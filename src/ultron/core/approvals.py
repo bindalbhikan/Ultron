@@ -2,7 +2,7 @@
 
 Two backends:
   worker  (default) the seller's Cloudflare worker keeps the pending approval and, on Approve,
-          starts the action's GitHub workflow (ultron/worker/agent.js).
+          starts the action's GitHub workflow (worker/agent.js in the Ultron repo).
   local   ultron serve on the seller's own machine: pending approvals are kept in
           output/agent/approvals.json and, on Approve, the action runs here: its command, else its
           GitHub workflow (needs GH_TOKEN with Actions: write).

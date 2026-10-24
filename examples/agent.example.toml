@@ -20,7 +20,7 @@ url_env = "AGENT_WORKER_URL"
 token_env = "AGENT_WORKER_TOKEN"
 
 [model]
-# a Workers AI model the worker allows (ultron/worker/agent.js FREE_MODELS);
+# a Workers AI model the worker allows (worker/agent.js FREE_MODELS);
 # the AGENT_MODEL env var / repo variable overrides it
 name = "@cf/openai/gpt-oss-120b"
 

@@ -1,5 +1,5 @@
 // A standalone worker for a seller who has no Telegram bot of their own yet: the owner's plain
-// messages go to the agent, its approvals come back as buttons. Setup: ultron/README.md.
+// messages go to the agent, its approvals come back as buttons. Setup: README.md.
 //
 // Secrets (wrangler secret put): TELEGRAM_BOT_TOKEN, GITHUB_TOKEN, WEBHOOK_SECRET, ALLOWED_CHAT_IDS,
 // AGENT_TOKEN. Vars (wrangler.toml): AGENT_REPO, AGENT_ACTIONS. Bindings: AI, AGENT_KV.

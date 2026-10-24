@@ -1,6 +1,6 @@
 """The agent's model: any chat-completions endpoint (messages, tools, tool_calls).
 
-By default the seller's Cloudflare worker (ultron/worker): POST <worker>/api/ai with the worker
+By default the seller's Cloudflare worker (worker/ in the Ultron repo): POST <worker>/api/ai with the worker
 token, served by Workers AI on the account's free daily allocation. AGENT_LLM_URL + AGENT_LLM_KEY
 point it at any other OpenAI-compatible endpoint instead (full URL of /chat/completions).
 

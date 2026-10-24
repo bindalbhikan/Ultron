@@ -99,7 +99,7 @@ class FileStore:
 
 
 class WorkerStore:
-    """The worker's KV (ultron/worker/agent.js /api/memory), with a version number so two runs
+    """The worker's KV (worker/agent.js /api/memory), with a version number so two runs
     writing at once do not overwrite each other: a stale write is refused and done again."""
 
     def __init__(self, url: str, token: str):

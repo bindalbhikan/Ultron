@@ -1,0 +1,11 @@
+{
+  "name": "ultron",
+  "version": "0.1.0",
+  "description": "Ultron's Cloudflare worker routes (worker/agent.js), for a seller's own worker",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./worker/agent.js": "./worker/agent.js"
+  },
+  "files": ["worker/agent.js"]
+}

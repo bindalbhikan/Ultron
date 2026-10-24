@@ -46,9 +46,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "./ultron[full]"
+      - run: pip install "ultron[full] @ git+https://github.com/bindalbhikan/Ultron.git@v0.1.0"
       - name: Answer
-        run: bash ultron/templates/ci_run.sh chat --text "$IN_TEXT"
+        run: bash scripts/ci_run.sh chat --text "$IN_TEXT"
       - name: Upload run output (encrypted)
         if: always()
         uses: actions/upload-artifact@v4

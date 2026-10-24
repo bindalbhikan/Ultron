@@ -1,4 +1,4 @@
-# A seller's own worker for Ultron (ultron/worker/index.js). Copy next to index.js and
+# A seller's own worker for Ultron (worker/index.js). Copy next to index.js and
 # agent.js as wrangler.toml, fill it in, then: npx wrangler deploy
 #
 # Secrets (npx wrangler secret put <NAME>): TELEGRAM_BOT_TOKEN, GITHUB_TOKEN (fine-grained, Actions:

@@ -1,0 +1,21 @@
+# a seller's own setup and secrets: next to an Ultron checkout, never in this repo
+.env
+agent.toml
+service_account.json
+worker/wrangler.toml
+# run output
+output/
+secure/
+# python / node / tools
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+.wrangler/
+# Google Drive
+desktop.ini

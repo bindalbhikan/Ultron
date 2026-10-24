@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs one agent command in GitHub Actions without its output in the public run log:
-#   bash ultron/templates/ci_run.sh <watch|chat> [options]     (same arguments as python -m ultron)
+#   bash scripts/ci_run.sh <watch|chat> [options]     (same arguments as python -m ultron)
+# (copy this file into the seller's repo as scripts/ci_run.sh)
 #
 # The log and the output/ folder are packed and encrypted with the ARTIFACT_KEY secret into
 # secure/output.tar.gz.enc (the only file uploaded as the run's artifact); the public log shows only

@@ -1,4 +1,4 @@
-"""One seller's setup: agent.toml (ultron/examples/agent.example.toml shows every key).
+"""One seller's setup: agent.toml (examples/agent.example.toml in the Ultron repo shows every key).
 
 Found at AGENT_CONFIG, else agent.toml in the current folder or the nearest folder above it. The
 folder holding it is the project root: output/, .env and the bots' docs are read relative to it.

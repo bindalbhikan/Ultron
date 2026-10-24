@@ -16,8 +16,8 @@ The code is the same for every seller. Each seller brings:
 ## Layout
 
 ```
-ultron/
-  pyproject.toml              the package: pip install ./ultron  ->  the `ultron` command
+  pyproject.toml              the package: pip install .  ->  the `ultron` command
+  package.json                worker/agent.js as an npm package, for a seller's own worker
   src/ultron/
     cli.py                    ultron serve | watch | chat | check | version
     core/
@@ -48,22 +48,35 @@ ultron/
   tests/                      python -m pytest (runs as the example seller)
 ```
 
-`ultron/` must never name a particular seller; the host repo's tests check it.
+This repo is Ultron alone and never names a particular seller: a seller's `agent.toml`, `.env`
+and `worker/wrangler.toml` stay out of it (`.gitignore`), and the seller's own repo tests that the
+installed package names no seller.
+
+## Install
+
+```
+pip install "ultron[full] @ git+https://github.com/bindalbhikan/Ultron.git@v0.1.0"   # a release
+pip install -e ".[full]"                                                            # this checkout
+```
+
+`[full]` adds pandas, openpyxl and cryptography (xlsx summaries, encrypted run artifacts); without
+it the install is pure Python (Android / Termux).
 
 ## Setting up a new seller
 
-1. **Repo.** The seller's bots repo gets a copy of `ultron/` and, at its root, `agent.toml`
-   from `examples/agent.example.toml`, filled in. Install with `pip install -e ./ultron` (or
-   `-e ./ultron` in the repo's requirements.txt) and check the setup with `ultron check`.
+1. **Repo.** The seller's bots repo puts `agent.toml` at its root (from
+   `examples/agent.example.toml`, filled in) and the install line above in its requirements.txt,
+   then checks the setup with `ultron check`.
 2. **Workflows.** Copy `templates/agent-watch.yml` and `templates/agent-chat.yml` into
-   `.github/workflows/`. In `agent-watch.yml`, list the seller's bot workflows by name. The bots
-   should keep their log in `output/run.log` and upload `output/` encrypted the way
-   `templates/ci_run.sh` does, so the watcher can read it.
-3. **Worker.** In `ultron/worker/`: copy `wrangler.example.toml` to `wrangler.toml`, fill in the
-   repo and `[vars.AGENT_ACTIONS]` (the same workflows and inputs as `agent.toml [actions]`), create
-   the KV namespace, put the secrets, `npx wrangler deploy`, then point the Telegram bot's webhook
-   at the worker with the `WEBHOOK_SECRET`. A seller who already has a worker imports
-   `makeAgent` from `agent.js` instead and calls `route`, `ask`, `isTap` and `decide` from it.
+   `.github/workflows/` and `templates/ci_run.sh` into `scripts/`. In `agent-watch.yml`, list the
+   seller's bot workflows by name. The bots should keep their log in `output/run.log` and upload
+   `output/` encrypted the way `ci_run.sh` does, so the watcher can read it.
+3. **Worker.** Copy `worker/wrangler.example.toml` to `worker/wrangler.toml`, fill in the repo and
+   `[vars.AGENT_ACTIONS]` (the same workflows and inputs as `agent.toml [actions]`), create the KV
+   namespace, put the secrets, `npx wrangler deploy`, then point the Telegram bot's webhook at the
+   worker with the `WEBHOOK_SECRET`. A seller who already has a worker adds this repo as an npm
+   dependency (`"ultron": "github:bindalbhikan/Ultron#v0.1.0"`), imports `makeAgent` from
+   `ultron/worker/agent.js` and calls `route`, `ask`, `isTap` and `decide` from it.
 4. **GitHub secrets.** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ARTIFACT_KEY` (any long random
    string), `AGENT_WORKER_URL` (the worker's address), `AGENT_WORKER_TOKEN` (the worker's
    `AGENT_TOKEN`), and for the `omsguru` tools `OMSGURU_EMAIL`, `OMSGURU_PASSWORD`, `OMSGURU_OTP`.
@@ -74,18 +87,18 @@ ultron/
 ## Hosting on the seller's own machine
 
 Instead of GitHub Actions + a Cloudflare worker, the agent can run as one long-lived process on
-any machine: `ultron serve` (or `python ultron/main.py serve` without installing). It polls
+any machine: `ultron serve` (or `python main.py serve` from this checkout, without installing). It polls
 Telegram itself (nothing to open on the machine, works behind a home router), answers the owner,
 and keeps the Approve / Reject buttons itself; an approved action runs its `command` on that
 machine, or starts its GitHub workflow (`GH_TOKEN` with Actions: write).
 
-| System | Setup (run in the folder that holds `agent.toml` and `.env`) | Runs as |
+| System | Setup (run in the folder that holds `agent.toml` and `.env`; `<Ultron>` is this checkout) | Runs as |
 |---|---|---|
-| Linux PC, server, VPS | `sh ultron/deploy/linux/install.sh` | systemd user service |
-| macOS | `sh ultron/deploy/macos/install.sh` | launchd agent |
-| Windows | `powershell -ExecutionPolicy Bypass -File ultron\deploy\windows\install.ps1` | scheduled task |
-| Android (Termux) | `sh ultron/deploy/termux/setup.sh` | termux-services (+ Termux:Boot) |
-| Any, with Docker | `ultron/deploy/docker/Dockerfile` | container |
+| Linux PC, server, VPS | `sh <Ultron>/deploy/linux/install.sh` | systemd user service |
+| macOS | `sh <Ultron>/deploy/macos/install.sh` | launchd agent |
+| Windows | `powershell -ExecutionPolicy Bypass -File <Ultron>\deploy\windows\install.ps1` | scheduled task |
+| Android (Termux) | `sh <Ultron>/deploy/termux/setup.sh` | termux-services (+ Termux:Boot) |
+| Any, with Docker | `<Ultron>/deploy/docker/Dockerfile` | container |
 
 Each restarts the agent when it stops and starts it with the machine. `.env` holds
 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (the owner's chats; or `ALLOWED_CHAT_IDS`), the model

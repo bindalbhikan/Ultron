@@ -40,9 +40,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "./ultron[full]"
+      - run: pip install "ultron[full] @ git+https://github.com/bindalbhikan/Ultron.git@v0.1.0"
       - name: Check the run
-        run: bash ultron/templates/ci_run.sh watch --run-id "$WATCH_RUN_ID"
+        run: bash scripts/ci_run.sh watch --run-id "$WATCH_RUN_ID"
       - name: Upload run output (encrypted)
         if: always()
         uses: actions/upload-artifact@v4
