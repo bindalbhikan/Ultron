@@ -49,11 +49,11 @@ backend = "auto"
 skip =["agent-watch.yml", "agent-chat.yml", "tests.yml"]
 failure_only = ["inv-push.yml"]     # runs every 3 hours: looked at only when it failed
 max_steps = 6
-tools = []
+tools = ["ultron.workings.agent_tools"]     # the watcher can check the Myntra logins
 
 [chat]
 max_steps = 8
-tools = ["runs", "omsguru"]
+tools = ["runs", "omsguru", "ultron.workings.agent_tools"]
 
 # What the agent may propose; each starts only after the owner taps Approve. The worker's
 # AGENT_ACTIONS (worker/wrangler.toml) must list the same workflows and inputs (a test checks).
