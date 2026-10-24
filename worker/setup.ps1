@@ -67,12 +67,20 @@ $hook = Invoke-RestMethod -Method Post -Uri "$api/setWebhook" -ContentType "appl
 } | ConvertTo-Json)
 Write-Host "  setWebhook: $($hook.description)"
 
-# Ultron takes plain words; the bot's command list has only these two (BOT_COMMANDS in src/worker.js)
+# The bot's command list: the same as BOT_COMMANDS in src/worker.js (/start sets it again)
 $commands = @(
-    @{ command = "start";     description = "What Ultron can do" },
-    @{ command = "dashboard"; description = "Dashboard sign-in link (10 min)" }
+    @{ command = "menu";      description = "Buttons for every portal and report" },
+    @{ command = "status";    description = "Last run of each report" },
+    @{ command = "sale";      description = "Daily sale (optional: today, or from to dates)" },
+    @{ command = "vms";       description = "Myntra VMS (optional: dates, or erp)" },
+    @{ command = "ajiotat";   description = "AJIO TAT (optional: days)" },
+    @{ command = "ajiospf";   description = "AJIO SPF (optional: dry, master)" },
+    @{ command = "myntraspf"; description = "Myntra SPF master" },
+    @{ command = "returns";   description = "Return analysis (optional: YYYY-MM)" },
+    @{ command = "dashboard"; description = "Dashboard sign-in link (10 min)" },
+    @{ command = "help";      description = "All commands, and how to ask Ultron" }
 )
 Invoke-RestMethod -Method Post -Uri "$api/setMyCommands" -ContentType "application/json" -Body (@{ commands = $commands } | ConvertTo-Json -Depth 4) | Out-Null
 Write-Host "  command list set"
 
-Write-Host "`nDone. Send /start to the bot, then write to Ultron in plain words."
+Write-Host "`nDone. Send /start to the bot: the menu comes up; plain words go to Ultron."

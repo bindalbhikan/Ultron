@@ -1,38 +1,122 @@
-// Telegram webhook for Bindal: the bot is Ultron, Ecom Manager (github.com/bindalbhikan/Ultron).
-// Every message in an allowed chat goes to Ultron, which answers in the same chat and asks
-// Approve / Reject before it runs anything. The worker also starts the daily reports on time
-// (cron triggers), keeps the dashboard's numbers and the Myntra logins (KV "DASH").
+// Telegram webhook for Bindal (@bindal_exports_bot): a button menu, portal by portal, that starts the
+// report workflows of github.com/bindalbhikan/Ultron, and Ultron, Ecom Manager, for everything typed
+// in plain words. The worker also starts the daily reports on time (cron triggers) and keeps the
+// dashboard's numbers, the Myntra logins and Ultron's memory and approvals (KV "DASH").
 //
 // Secrets (wrangler secret put): TELEGRAM_BOT_TOKEN, GITHUB_TOKEN, WEBHOOK_SECRET, ALLOWED_CHAT_IDS
 // ALLOWED_CHAT_IDS + EXTRA_CHAT_IDS (both secrets: the repo is public) are comma-separated chat ids;
-// messages and button taps from any other chat are ignored.
+// messages and button taps from any other chat are ignored. Each run's report goes to the chat
+// that asked for it (workflows with a chat_id input).
 //
-// The old command menu (/sale, /vms ... and its buttons) is retired (25 Oct 2026): a command or a
-// tap on an old menu still works by going to Ultron, which proposes the same report.
+// Every reply is written for a phone: a bold heading line, a blank line, short lines below,
+// and at most two short buttons per row.
 
 import { makeAgent } from "../agent.js";   // Ultron's worker routes (the same for every seller)
 
-// All bots live in one repo; the daily runs below start its workflows.
 const OWNER = "bindalbhikan";
 const REPO = "Ultron";
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-// The workflows the cron triggers start, with the name used when one does not start.
-const WORKFLOWS = {
-  sale: { workflow: "sale.yml", name: "Daily Sale" },
-  vms: { workflow: "vms.yml", name: "Myntra VMS" },
-  ajiotat: { workflow: "ajio-tat.yml", name: "AJIO TAT" },
-  ajiospf: { workflow: "ajio-spf.yml", name: "AJIO SPF" },
-  ajioads: { workflow: "ajio-ads.yml", name: "AJIO Ads / TOT gap" },
-  myntraspf: { workflow: "myntra-spf.yml", name: "Myntra SPF" },
-  returns: { workflow: "returns.yml", name: "Return Analysis" },
-  myntraotp: { workflow: "myntra-otp.yml", name: "Myntra courier OTP" },
-  myntrareports: { workflow: "myntra-reports.yml", name: "Myntra daily reports" },
+const none = (usage) => (args) => (args.length === 0 ? {} : `Use ${usage}`);
+const oneDate = (key, usage) => (args) => {
+  if (args.length === 0) return {};
+  if (args.length === 1 && DATE.test(args[0])) return { [key]: args[0] };
+  return `Use ${usage}`;
 };
+
+// Each command maps to one workflow. `inputs` turns the command's arguments into workflow_dispatch
+// inputs, or returns a string error to show. `chat` = the workflow takes a chat_id (its report comes
+// back to the chat that asked). `minutes` is the usual run time until the workflow has runs to measure.
+// `portal` groups it in /status and /help.
+const COMMANDS = {
+  // Myntra
+  vms: { workflow: "vms.yml", icon: "📹", name: "Myntra VMS", portal: "myntra", chat: true, minutes: 2,
+         examples: ["/vms", "/vms 2026-10-01 2026-10-07", "/vms erp"],
+         inputs: (args) => (args.length === 1 && args[0].toLowerCase() === "erp" ? { erp_only: "1" } : dateRange(args)) },
+  vmspic: { workflow: "vms.yml", icon: "🖼", name: "VMS sheet photo", portal: "myntra", chat: true, picture: true, minutes: 4,
+            examples: ["/vmspic", "/vmspic 2026-09"], inputs: monthArg },
+  myntraspf: { workflow: "myntra-spf.yml", icon: "🧾", name: "Myntra SPF", portal: "myntra", chat: true, minutes: 30,
+               examples: ["/myntraspf"], inputs: none("/myntraspf") },
+  myntraotp: { workflow: "myntra-otp.yml", icon: "🔐", name: "Myntra courier OTP", portal: "myntra", minutes: 1,
+               examples: ["/myntraotp"], inputs: none("/myntraotp") },
+  myntrareports: { workflow: "myntra-reports.yml", icon: "📊", name: "Myntra daily reports", portal: "myntra", minutes: 8,
+                   examples: ["/myntrareports", "/myntrareports 2026-10-23"],
+                   inputs: oneDate("date", "/myntrareports or /myntrareports YYYY-MM-DD") },
+  myntratat: { workflow: "myntra-tat.yml", icon: "🚚", name: "Myntra courier scorecard", portal: "myntra", minutes: 3,
+               examples: ["/myntratat"], inputs: none("/myntratat") },
+  // AJIO
+  ajiotat: { workflow: "ajio-tat.yml", icon: "📦", name: "AJIO TAT", portal: "ajio", chat: true, minutes: 2,
+             examples: ["/ajiotat", "/ajiotat 3"],
+             inputs: (args) => {
+               if (args.length === 0) return {};
+               if (args.length === 1 && /^\d{1,2}$/.test(args[0])) return { days: args[0] };
+               return "Days must be a number, e.g. /ajiotat 3";
+             } },
+  ajiospf: { workflow: "ajio-spf.yml", icon: "🧾", name: "AJIO SPF", portal: "ajio", chat: true, minutes: 13,
+             examples: ["/ajiospf dry", "/ajiospf master", "/ajiospf"],
+             inputs: (args) => {
+               if (args.length === 0) return {};
+               const a = args.length === 1 ? args[0].toLowerCase() : "";
+               if (a === "dry") return { dry_run: "1" };
+               if (a === "master") return { master_only: "1" };
+               return "Use /ajiospf, /ajiospf dry or /ajiospf master";
+             } },
+  ajioads: { workflow: "ajio-ads.yml", icon: "📣", name: "AJIO Ads / TOT gap", portal: "ajio", chat: true, minutes: 3,
+             examples: ["/ajioads"], inputs: none("/ajioads") },
+  // All channels (OMSGuru)
+  sale: { workflow: "sale.yml", icon: "📈", name: "Daily Sale", portal: "all", chat: true, minutes: 1,
+          examples: ["/sale", "/sale today", "/sale 2026-10-01 2026-10-07"],
+          inputs: (args) => (args.length === 1 && args[0].toLowerCase() === "today" ? { today: "1" } : dateRange(args)) },
+  salepic: { workflow: "sale.yml", icon: "🖼", name: "Sale sheet photo", portal: "all", chat: true, picture: true, minutes: 4,
+             examples: ["/salepic", "/salepic 2026-09"], inputs: monthArg },
+  morning: { workflow: "morning.yml", icon: "🌅", name: "Morning report", portal: "all", chat: true, minutes: 2,
+             examples: ["/morning", "/morning 2026-10-23"], inputs: oneDate("day", "/morning or /morning YYYY-MM-DD") },
+  sla: { workflow: "sla.yml", icon: "⏰", name: "SLA warning", portal: "all", minutes: 2,
+         examples: ["/sla"], inputs: none("/sla") },
+  stock: { workflow: "stock.yml", icon: "📉", name: "Stock-out alert", portal: "all", minutes: 4,
+           examples: ["/stock"], inputs: none("/stock") },
+  labels: { workflow: "labels.yml", icon: "🏷", name: "Label check", portal: "all", minutes: 3,
+            examples: ["/labels"], inputs: none("/labels") },
+  listings: { workflow: "listings.yml", icon: "🧩", name: "Listing health", portal: "all", minutes: 6,
+              examples: ["/listings"], inputs: none("/listings") },
+  invpush: { workflow: "inv-push.yml", icon: "🔄", name: "Inventory push", portal: "all", minutes: 3,
+             examples: ["/invpush dry", "/invpush"],
+             inputs: (args) => {
+               if (args.length === 0) return {};
+               if (args.length === 1 && args[0].toLowerCase() === "dry") return { dry_run: "1" };
+               return "Use /invpush or /invpush dry";
+             } },
+  evening: { workflow: "evening.yml", icon: "🌙", name: "Evening summary", portal: "all", minutes: 3,
+             examples: ["/evening"], inputs: none("/evening") },
+  // Reports & MIS
+  returns: { workflow: "returns.yml", icon: "↩️", name: "Return Analysis", portal: "reports", chat: true, minutes: 25,
+             examples: ["/returns", "/returns 2026-09"],
+             inputs: (args) => {
+               if (args.length === 0) return {};
+               if (args.length === 1 && /^\d{4}-\d{2}$/.test(args[0])) return { month: args[0] };
+               return "Month must be YYYY-MM, e.g. /returns 2026-09";
+             } },
+  weekly: { workflow: "weekly.yml", icon: "📅", name: "Weekly review", portal: "reports", minutes: 5,
+            examples: ["/weekly"], inputs: none("/weekly") },
+  mis: { workflow: "mis.yml", icon: "📆", name: "Monthly MIS", portal: "reports", minutes: 6,
+         examples: ["/mis", "/mis 2026-10-02"], inputs: oneDate("day", "/mis or /mis YYYY-MM-DD") },
+  deadstock: { workflow: "deadstock.yml", icon: "🪦", name: "Dead stock", portal: "reports", minutes: 6,
+               examples: ["/deadstock"], inputs: none("/deadstock") },
+};
+
+const PORTALS = [["myntra", "🛍 Myntra"], ["ajio", "🟠 AJIO"], ["all", "📦 All channels (OMSGuru)"], ["reports", "📊 Reports & MIS"]];
+
+function monthArg(args) {
+  if (args.length === 0) return { snapshot: "current" };
+  if (args.length === 1 && /^\d{4}-\d{2}$/.test(args[0])) return { snapshot: args[0] };
+  return "Month must be YYYY-MM, e.g. 2026-09";
+}
 
 // Daily automatic runs, in IST. Cloudflare cron is UTC (IST = UTC + 5:30); each `cron` below
 // ("minute hour") must be one of the times the [triggers] in wrangler.toml fire at (one trigger
-// can list several hours: the free plan allows 5 triggers). GitHub's own `schedule:` is not
-// used: it ran hours late or skipped runs (24 Oct 2026: the 11 AM OTP never ran).
+// can list several hours: the free plan allows 5 triggers). The other daily reports (morning, SLA,
+// stock, labels, listings, evening, weekly, dead stock, MIS, Myntra TAT, inventory push) run on their
+// workflow's own `schedule:`.
 const SCHEDULE = [
   // 7 AM: Myntra report requests - they queue on the portal for a while. The same Myntra report
   // twice within 15 minutes is refused, so the SPF request leaves the order report to 9 AM.
@@ -60,27 +144,192 @@ const SCHEDULE = [
   { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "vms" },
   { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "ajiotat" },
 ];
+// the workflow schedules, for /help and /status (the times are in those workflows)
+const OWN_SCHEDULE = {
+  morning: "9:30 AM daily", stock: "10:00 AM daily", weekly: "10:15 AM Monday", listings: "11:30 AM daily",
+  sla: "12:00 PM, 3:00 PM", labels: "6:00 PM daily", myntratat: "6:30 PM daily", evening: "8:00 PM daily",
+  deadstock: "11:00 AM on the 1st", mis: "11:00 AM on the 2nd", invpush: "every 3 hours",
+};
 
-const WELCOME = [
-  "🤖 <b>Ultron · Ecom Manager</b>",
-  "",
-  "Write to me in plain words, e.g.",
-  "• how many orders yesterday?",
-  "• where is order FN2511505146?",
-  "• which orders are due today?",
-  "• run the sale report for 1 to 7 Oct",
-  "",
-  "Anything I would run, I ask first with Approve / Reject. The daily reports keep coming on their own.",
-  "",
-  "<code>/dashboard</code>: dashboard sign-in link, valid 10 min",
-].join("\n");
-// The old menu's buttons under the chat box send these texts: answered with the welcome, which
-// also takes that keyboard away.
-const OLD_KEYBOARD = new Set(["📋 Menu", "📊 Status"]);
+// The button menu. Every screen edits the same message. Button data (64 bytes at most):
+//   "m:<screen>" open a screen · "r:<command line>" start a run · "c:<command line>" ask first
+//   "a:<question>" ask Ultron · "st" status · "db" dashboard · "hp" help
+const back = (to = "main") => [["⬅️ Back", `m:${to}`]];
+const SCREENS = {
+  main: {
+    title: "🏠 <b>Bindal Exports</b>\n<i>Ultron · Ecom Manager</i>\n\nChoose a portal 👇\n<i>or just write to me in plain words</i>",
+    rows: [
+      [["🛍 Myntra", "m:myntra"], ["🟠 AJIO", "m:ajio"]],
+      [["🛒 Flipkart", "m:flipkart"], ["📦 All channels", "m:all"]],
+      [["📊 Reports & MIS", "m:reports"]],
+      [["📋 Status", "st"], ["🖥 Dashboard", "db"]],
+      [["🤖 Ask Ultron / Help", "hp"]],
+    ],
+  },
+  myntra: {
+    title: "🛍 <b>Myntra</b>\n<i>MAIN · PPMP · DBCC · FMCC</i>\n\nWhat do you need?",
+    rows: [
+      [["📹 VMS", "m:vms"], ["🧾 Myntra SPF", "r:myntraspf"]],
+      [["🔐 Courier OTP", "r:myntraotp"], ["📊 Daily reports", "r:myntrareports"]],
+      [["🚚 Courier scorecard", "r:myntratat"], ["🔑 Login check", "a:mlogin"]],
+      [["📈 Orders yesterday", "a:myn_orders"]],
+      back(),
+    ],
+  },
+  vms: {
+    title: "📹 <b>Myntra VMS</b>\n<i>Packing video check</i>\n\nWhich SLA dates?",
+    rows: [
+      [["Today", "r:vms"], ["Last 7 days", "r:vms @week"]],
+      [["This month", "r:vms @month"], ["🖼 Sheet photo", "r:vmspic"]],
+      [["🏭 ERP vs VMS", "r:vms erp"]],
+      back("myntra"),
+    ],
+  },
+  ajio: {
+    title: "🟠 <b>AJIO</b>\n\nWhat do you need?",
+    rows: [
+      [["📦 TAT + pickups", "m:tat"], ["🧾 SPF claims", "m:spf"]],
+      [["📣 Ads / TOT gap", "r:ajioads"], ["📈 Orders yesterday", "a:ajio_orders"]],
+      back(),
+    ],
+  },
+  tat: {
+    title: "📦 <b>AJIO TAT</b>\n<i>Dispatch TAT + courier pickup</i>\n\nWhich order dates?",
+    rows: [
+      [["Today", "r:ajiotat"], ["Last 3 days", "r:ajiotat 3"]],
+      [["Last 7 days", "r:ajiotat 7"]],
+      back("ajio"),
+    ],
+  },
+  spf: {
+    title: "🧾 <b>AJIO SPF</b>\n<i>SPF tickets + follow-ups</i>\n\n🧪 Dry = only lists\n📒 Master = sheet only\n⚠️ LIVE = posts on AJIO",
+    rows: [
+      [["🧪 Dry run", "r:ajiospf dry"], ["📒 Master only", "r:ajiospf master"]],
+      [["⚠️ LIVE", "c:ajiospf"]],
+      back("ajio"),
+    ],
+  },
+  flipkart: {
+    title: "🛒 <b>Flipkart</b>\n<i>incl. FBF</i>\n\nWhat do you need?",
+    rows: [
+      [["📈 Orders yesterday", "a:fk_orders"], ["⏰ Due today", "a:fk_due"]],
+      [["📈 Sale report", "m:sale"], ["↩️ Return analysis", "m:returns"]],
+      back(),
+    ],
+  },
+  all: {
+    title: "📦 <b>All channels</b>\n<i>OMSGuru: every marketplace</i>\n\nWhat do you need?",
+    rows: [
+      [["📈 Sale", "m:sale"], ["🌅 Morning report", "r:morning"]],
+      [["⏰ SLA warning", "r:sla"], ["📉 Stock-out", "r:stock"]],
+      [["🏷 Label check", "r:labels"], ["🧩 Listing health", "r:listings"]],
+      [["🔄 Inventory push", "m:inv"], ["🌙 Evening summary", "r:evening"]],
+      back(),
+    ],
+  },
+  sale: {
+    title: "📈 <b>Daily Sale</b>\n<i>OMSGuru + FBF + SJIT</i>\n\nWhich days?",
+    rows: [
+      [["Yesterday", "r:sale"], ["Today", "r:sale today"]],
+      [["Last 7 days", "r:sale @week"], ["This month", "r:sale @month"]],
+      [["🖼 Sheet photo", "r:salepic"]],
+      back("all"),
+    ],
+  },
+  inv: {
+    title: "🔄 <b>Inventory push</b>\n<i>OMSGuru Push Inventory, every channel</i>\n\nRuns by itself every 3 hours.",
+    rows: [
+      [["🧪 Dry run", "r:invpush dry"], ["⚠️ Push now", "c:invpush"]],
+      back("all"),
+    ],
+  },
+  reports: {
+    title: "📊 <b>Reports & MIS</b>\n\nWhich report?",
+    rows: [
+      [["📅 Weekly review", "r:weekly"], ["📆 Monthly MIS", "r:mis"]],
+      [["↩️ Return analysis", "m:returns"], ["🪦 Dead stock", "r:deadstock"]],
+      [["📣 AJIO Ads gap", "r:ajioads"]],
+      back(),
+    ],
+  },
+  returns: {
+    title: "↩️ <b>Return Analysis</b>\n<i>Myntra x3 + Ajio + Flipkart, Drive + Telegram</i>\n\n" +
+      "Last month: sale 1st-last day, returns up to the 14th. Runs by itself on the 15th, 2 PM.",
+    rows: [
+      [["Last month", "r:returns"]],
+      back("reports"),
+    ],
+  },
+};
+// "c:" buttons: what the run does, and the screen Cancel goes back to
+const CONFIRM = {
+  ajiospf: { text: "⚠️ <b>AJIO SPF · LIVE</b>\n\nRaises tickets and posts replies on AJIO.\nStart it?", back: "spf" },
+  invpush: { text: "⚠️ <b>Inventory push · now</b>\n\nPushes inventory to every channel on OMSGuru.\nStart it?", back: "inv" },
+};
+// "a:" buttons: a question for Ultron, sent as if typed
+const ASK = {
+  mlogin: "Check the Myntra portal logins (MAIN, DBCC, FMCC): logged in or out, and when they run out.",
+  myn_orders: "How many Myntra orders came yesterday, account-wise, with cancels?",
+  ajio_orders: "How many AJIO orders came yesterday, with cancels?",
+  fk_orders: "How many Flipkart orders came yesterday, with cancels?",
+  fk_due: "Which Flipkart orders are due today or overdue and not ready to ship?",
+};
+
+// Always-visible buttons under the chat box; their text arrives as a normal message.
+const KEYBOARD_MENU = "📋 Menu";
+const KEYBOARD_STATUS = "📊 Status";
+const REPLY_KEYBOARD = {
+  keyboard: [[{ text: KEYBOARD_MENU }, { text: KEYBOARD_STATUS }]],
+  resize_keyboard: true,
+  is_persistent: true,
+};
+// the bot's command list in Telegram (setMyCommands on /start; worker/setup.ps1 sets the same)
 const BOT_COMMANDS = [
-  { command: "start", description: "What Ultron can do" },
-  { command: "dashboard", description: "Dashboard sign-in link (10 min)" },
-];
+  ["menu", "Buttons for every portal and report"], ["status", "Last run of each report"],
+  ["sale", "Daily sale (optional: today, or from to dates)"], ["vms", "Myntra VMS (optional: dates, or erp)"],
+  ["ajiotat", "AJIO TAT (optional: days)"], ["ajiospf", "AJIO SPF (optional: dry, master)"],
+  ["myntraspf", "Myntra SPF master"], ["returns", "Return analysis (optional: YYYY-MM)"],
+  ["dashboard", "Dashboard sign-in link (10 min)"], ["help", "All commands, and how to ask Ultron"],
+].map(([command, description]) => ({ command, description }));
+
+function dateRange(args) {
+  if (args.length === 0) return {};
+  if (args.length > 2 || !args.every((a) => DATE.test(a))) return "Dates must be YYYY-MM-DD";
+  return args.length === 2 ? { from: args[0], to: args[1] } : { from: args[0] };
+}
+
+// "@week" / "@month" from the buttons become dates, in IST. Sale reports end yesterday,
+// the VMS report (by SLA date) ends today.
+function expandPeriod(name, args) {
+  if (args.length !== 1 || !args[0].startsWith("@")) return args;
+  const ist = (d) => new Date(d.getTime() + 330 * 60000).toISOString().slice(0, 10);
+  const today = new Date();
+  const end = name === "sale" ? new Date(today.getTime() - 86400000) : today;
+  const from = args[0] === "@week" ? ist(new Date(end.getTime() - 6 * 86400000)) : `${ist(end).slice(0, 8)}01`;
+  return [from, ist(end)];
+}
+
+function scheduleOf(key) {
+  return [...SCHEDULE.filter((s) => s.cmd === key && !s.inputs).map((s) => s.ist), ...(OWN_SCHEDULE[key] ? [OWN_SCHEDULE[key]] : [])];
+}
+
+function helpText() {
+  const blocks = PORTALS.map(([key, title]) => [
+    `<b>${title}</b>`,
+    ...Object.values(COMMANDS).filter((c) => c.portal === key)
+      .map((c) => `${c.icon} ${c.name}: ${c.examples.map((e) => `<code>${e}</code>`).join(" ")}`),
+  ].join("\n"));
+  return [
+    "❓ <b>Help</b>",
+    "",
+    `Tap <b>${KEYBOARD_MENU}</b> below, type a command, or write to <b>Ultron</b> in plain words, e.g.`,
+    "<i>how many orders yesterday? · where is order FN2511505146? · check the Myntra logins</i>",
+    "Anything Ultron would run, it asks first with Approve / Reject.",
+    "",
+    ...blocks.flatMap((b) => [b, ""]),
+    "🖥 <code>/dashboard</code> sign-in link, valid 10 min · 📋 <code>/status</code> last runs",
+  ].join("\n");
+}
 
 function allowedChat(env, chatId) {
   const allowed = `${env.ALLOWED_CHAT_IDS || ""},${env.EXTRA_CHAT_IDS || ""}`.split(",").map((s) => s.trim()).filter(Boolean);
@@ -101,26 +350,30 @@ export default {
     }
     const update = await request.json().catch(() => null);
 
-    // A tap on a button: Ultron's Approve / Reject, or a button of the retired menu
+    // A tap on a button: the menu, or Ultron's Approve / Reject
     const cb = update?.callback_query;
     if (cb?.message) {
       if (!allowedChat(env, cb.message.chat.id)) {
         console.log(`ignored button ${cb.data} from chat ${cb.message.chat.id} user ${cb.from?.id}`);
         return new Response("ok");
       }
-      ctx.waitUntil(onTap(env, cb));
+      ctx.waitUntil(handleTap(env, cb));
       return new Response("ok");
     }
 
     const msg = update?.message;
-    const text = msg?.text?.trim();
+    let text = msg?.text?.trim();
+    if (text === KEYBOARD_MENU) text = "/menu";
+    if (text === KEYBOARD_STATUS) text = "/status";
     if (!text) return new Response("ok");
     if (!allowedChat(env, msg.chat.id)) {
       console.log(`ignored ${text.slice(0, 40)} from chat ${msg.chat.id} (${msg.chat.type} ${msg.chat.title || ""}) user ${msg.from?.id}`);
       return new Response("ok");
     }
+    // plain words go to Ultron (ultron.agents.chat); a command runs here.
     // Reply after the 200 so Telegram never retries a slow GitHub call.
-    ctx.waitUntil(onMessage(env, msg, text));
+    ctx.waitUntil(text.startsWith("/") ? handle(env, msg.chat.id, msg.message_id, text)
+                                       : agent.ask(env, msg.chat.id, msg.message_id, text));
     return new Response("ok");
   },
 
@@ -140,16 +393,16 @@ export default {
     ctx.waitUntil(
       Promise.all(
         due.map(async (s) => {
-          const wf = WORKFLOWS[s.cmd];
+          const cmd = COMMANDS[s.cmd];
           try {
-            const res = await dispatch(env, wf.workflow, s.inputs || {});
-            console.log(`cron ${event.cron} -> ${wf.workflow} ${res.status}`);
+            const res = await dispatch(env, cmd, s.inputs || {});
+            console.log(`cron ${event.cron} -> ${cmd.workflow} ${res.status}`);
             if (res.status !== 204) throw new Error(`GitHub said ${res.status}: ${(await res.text()).slice(0, 200)}`);
           } catch (e) {
             console.log(`cron ${s.cmd} failed: ${e.stack || e}`);
             const chat = String(env.ALLOWED_CHAT_IDS || "").split(",")[0].trim();
             if (chat) {
-              await sendMessage(env, chat, `❌ <b>${s.label || wf.name} did not start</b>\n<i>auto run, ${s.ist}</i>\n\n<code>${esc(e.message)}</code>`);
+              await sendMessage(env, chat, `❌ <b>${s.label || cmd.name} did not start</b>\n<i>auto run, ${s.ist}</i>\n\n<code>${esc(e.message)}</code>`);
             }
           }
         })
@@ -158,32 +411,181 @@ export default {
   },
 };
 
-async function onMessage(env, msg, text) {
-  const chatId = msg.chat.id;
-  const command = text.startsWith("/") ? text.split(/\s+/)[0].slice(1).split("@")[0].toLowerCase() : "";
+async function handleTap(env, cb) {
+  const chatId = cb.message.chat.id;
+  const messageId = cb.message.message_id;
+  const data = String(cb.data || "");
+  const answer = (text) => telegram(env, "answerCallbackQuery", { callback_query_id: cb.id, ...(text ? { text } : {}) });
+  const show = (text, rows) =>
+    telegram(env, "editMessageText", { chat_id: chatId, message_id: messageId, text, parse_mode: "HTML",
+                                       disable_web_page_preview: true, reply_markup: keyboard(rows) });
+
+  if (agent.isTap(data)) return agent.decide(env, cb, data);        // Ultron's Approve / Reject
+  if (data.startsWith("m:")) {
+    await answer();
+    const screen = SCREENS[data.slice(2)] || SCREENS.main;
+    return show(screen.title, screen.rows);
+  }
+  if (data === "st") {
+    await answer("Checking…");
+    return show(await statusText(env), [[["🔄 Refresh", "st"], ["🏠 Menu", "m:main"]]]);
+  }
+  if (data === "db") {
+    await answer();
+    return sendDashboardLink(env, chatId, undefined);
+  }
+  if (data === "hp") {
+    await answer();
+    return show(helpText(), [back()[0]]);
+  }
+  if (data.startsWith("a:")) {
+    const question = ASK[data.slice(2)];
+    await answer(question ? "Asking Ultron…" : undefined);
+    return question ? agent.ask(env, chatId, undefined, question) : undefined;
+  }
+  if (data.startsWith("c:")) {
+    await answer();
+    const line = data.slice(2);
+    const c = CONFIRM[line.split(" ")[0]] || { text: `Start <code>/${esc(line)}</code>?`, back: "main" };
+    return show(c.text, [[["✅ Yes, start", `r:${line}`], ["✖️ Cancel", `m:${c.back}`]]]);
+  }
+  if (data.startsWith("r:")) {
+    await answer("Starting…");
+    await show(SCREENS.main.title, SCREENS.main.rows);   // menu stays ready for the next tap
+    return handle(env, chatId, undefined, `/${data.slice(2)}`);
+  }
+  // a button of an older menu, or anything else
+  return answer("Send /menu for the current menu.");
+}
+
+async function handle(env, chatId, replyTo, text) {
+  const [head, ...rawArgs] = text.split(/\s+/);
+  const name = head.slice(1).split("@")[0].toLowerCase();
+  const reply = (t, markup) => sendMessage(env, chatId, t, replyTo, markup);
+
   try {
-    if (command === "start" || command === "help" || command === "menu" || OLD_KEYBOARD.has(text)) {
-      // also replaces the old command list in Telegram's menu with Ultron's two commands
+    if (name === "start") {
       await telegram(env, "setMyCommands", { commands: BOT_COMMANDS });
-      return await sendMessage(env, chatId, WELCOME, msg.message_id, { remove_keyboard: true });
+      await reply("👋 <b>Bindal Exports · Ultron</b>\n\nUse the buttons below the chat box any time, or write to me in plain words.",
+                  REPLY_KEYBOARD);
+      return await reply(SCREENS.main.title, keyboard(SCREENS.main.rows));
     }
-    if (command === "dashboard") return await sendDashboardLink(env, chatId, msg.message_id);
-    // anything else, an old command like /sale included: Ultron (ultron.agents.chat)
-    return await agent.ask(env, chatId, msg.message_id, text);
+    if (name === "help") return await reply(helpText());
+    if (name === "dashboard") return await sendDashboardLink(env, chatId, replyTo);
+    if (name === "menu") return await reply(SCREENS.main.title, keyboard(SCREENS.main.rows));
+    if (name === "status") return await reply(await statusText(env), keyboard([[["🔄 Refresh", "st"], ["🏠 Menu", "m:main"]]]));
+
+    const cmd = COMMANDS[name];
+    // not a command: Ultron reads it like any message ("/sales yesterday", "/where is FN123")
+    if (!cmd) return await agent.ask(env, chatId, replyTo, text);
+
+    const args = expandPeriod(name, rawArgs);
+    const inputs = cmd.inputs(args);
+    if (typeof inputs === "string") {
+      return await reply(`⚠️ <b>${cmd.name}</b>\n\n${esc(inputs)}\n\nExamples:\n${cmd.examples.map((e) => `<code>${e}</code>`).join("\n")}`);
+    }
+
+    // Measured before dispatching, so the new run is not counted as "already running".
+    const eta = await estimate(env, cmd, inputs);
+    // The run's report goes back to the chat that asked for it, when the workflow can.
+    const res = await dispatch(env, cmd, cmd.chat ? { ...inputs, chat_id: String(chatId) } : inputs);
+    console.log(`dispatch ${cmd.workflow} ${JSON.stringify(inputs)} -> ${res.status}`);
+    if (res.status !== 204) {
+      return await reply(`❌ <b>${cmd.name} did not start</b>\n\nGitHub said ${res.status}\n<code>${esc((await res.text()).slice(0, 200))}</code>`);
+    }
+    const what = describe(name, inputs);
+    await reply([
+      `⏳ <b>${cmd.name} started</b>`,
+      "",
+      ...(what ? [`📅 ${esc(what)}`] : []),
+      eta,
+      "",
+      `<i>${cmd.chat ? "Report will come here." : "Report will come to the main chat."}</i>`,
+    ].join("\n"));
   } catch (e) {
-    console.log(`message failed: ${e.stack || e}`);
-    await sendMessage(env, chatId, `❌ <b>Error</b>\n\n<code>${esc(e.message)}</code>`, msg.message_id);
+    console.log(`handle /${name} failed: ${e.stack || e}`);
+    await reply(`❌ <b>Error</b>\n\n<code>${esc(e.message)}</code>`);
   }
 }
 
-async function onTap(env, cb) {
-  const data = String(cb.data || "");
-  if (agent.isTap(data)) return agent.decide(env, cb, data);
-  // a button of the retired menu: say so, and take the old buttons off that message
-  await telegram(env, "answerCallbackQuery", { callback_query_id: cb.id, show_alert: true,
-                                              text: "This menu is retired. Write to Ultron in plain words, e.g. \"run the sale report\"." });
-  return telegram(env, "editMessageReplyMarkup", { chat_id: cb.message.chat.id, message_id: cb.message.message_id,
-                                                  reply_markup: { inline_keyboard: [] } });
+function describe(name, inputs) {
+  const d = (s) => new Date(`${s}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
+  if (inputs.today) return "Today so far";
+  if (inputs.erp_only) return "ERP vs VMS · yesterday and today";
+  if (inputs.snapshot) return inputs.snapshot === "current" ? "This month" : inputs.snapshot;
+  if (inputs.dry_run) return "Dry run · nothing posted";
+  if (inputs.master_only) return "Master sheet only · nothing posted";
+  if (name === "returns") return inputs.month ? `Month ${inputs.month}` : "Last month";
+  if (name === "ajiospf") return "LIVE · posts on AJIO";
+  if (name === "invpush") return "LIVE · pushes every channel";
+  if (inputs.days) return `Today + ${inputs.days} days back`;
+  if (inputs.day) return d(inputs.day);
+  if (inputs.date) return d(inputs.date);
+  if (inputs.from) return inputs.to && inputs.to !== inputs.from ? `${d(inputs.from)} → ${d(inputs.to)}` : d(inputs.from);
+  return "";
+}
+
+// How long the run will take: the median of this workflow's recent successful runs
+// (command to finish, so GitHub's queue time is included), plus any run already in progress.
+async function estimate(env, cmd, inputs) {
+  let minutes = cmd.minutes;
+  let waiting = "";
+  try {
+    const res = await github(env, `/repos/${OWNER}/${REPO}/actions/workflows/${cmd.workflow}/runs?per_page=20`);
+    if (res.ok) {
+      const runs = (await res.json()).workflow_runs || [];
+      const done = runs
+        .filter((r) => r.status === "completed" && r.conclusion === "success")
+        .map((r) => (Date.parse(r.updated_at) - Date.parse(r.created_at)) / 60000)
+        .slice(0, 15)
+        .sort((a, b) => a - b);
+      if (!cmd.picture && done.length >= 3) minutes = done[Math.floor(done.length / 2)];
+      const busy = runs.filter((r) => r.status !== "completed");
+      if (busy.length) {
+        const ranFor = (Date.now() - Date.parse(busy[0].created_at)) / 60000;
+        const left = Math.max(1, Math.ceil(minutes - ranFor));
+        minutes += left;
+        waiting = `\n🚦 Waits ~${left} min for a run in progress`;
+      }
+    }
+  } catch (e) {
+    console.log(`estimate ${cmd.workflow} failed: ${e}`);
+  }
+  const more = inputs.from && inputs.to && inputs.from !== inputs.to ? "+" : "";
+  const finish = new Date(Date.now() + minutes * 60000).toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit",
+  });
+  return `⏱ ~${fmt(minutes)}${more} · ready by <b>${finish}</b>${waiting}`;
+}
+
+function fmt(minutes) {
+  return minutes < 1.5 ? "1 min" : `${Math.round(minutes)} min`;
+}
+
+// The last run of every report, portal by portal (one GitHub call per workflow).
+async function statusText(env) {
+  const line = async ([key, c]) => {
+    const head = `${c.icon} <b>${c.name}</b>`;
+    const auto = scheduleOf(key).map((t) => `⏰ ${t}`);
+    const res = await github(env, `/repos/${OWNER}/${REPO}/actions/workflows/${c.workflow}/runs?per_page=1`);
+    if (!res.ok) return [head, `⚠️ GitHub ${res.status}`].join("\n");
+    const run = (await res.json()).workflow_runs?.[0];
+    if (!run) return [head, "No runs yet", ...auto].join("\n");
+    const when = new Date(run.created_at).toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
+    });
+    const took = ((run.status === "completed" ? Date.parse(run.updated_at) : Date.now()) - Date.parse(run.created_at)) / 60000;
+    const state = run.status !== "completed"
+      ? `⏳ Running · ${fmt(took)}`
+      : run.conclusion === "success" ? `✅ Done · ${fmt(took)}` : `❌ ${run.conclusion}`;
+    return [head, `${state} · 🕒 ${when}`, ...auto].join("\n");
+  };
+  const sections = await Promise.all(PORTALS.map(async ([key, title]) => {
+    const rows = await Promise.all(Object.entries(COMMANDS).filter(([, c]) => c.portal === key && !c.picture).map(line));
+    return [`<b>${title}</b>`, "", rows.join("\n\n")].join("\n");
+  }));
+  const now = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" });
+  return [`📋 <b>Status</b> · ${now}`, "", sections.join("\n\n")].join("\n");
 }
 
 // The bots' latest numbers for the dashboard, stored in KV under their key.
@@ -251,12 +653,12 @@ async function readMyntraSession(request, env) {
 }
 
 // ------------------------------------------------------------------ Ultron
-// The agent's routes are worker/agent.js of the Ultron repo, the same for every seller. Plain text in an
-// allowed chat goes to the agent-chat workflow (ultron.agents.chat), which answers in the same chat.
-// The agent can only read; anything it wants done it proposes with POST /api/approval, and only an
-// Approve tap starts it - one of AGENT_ACTIONS (wrangler.toml, the same list as agent.toml), with
-// only the inputs listed there. /api/ai serves its model (Workers AI, free daily allocation), and
-// /api/memory its memory.
+// The agent's routes are ../agent.js, the same for every seller. Plain text in an allowed chat goes
+// to the agent-chat workflow (ultron.agents.chat), which answers in the same chat. The agent can
+// only read; anything it wants done it proposes with POST /api/approval, and only an Approve tap
+// starts it - one of AGENT_ACTIONS (wrangler.toml, the same list as agent.toml), with only the
+// inputs listed there. /api/ai serves its model (Workers AI, free daily allocation), /api/memory
+// its memory.
 const agent = makeAgent({ repo: `${OWNER}/${REPO}`, token: (env) => env.DASHBOARD_TOKEN, allowedChat, kv: "DASH",
                           userAgent: "bindal-ultron-worker" });
 
@@ -279,11 +681,15 @@ function b64url(bytes) {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function dispatch(env, workflow, inputs) {
-  return github(env, `/repos/${OWNER}/${REPO}/actions/workflows/${workflow}/dispatches`, {
+function dispatch(env, cmd, inputs) {
+  return github(env, `/repos/${OWNER}/${REPO}/actions/workflows/${cmd.workflow}/dispatches`, {
     method: "POST",
     body: JSON.stringify({ ref: "main", inputs }),
   });
+}
+
+function keyboard(rows) {
+  return { inline_keyboard: rows.map((row) => row.map(([text, data]) => ({ text, callback_data: data }))) };
 }
 
 function esc(s) {
