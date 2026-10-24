@@ -62,9 +62,7 @@ release of Ultron is `src/ultron` without `workings/`.
     wrangler.example.toml
   main.py                     python main.py <command>: the same commands without installing
   deploy/                     linux/ macos/ windows/ termux/ docker/: run ultron serve as a service
-  templates/                  agent-watch.yml, agent-chat.yml, ci_run.sh to copy into the seller's repo
   examples/agent.example.toml every agent.toml key, commented
-  tests/                      python -m pytest (runs as the example seller)
 ```
 
 This repo is Ultron alone and never names a particular seller: a seller's `agent.toml`, `.env`
@@ -86,9 +84,8 @@ it the install is pure Python (Android / Termux).
 1. **Repo.** The seller's bots repo puts `agent.toml` at its root (from
    `examples/agent.example.toml`, filled in) and the install line above in its requirements.txt,
    then checks the setup with `ultron check`.
-2. **Workflows.** Copy `templates/agent-watch.yml` and `templates/agent-chat.yml` into
-   `.github/workflows/` and `templates/ci_run.sh` into `scripts/`. In `agent-watch.yml`, list the
-   seller's bot workflows by name. The bots should keep their log in `output/run.log` and upload
+2. **Workflows.** Copy this repo's `.github/workflows/agent-watch.yml` and `agent-chat.yml` and
+   `scripts/github/ci_run.sh`. In `agent-watch.yml`, list the seller's bot workflows by name. The bots should keep their log in `output/run.log` and upload
    `output/` encrypted the way `ci_run.sh` does, so the watcher can read it.
 3. **Worker.** Copy `worker/wrangler.example.toml` to `worker/wrangler.toml`, fill in the repo and
    `[vars.AGENT_ACTIONS]` (the same workflows and inputs as `agent.toml [actions]`), create the KV

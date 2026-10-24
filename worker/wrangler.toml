@@ -23,7 +23,7 @@ crons = ["30 1,3,4,5,8 * * *", "0 10,12 * * *"]
 DASHBOARD_PAGE = "https://bindal-dashboard.bhikan-serein.workers.dev"
 
 # What Ultron may start after an Approve tap (ultron/worker/agent.js): the same workflows
-# and inputs as [actions] in ../agent.toml (tests/test_agent_setup.py checks they match).
+# and inputs as [actions] in ../agent.toml (keep the two lists the same).
 [vars.AGENT_ACTIONS]
 sale = { workflow = "sale.yml", inputs = ["from", "to", "today", "snapshot"] }
 vms = { workflow = "vms.yml", inputs = ["from", "to", "erp_only", "snapshot"] }

@@ -1,4 +1,4 @@
-"""A run's encrypted output (templates/ci_run.sh in the Ultron repo: openssl enc with ARTIFACT_KEY), read back."""
+"""A run's encrypted output (scripts/github/ci_run.sh: openssl enc with ARTIFACT_KEY), read back."""
 from __future__ import annotations
 
 

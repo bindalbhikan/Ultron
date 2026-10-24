@@ -30,7 +30,6 @@ workings = [
     # Myntra SPF master: fast streaming writer, and the fast (Rust) xlsx reader for the big payment exports
     "xlsxwriter>=3.1", "python-calamine>=0.2",
 ]
-test = ["pytest>=8.0", "pandas>=2.2", "openpyxl>=3.1"]
 
 [project.scripts]
 ultron = "ultron.cli:main"
@@ -40,7 +39,3 @@ version = { attr = "ultron.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]

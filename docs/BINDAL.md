@@ -94,9 +94,8 @@ Secrets never go in git: `.env`, `service_account.json` and all workbooks are ig
 ## Local run
 
 ```
-python -m venv .venv && .venv\Scripts\pip install -r requirements.txt
+python -m venv .venv && .venv\Scripts\pip install -e ".[full,workings]"
 .venv\Scripts\python run.py vms --no-telegram
-.venv\Scripts\python -m pytest
 ```
 
 `--snapshot` also needs LibreOffice (`soffice`) and poppler (`pdftoppm`) on the PATH.

@@ -74,7 +74,6 @@ scripts/                    manual tools, one folder per job, each with a README
   drive/                      drive_relay.gs: the Apps Script relay that creates Drive files
   local/                      run_local.bat: run a bot on this PC
 worker/                     Telegram bot + scheduler (Cloudflare);  dashboard/  the dashboard
-tests/                      python -m pytest (runs on every push: .github/workflows/tests.yml)
 docs/                       this file, PORTALS.md, bots/<bot>.md
 ```
 
@@ -113,8 +112,7 @@ docs/                       this file, PORTALS.md, bots/<bot>.md
    `day` / `weekdays`), the dashboard keys in `DASH_KEYS`; then `cd worker && npx wrangler deploy`
    (an undeployed change does not run).
 6. Dashboard: a section in `dashboard/src/page.html` for its pushed numbers; deploy `dashboard/`.
-7. Tests in `tests/test_<name>.py` for the pure logic (windows, parsing, summaries).
-8. Docs: `docs/bots/<name>.md`, a row in `README.md` and `docs/CONTEXT.md`.
+7. Docs: `docs/bots/<name>.md`, a row in `README.md` and `docs/CONTEXT.md`.
 9. Test run first: `--no-upload --no-telegram` locally or the workflow's test input, check the
    numbers against the hand-made result, then switch it on.
 

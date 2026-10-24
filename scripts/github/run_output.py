@@ -22,6 +22,7 @@ from ultron.workings.core.secure import decrypt  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # the log has characters a Windows console cannot show
     if len(argv) != 1 or not argv[0].isdigit():
         print(__doc__)
         return 2
