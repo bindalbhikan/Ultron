@@ -10,6 +10,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 
 from ultron.integrations import github
+from ultron.core.style import MOBILE, tidy
 
 from ..core import telegram
 from ..core.app import run_bot
@@ -30,9 +31,9 @@ BOTS = {"morning.yml": "Morning report", "stock.yml": "Stock-out alert", "sla.ym
 
 COMMENT = """You are the e-commerce manager of Bindal Exports (women's apparel on Myntra, AJIO,
 Flipkart, Amazon, Meesho, Nykaa). Below is today's evening summary: how the automated reports ran,
-today's sale so far against the same weekday last week, and orders still due today. Write 2 or 3
-short lines for the owner in plain English: what went well or badly today and the one or two
-things to watch tomorrow. Numbers exact, no markdown, no greeting; say only what the data shows."""
+today's sale so far against the same weekday last week, and orders still due today. Write 2 to 4
+lines: what went well or badly today and the one or two things to watch tomorrow. Say only what the
+data shows.""" + MOBILE
 
 
 def runs_today(today: date) -> list[tuple[str, int, int, list[str]]]:
@@ -110,10 +111,10 @@ def run(args) -> int:
                  f"Bots: {len(bots)} bots, {sum(k for _, k, _, _ in bots)} runs in all, "
                  f"{sum(f for _, _, f, _ in bots)} failed\n"
                  + "\n".join(f"{n}: {k} runs, {f} failed" for n, k, f, _ in bots))
-        note = (llm.chat([{"role": "system", "content": COMMENT}, {"role": "user", "content": facts}],
-                         max_tokens=1500)["choices"][0]["message"].get("content") or "").strip()
+        note = tidy(llm.chat([{"role": "system", "content": COMMENT}, {"role": "user", "content": facts}],
+                             max_tokens=1500)["choices"][0]["message"].get("content") or "")
         if note:
-            out += ["", "🧠 " + telegram.md(note)]
+            out += ["", "🧠 <b>Ultron's take</b>\n" + telegram.md(note)]
     except Exception as exc:  # noqa: BLE001 - the summary goes out without the lines
         log.warning("No comment: %s", exc)
     text = "\n".join(out)

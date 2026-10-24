@@ -14,6 +14,8 @@ import logging
 from collections import Counter
 from datetime import date, datetime, timedelta
 
+from ultron.core.style import MOBILE, tidy
+
 from ..core import telegram
 from ..core.app import run_bot
 from ..morning.pipeline import channel_line, change
@@ -28,11 +30,10 @@ TOP = 10
 COMMENT = """You are the e-commerce head of Bindal Exports (women's apparel on Myntra, AJIO, Flipkart,
 Amazon, Meesho, Nykaa). Below is the weekly business review: this week against last week per
 channel (units, order value, cancel %), the top styles, the styles that fell most and packer output.
-Write 3 or 4 short lines for the owner in plain English: the overall trend, the channel and styles
-that need attention, and two concrete actions for this week. Numbers exact, no markdown, no
-greeting; say only what the data shows. A style that sold less may have run out of stock or lost
-its listing: say to check its stock and listing first; never suggest discounts, price changes or
-staffing changes."""
+Write 3 to 5 lines: the overall trend, the channel and styles that need attention, and two concrete
+actions for this week. Say only what the data shows. A style that sold less may have run out of
+stock or lost its listing: say to check its stock and listing first; never suggest discounts, price
+changes or staffing changes.""" + MOBILE
 
 
 def weeks(today: date) -> tuple[list[date], list[date]]:
@@ -143,10 +144,10 @@ def run(args) -> int:
         from ultron.core import llm
         plain = text.replace("<pre>", "").replace("</pre>", "").replace("<b>", "").replace("</b>", "")
         plain = plain.replace("<i>", "").replace("</i>", "")
-        note = (llm.chat([{"role": "system", "content": COMMENT}, {"role": "user", "content": plain}],
-                         max_tokens=2000)["choices"][0]["message"].get("content") or "").strip()
+        note = tidy(llm.chat([{"role": "system", "content": COMMENT}, {"role": "user", "content": plain}],
+                             max_tokens=2000)["choices"][0]["message"].get("content") or "")
         if note:
-            text += "\n\n🧠 " + telegram.md(note)
+            text += "\n\n" + "🧠 <b>Ultron's take</b>\n" + telegram.md(note)
     except Exception as exc:  # noqa: BLE001
         log.warning("No comment: %s", exc)
     log.info("Weekly: %d channels, %d order lines", len(ch), len(lines))

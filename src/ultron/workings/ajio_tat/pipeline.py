@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from ultron.core.style import MOBILE, tidy
+
 from ..awb_tracker import CourierRegistry, Job, track_all
 from ..core import dashboard, telegram
 from ..core.app import run_bot
@@ -557,9 +559,9 @@ def pickup_ticket_report(done: list[dict]) -> list:
 
 
 SCORE_COMMENT = """You are the e-commerce manager of Bindal Exports, an AJIO seller. Below is the courier
-pickup scorecard of the last 7 order days. Write 2 short lines for the owner in plain English: which
-courier is the problem and how bad, and whether the delay is on our side (processing late) or the
-courier's (pickup late). Numbers exact, no markdown, no greeting; say only what the numbers show."""
+pickup scorecard of the last 7 order days. Write 2 or 3 lines: which courier is the problem and how
+bad, and whether the delay is on our side (processing late) or the courier's (pickup late). Say only
+what the numbers show.""" + MOBILE
 
 
 def courier_scorecard(df: pd.DataFrame, now: pd.Timestamp | None = None) -> str:
@@ -619,10 +621,10 @@ def courier_scorecard(df: pd.DataFrame, now: pd.Timestamp | None = None) -> str:
     try:
         from ultron.core import llm
         plain = "\n".join(table) + f"\nNOT CORRECT on {yday:%d %b}: {len(bad)}, ours {ours}, courier {len(bad) - ours}\n" + "\n".join(alerts)
-        note = (llm.chat([{"role": "system", "content": SCORE_COMMENT}, {"role": "user", "content": plain}],
-                         max_tokens=1200)["choices"][0]["message"].get("content") or "").strip()
+        note = tidy(llm.chat([{"role": "system", "content": SCORE_COMMENT}, {"role": "user", "content": plain}],
+                             max_tokens=1200)["choices"][0]["message"].get("content") or "")
         if note:
-            lines += ["", "🧠 " + telegram.md(note)]
+            lines += ["", "🧠 <b>Ultron's take</b>\n" + telegram.md(note)]
     except Exception as exc:  # noqa: BLE001 - the scorecard goes out without the lines
         log.warning("No scorecard comment: %s", exc)
     return "\n".join(lines)

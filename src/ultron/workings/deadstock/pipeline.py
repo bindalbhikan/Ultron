@@ -15,6 +15,8 @@ import logging
 from collections import defaultdict
 from datetime import date, timedelta
 
+from ultron.core.style import MOBILE, tidy
+
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import num
@@ -26,10 +28,9 @@ log = logging.getLogger("bindal.deadstock")
 
 COMMENT = """You are the e-commerce head of Bindal Exports (women's apparel on Myntra, AJIO, Flipkart,
 Amazon, Meesho, Nykaa). Below is this month's dead stock (in stock, nothing sold in 90 days) and slow
-stock (more than 180 days of stock at the current pace), by style. Write 3 short lines for the owner
-in plain English: how big the problem is (units), which styles to act on first, and what to do with
-them (clearance price, bundle or combo, move to another channel, stop reorders). Numbers exact, no
-markdown, no greeting."""
+stock (more than 180 days of stock at the current pace), by style. Write 3 or 4 lines: how big the
+problem is (units), which styles to act on first, and what to do with them (clearance price, bundle
+or combo, move to another channel, stop reorders).""" + MOBILE
 
 
 def classify(stock, sold, days: int, min_stock: int, slow_days: float) -> tuple[list, list]:
@@ -96,10 +97,10 @@ def run(args) -> int:
     try:
         from ultron.core import llm
         plain = telegram.render(out).replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
-        note = (llm.chat([{"role": "system", "content": COMMENT}, {"role": "user", "content": plain[:12000]}],
-                         max_tokens=1500)["choices"][0]["message"].get("content") or "").strip()
+        note = tidy(llm.chat([{"role": "system", "content": COMMENT}, {"role": "user", "content": plain[:12000]}],
+                             max_tokens=1500)["choices"][0]["message"].get("content") or "")
         if note:
-            out += ["", "🧠 " + telegram.md(note)]
+            out += ["", "🧠 <b>Ultron's take</b>\n" + telegram.md(note)]
     except Exception as exc:  # noqa: BLE001
         log.warning("No comment: %s", exc)
     telegram.send_report(out, "Dead_stock", dry=args.no_telegram)

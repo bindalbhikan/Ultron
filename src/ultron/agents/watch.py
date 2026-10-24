@@ -18,6 +18,7 @@ import time
 from statistics import median
 
 from ..core import config, llm, memory, runtime
+from ..core.style import tidy
 from ..integrations import github, telegram
 from ..tools import memory as memory_tools
 from ..tools import runs
@@ -47,9 +48,12 @@ Answer with exactly this shape, nothing before it:
 STATUS: OK      (nothing for the owner to do)
 or
 STATUS: ALERT   (the owner should know)
-then, for ALERT only, a short message for the owner in plain English (e.g. "The run failed.
-Cause: ..."), at most 8 lines: what happened, the cause, what was affected, and
-the next step you suggest. Plain lines, no markdown, numbers exact."""
+then, for ALERT only, the message for the owner, who reads it on a phone. Exactly these four
+lines, each short (about 60 characters), simple English, numbers exact, no markdown:
+❌ <what happened, e.g. "The run failed after 12 min">
+🔍 Cause: <the real cause, in everyday words>
+📦 Affected: <which sheet, channel or account, how many orders or rows>
+👉 Do: <the one next step>"""
 
 
 def bot_doc(workflow_file: str) -> str:
@@ -163,7 +167,7 @@ def run(args) -> int:
         status, msg = "ALERT", plain_alert(info, why, errors, str(exc))
     if status == "ALERT":
         note_incident(info, msg)
-        text = (f"🤖 <b>Ultron: {telegram.esc(info['workflow'] or '')}</b>\n\n{telegram.md(msg)}\n\n"
+        text = (f"🤖 <b>Ultron: {telegram.esc(info['workflow'] or '')}</b>\n\n{telegram.md(tidy(msg))}\n\n"
                 f"<a href=\"{info['url']}\">run {args.run_id}</a>")
         print(text) if args.no_telegram else telegram.send(text)
     else:

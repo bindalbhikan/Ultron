@@ -16,6 +16,8 @@ import logging
 from collections import Counter
 from datetime import date, timedelta
 
+from ultron.core.style import MOBILE, tidy
+
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import env
@@ -28,12 +30,11 @@ log = logging.getLogger("bindal.mis")
 
 PLAN = """You are the e-commerce head of Bindal Exports (women's apparel on Myntra, AJIO, Flipkart,
 Amazon, Meesho, Nykaa). Below is last month's MIS per channel against the month before (units,
-order value, cancel %, and commission / shipping / net where the rates are known). Write a short
-plan for this month for the owner in plain English, 5 to 7 lines: where the business grew or fell,
-which channels to push and which to fix, and 3 concrete actions with the numbers behind them.
-A channel that sold less may have had stock or listing problems: say to check those first. Use only
-the numbers in the data, copied exactly; never work out new ones and never invent budgets, ad spend,
-targets or causes. No markdown tables, no greeting."""
+order value, cancel %, and commission / shipping / net where the rates are known). Write this
+month's plan in 5 to 7 lines: where the business grew or fell, which channels to push and which to
+fix, and 3 concrete actions with the numbers behind them. A channel that sold less may have had
+stock or listing problems: say to check those first. Use only the numbers in the data, copied
+exactly; never work out new ones and never invent budgets, ad spend, targets or causes.""" + MOBILE
 
 
 def months(today: date) -> tuple[list[date], list[date]]:
@@ -133,8 +134,8 @@ def run(args) -> int:
         from ultron.core import llm
         plain = text.replace("<pre>", "").replace("</pre>", "").replace("<b>", "").replace("</b>", "")
         plain = plain.replace("<i>", "").replace("</i>", "")
-        note = (llm.chat([{"role": "system", "content": PLAN}, {"role": "user", "content": plain}],
-                         max_tokens=2500)["choices"][0]["message"].get("content") or "").strip()
+        note = tidy(llm.chat([{"role": "system", "content": PLAN}, {"role": "user", "content": plain}],
+                             max_tokens=2500)["choices"][0]["message"].get("content") or "")
         if note:
             text += "\n\n🧭 <b>Plan for this month</b>\n" + telegram.md(note)
     except Exception as exc:  # noqa: BLE001

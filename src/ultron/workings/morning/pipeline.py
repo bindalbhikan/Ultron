@@ -11,6 +11,7 @@ import logging
 from datetime import date, timedelta
 
 from ultron.core.config import channel_line  # noqa: F401 - other bots import it from here
+from ultron.core.style import MOBILE, tidy
 
 from ..core import telegram
 from ..core.app import run_bot
@@ -26,10 +27,9 @@ ORDER = ["Myntra MAIN", "Myntra PPMP", "Myntra DBCC", "Myntra FMCC", "SJIT", "Aj
 
 COMMENT = """You are the e-commerce manager of Bindal Exports (women's apparel on Myntra, AJIO,
 Flipkart, Amazon, Meesho, Nykaa). Below is yesterday's sale in units per channel against the same
-weekday one week before, with cancelled units. Write 2 or 3 short lines for the owner in plain
-English: the biggest change and on which channel, anything worrying (a channel at
-or near zero, cancels high), and one thing to check today. Numbers exact, no markdown, no greeting.
-Say only what the numbers show; do not guess causes you cannot see."""
+weekday one week before, with cancelled units. Write 2 to 4 lines: the biggest change and on which
+channel, anything worrying (a channel at or near zero, cancels high), and one thing to check today.
+Say only what the numbers show; do not guess causes you cannot see.""" + MOBILE
 
 
 def oms_counts(days: list[date]) -> tuple[dict, dict]:
@@ -91,7 +91,7 @@ def comment(text_table: str) -> str:
     try:
         data = llm.chat([{"role": "system", "content": COMMENT}, {"role": "user", "content": text_table}],
                         max_tokens=1500)
-        return (data["choices"][0]["message"].get("content") or "").strip()
+        return tidy(data["choices"][0]["message"].get("content") or "")
     except llm.LLMError as exc:
         log.warning("No comment: %s", exc)
         return ""
@@ -131,7 +131,7 @@ def run(args) -> int:
     note = comment(f"Yesterday {day:%a %d %b}, compared with {before:%a %d %b}:\n{plain}") if not args.no_comment else ""
     text = "\n".join([f"☀️ <b>Morning report · {day:%a %d %b}</b>",
                       f"<i>yesterday vs last {before:%a} ({before:%d %b}), units</i>", "", body,
-                      *(["", "🧠 " + telegram.md(note)] if note else []),
+                      *(["", "🧠 <b>Ultron's take</b>\n" + telegram.md(note)] if note else []),
                       *(["", "⚠️ " + "\n⚠️ ".join(telegram.esc(n) for n in notes)] if notes else [])])
     log.info("Morning report: %s", {n: v.get(day, 0) for n, v in gross.items()})
     print(text) if args.no_telegram else telegram.send(text)

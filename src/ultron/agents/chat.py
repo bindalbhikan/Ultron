@@ -18,6 +18,7 @@ import logging
 from datetime import date
 
 from ..core import approvals, config, llm, memory, runtime
+from ..core.style import MOBILE, tidy
 from ..core.config import env
 from ..integrations import telegram
 
@@ -32,8 +33,9 @@ def rules(cfg: config.Config) -> str:
 as GitHub Actions workflows.
 {cfg.owner_note or "The owner writes to you on Telegram."} Always answer in {cfg.language}.
 
-Use the tools to find the facts; never guess numbers. Keep answers short (under 15 lines), plain
-text, numbers exact. Today is {date.today():%A %d %b %Y}.
+Use the tools to find the facts; never guess numbers. Keep answers short: at most 10 lines, numbers
+exact. A list of figures (channels, accounts, couriers) is one line each: "Myntra MAIN: 130 (5
+cancelled)". Today is {date.today():%A %d %b %Y}.{MOBILE}
 
 You can only read. Whenever the owner asks you to run, start, push, add or redo anything, you MUST
 call the propose_action tool in this same reply (one call per action) before you answer; do not
@@ -121,7 +123,7 @@ def answer(question: str, chat: str = "") -> str:
             mem.add_turn(chat, question, text)
         except Exception as exc:  # noqa: BLE001
             log.warning("Conversation not kept: %s", exc)
-    return "🤖 " + to_telegram(text)
+    return "🤖 " + to_telegram(tidy(text))
 
 
 def run(args) -> int:
