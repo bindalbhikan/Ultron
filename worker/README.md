@@ -10,6 +10,7 @@ and approvals in KV.
 
 | Screen | Buttons |
 |---|---|
+| 🏠 Main | quick runs: sale yesterday / today, VMS today, AJIO TAT today, sale and VMS sheet photos; then the portals |
 | 🛍 Myntra | VMS (today / 7 days / month / sheet photo / ERP vs VMS), Myntra SPF, courier OTP, daily reports, courier scorecard, login check (Ultron), orders yesterday (Ultron) |
 | 🟠 AJIO | TAT (today / 3 / 7 days), SPF (dry run / master only / LIVE, asks first), ads / TOT gap, orders yesterday (Ultron) |
 | 🛒 Flipkart | orders yesterday and due today (Ultron), sale report, return analysis |

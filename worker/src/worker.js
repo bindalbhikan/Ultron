@@ -157,13 +157,17 @@ const OWN_SCHEDULE = {
 const back = (to = "main") => [["⬅️ Back", `m:${to}`]];
 const SCREENS = {
   main: {
-    title: "🏠 <b>Bindal Exports</b>\n<i>Ultron · Ecom Manager</i>\n\nChoose a portal 👇\n<i>or just write to me in plain words</i>",
+    title: "🏠 <b>Bindal Exports</b>\n<i>Ultron · Ecom Manager</i>\n\n⚡ Quick runs, or choose a portal 👇\n<i>or just write to me in plain words</i>",
     rows: [
+      // the runs used most, one tap
+      [["📈 Sale · yesterday", "r:sale"], ["📈 Sale · today", "r:sale today"]],
+      [["📹 VMS · today", "r:vms"], ["📦 AJIO TAT · today", "r:ajiotat"]],
+      [["🖼 Sale sheet photo", "r:salepic"], ["🖼 VMS sheet photo", "r:vmspic"]],
+      // everything else, portal by portal
       [["🛍 Myntra", "m:myntra"], ["🟠 AJIO", "m:ajio"]],
       [["🛒 Flipkart", "m:flipkart"], ["📦 All channels", "m:all"]],
-      [["📊 Reports & MIS", "m:reports"]],
-      [["📋 Status", "st"], ["🖥 Dashboard", "db"]],
-      [["🤖 Ask Ultron / Help", "hp"]],
+      [["📊 Reports & MIS", "m:reports"], ["📋 Status", "st"]],
+      [["🖥 Dashboard", "db"], ["🤖 Ask Ultron / Help", "hp"]],
     ],
   },
   myntra: {
@@ -286,7 +290,8 @@ const REPLY_KEYBOARD = {
 // the bot's command list in Telegram (setMyCommands on /start; worker/setup.ps1 sets the same)
 const BOT_COMMANDS = [
   ["menu", "Buttons for every portal and report"], ["status", "Last run of each report"],
-  ["sale", "Daily sale (optional: today, or from to dates)"], ["vms", "Myntra VMS (optional: dates, or erp)"],
+  ["sale", "Daily sale (optional: today, or from to dates)"], ["salepic", "Sale sheet photo (optional: YYYY-MM)"],
+  ["vms", "Myntra VMS (optional: dates, or erp)"], ["vmspic", "VMS sheet photo (optional: YYYY-MM)"],
   ["ajiotat", "AJIO TAT (optional: days)"], ["ajiospf", "AJIO SPF (optional: dry, master)"],
   ["myntraspf", "Myntra SPF master"], ["returns", "Return analysis (optional: YYYY-MM)"],
   ["dashboard", "Dashboard sign-in link (10 min)"], ["help", "All commands, and how to ask Ultron"],
