@@ -13,6 +13,25 @@ The code is the same for every seller. Each seller brings:
 * **A Cloudflare worker**: serves the model (Workers AI, free daily allocation) and the
   Approve / Reject buttons.
 
+## This repo runs Bindal Exports
+
+Besides the agent, this repo is the whole of Bindal's live setup (it replaced the `bindal-bots`
+repo on 25 Oct 2026):
+
+| Path | What it is |
+|---|---|
+| `src/ultron/workings/` | the report workings: sale, VMS, AJIO TAT / SPF / ads, Myntra SPF / OTP / reports, returns, morning, SLA, labels, stock, evening, weekly, dead stock, listings, MIS, Myntra TAT, inventory push; their portal clients (`workings/portals`) and shared frame (`workings/core`) |
+| `run.py` | `python run.py <working>`: what every report workflow runs (through `scripts/github/ci_run.sh`) |
+| `.github/workflows/` | one workflow per working, plus `agent-watch.yml` and `agent-chat.yml` (Ultron) |
+| `agent.toml` | Bindal's Ultron setup (company, channels, actions, tools) |
+| `worker/src/worker.js`, `worker/wrangler.toml` | Bindal's Telegram worker: the bot is Ultron, plus the daily schedule (`worker/README.md`) |
+| `dashboard/` | the dashboard worker |
+| `scripts/`, `docs/` | manual tools; how each working runs (`docs/bots/`, which the watcher reads), `docs/BINDAL.md` |
+
+Install for the workings: `pip install -e ".[full,workings]"`. The workings are Bindal's own (its
+sheets, accounts and names); making them seller-neutral is a later step, so a seller-neutral
+release of Ultron is `src/ultron` without `workings/`.
+
 ## Layout
 
 ```

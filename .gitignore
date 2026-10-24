@@ -1,11 +1,18 @@
-# a seller's own setup and secrets: next to an Ultron checkout, never in this repo
+# secrets
 .env
-agent.toml
+myntra_session.json
+myntra_session_*.json
+myntra_cookie.txt
+netcap-*.json
 service_account.json
-worker/wrangler.toml
-# run output
+*.json.key
+# run output and business data (data stays on Google Drive, never in git: the repo is public)
 output/
 secure/
+data/
+sjit/
+*.xlsx
+*.csv
 # python / node / tools
 __pycache__/
 *.pyc
@@ -17,5 +24,13 @@ dist/
 venv/
 node_modules/
 .wrangler/
-# Google Drive
+scripts/**/*.txt
+# network captures (netcap exports) of the portals
+netcap/
+return genra.json
+flipkart cap.json
+fl tax sel report.json
+# the relay script with its token filled in (paste into Apps Script, then delete)
+drive_relay_SETUP.gs
+# Google Drive folder settings
 desktop.ini

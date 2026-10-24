@@ -1,0 +1,57 @@
+name = "bindal-telegram-bot"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# Daily auto runs (UTC; IST = UTC + 5:30). Which report runs at which time: SCHEDULE in src/worker.js.
+# The free plan allows 5 cron triggers per account; one trigger lists several hours, and
+# monthly / weekly runs ride on daily ones.
+#   1:30 UTC  ->  7:00 AM IST  Myntra report requests (SJIT, Myntra SPF; return analysis on the 15th)
+#   3:30      ->  9:00 AM IST  Myntra SPF + AJIO SPF masters (AJIO tickets / replies Wed + Sat)
+#   4:30      -> 10:00 AM IST  Myntra courier OTP, Myntra daily reports
+#   5:30      -> 11:00 AM IST  Myntra courier OTP retry
+#   8:30      ->  2:00 PM IST, only on the 15th  return analysis
+#   10:00     ->  3:30 PM IST  sale
+#   12:00     ->  5:30 PM IST  vms, ajiotat
+[triggers]
+crons = ["30 1,3,4,5,8 * * *", "0 10,12 * * *"]
+
+[vars]
+# Extra Telegram users allowed to send commands: the EXTRA_CHAT_IDS secret (comma-separated chat ids,
+# from DMs with the bot), kept out of this file because the repo is public.
+# Dashboard address for /dashboard sign-in links (SESSION_KEY secret signs them).
+DASHBOARD_PAGE = "https://bindal-dashboard.bhikan-serein.workers.dev"
+
+# What Ultron may start after an Approve tap (ultron/worker/agent.js): the same workflows
+# and inputs as [actions] in ../agent.toml (tests/test_agent_setup.py checks they match).
+[vars.AGENT_ACTIONS]
+sale = { workflow = "sale.yml", inputs = ["from", "to", "today", "snapshot"] }
+vms = { workflow = "vms.yml", inputs = ["from", "to", "erp_only", "snapshot"] }
+ajiotat = { workflow = "ajio-tat.yml", inputs = ["days", "orders"] }
+ajiospf = { workflow = "ajio-spf.yml", inputs = ["dry_run"] }
+myntraspf = { workflow = "myntra-spf.yml", inputs = [] }
+invpush = { workflow = "inv-push.yml", inputs = ["dry_run"] }
+morning = { workflow = "morning.yml", inputs = ["day"] }
+sla = { workflow = "sla.yml", inputs = [] }
+labels = { workflow = "labels.yml", inputs = [] }
+stock = { workflow = "stock.yml", inputs = [] }
+evening = { workflow = "evening.yml", inputs = [] }
+weekly = { workflow = "weekly.yml", inputs = [] }
+deadstock = { workflow = "deadstock.yml", inputs = [] }
+listings = { workflow = "listings.yml", inputs = [] }
+mis = { workflow = "mis.yml", inputs = ["day"] }
+myntratat = { workflow = "myntra-tat.yml", inputs = [] }
+returns = { workflow = "returns.yml", inputs = ["month"] }
+ajioads = { workflow = "ajio-ads.yml", inputs = [] }
+myntraotp = { workflow = "myntra-otp.yml", inputs = [] }
+myntrareports = { workflow = "myntra-reports.yml", inputs = ["date"] }
+
+# Latest numbers of each bot for the dashboard (worker/../dashboard reads the same namespace).
+# The bots POST them to /api/push/<key> with the DASHBOARD_TOKEN secret.
+# Workers AI (free daily allocation) for Ultron: POST /api/ai with the DASHBOARD_TOKEN.
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+binding = "DASH"
+id = "67db94fc82af438496705a09419c2ac3"

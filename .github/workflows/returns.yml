@@ -1,0 +1,84 @@
+name: Return analysis
+
+on:
+  # Started by the Telegram bot's Cloudflare cron (worker/src/worker.js): 9:00 AM IST on the 15th
+  # with request=1 (ask the portals for the slow reports), 2:00 PM IST on the 15th for the report.
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "Report month (YYYY-MM), empty = last month"
+        default: ""
+      request:
+        description: "1 = only ask the portals for the reports (morning of the 15th)"
+        default: ""
+      drive_input:
+        description: "1 = use the files in the Drive folder's Input/ instead of fetching them"
+        default: ""
+      backfill_year:
+        description: "YYYY = one-time build of that year's yearly report (fetches every finished month, a few hours)"
+        default: ""
+      backfill_portals:
+        description: "With backfill_year: only these portals again, e.g. FLIPKART (empty = all)"
+        default: ""
+      no_upload:
+        description: "1 = test run: reports only as the run's artifact, Drive not changed"
+        default: ""
+      chat_id:
+        description: "Telegram chat for this run's report (empty = default chat)"
+        default: ""
+
+concurrency:
+  group: returns
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330   # a backfill asks Myntra for ~20 reports, 15 minutes apart
+    env:
+      TZ: Asia/Kolkata
+      RUN_MODE: github-actions
+      # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+      ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      AJIO_USERNAME: ${{ secrets.AJIO_USERNAME }}
+      AJIO_PASSWORD: ${{ secrets.AJIO_PASSWORD }}
+      FLIPKART_EMAIL: ${{ secrets.FLIPKART_EMAIL }}
+      FLIPKART_PASSWORD: ${{ secrets.FLIPKART_PASSWORD }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      # new Drive files are created through the Apps Script relay (service accounts have no Drive storage)
+      DRIVE_RELAY_URL: ${{ secrets.DRIVE_RELAY_URL }}
+      DRIVE_RELAY_TOKEN: ${{ secrets.DRIVE_RELAY_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+      # the Myntra sessions are read from the worker with the dashboard token
+      DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+      DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+      RETURN_DRIVE_FOLDER_ID: ${{ secrets.RETURN_DRIVE_FOLDER_ID }}
+      RETURNS_WAIT_MINUTES: ${{ vars.RETURNS_WAIT_MINUTES }}
+      # inputs reach the shell only as variables, never pasted into the script
+      IN_MONTH: ${{ inputs.month }}
+      IN_REQUEST: ${{ inputs.request }}
+      IN_DRIVE_INPUT: ${{ inputs.drive_input }}
+      IN_NO_UPLOAD: ${{ inputs.no_upload }}
+      IN_BACKFILL_YEAR: ${{ inputs.backfill_year }}
+      IN_BACKFILL_PORTALS: ${{ inputs.backfill_portals }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Run report
+        run: |
+          set -- ${IN_MONTH:+--month "$IN_MONTH"}
+          if [ -n "$IN_REQUEST" ]; then set -- "$@" --request; fi
+          if [ -n "$IN_DRIVE_INPUT" ]; then set -- "$@" --drive-input; fi
+          if [ -n "$IN_NO_UPLOAD" ]; then set -- "$@" --no-upload; fi
+          if [ -n "$IN_BACKFILL_YEAR" ]; then set -- "$@" --backfill-year "$IN_BACKFILL_YEAR"; fi
+          if [ -n "$IN_BACKFILL_PORTALS" ]; then set -- "$@" --backfill-portals "$IN_BACKFILL_PORTALS"; fi
+          bash scripts/github/ci_run.sh returns "$@"
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: returns-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 14

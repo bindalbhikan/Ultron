@@ -1,0 +1,78 @@
+name: AJIO TAT daily update
+
+on:
+  # The daily run (5:30 PM IST) is started by the Telegram bot's Cloudflare cron (worker/src/worker.js).
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "OMSGuru window: today plus N previous days (1 = yesterday + today)"
+        default: ""
+      orders:
+        description: "Also add these AJIO orders, whatever their date (FN... / EX... / seller order nos, comma separated)"
+        default: ""
+      chat_id:
+        description: "Telegram chat for this run's report (empty = default chat)"
+        default: ""
+
+concurrency:
+  group: ajio-tat
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180   # a rebuild from far back (days=80) reads months of orders
+    env:
+      TZ: Asia/Kolkata
+      RUN_MODE: github-actions
+      # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+      ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
+      OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
+      OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
+      TAT_DRIVE_FILE_ID: ${{ secrets.TAT_DRIVE_FILE_ID }}
+      # the master by name in the Drive folder AJIO/Ajio Daily Order Tat Check Working (wins over the file id)
+      TAT_DRIVE_FOLDER_ID: ${{ secrets.TAT_DRIVE_FOLDER_ID }}
+      # ERP packing report: was the AJIO shipping label printed
+      ERP_USERNAME: ${{ secrets.ERP_USERNAME }}
+      ERP_PASSWORD: ${{ secrets.ERP_PASSWORD }}
+      ERP_USER_TOKEN: ${{ secrets.ERP_USER_TOKEN }}
+      # AJIO Dropship order report: pickup times the couriers no longer give for old orders
+      AJIO_USERNAME: ${{ secrets.AJIO_USERNAME }}
+      AJIO_PASSWORD: ${{ secrets.AJIO_PASSWORD }}
+      TAT_GOOGLE_SHEET_ID: ${{ secrets.TAT_GOOGLE_SHEET_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      # new Drive files are created through the Apps Script relay (service accounts have no Drive storage)
+      DRIVE_RELAY_URL: ${{ secrets.DRIVE_RELAY_URL }}
+      DRIVE_RELAY_TOKEN: ${{ secrets.DRIVE_RELAY_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+      DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+      SHADOWFAX_TOKEN: ${{ secrets.SHADOWFAX_TOKEN }}
+      AJIO_CHANNEL_IDS: ${{ vars.AJIO_CHANNEL_IDS }}
+      TAT_LOOKBACK_DAYS: ${{ inputs.days || vars.TAT_LOOKBACK_DAYS }}
+      # on unless the repo variable says 0: an AJIO "pickup not done" ticket per pickup pending order,
+      # Over or Due (AJIO order report and the courier's site both show no pickup);
+      # TICKET_ONLY_OVER=1: only orders TICKET_GRACE_HOURS past their deadline
+      AJIO_PICKUP_TICKETS: ${{ vars.AJIO_PICKUP_TICKETS || '1' }}
+      TICKET_ONLY_OVER: ${{ vars.TICKET_ONLY_OVER }}
+      TICKET_GRACE_HOURS: ${{ vars.TICKET_GRACE_HOURS }}
+      TICKET_CAP: ${{ vars.TICKET_CAP }}
+      IN_ORDERS: ${{ inputs.orders }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Run report
+        run: |
+          set --
+          if [ -n "$IN_ORDERS" ]; then set -- --orders "$IN_ORDERS"; fi
+          bash scripts/github/ci_run.sh ajio-tat "$@"
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ajio-tat-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 14

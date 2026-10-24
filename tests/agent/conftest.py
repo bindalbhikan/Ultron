@@ -4,7 +4,7 @@ import pytest
 
 from ultron.core import config, memory
 
-EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "agent.example.toml"
+EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "agent.example.toml"
 GET = config.get          # the cached loader itself, even while a test has patched config.get
 
 

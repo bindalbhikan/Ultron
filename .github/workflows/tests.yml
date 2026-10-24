@@ -29,12 +29,13 @@ jobs:
           python-version: "3.12"
       - name: Install (full)
         if: matrix.install == 'full'
-        run: pip install ".[full,test]"
+        run: pip install ".[full,workings,test]"
       - name: Install (minimal, as on Termux)
         if: matrix.install == 'minimal'
         run: pip install . pytest
       - run: ultron version
-      - run: python -m pytest -q
+      - name: Tests
+        run: python -m pytest -q ${{ matrix.install == 'minimal' && 'tests/agent' || '' }}
       - name: Worker module loads
         if: matrix.os == 'ubuntu-latest' && matrix.install == 'full'
         run: node -e "import('./worker/agent.js').then(m => { if (typeof m.makeAgent !== 'function') process.exit(1) })"
