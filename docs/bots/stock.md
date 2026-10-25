@@ -1,7 +1,6 @@
 # Stock-out alert — `python run.py stock`
 
-**When**: 10 AM IST daily (`stock.yml`, GitHub schedule; the Cloudflare cron's 5 free triggers are
-all used). By hand: run the workflow.
+**When**: 10 AM IST daily (`stock.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the workflow.
 
 **Result**: a Telegram message when SKUs are at risk; nothing written.
 

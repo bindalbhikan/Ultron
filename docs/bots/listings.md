@@ -1,6 +1,6 @@
 # Listing health — `python run.py listings`
 
-**When**: 11:30 AM IST daily (`listings.yml`, GitHub schedule). By hand: run the workflow, or ask
+**When**: 11:30 AM IST daily (`listings.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the workflow, or ask
 the agent on Telegram ("listings" action).
 
 **Result**: one Telegram message, nothing written. Channels with inventory sync on only.

@@ -1,7 +1,6 @@
 # Morning report — `python run.py morning`
 
-**When**: 9:30 AM IST daily (`morning.yml`, GitHub schedule; the Cloudflare cron's 5 free triggers
-are all used). By hand: run the workflow, optionally with a `day`.
+**When**: 9:30 AM IST daily (`morning.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the workflow, optionally with a `day`.
 
 **Result**: one Telegram message, nothing written anywhere: yesterday's sale in units per channel
 against the same weekday a week before, with the change in %, the total and yesterday's cancels.

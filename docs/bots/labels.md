@@ -1,7 +1,6 @@
 # Label check — `python run.py labels`
 
-**When**: 6 PM IST daily (`labels.yml`, GitHub schedule; the Cloudflare cron's 5 free triggers are
-all used). By hand: run the workflow.
+**When**: 6 PM IST daily (`labels.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the workflow.
 
 **Result**: one Telegram message, nothing written.
 

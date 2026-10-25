@@ -112,11 +112,12 @@ function monthArg(args) {
   return "Month must be YYYY-MM, e.g. 2026-09";
 }
 
-// Daily automatic runs, in IST. Cloudflare cron is UTC (IST = UTC + 5:30); each `cron` below
-// ("minute hour") must be one of the times the [triggers] in wrangler.toml fire at (one trigger
-// can list several hours: the free plan allows 5 triggers). The other daily reports (morning, SLA,
-// stock, labels, listings, evening, weekly, dead stock, MIS, Myntra TAT, inventory push) run on their
-// workflow's own `schedule:`.
+// Every automatic run, in IST. The worker is the only scheduler: GitHub's own `schedule:` started
+// runs late or not at all (25 Oct 2026: morning, stock-out and listings never ran from it).
+// Cloudflare cron is UTC (IST = UTC + 5:30); each `cron` below ("minute hour") must be one of the
+// times the [triggers] in wrangler.toml fire at. One trigger lists many hours (the free plan allows
+// 5): ":30" past the hours, ":00" past the hours, and Monday 4:45 UTC.
+const INV_PUSH_HOURS = [0, 3, 6, 9, 12, 15, 18, 21];   // UTC: 6 AM, 9 AM ... 3 AM IST
 const SCHEDULE = [
   // 7 AM: Myntra report requests - they queue on the portal for a while. The same Myntra report
   // twice within 15 minutes is refused, so the SPF request leaves the order report to 9 AM.
@@ -143,13 +144,20 @@ const SCHEDULE = [
   { ist: "3:30 PM daily", cron: "0 10 * * *", cmd: "sale" },
   { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "vms" },
   { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "ajiotat" },
+  // the reports that used GitHub's schedule until 25 Oct 2026
+  { ist: "9:30 AM daily", cron: "0 4 * * *", cmd: "morning" },
+  { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "stock" },
+  { ist: "10:15 AM Monday", cron: "45 4 * * *", weekdays: [1], cmd: "weekly" },
+  { ist: "11:00 AM on the 1st", cron: "30 5 * * *", day: 1, cmd: "deadstock" },
+  { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "mis" },
+  { ist: "11:30 AM daily", cron: "0 6 * * *", cmd: "listings" },
+  { ist: "12:00 PM daily", cron: "30 6 * * *", cmd: "sla" },
+  { ist: "3:00 PM daily", cron: "30 9 * * *", cmd: "sla" },
+  { ist: "6:00 PM daily", cron: "30 12 * * *", cmd: "labels" },
+  { ist: "6:30 PM daily", cron: "0 13 * * *", cmd: "myntratat" },
+  { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "evening" },
+  ...INV_PUSH_HOURS.map((h) => ({ ist: "every 3 hours from 6 AM", cron: `30 ${h} * * *`, cmd: "invpush" })),
 ];
-// the workflow schedules, for /help and /status (the times are in those workflows)
-const OWN_SCHEDULE = {
-  morning: "9:30 AM daily", stock: "10:00 AM daily", weekly: "10:15 AM Monday", listings: "11:30 AM daily",
-  sla: "12:00 PM, 3:00 PM", labels: "6:00 PM daily", myntratat: "6:30 PM daily", evening: "8:00 PM daily",
-  deadstock: "11:00 AM on the 1st", mis: "11:00 AM on the 2nd", invpush: "every 3 hours",
-};
 
 // The button menu. Every screen edits the same message. Button data (64 bytes at most):
 //   "m:<screen>" open a screen · "r:<command line>" start a run · "c:<command line>" ask first
@@ -315,7 +323,7 @@ function expandPeriod(name, args) {
 }
 
 function scheduleOf(key) {
-  return [...SCHEDULE.filter((s) => s.cmd === key && !s.inputs).map((s) => s.ist), ...(OWN_SCHEDULE[key] ? [OWN_SCHEDULE[key]] : [])];
+  return [...new Set(SCHEDULE.filter((s) => s.cmd === key && !s.inputs).map((s) => s.ist))];
 }
 
 function helpText() {

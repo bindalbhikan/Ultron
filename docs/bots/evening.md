@@ -1,6 +1,6 @@
 # Evening summary — `python run.py evening`
 
-**When**: 8 PM IST daily (`evening.yml`, GitHub schedule). By hand: run the workflow.
+**When**: 8 PM IST daily (`evening.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the workflow.
 
 **Result**: one Telegram message, nothing written.
 

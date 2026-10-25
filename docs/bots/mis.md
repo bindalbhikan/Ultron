@@ -1,6 +1,6 @@
 # Monthly MIS — `python run.py mis`
 
-**When**: the 2nd of every month, 11 AM IST (`mis.yml`, GitHub schedule). By hand: run the
+**When**: the 2nd of every month, 11 AM IST (`mis.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the
 workflow (optionally with a `day` in the month after the one wanted).
 
 **Result**: one Telegram message, nothing written. Last month against the month before.

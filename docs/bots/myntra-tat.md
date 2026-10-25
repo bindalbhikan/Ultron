@@ -1,6 +1,6 @@
 # Myntra courier scorecard — `python run.py myntra-tat`
 
-**When**: 6:30 PM IST daily (`myntra-tat.yml`, GitHub schedule). By hand: run the workflow.
+**When**: 6:30 PM IST daily (`myntra-tat.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the workflow.
 
 **Result**: one Telegram message, nothing written.
 

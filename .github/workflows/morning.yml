@@ -1,10 +1,8 @@
 name: Morning report
 
 on:
-  # 9:30 AM IST daily (04:00 UTC). GitHub's own schedule, not the Telegram bot's Cloudflare cron:
-  # its free plan's 5 triggers are all used.
-  schedule:
-    - cron: "0 4 * * *"
+  # Started by the Telegram worker's cron (SCHEDULE in worker/src/worker.js) or by hand: GitHub's
+  # own schedule started runs late or not at all.
   workflow_dispatch:
     inputs:
       day:

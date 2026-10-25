@@ -1,7 +1,6 @@
 # SLA warning — `python run.py sla`
 
-**When**: 12 PM and 3 PM IST (`sla.yml`, GitHub schedule; the Cloudflare cron's 5 free triggers
-are all used). By hand: run the workflow.
+**When**: 12 PM and 3 PM IST (`sla.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the workflow.
 
 **Result**: a Telegram message only when there is something to do; nothing is written.
 

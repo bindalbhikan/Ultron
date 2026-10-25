@@ -1,7 +1,6 @@
 # OMSGuru inventory push — `python run.py inv-push`
 
-**When**: every 3 hours, 12 / 3 / 6 / 9 AM and PM IST (GitHub schedule in `inv-push.yml`; the
-Cloudflare cron's 5 free triggers are all used). On demand: run the workflow by hand
+**When**: every 3 hours, 12 / 3 / 6 / 9 AM and PM IST (`inv-push.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). On demand: run the workflow by hand
 (`dry_run` = 1 only lists the channels).
 
 * Channel > List Channels in OMSGuru: every channel with **Inventory Sync Enabled = Yes** gets

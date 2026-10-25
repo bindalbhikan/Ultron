@@ -173,14 +173,22 @@ class DriveFolder:
     def _relay_create(self, src: Path, mime: str) -> str:
         import base64
         import requests
+        import time
         body = {"token": os.getenv("DRIVE_RELAY_TOKEN", "").strip(), "folderId": self.folder_id, "name": src.name,
                 "mimeType": mime, "data": base64.b64encode(src.read_bytes()).decode()}
-        r = requests.post(os.getenv("DRIVE_RELAY_URL", "").strip(), data=json.dumps(body), timeout=600,
-                          headers={"Content-Type": "application/json"})
-        try:
-            out = r.json()
-        except ValueError:
-            raise DriveError(f"Drive relay answered HTTP {r.status_code}, not JSON: {r.text[:200]}") from None
+        # Apps Script now and then answers a request with an HTML error page (404 / 5xx) and the
+        # next one works (25 Oct 2026): up to three tries before the file is given up.
+        for attempt, pause in enumerate((5, 15, 0), 1):
+            r = requests.post(os.getenv("DRIVE_RELAY_URL", "").strip(), data=json.dumps(body), timeout=600,
+                              headers={"Content-Type": "application/json"})
+            try:
+                out = r.json()
+                break
+            except ValueError:
+                if not pause:
+                    raise DriveError(f"Drive relay answered HTTP {r.status_code}, not JSON: {r.text[:200]}") from None
+                log.warning("Drive relay answered HTTP %s with a page (try %d of 3); trying again", r.status_code, attempt)
+                time.sleep(pause)
         if not out.get("ok"):
             raise DriveError(f"Drive relay could not save {src.name}: {out.get('error')}")
         log.info("Created %s in Drive (through the relay)", src.name)

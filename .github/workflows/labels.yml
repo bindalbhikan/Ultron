@@ -1,10 +1,8 @@
 name: Label check
 
 on:
-  # 6 PM IST (12:30 UTC). GitHub's own schedule, not the Telegram bot's Cloudflare cron: its free
-  # plan's 5 triggers are all used.
-  schedule:
-    - cron: "30 12 * * *"
+  # Started by the Telegram worker's cron (SCHEDULE in worker/src/worker.js) or by hand: GitHub's
+  # own schedule started runs late or not at all.
   workflow_dispatch:
 
 concurrency:

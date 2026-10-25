@@ -1,7 +1,7 @@
 # Myntra daily reports — `python run.py myntra-reports`
 
 **When**: 10 AM IST daily (not earlier: a report asked for at 7 AM had only 23 of the day's
-239 MAIN orders) (`myntra-reports.yml`, GitHub schedule). By hand: run the workflow
+239 MAIN orders) (`myntra-reports.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the workflow
 (`date` = another day, YYYY-MM-DD).
 
 * Each Myntra account (MAIN / DBCC / FMCC, `MYNTRA_REPORT_ACCOUNTS`), saved portal sessions:

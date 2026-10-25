@@ -1,6 +1,6 @@
 # Dead stock report — `python run.py deadstock`
 
-**When**: the 1st of every month, 11 AM IST (`deadstock.yml`, GitHub schedule). By hand: run the
+**When**: the 1st of every month, 11 AM IST (`deadstock.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the
 workflow.
 
 **Result**: one Telegram message, nothing written.

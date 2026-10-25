@@ -2,7 +2,7 @@
 
 Cloudflare Worker behind @bindal_exports_bot: a button menu, portal by portal, that starts the
 report workflows of this repo; Ultron, Ecom Manager, for everything typed in plain words; and the
-only scheduler of the worker-cron daily runs (cron triggers in `wrangler.toml`, times in `SCHEDULE`
+only scheduler of every automatic run (cron triggers in `wrangler.toml`, times in `SCHEDULE`
 in `src/worker.js`). It also keeps the dashboard's numbers, the Myntra logins and Ultron's memory
 and approvals in KV.
 

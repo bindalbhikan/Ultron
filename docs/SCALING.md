@@ -37,7 +37,7 @@ are the two things the owner feels.
 | 1.1 | **Chat inside the worker.** Run the agent loop in the worker (JavaScript) for questions that need no Python portal code; keep GitHub Actions for reports and heavy tools | answers in about 10-20 s instead of 1-2 min | medium |
 | 1.2 | **Auto-retry known failures.** The watcher re-runs a report once when the cause is a known, harmless one (login drop, portal timeout, cooldown), from `known_issue` notes in memory | fewer alerts, no manual rerun | small |
 | 1.3 | **Model fallback chain.** Workers AI first; when the free allocation is used up, a second free / cheap endpoint (`AGENT_LLM_URL`, e.g. Gemini with the existing `GEMINI_API_KEY`); a paid model (Claude) only for hard cases | Ultron never goes silent at the end of the day | small |
-| 1.4 | **One scheduler.** Move the GitHub `schedule:` reports into the worker's `SCHEDULE` (one cron trigger lists many hours) | GitHub schedules start late or skip; one place to see every time | small |
+| 1.4 | **One scheduler.** DONE 25 Oct 2026: every report runs from the worker's `SCHEDULE` (3 cron triggers) | GitHub schedules started late or skipped | done |
 | 1.5 | **Health message.** One short morning line: runs yesterday, failed, Myntra logins expiring within 7 days, model budget left | problems seen before the owner asks | small |
 | 1.6 | **Pin releases.** Reports run a tagged Ultron release; `main` is for work in progress | a bad push does not break the next morning's reports | small |
 

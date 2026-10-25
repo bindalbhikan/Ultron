@@ -1,6 +1,6 @@
 # Weekly review — `python run.py weekly`
 
-**When**: Monday 10:15 AM IST (`weekly.yml`, GitHub schedule). By hand: run the workflow.
+**When**: Monday 10:15 AM IST (`weekly.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the workflow.
 
 **Result**: one Telegram message, nothing written. This week = the last 7 complete days, against
 the 7 before them.

@@ -1,10 +1,8 @@
 name: Monthly MIS
 
 on:
-  # The 2nd of the month, 11 AM IST (05:30 UTC). GitHub's own schedule, not the Telegram bot's
-  # Cloudflare cron: its free plan's 5 triggers are all used.
-  schedule:
-    - cron: "30 5 2 * *"
+  # Started by the Telegram worker's cron (SCHEDULE in worker/src/worker.js) or by hand: GitHub's
+  # own schedule started runs late or not at all.
   workflow_dispatch:
     inputs:
       day:
