@@ -15,10 +15,11 @@ button on the Myntra menu, or run the workflow. About 1-2 minutes for ~5,900 sty
   stock sells at MRP), PART ZERO TD (some sizes), DISCOUNTED, OUT OF STOCK, NOT FOUND (404), NOT
   CHECKED (no answer after 3 retries).
 * Telegram: one message, per account the styles at MRP and their stock, the 5 with most stock,
-  then the workbook: SUMMARY, a tab per account (its ZERO TD / PART ZERO TD styles: the sheet's
+  then the workbook: SUMMARY, ALL ACCOUNTS (every account's styles at MRP together, each style
+  once: STYLE ID, SKU (FINAL SKU, else MY SKU), SELLING PRICE), a tab per account (its ZERO TD / PART ZERO TD styles: the sheet's
   columns + STATUS, MRP, SELLING PRICE, SIZES AT MRP, STOCK AT MRP, TOTAL STOCK, SELLER, LINK),
   NOT CHECKED when some had no answer.
-* Drive: the same workbook in `AGENT WORK/MYNTRA ZERO TD SHEETS/<OCT-26>/<26-10-26>/ZERO TD 26 10 26 10.00 AM.xlsx`.
+* Drive: the same workbook in `AGENT WORK/MYNTRA ZERO TD SHEETS/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx`.
 * The buyer side shows a style, not an account: a style id on two account tabs shows the same
   result on both.
 * Fails (Telegram alert) when myntra.com answered no style at all (blocked, site down); exit 1

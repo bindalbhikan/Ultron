@@ -14,7 +14,7 @@ side (spider.py). A style is
 Telegram gets one message (per account the zero TD styles and their stock, the biggest ones) and
 one workbook: a tab per account with its ZERO TD and PART ZERO TD styles, SUMMARY, and NOT CHECKED
 when some styles had no answer. The workbook is also kept on Drive:
-AGENT WORK/MYNTRA ZERO TD SHEETS/OCT-26/26-10-26/ZERO TD 26 10 26 10.00 AM.xlsx.
+AGENT WORK/MYNTRA ZERO TD SHEETS/OCT-26/26-10-26/ZERO TD 26-10-26 10.00 AM.xlsx.
 """
 from __future__ import annotations
 
@@ -33,12 +33,13 @@ log = logging.getLogger("bindal.myntra_zero_td")
 
 AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 SOURCE = "MYNTRA ZERO TD UPDATE SHEET.xlsx"
-FOLDER = "MYNTRA ZERO TD SHEETS"   # AGENT WORK/<FOLDER>/<OCT-26>/<26-10-26>/ZERO TD 26 10 26 10.00 AM.xlsx
+FOLDER = "MYNTRA ZERO TD SHEETS"   # AGENT WORK/<FOLDER>/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx
 ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 SHEET_COLUMNS = ["ARTICLE TYPE", "BRAND", "STYLE ID", "MY SKU", "FINAL SKU", "COST", "LIQ STYLES"]
 CHECK_COLUMNS = ["STATUS", "MRP", "SELLING PRICE", "SIZES AT MRP", "STOCK AT MRP", "TOTAL STOCK",
                  "SELLER", "LINK"]
 FLAGGED = ("ZERO TD", "PART ZERO TD")
+ALL_TAB = "ALL ACCOUNTS"
 TOP = 5               # styles named per account in the message
 MAX_UNCHECKED = 0.05  # more styles than this without an answer fails the run
 
@@ -95,17 +96,23 @@ def check(answer: dict | str) -> dict:
 
 
 def write_workbook(path: Path, checked: dict[str, pd.DataFrame], when: datetime) -> Path:
-    """The workbook sent on Telegram: SUMMARY, a tab per account (its zero TD styles, most stock at
-    MRP first) and NOT CHECKED."""
+    """The workbook sent on Telegram: SUMMARY, ALL ACCOUNTS (every account's zero TD styles together:
+    STYLE ID, SKU, SELLING PRICE, each style once), a tab per account (its zero TD styles, most
+    stock at MRP first) and NOT CHECKED."""
     from openpyxl.styles import Font, PatternFill
     from openpyxl.utils import get_column_letter
     summary = pd.DataFrame([summarise(a, df) for a, df in checked.items()])
     unchecked = pd.concat([df[df["STATUS"] == "NOT CHECKED"].assign(ACCOUNT=a) for a, df in checked.items()])
+    flagged = {a: df[df["STATUS"].isin(FLAGGED)].sort_values("STOCK AT MRP", ascending=False)
+               for a, df in checked.items()}
+    merged = pd.concat(flagged.values())
+    merged = pd.DataFrame({"STYLE ID": merged["STYLE ID"], "SKU": merged["FINAL SKU"].fillna(merged["MY SKU"]),
+                           "SELLING PRICE": merged["SELLING PRICE"]}).drop_duplicates("STYLE ID")
     with pd.ExcelWriter(path, engine="openpyxl") as xl:
         summary.to_excel(xl, sheet_name="SUMMARY", index=False)
-        for account, df in checked.items():
-            flagged = df[df["STATUS"].isin(FLAGGED)].sort_values("STOCK AT MRP", ascending=False)
-            flagged.reindex(columns=SHEET_COLUMNS + CHECK_COLUMNS).to_excel(xl, sheet_name=account, index=False)
+        merged.to_excel(xl, sheet_name=ALL_TAB, index=False)
+        for account, df in flagged.items():
+            df.reindex(columns=SHEET_COLUMNS + CHECK_COLUMNS).to_excel(xl, sheet_name=account, index=False)
         if len(unchecked):
             unchecked.reindex(columns=["ACCOUNT", "STYLE ID", "MY SKU", "ERROR"]).to_excel(xl, sheet_name="NOT CHECKED", index=False)
         head, fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="C0392B")
@@ -116,8 +123,8 @@ def write_workbook(path: Path, checked: dict[str, pd.DataFrame], when: datetime)
             ws.auto_filter.ref = ws.dimensions
             for i, col in enumerate(ws.iter_cols(min_row=1, max_row=min(ws.max_row, 200)), 1):
                 ws.column_dimensions[get_column_letter(i)].width = min(45, max(10, *(len(str(c.value or "")) + 2 for c in col)))
-            if ws.title in checked:
-                link = SHEET_COLUMNS.index("STYLE ID") + 1
+            if ws.title in checked or ws.title == ALL_TAB:
+                link = 1 if ws.title == ALL_TAB else SHEET_COLUMNS.index("STYLE ID") + 1
                 for row in ws.iter_rows(min_row=2, min_col=link, max_col=link):
                     row[0].hyperlink = f"https://www.myntra.com/{row[0].value}"
                     row[0].font = Font(color="0563C1", underline="single")
@@ -157,8 +164,8 @@ def message(checked: dict[str, pd.DataFrame], when: datetime) -> str:
 
 
 def file_name(when: datetime) -> str:
-    """ZERO TD 26 10 26 10.00 AM.xlsx (no ":" - Windows does not allow it in a file name)."""
-    return f"ZERO TD {when:%d %m %y %I.%M %p}.xlsx"
+    """ZERO TD 26-10-26 10.00 AM.xlsx (no ":" - Windows does not allow it in a file name)."""
+    return f"ZERO TD {when:%d-%m-%y %I.%M %p}.xlsx"
 
 
 def save_to_drive(path: Path, when: datetime) -> str:
