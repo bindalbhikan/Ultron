@@ -23,6 +23,7 @@
   myntra-tat 6:30 PM Myntra courier pickups   python run.py myntra-tat --help
   mis        monthly MIS and plan           python run.py mis --help
   myntra-reports 10 AM Myntra orders / returns / listings  python run.py myntra-reports --help
+  myntra-zero-td 10 AM / 2 PM / 5 PM styles live at MRP  python run.py myntra-zero-td --help
 """
 import importlib
 import sys
@@ -37,7 +38,8 @@ BOTS = {"sale": "ultron.workings.sale.pipeline", "vms": "ultron.workings.vms.pip
         "weekly": "ultron.workings.weekly.pipeline", "deadstock": "ultron.workings.deadstock.pipeline",
         "listings": "ultron.workings.listings.pipeline", "myntra-tat": "ultron.workings.myntra_tat.pipeline",
         "mis": "ultron.workings.mis.pipeline", "myntra-otp": "ultron.workings.myntra_otp.pipeline",
-        "myntra-reports": "ultron.workings.myntra_reports.pipeline"}
+        "myntra-reports": "ultron.workings.myntra_reports.pipeline",
+        "myntra-zero-td": "ultron.workings.myntra_zero_td.pipeline"}
 
 
 def main(argv: list[str]) -> int:

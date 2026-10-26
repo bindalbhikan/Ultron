@@ -78,3 +78,4 @@ returns = { workflow = "returns.yml", inputs = ["month"], about = "Return analys
 ajioads = { workflow = "ajio-ads.yml", inputs = [], about = "AJIO ads / TOT gap report now. no inputs" }
 myntraotp = { workflow = "myntra-otp.yml", inputs = [], about = "Myntra courier pickup / return OTPs now. no inputs" }
 myntrareports = { workflow = "myntra-reports.yml", inputs = ["date"], about = "Myntra daily reports (orders, returns, listings). inputs: date (YYYY-MM-DD; default yesterday)" }
+myntrazerotd = { workflow = "myntra-zero-td.yml", inputs = [], about = "Myntra zero TD check now: styles of the ZERO TD sheet live on myntra.com with stock at MRP, per account. no inputs" }

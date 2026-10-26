@@ -42,6 +42,8 @@ const COMMANDS = {
   myntrareports: { workflow: "myntra-reports.yml", icon: "📊", name: "Myntra daily reports", portal: "myntra", minutes: 8,
                    examples: ["/myntrareports", "/myntrareports 2026-10-23"],
                    inputs: oneDate("date", "/myntrareports or /myntrareports YYYY-MM-DD") },
+  myntrazerotd: { workflow: "myntra-zero-td.yml", icon: "🏷", name: "Myntra zero TD", portal: "myntra", minutes: 3,
+                  examples: ["/myntrazerotd"], inputs: none("/myntrazerotd") },
   myntratat: { workflow: "myntra-tat.yml", icon: "🚚", name: "Myntra courier scorecard", portal: "myntra", minutes: 3,
                examples: ["/myntratat"], inputs: none("/myntratat") },
   // AJIO
@@ -140,6 +142,9 @@ const SCHEDULE = [
   { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "myntraotp" },
   { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "myntrareports" },
   { ist: "11:00 AM daily", cron: "30 5 * * *", cmd: "myntraotp", label: "Myntra OTP retry", inputs: { retry: "1" } },
+  // Myntra zero TD: styles live at MRP on www.myntra.com, Monday to Saturday
+  ...[["10:00 AM", 4], ["2:00 PM", 8], ["5:00 PM", 11]].map(([ist, h]) => (
+    { ist: `${ist} Mon-Sat`, cron: `30 ${h} * * *`, weekdays: [1, 2, 3, 4, 5, 6], cmd: "myntrazerotd" })),
   { ist: "2:00 PM on the 15th", cron: "30 8 * * *", day: 15, cmd: "returns" },
   { ist: "3:30 PM daily", cron: "0 10 * * *", cmd: "sale" },
   { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "vms" },
@@ -184,7 +189,7 @@ const SCREENS = {
       [["📹 VMS", "m:vms"], ["🧾 Myntra SPF", "r:myntraspf"]],
       [["🔐 Courier OTP", "r:myntraotp"], ["📊 Daily reports", "r:myntrareports"]],
       [["🚚 Courier scorecard", "r:myntratat"], ["🔑 Login check", "a:mlogin"]],
-      [["📈 Orders yesterday", "a:myn_orders"]],
+      [["📈 Orders yesterday", "a:myn_orders"], ["🏷 Zero TD", "r:myntrazerotd"]],
       back(),
     ],
   },
