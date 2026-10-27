@@ -429,9 +429,9 @@ def pickup_followup_text(rows: list[dict]) -> str:
 
 
 def pickup_ticket_file(courier: str, rows: list[dict], now) -> tuple[str, bytes]:
-    """The ticket's attachment: its orders as an Excel (Order ID, AWB)."""
+    """The ticket's attachment: its orders as an Excel (Order ID, AWB, Courier), nothing else."""
     buf = io.BytesIO()
-    pd.DataFrame([{"Order ID": r["Order ID"], "AWB": r["AWB"]} for r in rows]).to_excel(
+    pd.DataFrame([{"Order ID": r["Order ID"], "AWB": r["AWB"], "Courier": courier} for r in rows]).to_excel(
         buf, index=False, sheet_name="Pickup pending")
     return f"PICKUP PENDING {courier} {now:%d-%m-%y}.xlsx", buf.getvalue()
 
