@@ -12,10 +12,13 @@ concurrency:
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    # The office PC (self-hosted runner, label bindal-office): www.myntra.com refuses GitHub's own
+    # runners (26 Oct 2026: HTTP 403 for every style) and answers from the office line. Its Python is
+    # the runner's venv (C:\Users\Bhikan\actions-runner\venv, first on PATH in the runner's .env,
+    # with Git Bash for the bash steps); the PC's clock is already IST (no TZ: Windows reads it wrong).
+    runs-on: [self-hosted, bindal-office]
     timeout-minutes: 30
     env:
-      TZ: Asia/Kolkata
       RUN_MODE: github-actions
       # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
       ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
@@ -30,8 +33,11 @@ jobs:
       AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
+      - name: Install Ultron from this checkout
+        shell: bash
+        run: python -m pip install -q -e ".[workings]"
       - name: Check the styles on myntra.com
+        shell: bash
         run: bash scripts/github/ci_run.sh myntra-zero-td
       - name: Upload run output (encrypted)
         if: always()
