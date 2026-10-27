@@ -173,6 +173,16 @@ class AjioClient:
             raise AjioError(f"Comment on {ticket_id} failed: HTTP {r.status_code} {r.text[:200]}")
         return (r.json() or {}).get("result") or {}
 
+    def attach(self, ticket_id: str, name: str, data: bytes, mime: str) -> list[dict]:
+        """Add a file to a ticket (the Help Center's attach button: multipart "files", after the
+        ticket is created). Returns the ticket's attachments."""
+        r = self._req("POST", f"/malekith/castellan/api/v1/tickets/{ticket_id}/attachments",
+                      files={"files": (name, data, mime)},
+                      headers=self.castellan)
+        if r.status_code not in (200, 201):
+            raise AjioError(f"Attachment on {ticket_id} failed: HTTP {r.status_code} {r.text[:200]}")
+        return ((r.json() or {}).get("result") or {}).get("attachments") or []
+
     def tickets_for_return(self, return_order: str) -> list[dict]:
         """Tickets already open for this return. 404 = none. Any other answer (session expired,
         server error) raises, so a ticket is never raised twice just because the check failed."""

@@ -428,6 +428,14 @@ def pickup_followup_text(rows: list[dict]) -> str:
             f"penalty should be applied to these orders.\n\n{_order_lines(rows)}")
 
 
+def pickup_ticket_file(courier: str, rows: list[dict], now) -> tuple[str, bytes]:
+    """The ticket's attachment: its orders as an Excel (Order ID, AWB)."""
+    buf = io.BytesIO()
+    pd.DataFrame([{"Order ID": r["Order ID"], "AWB": r["AWB"]} for r in rows]).to_excel(
+        buf, index=False, sheet_name="Pickup pending")
+    return f"PICKUP PENDING {courier} {now:%d-%m-%y}.xlsx", buf.getvalue()
+
+
 def pickup_ticket_ids(client, tickets: list[dict]) -> tuple[dict[str, list[str]], dict[str, dict]]:
     """Order ID -> its AJIO pickup ticket ids, from the tickets listed: a one-per-order ticket (before
     27 Oct 2026, subject "PICKUP NOT DONE | Order ...") by its order id, a courier ticket by the
@@ -484,7 +492,7 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
     """AJIO tickets (ORDERS > PICKUP NOT DONE / SHIPMENT NOT SCANNING) for the pickup pending orders
     whose pickup neither the AJIO order report (already read into df this run) nor the courier's
     site, checked again here, shows: ONE ticket per courier, all its orders listed in it (since 27 Oct
-    2026; before, one per order), TICKET_BATCH (50) orders a ticket at most. Never two tickets for one
+    2026; before, one per order; their Excel attached), TICKET_BATCH (50) orders a ticket at most. Never two tickets for one
     order: an order with any pickup ticket (one-per-order or courier, last 30 days, or a ticket id
     already in the master's Pickup Ticket) is not raised again; at most TICKET_CAP (200) orders per
     run. Instead, while some of its parcels are still not picked up, the order's latest ticket gets a
@@ -556,6 +564,11 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
                 for rec in part:
                     rec["Result"] = f"error: {exc}"[:200]
                 continue
+            try:   # the orders are in the description too: a failed attachment is only logged
+                client.attach(tid, *pickup_ticket_file(name, part, now), XLSX)
+                time.sleep(gap)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Ticket %s: Excel not attached: %s", tid, exc)
             for rec in part:
                 ids.setdefault(rec["Order ID"], []).append(tid)
                 rec.update(Ticket=", ".join(ids[rec["Order ID"]]), Result="created", New=tid)

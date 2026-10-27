@@ -41,7 +41,9 @@
   courier (since 27 Oct 2026; 23-26 Oct it was one per order, 317 tickets), every order of that
   courier's pickup pending list (Over and Due alike; `TICKET_ONLY_OVER=1` goes back to orders
   `TICKET_GRACE_HOURS` past the deadline) on its own "Order ID ... - AWB ..." line, when the AJIO
-  report and the courier's site show no pickup. `TICKET_BATCH` (50) orders a ticket at most (more =
+  report and the courier's site show no pickup; the same orders (Order ID, AWB) are attached as
+  `PICKUP PENDING <COURIER> <dd-mm-yy>.xlsx` (`POST /tickets/<id>/attachments`, multipart "files",
+  after the ticket is created; a failed attachment is only logged). `TICKET_BATCH` (50) orders a ticket at most (more =
   "(1/2)", "(2/2)"), `TICKET_CAP` (200) orders a run. Never two tickets for one order: an order with
   any pickup ticket of the last 30 days (one-per-order, or a courier ticket: the next runs read its
   orders back from the description) or a ticket id in the master is not raised again. (27 Oct, the
