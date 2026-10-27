@@ -405,17 +405,51 @@ def pickup_ticket_candidates(df, now) -> pd.DataFrame:
     return df[due].sort_values("Dispatch Deadline")
 
 
-def pickup_ticket_text(r) -> tuple[str, str]:
-    subject = f"PICKUP NOT DONE | Order {r['Order ID']} | AWB {r['AWB']}"
-    description = (f"Hi Team,\n\nOrder ID {r['Order ID']} (AWB {r['AWB']}) was ready to ship on time, but the "
+ORDER_IN_TICKET = re.compile(r"Order ID (\d+)")
+
+
+def _order_lines(rows: list[dict]) -> str:
+    def ready(v):
+        return "" if pd.isna(v) else f" - ready {pd.Timestamp(v):%d %b %I:%M %p}"
+    return "\n".join(f"{i}. Order ID {r['Order ID']} - AWB {r['AWB']}{ready(r.get('RTS Time'))}"
+                     for i, r in enumerate(rows, 1))
+
+
+def pickup_ticket_text(courier: str, rows: list[dict], part: int = 1, parts: int = 1) -> tuple[str, str]:
+    """One ticket for a courier's pending pickups; every order on its own "Order ID ..." line (read
+    back from the description by the next runs)."""
+    more = f" ({part}/{parts})" if parts > 1 else ""
+    subject = f"PICKUP NOT DONE | {courier} | {len(rows)} orders{more}"
+    description = (f"Hi Team,\n\nThe below {len(rows)} {courier} shipments were ready to ship on time, but the "
                    f"pickup is still pending. Kindly arrange the pickup, and no penalty should be applied to "
-                   f"this order.\n\nThanks & regards,\nBindal Exports")
+                   f"these orders.\n\n{_order_lines(rows)}\n\nThanks & regards,\nBindal Exports")
     return subject, description
 
 
-def pickup_followup_text(r) -> str:
-    return (f"Pickup is still pending for Order ID {r['Order ID']} (AWB {r['AWB']}). Kindly arrange the "
-            f"pickup today, and no penalty should be applied to this order.")
+def pickup_followup_text(rows: list[dict]) -> str:
+    return (f"Pickup is still pending for these {len(rows)} orders. Kindly arrange the pickup today, and no "
+            f"penalty should be applied to these orders.\n\n{_order_lines(rows)}")
+
+
+def pickup_ticket_ids(client, tickets: list[dict]) -> tuple[dict[str, list[str]], dict[str, dict]]:
+    """Order ID -> its AJIO pickup ticket ids, from the tickets listed: a one-per-order ticket (before
+    27 Oct 2026, subject "PICKUP NOT DONE | Order ...") by its order id, a courier ticket by the
+    orders in its description. Also the courier tickets' details (for the follow-ups)."""
+    from ..portals.ajio import PICKUP_NOT_DONE
+    pickup = [t for t in tickets if str(t.get("subCategory") or "").upper() == PICKUP_NOT_DONE]
+    courier_ids = [str(t["ticketId"]) for t in pickup if not str(t.get("subject") or "").startswith(
+        "PICKUP NOT DONE | Order ")]
+    details = {str(t["ticketId"]): t for t in client.ticket_details(courier_ids)}
+    ids: dict[str, list[str]] = {}
+    for t in sorted(pickup, key=lambda t: str(t.get("createdDate"))):
+        tid = str(t["ticketId"])
+        orders = (ORDER_IN_TICKET.findall(str(details[tid].get("description") or "")) if tid in details
+                  else [str(t.get("orderId") or "").strip()])
+        for oid in filter(None, orders):
+            ids.setdefault(oid, [])
+            if tid not in ids[oid]:
+                ids[oid].append(tid)
+    return ids, details
 
 
 def due_followup(ticket: dict, seller_id: str, now, hours: int) -> bool:
@@ -449,66 +483,109 @@ def courier_pickup_check(pairs: pd.DataFrame) -> dict[str, str]:
     return out
 
 
-def raise_pickup_tickets(df, now, dry: bool) -> list[dict]:
-    """One AJIO ticket (ORDERS > PICKUP NOT DONE / SHIPMENT NOT SCANNING) per pickup pending order whose
-    pickup neither the AJIO order report (already read into df this run) nor the courier's site,
-    checked again here, shows. An order that already has a pickup ticket from the last 30 days is
-    skipped, so a ticket is never raised twice; at most TICKET_CAP (200) per run. Instead, while the
-    parcel is still not picked up, that ticket gets a follow-up comment once our last word on it is
-    TICKET_FOLLOWUP_HOURS (24) old (a comment re-opens a resolved ticket); at most TICKET_FOLLOWUP_CAP
-    (40) per run."""
-    from ..portals.ajio import PICKUP_NOT_DONE, AjioClient, pickup_payload
-    cands = pickup_ticket_candidates(df, now)
-    if cands.empty or not env("AJIO_USERNAME"):
-        return []
+def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list[str]]]:
+    """AJIO tickets (ORDERS > PICKUP NOT DONE / SHIPMENT NOT SCANNING) for the pickup pending orders
+    whose pickup neither the AJIO order report (already read into df this run) nor the courier's
+    site, checked again here, shows: ONE ticket per courier, all its orders listed in it (since 27 Oct
+    2026; before, one per order), TICKET_BATCH (50) orders a ticket at most. An order already in a
+    courier ticket of the last 30 days is not raised again; at most TICKET_CAP (200) orders per run.
+    Instead, while some of its parcels are still not picked up, the courier ticket gets a follow-up
+    comment listing them once our last word on it is TICKET_FOLLOWUP_HOURS (24) old (a comment
+    re-opens a resolved ticket); at most TICKET_FOLLOWUP_CAP (40) per run. Orders that only have an
+    old one-per-order ticket go into the courier ticket too.
+    Returns one record per candidate order and every order's pickup ticket ids (old and new)."""
+    from ..portals.ajio import AjioClient, pickup_payload
+    if not env("AJIO_USERNAME"):
+        return [], {}
     client = AjioClient(env("AJIO_USERNAME"), env("AJIO_PASSWORD"))
     client.login()
-    old = client.ticket_list((now - pd.Timedelta(days=30)).date(), now.date())
-    have = {str(t.get("orderId") or "").strip(): str(t.get("ticketId")) for t in old
-            if str(t.get("subCategory") or "").upper() == PICKUP_NOT_DONE}
+    ids, courier_tickets = pickup_ticket_ids(
+        client, client.ticket_list((now - pd.Timedelta(days=30)).date(), now.date()))
+    in_courier_ticket = {oid: [t for t in tids if t in courier_tickets][-1] for oid, tids in ids.items()
+                         if any(t in courier_tickets for t in tids)}
+    cands = pickup_ticket_candidates(df, now)
+    if cands.empty:
+        return [], ids
     courier = courier_pickup_check(cands)
-    pob, cap, done = env("POB_ID", "DV00348890"), num("TICKET_CAP", 200), []
+    pob, cap, batch, done = env("POB_ID", "DV00348890"), num("TICKET_CAP", 200), num("TICKET_BATCH", 50), []
     follow_cap, follow_hours = num("TICKET_FOLLOWUP_CAP", 40), num("TICKET_FOLLOWUP_HOURS", 24)
     gap = num("TICKET_DELAY_MS", 30) / 1000     # pause between two AJIO ticket / comment calls
+    to_raise: dict[str, list[dict]] = {}
+    to_follow: dict[str, list[dict]] = {}
     for _, r in cands.iterrows():
         oid = str(r["Order ID"]).strip()
-        rec = {"Order ID": oid, "AWB": str(r["AWB"]), "Courier": str(r["Courier"]),
-               "Pickup Deadline": r["Dispatch Deadline"], "Ticket": have.get(oid, ""), "Result": ""}
+        rec = {"Order ID": oid, "AWB": str(r["AWB"]), "Courier": str(r["Courier"]), "RTS Time": r.get("RTS Time"),
+               "Pickup Deadline": r["Dispatch Deadline"], "Ticket": ", ".join(ids.get(oid, [])), "Result": ""}
         seen = courier.get(str(r["AWB"]), "not checked")
-        if oid in have:
+        if oid in in_courier_ticket:
             rec["Result"] = "already has ticket"
-            if seen == "not picked" and sum(d["Result"] == "followed up" for d in done) < follow_cap:
-                try:
-                    ticket = client.ticket_detail(have[oid]) or {}
-                    if due_followup(ticket, client.seller_id, now, follow_hours):
-                        if not dry:
-                            client.comment(have[oid], pickup_followup_text(r))
-                            time.sleep(gap)
-                        rec["Result"] = "follow-up due (dry run)" if dry else "followed up"
-                except Exception as exc:  # noqa: BLE001 - the ticket keeps waiting for the next run
-                    rec["Result"] = f"error: follow-up {exc}"[:200]
+            if seen == "not picked":
+                to_follow.setdefault(in_courier_ticket[oid], []).append(rec)
         elif seen != "not picked":
             rec["Result"] = f"courier: {seen}"
-        elif sum(d["Result"] in ("created", "dry-run") for d in done) >= cap:
+        elif sum(len(v) for v in to_raise.values()) >= cap:
             rec["Result"] = "over cap"
-        elif dry:
-            rec["Result"] = "dry-run"
         else:
-            subject, description = pickup_ticket_text(r)
-            try:
-                rec.update(Ticket=client.create_ticket(pickup_payload(oid, subject, description, pob,
-                                                                      env("AJIO_USERNAME"))), Result="created")
-                time.sleep(gap)
-            except Exception as exc:  # noqa: BLE001 - the next order still gets its ticket
-                rec["Result"] = f"error: {exc}"[:200]
+            to_raise.setdefault(short_courier(r["Courier"]), []).append(rec)
         done.append(rec)
+
+    for tid, recs in list(to_follow.items())[:follow_cap]:
+        try:
+            if due_followup(courier_tickets[tid], client.seller_id, now, follow_hours):
+                if not dry:
+                    client.comment(tid, pickup_followup_text(recs))
+                    time.sleep(gap)
+                for rec in recs:
+                    rec["Result"] = "follow-up due (dry run)" if dry else "followed up"
+        except Exception as exc:  # noqa: BLE001 - the ticket keeps waiting for the next run
+            for rec in recs:
+                rec["Result"] = f"error: follow-up {exc}"[:200]
+
+    for recs in to_raise.values():
+        name = recs[0]["Courier"].strip().upper()
+        parts = [recs[i:i + batch] for i in range(0, len(recs), batch)]
+        for n, part in enumerate(parts, 1):
+            if dry:
+                for rec in part:
+                    rec["Result"] = "dry-run"
+                continue
+            subject, description = pickup_ticket_text(name, part, n, len(parts))
+            try:
+                tid = client.create_ticket(pickup_payload(part[0]["Order ID"], subject, description, pob,
+                                                          env("AJIO_USERNAME")))
+                time.sleep(gap)
+            except Exception as exc:  # noqa: BLE001 - the next courier still gets its ticket
+                for rec in part:
+                    rec["Result"] = f"error: {exc}"[:200]
+                continue
+            for rec in part:
+                ids.setdefault(rec["Order ID"], []).append(tid)
+                rec.update(Ticket=", ".join(ids[rec["Order ID"]]), Result="created", New=tid)
     log.info("Pickup tickets: %s", pd.Series([d["Result"] for d in done]).value_counts().to_dict())
-    return done
+    return done, ids
+
+
+def add_ticket_ids(df, ids: dict[str, list[str]]):
+    """The master's "Pickup Ticket": every AJIO pickup ticket id of the order, old and new, comma
+    separated (the ids already there are kept)."""
+    if not ids:
+        return df
+    df = df.copy()
+    key = df["Order ID"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+
+    def joined(old, oid):
+        have = [] if pd.isna(old) else [x.strip() for x in str(old).split(",") if x.strip()]
+        return ", ".join(dict.fromkeys(have + ids.get(oid, []))) or old
+
+    hit = key.isin(ids.keys())
+    df.loc[hit, "Pickup Ticket"] = [joined(o, k) for o, k in zip(df.loc[hit, "Pickup Ticket"], key[hit])]
+    return df
 
 
 def pickup_tickets(df, args, errors: list[str]):
-    """When on (--tickets / --tickets-dry / AJIO_PICKUP_TICKETS=1): raise the pickup tickets and write
-    each order's ticket id into the master's "Pickup Ticket" column. Not raised when this run could
+    """When on (--tickets / --tickets-dry / AJIO_PICKUP_TICKETS=1): raise the courier pickup tickets
+    and write every order's pickup ticket ids (old one-per-order and courier tickets of the last 30
+    days, and this run's) into the master's "Pickup Ticket" column. Not raised when this run could
     not read the AJIO order report (its Pickup Timestamp is the first pickup check).
     Returns the master and the Telegram report ([] when nothing to say)."""
     if not (args.tickets or args.tickets_dry or env("AJIO_PICKUP_TICKETS", "").lower() in ("1", "true", "yes")):
@@ -516,43 +593,46 @@ def pickup_tickets(df, args, errors: list[str]):
     if any(e.startswith("AJIO order report not read") for e in errors):
         return df, ["⚠️ AJIO pickup tickets not raised: the AJIO order report (pickup times) was not read"]
     try:
-        done = raise_pickup_tickets(df, pd.Timestamp.now(), dry=args.tickets_dry)
+        done, ids = raise_pickup_tickets(df, pd.Timestamp.now(), dry=args.tickets_dry)
     except Exception as exc:  # noqa: BLE001 - the TAT report still goes out
         log.exception("Pickup tickets not raised")
         return df, [f"⚠️ AJIO pickup tickets not raised: {telegram.esc(str(exc)[:150])}"]
-    ids = {d["Order ID"]: d["Ticket"] for d in done if d["Ticket"] and d["Result"] != "dry-run"}
-    if ids:
-        df = df.copy()
-        got = df["Order ID"].astype(str).str.strip().map(ids)
-        df.loc[got.notna(), "Pickup Ticket"] = got[got.notna()]
-    return df, pickup_ticket_report(done)
+    return add_ticket_ids(df, ids), pickup_ticket_report(done)
 
 
 def pickup_ticket_report(done: list[dict]) -> list:
-    """Telegram: the pickup tickets this run raised (or would raise, dry run); [] when none."""
+    """Telegram: the courier pickup tickets this run raised (or would raise, dry run); [] when none."""
     new = [d for d in done if d["Result"] in ("created", "dry-run")]
     failed = [d for d in done if d["Result"].startswith("error")]
     followed = [d for d in done if d["Result"] == "followed up"]
     if not new and not failed and not followed:
         return []
     dry = any(d["Result"] == "dry-run" for d in new)
-    table = [f"{d['AWB'][:15]:<15} {short_courier(d['Courier'])[:7]:<7} {d['Ticket'][-4:] or '-'}" for d in new]
-    lines = [f"🎫 <b>AJIO Pickup Tickets · {len(new)} {'to raise (dry run)' if dry else 'raised'}</b>",
-             "<i>ORDERS › Pickup not done, one per order whose pickup deadline has passed</i>"]
+    per_ticket: dict[tuple[str, str], int] = {}
+    for d in new:
+        k = (short_courier(d["Courier"]), d.get("New", ""))
+        per_ticket[k] = per_ticket.get(k, 0) + 1
+    table = [f"{c[:7]:<7} {n:>6}  {t or '-'}" for (c, t), n in per_ticket.items()]
+    n_tickets = len({t for _, t in per_ticket}) if not dry else len(per_ticket)
+    lines = [f"🎫 <b>AJIO Pickup Tickets · {len(new)} orders, {n_tickets} courier "
+             f"{'ticket' if n_tickets == 1 else 'tickets'}{' to raise (dry run)' if dry else ' raised'}</b>",
+             "<i>ORDERS › Pickup not done, one ticket per courier with its orders listed</i>"]
     picked = sum(d["Result"] == "courier: picked" for d in done)
     unchecked = sum(d["Result"] == "courier: not checked" for d in done)
     if picked or unchecked:
         lines.append(f"Not raised: {picked} picked per the courier's site"
                      + (f", {unchecked} courier site not reachable" if unchecked else ""))
     if followed:
-        lines.append(f"🔁 Followed up {len(followed)} open pickup tickets (still not picked up): "
-                     + ", ".join(d["Ticket"] for d in followed[:15]) + (" …" if len(followed) > 15 else ""))
+        tickets = list(dict.fromkeys(d["Ticket"].split(", ")[-1] for d in followed))
+        lines.append(f"🔁 Followed up {len(tickets)} courier tickets ({len(followed)} orders still not picked "
+                     f"up): " + ", ".join(tickets[:15]) + (" …" if len(tickets) > 15 else ""))
     if failed:
         lines.append(f"⚠️ {len(failed)} failed: " + ", ".join(d["Order ID"] for d in failed[:10]))
     if table:
-        rows = [{**d, "Pickup Deadline": None if pd.isna(d["Pickup Deadline"])
+        rows = [{**{k: v for k, v in d.items() if k not in ("New", "RTS Time")},
+                 "Pickup Deadline": None if pd.isna(d["Pickup Deadline"])
                  else pd.Timestamp(d["Pickup Deadline"]).to_pydatetime()} for d in done]
-        lines.append(telegram.Listing("", ["<pre>" + telegram.esc(f"{'AWB':<15} {'Courier':<7} Tkt\n"
+        lines.append(telegram.Listing("", ["<pre>" + telegram.esc(f"{'Courier':<7} {'Orders':>6}  Ticket\n"
                                                                  + "\n".join(table)) + "</pre>"],
                                       rows, "Pickup tickets"))
     return lines

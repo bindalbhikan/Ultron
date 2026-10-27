@@ -37,8 +37,15 @@
   model (left out when it is not available). Pickups pending: a ready-to-copy mail with the AWB
   table when it fits in one message; with more AWBs the mail comes alone and every AWB (courier,
   Over / Due, order time, RTS, deadline) is in the attached `AJIO_pickup_pending_*.xlsx`.
-* **Pickup tickets** (on by default, `AJIO_PICKUP_TICKETS`): one AJIO "pickup not done" ticket per
-  order of the pickup pending list, Over and Due alike (since 24 Oct 2026; `TICKET_ONLY_OVER=1` goes
-  back to orders `TICKET_GRACE_HOURS` past the deadline), when the AJIO report and the courier's site
-  show no pickup; at most `TICKET_CAP` (200) per run, never twice per order (30 days), a follow-up
-  comment every 24 h while still not picked up. `TICKET_DELAY_MS` (30) between two ticket calls. The ticket id goes into the master's Pickup Ticket.
+* **Pickup tickets** (on by default, `AJIO_PICKUP_TICKETS`): ONE AJIO "pickup not done" ticket per
+  courier (since 27 Oct 2026; 23-26 Oct it was one per order, 317 tickets), every order of that
+  courier's pickup pending list (Over and Due alike; `TICKET_ONLY_OVER=1` goes back to orders
+  `TICKET_GRACE_HOURS` past the deadline) on its own "Order ID ... - AWB ..." line, when the AJIO
+  report and the courier's site show no pickup. `TICKET_BATCH` (50) orders a ticket at most (more =
+  "(1/2)", "(2/2)"), `TICKET_CAP` (200) orders a run. An order already in a courier ticket of the
+  last 30 days is not raised again (the next runs read the orders back from the ticket's
+  description); orders with only an old one-per-order ticket go into the courier ticket. While some
+  of a courier ticket's orders are still not picked up it gets one follow-up comment listing them
+  every 24 h. `TICKET_DELAY_MS` (30) between two ticket calls. The master's Pickup Ticket holds every
+  pickup ticket id of the order (old one-per-order and courier tickets, comma separated), filled
+  from all pickup tickets of the last 30 days on every run.
