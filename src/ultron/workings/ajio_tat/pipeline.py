@@ -416,16 +416,20 @@ def pickup_ticket_text(courier: str, rows: list[dict], part: int = 1, parts: int
     """One ticket for a courier's pending pickups; every order on its own "Order ID ..." line (read
     back from the description by the next runs)."""
     more = f" ({part}/{parts})" if parts > 1 else ""
-    subject = f"PICKUP NOT DONE | {courier} | {len(rows)} orders{more}"
-    description = (f"Hi Team,\n\nThe below {len(rows)} {courier} shipments were ready to ship on time, but the "
-                   f"pickup is still pending. Kindly arrange the pickup, and no penalty should be applied to "
-                   f"these orders.\n\n{_order_lines(rows)}\n\nThanks & regards,\nBindal Exports")
+    one = len(rows) == 1
+    subject = f"PICKUP NOT DONE | {courier} | {len(rows)} {'order' if one else 'orders'}{more}"
+    description = (f"Hi Team,\n\nThe below {len(rows)} {courier} {'shipment was' if one else 'shipments were'} "
+                   f"ready to ship on time, but the pickup is still pending. Kindly arrange the pickup, and no "
+                   f"penalty should be applied to {'this order' if one else 'these orders'}.\n\n"
+                   f"{_order_lines(rows)}\n\nThanks & regards,\nBindal Exports")
     return subject, description
 
 
 def pickup_followup_text(rows: list[dict]) -> str:
-    return (f"Pickup is still pending for these {len(rows)} orders. Kindly arrange the pickup today, and no "
-            f"penalty should be applied to these orders.\n\n{_order_lines(rows)}")
+    these = "this order" if len(rows) == 1 else "these orders"
+    which = "this order" if len(rows) == 1 else f"these {len(rows)} orders"
+    return (f"Pickup is still pending for {which}. Kindly arrange the pickup today, and no penalty should "
+            f"be applied to {these}.\n\n{_order_lines(rows)}")
 
 
 def pickup_ticket_file(courier: str, rows: list[dict], now) -> tuple[str, bytes]:
