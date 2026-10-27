@@ -487,12 +487,12 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
     """AJIO tickets (ORDERS > PICKUP NOT DONE / SHIPMENT NOT SCANNING) for the pickup pending orders
     whose pickup neither the AJIO order report (already read into df this run) nor the courier's
     site, checked again here, shows: ONE ticket per courier, all its orders listed in it (since 27 Oct
-    2026; before, one per order), TICKET_BATCH (50) orders a ticket at most. An order already in a
-    courier ticket of the last 30 days is not raised again; at most TICKET_CAP (200) orders per run.
-    Instead, while some of its parcels are still not picked up, the courier ticket gets a follow-up
-    comment listing them once our last word on it is TICKET_FOLLOWUP_HOURS (24) old (a comment
-    re-opens a resolved ticket); at most TICKET_FOLLOWUP_CAP (40) per run. Orders that only have an
-    old one-per-order ticket go into the courier ticket too.
+    2026; before, one per order), TICKET_BATCH (50) orders a ticket at most. Never two tickets for one
+    order: an order with any pickup ticket (one-per-order or courier, last 30 days, or a ticket id
+    already in the master's Pickup Ticket) is not raised again; at most TICKET_CAP (200) orders per
+    run. Instead, while some of its parcels are still not picked up, the order's latest ticket gets a
+    follow-up comment listing them once our last word on it is TICKET_FOLLOWUP_HOURS (24) old (a
+    comment re-opens a resolved ticket); at most TICKET_FOLLOWUP_CAP (40) tickets per run.
     Returns one record per candidate order and every order's pickup ticket ids (old and new)."""
     from ..portals.ajio import AjioClient, pickup_payload
     if not env("AJIO_USERNAME"):
@@ -501,8 +501,6 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
     client.login()
     ids, courier_tickets = pickup_ticket_ids(
         client, client.ticket_list((now - pd.Timedelta(days=30)).date(), now.date()))
-    in_courier_ticket = {oid: [t for t in tids if t in courier_tickets][-1] for oid, tids in ids.items()
-                         if any(t in courier_tickets for t in tids)}
     cands = pickup_ticket_candidates(df, now)
     if cands.empty:
         return [], ids
@@ -517,10 +515,12 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
         rec = {"Order ID": oid, "AWB": str(r["AWB"]), "Courier": str(r["Courier"]), "RTS Time": r.get("RTS Time"),
                "Pickup Deadline": r["Dispatch Deadline"], "Ticket": ", ".join(ids.get(oid, [])), "Result": ""}
         seen = courier.get(str(r["AWB"]), "not checked")
-        if oid in in_courier_ticket:
+        in_master = [x.strip() for x in str(r.get("Pickup Ticket") or "").split(",")
+                     if x.strip() and x.strip().lower() != "nan"]
+        if ids.get(oid) or in_master:
             rec["Result"] = "already has ticket"
-            if seen == "not picked":
-                to_follow.setdefault(in_courier_ticket[oid], []).append(rec)
+            if seen == "not picked" and ids.get(oid):
+                to_follow.setdefault(ids[oid][-1], []).append(rec)
         elif seen != "not picked":
             rec["Result"] = f"courier: {seen}"
         elif sum(len(v) for v in to_raise.values()) >= cap:
@@ -531,7 +531,8 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
 
     for tid, recs in list(to_follow.items())[:follow_cap]:
         try:
-            if due_followup(courier_tickets[tid], client.seller_id, now, follow_hours):
+            ticket = courier_tickets.get(tid) or client.ticket_detail(tid) or {}
+            if due_followup(ticket, client.seller_id, now, follow_hours):
                 if not dry:
                     client.comment(tid, pickup_followup_text(recs))
                     time.sleep(gap)

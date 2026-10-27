@@ -42,10 +42,11 @@
   courier's pickup pending list (Over and Due alike; `TICKET_ONLY_OVER=1` goes back to orders
   `TICKET_GRACE_HOURS` past the deadline) on its own "Order ID ... - AWB ..." line, when the AJIO
   report and the courier's site show no pickup. `TICKET_BATCH` (50) orders a ticket at most (more =
-  "(1/2)", "(2/2)"), `TICKET_CAP` (200) orders a run. An order already in a courier ticket of the
-  last 30 days is not raised again (the next runs read the orders back from the ticket's
-  description); orders with only an old one-per-order ticket go into the courier ticket. While some
-  of a courier ticket's orders are still not picked up it gets one follow-up comment listing them
-  every 24 h. `TICKET_DELAY_MS` (30) between two ticket calls. The master's Pickup Ticket holds every
+  "(1/2)", "(2/2)"), `TICKET_CAP` (200) orders a run. Never two tickets for one order: an order with
+  any pickup ticket of the last 30 days (one-per-order, or a courier ticket: the next runs read its
+  orders back from the description) or a ticket id in the master is not raised again. (27 Oct, the
+  first courier run, put 58 orders that had a one-per-order ticket into a courier ticket too; fixed
+  the same day.) While some orders of a ticket are still not picked up, the order's latest ticket
+  gets one follow-up comment listing them every 24 h. `TICKET_DELAY_MS` (30) between two ticket calls. The master's Pickup Ticket holds every
   pickup ticket id of the order (old one-per-order and courier tickets, comma separated), filled
   from all pickup tickets of the last 30 days on every run.
