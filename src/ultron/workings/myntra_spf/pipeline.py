@@ -501,6 +501,37 @@ def run_engine(work: Path, oms: dict | None = None, details: dict | None = None)
         sys.argv = argv
 
 
+def _files(folder: Path) -> set[Path]:
+    """Every file under folder, relative to it."""
+    return {p.relative_to(folder) for p in folder.rglob("*") if p.is_file()}
+
+
+def upload_master(master: DriveFile, work: Path, oms: dict, details: dict,
+                  notes: list[str], tries: int = 3) -> None:
+    """The new master onto Drive. When someone saved the master on Drive during the run, their
+    version is downloaded and the engine runs again on it with the inputs as fetched (plus the
+    ticket files of the claims raised in this run, in claim_files/), so their edits are kept; no
+    portal fetch and no claim is repeated."""
+    from ..core.drive import DriveConflict
+    inp = work / "input"
+    for attempt in range(1, tries + 1):
+        try:
+            master.upload(work / MASTER_NAME)
+            return
+        except DriveConflict as exc:
+            if attempt == tries:
+                raise
+            log.warning("%s Rebuilding on the newer master (try %d).", exc, attempt + 1)
+        if attempt == 1:
+            notes.append("Master saved on Drive during the run: rebuilt on that version, edits kept")
+        master.download(work / MASTER_NAME, need_edit=True)
+        shutil.rmtree(inp)
+        shutil.copytree(work / "input_fetched", inp)
+        if (work / "claim_files").exists():
+            shutil.copytree(work / "claim_files", inp, dirs_exist_ok=True)
+        run_engine(work, oms, details)
+
+
 # ------------------------------------------------------------------ run
 
 def run(args) -> int:
@@ -554,8 +585,12 @@ def run(args) -> int:
         log.exception("ERP reports failed")
         notes.append(f"ERP GRN / dispatch not read: {str(exc)[:100]}")
 
+    # the engine deletes the inputs it has used: kept as fetched, for a rebuild on a newer master
+    inp.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(inp, work / "input_fetched")
     # 1) ERP (GRN) and the manual sheet: the engine's own run, in the work folder
     run_engine(work, details=details)
+    after_engine = _files(inp)
     # 2) OMSGuru for the rows still without a final status, then the engine again with them
     try:
         since = today - timedelta(days=num("MYNTRA_SPF_OMS_DAYS", 180))
@@ -571,6 +606,9 @@ def run(args) -> int:
         oms = {}
     # 3) SPF claims due today (policy timelines), raised on the portal; shown in the master at once
     claims = raise_due_claims(work, today, ticketed, oms, notes, details)
+    for p in _files(inp) - after_engine:          # ticket files of these claims, for a rebuild
+        (work / "claim_files" / p).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(inp / p, work / "claim_files" / p)
     if oms or claims:
         run_engine(work, oms, details)
     waiting = {a: sum(d.get("NEEDS OUR REPLY") == "YES" for d in rows) for a, rows in details.items()}
@@ -582,7 +620,7 @@ def run(args) -> int:
     if args.no_upload:
         notes.append("not uploaded to Drive (test run): output/myntra_spf")
     else:
-        master.upload(work / MASTER_NAME)
+        upload_master(master, work, oms, details, notes)
     text = summary_text(work / MASTER_NAME, notes)
     print(text) if args.no_telegram else telegram.send(text)
     try:

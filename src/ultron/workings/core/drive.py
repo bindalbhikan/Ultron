@@ -33,6 +33,10 @@ class DriveError(RuntimeError):
     pass
 
 
+class DriveConflict(DriveError):
+    """The file was changed on Drive since this run downloaded it."""
+
+
 class DriveFile:
     def __init__(self, file_id: str, http: AuthorizedSession | None = None):
         self.file_id = file_id
@@ -81,7 +85,7 @@ class DriveFile:
                              "during the run is never overwritten")
         now = self.metadata()
         if now.get("md5Checksum") != self.meta.get("md5Checksum"):
-            raise DriveError(f"{now.get('name')} was changed on Drive during the run "
+            raise DriveConflict(f"{now.get('name')} was changed on Drive during the run "
                              f"(modified {now.get('modifiedTime')}); not overwriting it. Run again.")
         r = self.http.patch(f"{UPLOAD}/{self.file_id}", data=src.read_bytes(), timeout=300,
                             params={"uploadType": "media", "supportsAllDrives": "true", "fields": FIELDS},
