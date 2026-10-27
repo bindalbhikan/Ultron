@@ -409,10 +409,7 @@ ORDER_IN_TICKET = re.compile(r"Order ID (\d+)")
 
 
 def _order_lines(rows: list[dict]) -> str:
-    def ready(v):
-        return "" if pd.isna(v) else f" - ready {pd.Timestamp(v):%d %b %I:%M %p}"
-    return "\n".join(f"{i}. Order ID {r['Order ID']} - AWB {r['AWB']}{ready(r.get('RTS Time'))}"
-                     for i, r in enumerate(rows, 1))
+    return "\n".join(f"{i}. Order ID {r['Order ID']} - AWB {r['AWB']}" for i, r in enumerate(rows, 1))
 
 
 def pickup_ticket_text(courier: str, rows: list[dict], part: int = 1, parts: int = 1) -> tuple[str, str]:
@@ -512,7 +509,7 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
     to_follow: dict[str, list[dict]] = {}
     for _, r in cands.iterrows():
         oid = str(r["Order ID"]).strip()
-        rec = {"Order ID": oid, "AWB": str(r["AWB"]), "Courier": str(r["Courier"]), "RTS Time": r.get("RTS Time"),
+        rec = {"Order ID": oid, "AWB": str(r["AWB"]), "Courier": str(r["Courier"]),
                "Pickup Deadline": r["Dispatch Deadline"], "Ticket": ", ".join(ids.get(oid, [])), "Result": ""}
         seen = courier.get(str(r["AWB"]), "not checked")
         in_master = [x.strip() for x in str(r.get("Pickup Ticket") or "").split(",")
@@ -630,7 +627,7 @@ def pickup_ticket_report(done: list[dict]) -> list:
     if failed:
         lines.append(f"⚠️ {len(failed)} failed: " + ", ".join(d["Order ID"] for d in failed[:10]))
     if table:
-        rows = [{**{k: v for k, v in d.items() if k not in ("New", "RTS Time")},
+        rows = [{**{k: v for k, v in d.items() if k != "New"},
                  "Pickup Deadline": None if pd.isna(d["Pickup Deadline"])
                  else pd.Timestamp(d["Pickup Deadline"]).to_pydatetime()} for d in done]
         lines.append(telegram.Listing("", ["<pre>" + telegram.esc(f"{'Courier':<7} {'Orders':>6}  Ticket\n"
