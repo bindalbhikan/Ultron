@@ -33,9 +33,10 @@ def same_sku(report_sku: str, oms_sku: str) -> bool:
 RETURN_LOG = re.compile(r"Return Log\s+(RT\d+)\s*\(\s*(\d{4}-\d{2}-\d{2})\s*\)")
 RECEIVED_LABELS = ("Partial Cancelled Return Received", "Cancelled Return Received",
                    "Partial Return Received", "Return Received")
-# Return-side labels shown in an item's return block, just before "Return Comments"
+# Return-side labels shown in an item's return block, just before "Return Reason" (a customer
+# return) or "Return Comments" (a cancellation, which has no reason)
 RETURN_LABEL = re.compile(r"(Partial Cancelled Return Received|Cancelled Return Received|Partial Return Received|"
-                          r"Return Received|Return Rejected|Return Init|Cancel Init)\s+Return Comments")
+                          r"Return Received|Return Rejected|Return Init|Cancel Init)\s+Return (?:Reason|Comments)")
 TRACKER = re.compile(r"^\s*([A-Za-z0-9]+)\s*(?:\(\s*([^)]+?)\s*\))?")
 
 

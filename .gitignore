@@ -34,3 +34,5 @@ fl tax sel report.json
 drive_relay_SETUP.gs
 # Google Drive folder settings
 desktop.ini
+
+.claude/settings.local.json
