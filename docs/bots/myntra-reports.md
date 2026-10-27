@@ -14,7 +14,10 @@
   returns / delivery: Return vs RTO; listings: SKUs, active) and the folder link. A report not
   got is named at the end.
 * `AGENT WORK/MYNTRA DAILY RETURN DELIVERY REPORT.xlsx`: one row per account and day - DATE, PORTAL
-  (MYNTRA MAIN / DBCC / FMCC), CUSTOMER RETURN, RTO, CANCELLED, TOTAL. The delivery report has
+  (MYNTRA MAIN / DBCC / FMCC), CUSTOMER RETURN, RTO, CANCELLED, TOTAL. Only deliveries to our own
+  PPMP warehouses count (MAIN 46148 / 24504, DBCC 50829, FMCC 56765; `MYNTRA_PPMP_WAREHOUSES`):
+  FBM / SJIT returns to Myntra's warehouses (28, 36, 81 ...) are left out (since 27 Oct 2026; the rows
+  from 24 Sep were filled again that way). The delivery report has
   RTO and cancelled as one type (RTO_or_Cancel): the order's status in the 30-day orders report
   tells them apart (F = cancelled, else RTO). A day run again replaces its rows.
 * The workbook (`src/ultron/workings/myntra_reports/workbook.py`): **DASHBOARD** (first tab) and **DATA**. The
@@ -25,6 +28,6 @@
   (delete the tab to get it rebuilt by the next run). After that the bot rewrites only DATA's rows inside
   the .xlsx: fonts, sizes, alignment and charts changed by hand on the DASHBOARD stay (openpyxl
   would drop the charts).
-* `--backfill-from YYYY-MM-DD`: fills DATA from that day to the day before yesterday from report
+* `--backfill-from YYYY-MM-DD` (`--backfill-to YYYY-MM-DD`): fills DATA from that day to the day before yesterday (or that day) from report
   jobs already on the portal (each delivery on its deliver_to_seller_date). Filled from 24 Sep
   2026 (the first day the 30-day delivery report held).

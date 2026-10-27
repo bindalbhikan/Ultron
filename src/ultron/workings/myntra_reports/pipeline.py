@@ -7,7 +7,7 @@ The orders report is asked for the last 30 days (the same job the 7 AM SPF run a
 Orders file keeps only yesterday's lines, the rest tells the return deliveries of type
 RTO_or_Cancel apart by order status (RTO = RTO, F = cancelled; an order older than 30 days counts as RTO).
 The CSVs go to Drive AGENT WORK/MYNTRA DAILY REPORTS/<yesterday>/ ("MAIN Orders 2026-10-23.csv"),
-each account's return deliveries become a row of AGENT WORK/MYNTRA DAILY RETURN DELIVERY REPORT.xlsx
+each account's return deliveries to its PPMP warehouses (not FBM / SJIT) become a row of AGENT WORK/MYNTRA DAILY RETURN DELIVERY REPORT.xlsx
 (DATE, PORTAL, CUSTOMER RETURN, RTO, CANCELLED, TOTAL; a day run again replaces its rows), and
 Telegram gets one message: the total return delivery, per account the rows of each report and the folder link.
 """
@@ -34,6 +34,9 @@ FOLDER = "MYNTRA DAILY REPORTS"
 WORKBOOK = "MYNTRA DAILY RETURN DELIVERY REPORT.xlsx"
 PORTALS = {"MAIN": "MYNTRA MAIN", "DBCC": "MYNTRA DBCC", "FMCC": "MYNTRA FMCC"}
 DELIVERY_COLUMNS = ["CUSTOMER RETURN", "RTO", "CANCELLED", "TOTAL"]
+# our own warehouses (PPMP orders): MAIN 46148 and 24504, DBCC 50829, FMCC 56765. The delivery report
+# also has FBM / SJIT returns to Myntra's warehouses (28, 36, 81 ...): not counted in the workbook.
+PPMP_WAREHOUSES = {"46148", "24504", "50829", "56765"}
 # label -> report id
 REPORTS = {"Orders": 4, "Returns": 12, "Return Delivery": 84, "Listings": 14}
 SNAPSHOT = {"Listings"}
@@ -82,9 +85,16 @@ def summary(label: str, df: pd.DataFrame) -> str:
     return f"{n} rows"
 
 
+def ppmp_only(delivery: pd.DataFrame) -> pd.DataFrame:
+    """The rows delivered to our own (PPMP) warehouses; FBM / SJIT returns go to Myntra's warehouses."""
+    ours = set(csv_list("MYNTRA_PPMP_WAREHOUSES")) or PPMP_WAREHOUSES
+    return delivery[_col(delivery, "warehouse_id").str.replace(r"\.0$", "", regex=True).isin(ours)]
+
+
 def delivery_split(delivery: pd.DataFrame, orders: pd.DataFrame | None) -> dict[str, int]:
-    """CUSTOMER RETURN / RTO / CANCELLED / TOTAL of a Return_Delivery_Report. RTO_or_Cancel rows are
-    cancelled when the order's status in the orders report is F, else RTO."""
+    """CUSTOMER RETURN / RTO / CANCELLED / TOTAL of a Return_Delivery_Report, PPMP warehouses only.
+    RTO_or_Cancel rows are cancelled when the order's status in the orders report is F, else RTO."""
+    delivery = ppmp_only(delivery)
     kind = _col(delivery, "type")
     status = pd.Series(dtype=str)
     if orders is not None and len(orders):
@@ -157,7 +167,7 @@ def update_workbook(root, rows: list[tuple[date, str, dict]], work: Path) -> str
 
 
 def backfill(args) -> int:
-    """The workbook's rows for --backfill-from .. the day before yesterday, from report jobs already on
+    """The workbook's rows for --backfill-from .. --backfill-to (default the day before yesterday), from report jobs already on
     the portal (the 7 AM SPF run keeps a 30-day Return_Delivery_Report and 60 days of orders):
     each delivery counted on its deliver_to_seller_date. A missing range is asked for (one job per
     report, waited for)."""
@@ -166,7 +176,7 @@ def backfill(args) -> int:
     from ..portals import myntra as mp
     from ..return_analysis.sources import myntra_portal
     start = date.fromisoformat(args.backfill_from)
-    end = date.today() - timedelta(days=2)
+    end = date.fromisoformat(args.backfill_to) if args.backfill_to else date.today() - timedelta(days=2)
     rows = []
     for account in csv_list("MYNTRA_REPORT_ACCOUNTS") or ACCOUNTS:
         portal = myntra_portal(account)
@@ -288,6 +298,7 @@ def main(argv=None) -> int:
     p.add_argument("--date", help="report day YYYY-MM-DD (default yesterday)")
     p.add_argument("--backfill-from", help="YYYY-MM-DD: only fill the return delivery workbook from that day"
                    " to the day before yesterday")
+    p.add_argument("--backfill-to", help="YYYY-MM-DD: the last day --backfill-from fills (default the day before yesterday)")
     p.add_argument("--no-upload", action="store_true", help="keep the files in output/, not on Drive")
     p.add_argument("--no-telegram", action="store_true", help="print the summary instead of sending it")
     return run_bot("Myntra daily reports", p, run, argv)
