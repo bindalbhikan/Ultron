@@ -22,5 +22,9 @@ button on the Myntra menu, or run the workflow. About 1-2 minutes for ~5,900 sty
 * Drive: the same workbook in `AGENT WORK/MYNTRA ZERO TD SHEETS/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx`.
 * The buyer side shows a style, not an account: a style id on two account tabs shows the same
   result on both.
+* Runs on the office PC (self-hosted runner BHIKAN-PC, label `bindal-office`, in
+  `C:\Users\Bhikan\actions-runner` with its own venv): www.myntra.com answers GitHub's runners with
+  403 (26 Oct 2026). The PC must be on at the run times; a run waits in the queue while the runner
+  is off. The runner starts at login only once `start-hidden.vbs` is in the Startup folder.
 * Fails (Telegram alert) when myntra.com answered no style at all (blocked, site down); exit 1
   when more than 5% had no answer (the message and sheet still go out).
