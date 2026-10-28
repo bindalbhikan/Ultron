@@ -5,7 +5,7 @@
 
 **Result**: one master `AJIO_TAT_MASTER.xlsx` in Drive `AJIO/Ajio Daily Order Tat Check Working`
 (`TAT_DRIVE_FOLDER_ID`, found by name; a missing one is seeded from the old file
-`TAT_DRIVE_FILE_ID` and created through the relay). Orders from 2026-06-01 (rebuilt 20 Oct
+`TAT_DRIVE_FILE_ID` and created with the owner's OAuth token). Orders from 2026-06-01 (rebuilt 20 Oct
 2026 with `days=141`), plus 26 hand-added late-May orders (`--orders`).
 
 * **10:10 rule**: orders from yesterday 10:00 to today 10:00 must be processed and picked up today

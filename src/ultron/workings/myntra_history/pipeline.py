@@ -4,8 +4,7 @@ AGENT WORK/MYNTRA ORDER RETURN REPORTS <FROM> TO <TO>/:
 
   ORDERS/<ACCOUNT>/<ACCOUNT> ORDERS APR-25.csv     RETURNS/<ACCOUNT>/<ACCOUNT> RETURNS APR-25.csv
   MYNTRA ORDERS ALL ACCOUNTS APR-25 TO SEP-26.csv  MYNTRA RETURNS ALL ACCOUNTS APR-25 TO SEP-26.csv
-  (every month of the 3 accounts, ACCOUNT and MONTH columns first; zipped when too big for the
-  Drive relay)
+  (every month of the 3 accounts, ACCOUNT and MONTH columns first; zipped when over 30 MB)
 
 A report already on the portal for exactly that month is used; else one is asked for. The portal
 takes the same report of an account once in 16 minutes (a refusal reads "Internal server error"):
@@ -39,7 +38,7 @@ ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 CSV = "text/csv"
 GAP = 16 * 60            # seconds between two requests of the same report of an account
 TRIES = 3           # refused 3 times, each 16 minutes after the last request and the last report done: not kept
-RELAY_MAX = 30_000_000   # bytes: a bigger merged CSV goes up zipped
+ZIP_OVER = 30_000_000    # bytes: a bigger merged CSV goes up zipped
 
 
 def months(first: date, last: date) -> list[tuple[date, date]]:
@@ -179,7 +178,7 @@ def merge(folder, work: Path, label: str, wanted, first: date, last: date) -> tu
     df = pd.concat(frames, ignore_index=True)
     out = work / f"MYNTRA {label} ALL ACCOUNTS {tag(first)} TO {tag(last)}.csv"
     df.to_csv(out, index=False)
-    if out.stat().st_size > RELAY_MAX:
+    if out.stat().st_size > ZIP_OVER:
         z = out.with_suffix(".zip")
         with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as f:
             f.write(out, out.name)

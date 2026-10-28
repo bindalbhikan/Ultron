@@ -22,7 +22,7 @@ is in `docs/bots/`, the outside systems in `docs/PORTALS.md`.
                                                       ├──▶ portals: Myntra, AJIO, Flipkart,
                                                       │    SRM, OMSGuru, ERP, couriers, VMS
                                                       └──▶ Google Drive: workbooks (service
-                                                           account; new files via the relay)
+                                                           account; new files via OAuth)    
  Dashboard worker  bindal-dashboard  reads KV "DASH" (sign-in link from /dashboard)
 ```
 
@@ -36,9 +36,9 @@ is in `docs/bots/`, the outside systems in `docs/PORTALS.md`.
   (`ARTIFACT_KEY`); read them with `python scripts/github/run_output.py <run id>`.
 * **Storage = Google Drive.** Each working keeps its workbook / folder on Drive and updates it
   in place (Drive keeps old versions). The Google service account can update files but **cannot
-  create files** in a personal Drive; new files go through the Apps Script relay
-  (`scripts/drive/drive_relay.gs`, `DRIVE_RELAY_URL` / `DRIVE_RELAY_TOKEN`) — `DriveFolder.put()` does
-  this by itself. Folders the service account can create.
+  create files** in a personal Drive; with the Drive owner's OAuth refresh token
+  (`GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` / `_REFRESH_TOKEN`, made by `scripts/google/oauth_token.py`)
+  every Drive call runs as the owner, so `DriveFolder.put()` creates new files directly.
 * **Telegram** gets every report, failure (`core/app.py` sends the error) and alert.
 * **Dashboard**: every run posts its numbers to the worker (`/api/push/<key>`, `DASHBOARD_TOKEN`);
   the key must be listed in `DASH_KEYS` in `worker/src/worker.js`.
@@ -52,7 +52,7 @@ src/ultron/workings/
     config.py                 env() / flag() / num(); one .env locally, secrets on GitHub
     app.py                    run_bot(): args, logging, Telegram on failure, dashboard run status
     drive.py                  DriveFile (one workbook, change-checked upload), DriveFolder
-                              (list / download / put by name; new files via the relay)
+                              (list / download / put by name; resumable upload, 3 tries)
     telegram.py, dashboard.py, snapshot.py (sheet pictures), files.py, gauth.py
   portals/                  one client per outside system (docs/PORTALS.md)
     myntra.py  flipkart.py  ajio.py  srm.py  erp.py  omsguru.py  omsguru_returns.py
@@ -71,7 +71,7 @@ agent.toml                  this seller's agent setup: company, channel names, a
 scripts/                    manual tools, one folder per job, each with a README (scripts/README.md):
   myntra/                     myntra_session.py: save a Myntra login (when a session expires)
   github/                     ci_run.sh (every workflow), run_output.py (read a run's encrypted log)
-  drive/                      drive_relay.gs: the Apps Script relay that creates Drive files
+  google/                     oauth_token.py: the Drive owner's OAuth refresh token
   local/                      run_local.bat: run a bot on this PC
 worker/                     Telegram bot + scheduler (Cloudflare);  dashboard/  the dashboard
 docs/                       this file, PORTALS.md, bots/<bot>.md

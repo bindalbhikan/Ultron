@@ -30,9 +30,8 @@ netcap/
 return genra.json
 flipkart cap.json
 fl tax sel report.json
-# the relay script with its token filled in (paste into Apps Script, then delete)
-drive_relay_SETUP.gs
 # Google Drive folder settings
 desktop.ini
 
 .claude/settings.local.json
+client_secret*.json

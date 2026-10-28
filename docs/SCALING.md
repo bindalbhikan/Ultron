@@ -24,7 +24,7 @@ Each phase below can stop the next one from being needed too early. Do them in o
 | Model | Workers AI `gpt-oss-120b`, free daily allocation | about 10,000 neurons/day: roughly 15 watcher checks plus some chat (check); too weak for code changes |
 | Memory, approvals | one JSON document / keys in KV | every chat turn, note and incident is a KV write; one document grows with every seller |
 | Portals | OMSGuru, Myntra (3 accounts), AJIO, Flipkart, ERP, SRM, VMS | OMSGuru list stops near 3,000 rows a window; Myntra refuses the same report twice in 15 minutes and logins last about 30 days |
-| Drive | service account + Apps Script relay for new files | Sheets API about 60 requests/min per user (check); the relay is one script |
+| Drive | service account + the owner's OAuth token for Drive | Sheets API about 60 requests/min per user (check); Drive runs as one owner account |
 | Code | `src/ultron` (seller-neutral) + `src/ultron/workings` (Bindal's) | the workings name Bindal's sheets, accounts and channels |
 
 At Bindal's current volume nothing is near a hard limit. The slow chat answer and the free model

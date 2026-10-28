@@ -11,8 +11,6 @@ someone changed it on Drive in the meantime.
 """
 from __future__ import annotations
 
-import json
-import os
 import logging
 from pathlib import Path
 
@@ -152,12 +150,12 @@ class DriveFolder:
 
     def put(self, src: Path, mime: str = "application/octet-stream") -> str:
         """Upload src under its own name: the file of that name is replaced (same id), else created.
-        A service account cannot create files in a personal Drive (no storage quota): with the
-        owner's OAuth token (gauth.drive_credentials) the file is created directly, else through the
-        Drive relay (scripts/drive/drive_relay.gs, DRIVE_RELAY_URL + _TOKEN)."""
+        A service account cannot create files in a personal Drive (no storage quota): new files
+        need the owner's OAuth token (gauth.drive_credentials, scripts/google/oauth_token.py)."""
         found = self.children().get(src.name)
-        if not found and not oauth_configured() and os.getenv("DRIVE_RELAY_URL", "").strip():
-            return self._relay_create(src, mime)
+        if not found and not oauth_configured():
+            raise DriveError(f"{src.name} cannot be created on Drive: GOOGLE_OAUTH_CLIENT_ID / _SECRET / "
+                             "_REFRESH_TOKEN not set (python scripts/google/oauth_token.py)")
         file_id = self._upload(src, mime, found["id"] if found else None)
         log.info("Uploaded %s to Drive", src.name)
         return file_id
@@ -189,27 +187,3 @@ class DriveFolder:
             log.warning("Drive upload of %s: %s (try %d of 3); trying again", src.name, problem, attempt)
             time.sleep(pause)
         raise AssertionError("unreachable")
-
-    def _relay_create(self, src: Path, mime: str) -> str:
-        import base64
-        import requests
-        import time
-        body = {"token": os.getenv("DRIVE_RELAY_TOKEN", "").strip(), "folderId": self.folder_id, "name": src.name,
-                "mimeType": mime, "data": base64.b64encode(src.read_bytes()).decode()}
-        # Apps Script now and then answers a request with an HTML error page (404 / 5xx) and the
-        # next one works (25 Oct 2026): up to three tries before the file is given up.
-        for attempt, pause in enumerate((5, 15, 0), 1):
-            r = requests.post(os.getenv("DRIVE_RELAY_URL", "").strip(), data=json.dumps(body), timeout=600,
-                              headers={"Content-Type": "application/json"})
-            try:
-                out = r.json()
-                break
-            except ValueError:
-                if not pause:
-                    raise DriveError(f"Drive relay answered HTTP {r.status_code}, not JSON: {r.text[:200]}") from None
-                log.warning("Drive relay answered HTTP %s with a page (try %d of 3); trying again", r.status_code, attempt)
-                time.sleep(pause)
-        if not out.get("ok"):
-            raise DriveError(f"Drive relay could not save {src.name}: {out.get('error')}")
-        log.info("Created %s in Drive (through the relay)", src.name)
-        return out["id"]

@@ -47,10 +47,10 @@ working), **`docs/PORTALS.md`** (every outside system, its API and limits), **`d
   `ajio-tat-bot@storied-port-441507-k7.iam.gserviceaccount.com`, Editor on the folders). Ignored by
   git, as are `output/`, workbooks, CSVs, captures, `myntra_session*.json`, `scripts/*.txt`.
 - GitHub: repository **Secrets** (logins, Drive ids, `GOOGLE_SERVICE_ACCOUNT_JSON`,
-  `DRIVE_RELAY_URL/TOKEN`, `ARTIFACT_KEY`) and **Variables** (tuning). `SPF_DRY_RUN=0` = AJIO SPF
+  `GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN`, `ARTIFACT_KEY`) and **Variables** (tuning). `SPF_DRY_RUN=0` = AJIO SPF
   posts for real. A blank GitHub variable arrives as an empty string and falls back to the default.
 - Cloudflare worker secrets: see `docs/bots/worker-and-dashboard.md`.
-- New Drive files need the relay (the service account cannot create files): `docs/PORTALS.md`.
+- New Drive files need the owner's OAuth token (the service account cannot create files): `docs/PORTALS.md`.
 
 ## Hand-run tools the workings came from (still in their Drive folders)
 

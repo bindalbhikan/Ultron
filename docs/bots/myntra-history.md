@@ -8,7 +8,7 @@ its own 6 h), then `--step merge` (merged files + Telegram summary). Locally `--
   calendar month, into Drive `AGENT WORK/MYNTRA ORDER RETURN REPORTS <FROM> TO <TO>/`:
   `ORDERS/<ACCOUNT>/<ACCOUNT> ORDERS APR-25.csv`, `RETURNS/<ACCOUNT>/...`, and per report one merged
   file of every month and account (`MYNTRA ORDERS ALL ACCOUNTS APR-25 TO SEP-26.csv`, ACCOUNT and
-  MONTH columns first; zipped when over 30 MB, the Drive relay's limit).
+  MONTH columns first; zipped when over 30 MB).
 * A report already on the portal for exactly that month is used; else one is asked for.
 * The portal takes the same report of an account once in 16 minutes (refusals read "Internal
   server error"): six lines (account x report) run side by side, each asks for its next month 16

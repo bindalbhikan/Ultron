@@ -7,7 +7,7 @@ things done by hand, one folder per job. Each folder's README has the steps.
 |---|---|---|
 | [`myntra/`](myntra/README.md) | Telegram says a **Myntra session expired** (MAIN / DBCC / FMCC) | `python scripts/myntra/myntra_session.py` |
 | [`github/`](github/README.md) | You want to **read a run's log or files** (they are encrypted, the repo is public) | `python scripts/github/run_output.py <run id>` |
-| [`drive/`](drive/README.md) | The **Drive relay** stops working, or the relay token is changed | Apps Script, by hand |
+| [`google/`](google/README.md) | Bots cannot create **Drive files** (the OAuth token is missing or revoked) | `python scripts/google/oauth_token.py client_secret.json` |
 | [`local/`](local/README.md) | You want to **run a bot on this PC** instead of GitHub | `python run.py <bot> ...` |
 
 All commands run from the project folder (`G:\My Drive\BINDAL EXPORTS\BOTS\Bindal Exports Bot`)

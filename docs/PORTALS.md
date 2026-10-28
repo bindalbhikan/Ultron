@@ -89,8 +89,8 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 
 * Service account `ajio-tat-bot@storied-port-441507-k7.iam.gserviceaccount.com` needs Editor on
   each folder / workbook. It can update and create folders but **not create files** ("Service
-  Accounts do not have storage quota"): new files go through the relay
-  `scripts/drive/drive_relay.gs` (Apps Script web app "Bindal Bots Drive Relay" in
-  bhikan.serein@gmail.com, Execute as Me, access Anyone, token-checked).
+  Accounts do not have storage quota"): with the Drive owner's OAuth refresh token (`GOOGLE_OAUTH_*`,
+  `scripts/google/oauth_token.py`) Drive is used as the owner, who can create files. Uploads are
+  resumable; a timeout or 5xx is tried three times.
 * `DriveFile.upload()` refuses when the file changed on Drive since it was downloaded.
 * The bot cannot delete files you own: to drop data it overwrites the file (e.g. header-only CSV).
