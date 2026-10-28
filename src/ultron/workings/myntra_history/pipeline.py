@@ -38,7 +38,7 @@ AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT 
 ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 CSV = "text/csv"
 GAP = 16 * 60            # seconds between two requests of the same report of an account
-TRIES = 2           # a refusal after the 16-minute gap is not the cooldown: twice = not kept
+TRIES = 3           # refused 3 times, each 16 minutes after the last request and the last report done: not kept
 RELAY_MAX = 30_000_000   # bytes: a bigger merged CSV goes up zipped
 
 
@@ -86,7 +86,8 @@ class Line(threading.Thread):
             for n, (start, end) in enumerate(ask):
                 got = False
                 for attempt in range(1, TRIES + 1):
-                    self.serve_until(self.next_ok)
+                    while time.time() < self.next_ok:     # a report done meanwhile moves next_ok on
+                        self.serve_until(self.next_ok)
                     try:
                         self.pending.append((start, self.portal.schedule(start, end, self.rid, cooldown_wait=0)))
                         self.next_ok = time.time() + GAP
@@ -125,7 +126,16 @@ class Line(threading.Thread):
                     status = str(job.get("status") or "").upper()
                     if status == "COMPLETED" and job.get("successFile"):
                         self.pending.remove(item)
-                        self.save(start, self.portal.download(job)[1])
+                        # the portal counts its cooldown from the report done, not only from the request
+                        # (28 Oct 2026: every request 16 min after the last, but 7-12 min after it was
+                        # done, was refused)
+                        self.next_ok = max(self.next_ok, time.time() + GAP)
+                        try:
+                            self.save(start, self.portal.download(job)[1])
+                        except Exception as exc:  # noqa: BLE001 - the next months still go
+                            log.exception("%s %s not saved", self.name, tag(start))
+                            self.results["failed"].append((self.account, self.label, tag(start),
+                                                           f"not saved: {str(exc)[:120]}"))
                     elif any(f in status for f in mp.FAILED):
                         self.pending.remove(item)
                         self.results["failed"].append((self.account, self.label, tag(start), f"job {status}"))

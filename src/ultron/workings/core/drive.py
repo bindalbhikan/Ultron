@@ -18,7 +18,7 @@ from pathlib import Path
 
 from google.auth.transport.requests import AuthorizedSession
 
-from .gauth import credentials
+from .gauth import drive_credentials, oauth_configured
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class DriveConflict(DriveError):
 class DriveFile:
     def __init__(self, file_id: str, http: AuthorizedSession | None = None):
         self.file_id = file_id
-        self.http = http or AuthorizedSession(credentials(SCOPES))
+        self.http = http or AuthorizedSession(drive_credentials(SCOPES))
         self.meta: dict = {}
 
     def _check(self, r, what: str):
@@ -100,7 +100,7 @@ class DriveFolder:
 
     def __init__(self, folder_id: str, http: AuthorizedSession | None = None):
         self.folder_id = folder_id
-        self.http = http or AuthorizedSession(credentials(SCOPES))
+        self.http = http or AuthorizedSession(drive_credentials(SCOPES))
 
     def _check(self, r, what: str):
         if not r.ok:
@@ -152,27 +152,43 @@ class DriveFolder:
 
     def put(self, src: Path, mime: str = "application/octet-stream") -> str:
         """Upload src under its own name: the file of that name is replaced (same id), else created.
-        A service account cannot create files in a personal Drive (no storage quota), so a new
-        file goes through the Drive relay (scripts/drive/drive_relay.gs, DRIVE_RELAY_URL + _TOKEN)."""
+        A service account cannot create files in a personal Drive (no storage quota): with the
+        owner's OAuth token (gauth.drive_credentials) the file is created directly, else through the
+        Drive relay (scripts/drive/drive_relay.gs, DRIVE_RELAY_URL + _TOKEN)."""
         found = self.children().get(src.name)
-        if not found and os.getenv("DRIVE_RELAY_URL", "").strip():
+        if not found and not oauth_configured() and os.getenv("DRIVE_RELAY_URL", "").strip():
             return self._relay_create(src, mime)
-        if found:
-            r = self.http.patch(f"{UPLOAD}/{found['id']}", data=src.read_bytes(), timeout=600,
-                                params={"uploadType": "media", "supportsAllDrives": "true", "fields": "id"},
-                                headers={"Content-Type": mime})
-        else:
-            boundary = "bindalbotsboundary"
-            meta = json.dumps({"name": src.name, "parents": [self.folder_id]})
-            body = (f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{meta}\r\n"
-                    f"--{boundary}\r\nContent-Type: {mime}\r\n\r\n").encode() + src.read_bytes() + \
-                f"\r\n--{boundary}--".encode()
-            r = self.http.post(UPLOAD, data=body, timeout=600,
-                               params={"uploadType": "multipart", "supportsAllDrives": "true", "fields": "id"},
-                               headers={"Content-Type": f"multipart/related; boundary={boundary}"})
-        file_id = self._check(r, f"upload of {src.name}").json()["id"]
+        file_id = self._upload(src, mime, found["id"] if found else None)
         log.info("Uploaded %s to Drive", src.name)
         return file_id
+
+    def _upload(self, src: Path, mime: str, file_id: str | None) -> str:
+        """A resumable upload: replaces file_id's content, or creates src.name in this folder.
+        A timeout or a 5xx answer is tried again (three tries)."""
+        import time
+        meta = {} if file_id else {"name": src.name, "parents": [self.folder_id]}
+        params = {"uploadType": "resumable", "supportsAllDrives": "true", "fields": "id"}
+        for attempt, pause in enumerate((10, 30, 0), 1):
+            try:
+                if file_id:
+                    r = self.http.patch(f"{UPLOAD}/{file_id}", params=params, json=meta, timeout=60,
+                                        headers={"X-Upload-Content-Type": mime})
+                else:
+                    r = self.http.post(UPLOAD, params=params, json=meta, timeout=60,
+                                       headers={"X-Upload-Content-Type": mime})
+                self._check(r, f"upload start of {src.name}")
+                r = self.http.put(r.headers["Location"], data=src.read_bytes(), timeout=900,
+                                  headers={"Content-Type": mime})
+                if r.status_code < 500:
+                    return self._check(r, f"upload of {src.name}").json()["id"]
+                problem = f"HTTP {r.status_code}"
+            except (OSError, ConnectionError) as exc:   # requests' timeouts and dropped connections
+                problem = f"{type(exc).__name__}: {str(exc)[:120]}"
+            if not pause:
+                raise DriveError(f"Drive upload of {src.name} failed 3 times: {problem}")
+            log.warning("Drive upload of %s: %s (try %d of 3); trying again", src.name, problem, attempt)
+            time.sleep(pause)
+        raise AssertionError("unreachable")
 
     def _relay_create(self, src: Path, mime: str) -> str:
         import base64

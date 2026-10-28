@@ -45,6 +45,9 @@ jobs:
       # new Drive files are created through the Apps Script relay (service accounts have no Drive storage)
       DRIVE_RELAY_URL: ${{ secrets.DRIVE_RELAY_URL }}
       DRIVE_RELAY_TOKEN: ${{ secrets.DRIVE_RELAY_TOKEN }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
       DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}

@@ -48,6 +48,9 @@ jobs:
       # new Drive files are created through the Apps Script relay (service accounts have no Drive storage)
       DRIVE_RELAY_URL: ${{ secrets.DRIVE_RELAY_URL }}
       DRIVE_RELAY_TOKEN: ${{ secrets.DRIVE_RELAY_TOKEN }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
       # the Myntra sessions are read from the worker with the dashboard token
