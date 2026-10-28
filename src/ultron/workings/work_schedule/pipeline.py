@@ -1,8 +1,8 @@
 """Agent work schedule: Drive AGENT WORK/AGENT REPORT WORK SCHEDULE REPORT.xlsx.
 
-SCHEDULE: every scheduled bot task (SR, TASK NAME, TIME, DAILY/WEEKLY), the same list as SCHEDULE in
-worker/src/worker.js. One sheet a month (OCT-26): the same columns, then a column per day of the
-month with a check box on the days the task is due: ☑ once the task's GitHub workflow ran
+SCHEDULE: every scheduled bot task A to Z (SR, TASK NAME, TIME, DAILY/WEEKLY, WORK = what it does),
+the same list as SCHEDULE in worker/src/worker.js. One sheet a month (OCT-26): the same columns, a
+column per day of the month and WORK last, with a check box on the days the task is due: ☑ once the task's GitHub workflow ran
 successfully for that slot, ☐ while it has not (red once the day is over).
 
 Filled from the GitHub Actions run history, not by the bots themselves: work-schedule.yml runs after
@@ -32,7 +32,7 @@ AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT 
 WORKBOOK = "AGENT REPORT WORK SCHEDULE REPORT.xlsx"
 IST = timezone(timedelta(hours=5, minutes=30))
 DONE, DUE = "☑", "☐"
-COLUMNS = ["SR", "TASK NAME", "TIME", "DAILY/WEEKLY"]
+COLUMNS = ["SR", "TASK NAME", "TIME", "DAILY/WEEKLY"]   # then the days, then WORK
 DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 
 
@@ -94,6 +94,38 @@ TASKS = [
     Task("Evening summary", "evening.yml", _at(20), "DAILY"),
     Task("OMSGuru inventory push", "inv-push.yml", tuple(h * 60 for h in range(6, 28, 3)), "DAILY (8 times)"),
 ]
+TASKS.sort(key=lambda t: (t.name.upper(), t.slots[0]))   # the sheets list them A to Z
+
+# the WORK column: what each task does
+WORK = {
+    "AJIO Ads / TOT gap": "AJIO statement: G4 ads amount vs TOT marketing charge per month, saved in Ajio Ads Gap Working",
+    "AJIO Ads / TOT gap (if missed)": "Same AJIO Ads / TOT gap report, only if the 3rd did not save it",
+    "AJIO SPF (tickets + replies)": "AJIO SPF master updated, SPF claim tickets raised and replies posted on AJIO",
+    "AJIO SPF master update": "AJIO SPF master (returns, claims) updated, nothing posted on AJIO",
+    "AJIO TAT daily update": "AJIO dispatch TAT master (processing / pickup on time), pickup pending list, courier pickup tickets",
+    "Daily sale report": "Gross / return / cancel / net sale per channel into SALE REPORT.xlsx, Telegram day + month table",
+    "Dead stock report": "Styles with stock but no sale in 90 days, and slow movers (Telegram)",
+    "Evening summary": "Today's sale so far vs last week, orders still not ready to ship, today's bot runs (Telegram)",
+    "Label check": "ERP label prints checked vs OMSGuru: labels printed for cancelled orders, missing prints (Telegram)",
+    "Listing health": "Stock not reaching a channel, or listed more than in stock (Telegram)",
+    "Monthly MIS": "Last month vs the month before per channel: order value, units, cancel % (Telegram)",
+    "Morning report": "Yesterday's sale in units per channel vs the same day last week, cancels (Telegram)",
+    "Myntra SPF master": "Myntra SPF master (MAIN / DBCC / FMCC returns, claims) updated from the portal reports",
+    "Myntra SPF report request": "Asks the Myntra portal for the SPF reports (returns, return delivery) for the 9 AM master",
+    "Myntra VMS report": "Myntra orders vs VMS packing scans per SLA date, ERP vs VMS sheets in the VMS workbook",
+    "Myntra courier OTP": "Today's Myntra courier pickup / return OTPs of the warehouses (Telegram)",
+    "Myntra courier OTP retry": "OTPs again for couriers that had no trip at 10 AM (sent only when a new code came)",
+    "Myntra courier scorecard": "Myntra pickups on time per account and courier, last 7 days (Telegram)",
+    "Myntra daily reports": "Myntra orders, returns, return delivery and listings reports saved in MYNTRA DAILY REPORTS; return delivery workbook (PPMP only)",
+    "Myntra zero TD": "Styles of the ZERO TD sheet live on myntra.com with stock and selling at MRP; sheet on Telegram and in MYNTRA ZERO TD SHEETS",
+    "OMSGuru inventory push": "Pushes the inventory to every channel with inventory sync on in OMSGuru",
+    "Return analysis": "Monthly + yearly return analysis report of all channels",
+    "Return analysis report request": "Asks Myntra and Flipkart for the reports the 2 PM return analysis needs",
+    "SJIT report request": "Asks Myntra for the SJIT orders report used by the 3:30 PM daily sale",
+    "SLA warning": "Orders due today or past their SLA and still not ready to ship, per channel (Telegram)",
+    "Stock-out alert": "SKUs out of stock or running out within 3 days at the last 14 days' sale (Telegram)",
+    "Weekly review": "This week vs last week per channel, top / falling styles, packers' label prints (Telegram)",
+}
 
 
 # ------------------------------------------------------------------ GitHub run history
@@ -169,13 +201,13 @@ def write_schedule(wb) -> None:
         if name in wb.sheetnames and wb[name].max_row == 1 and wb[name]["A1"].value is None:
             del wb[name]
     ws = wb.create_sheet("SCHEDULE", 0)
-    ws.append(COLUMNS)
+    ws.append(COLUMNS + ["WORK"])
     for n, t in enumerate(TASKS, 1):
-        ws.append([n, t.name, t.time, t.every])
+        ws.append([n, t.name, t.time, t.every, WORK.get(t.name, "")])
     head = PatternFill("solid", fgColor="1F4E78")
     for c in ws[1]:
         c.font, c.fill, c.alignment = Font(bold=True, color="FFFFFF"), head, Alignment(horizontal="center")
-    for col, width in zip("ABCD", (6, 34, 26, 22)):
+    for col, width in zip("ABCDE", (6, 34, 26, 22, 110)):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A2"
 
@@ -193,8 +225,8 @@ def write_month(wb, month: date, done: set, now: datetime, since: dict[str, date
     ws.append([f"AGENT WORK SCHEDULE · {month:%B %Y}".upper()])
     ws.append([f"{DONE} done (the bot ran successfully)   {DUE} not done yet   red = missed   blank = not due that day"
                f"   ·   updated {now:%d-%m-%y %I:%M %p}"])
-    ws.append(COLUMNS + [d.day for d in days])
-    ws.append([""] * len(COLUMNS) + [DAYS[d.weekday()] for d in days])
+    ws.append(COLUMNS + [d.day for d in days] + ["WORK"])
+    ws.append([""] * len(COLUMNS) + [DAYS[d.weekday()] for d in days] + [""])
     green, red, grey = (PatternFill("solid", fgColor=c) for c in ("C6EFCE", "FFC7CE", "F2F2F2"))
     for n, t in enumerate(TASKS):
         row = [n + 1, t.name, t.time, t.every]
@@ -202,7 +234,7 @@ def write_month(wb, month: date, done: set, now: datetime, since: dict[str, date
             ok = all((n, d, k) in done for k in range(len(t.slots)))
             began = datetime.combine(d, time()) + timedelta(minutes=t.slots[0]) >= since.get(t.workflow, datetime.max)
             row.append("" if not t.due(d) or not (ok or began) else DONE if ok else DUE)
-        ws.append(row)
+        ws.append(row + [WORK.get(t.name, "")])
         r = ws.max_row
         for j, d in enumerate(days):
             c = ws.cell(r, len(COLUMNS) + 1 + j)
@@ -228,6 +260,7 @@ def write_month(wb, month: date, done: set, now: datetime, since: dict[str, date
         ws.column_dimensions[col].width = width
     for j in range(len(days)):
         ws.column_dimensions[get_column_letter(len(COLUMNS) + 1 + j)].width = 5
+    ws.column_dimensions[get_column_letter(len(COLUMNS) + len(days) + 1)].width = 110
     ws.freeze_panes = ws.cell(5, len(COLUMNS) + 1)
 
 

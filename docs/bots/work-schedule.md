@@ -5,7 +5,8 @@ the inventory push, whose runs the next update counts). By hand: run the workflo
 YYYY-MM rebuilds that month).
 
 * Drive `BINDAL EXPORTS/AGENT WORK/AGENT REPORT WORK SCHEDULE REPORT.xlsx`:
-  * **SCHEDULE**: every scheduled task, SR / TASK NAME / TIME / DAILY/WEEKLY. The list is `TASKS`
+  * **SCHEDULE**: every scheduled task A to Z, SR / TASK NAME / TIME / DAILY/WEEKLY / WORK (what it
+    does, `WORK` in the pipeline; the month sheets have WORK as their last column). The list is `TASKS`
     in `work_schedule/pipeline.py`, the same as `SCHEDULE` in `worker/src/worker.js`: a new
     scheduled task goes in both.
   * **One sheet a month** (`OCT-26`): the same columns, then a column per day. A box on each day
