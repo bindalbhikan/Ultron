@@ -205,9 +205,12 @@ def write_schedule(wb) -> None:
     for n, t in enumerate(TASKS, 1):
         ws.append([n, t.name, t.time, t.every, WORK.get(t.name, "")])
     head = PatternFill("solid", fgColor="1F4E78")
+    for row in ws.iter_rows():   # all left-aligned (the layout set by hand on 28 Oct 2026)
+        for c in row:
+            c.alignment = Alignment(horizontal="left")
     for c in ws[1]:
-        c.font, c.fill, c.alignment = Font(bold=True, color="FFFFFF"), head, Alignment(horizontal="center")
-    for col, width in zip("ABCDE", (6, 34, 26, 22, 110)):
+        c.font, c.fill = Font(bold=True, color="FFFFFF"), head
+    for col, width in zip("ABCDE", (3.1, 28.3, 24.7, 20, 110)):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A2"
 
@@ -222,9 +225,7 @@ def write_month(wb, month: date, done: set, now: datetime, since: dict[str, date
         del wb[name]
     ws = wb.create_sheet(name, 1 + at.index(name))
     days = [month + timedelta(days=i) for i in range(31) if (month + timedelta(days=i)).month == month.month]
-    ws.append([f"AGENT WORK SCHEDULE · {month:%B %Y}".upper()])
-    ws.append([f"{DONE} done (the bot ran successfully)   {DUE} not done yet   red = missed   blank = not due that day"
-               f"   ·   updated {now:%d-%m-%y %I:%M %p}"])
+    # header in row 1, weekdays in row 2, tasks from row 3 (no title rows: the layout set by hand on 28 Oct 2026)
     ws.append(COLUMNS + [d.day for d in days] + ["WORK"])
     ws.append([""] * len(COLUMNS) + [DAYS[d.weekday()] for d in days] + [""])
     green, red, grey = (PatternFill("solid", fgColor=c) for c in ("C6EFCE", "FFC7CE", "F2F2F2"))
@@ -248,20 +249,18 @@ def write_month(wb, month: date, done: set, now: datetime, since: dict[str, date
                 c.fill = grey
     head = PatternFill("solid", fgColor="1F4E78")
     thin = Side(style="thin", color="BFBFBF")
-    for r in (3, 4):
+    for r in (1, 2):
         for c in ws[r]:
             c.font, c.fill, c.alignment = Font(bold=True, color="FFFFFF", size=9), head, Alignment(horizontal="center")
-    for row in ws.iter_rows(min_row=3, max_row=ws.max_row):
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
         for c in row:
             c.border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"].font = Font(italic=True, size=9, color="595959")
-    for col, width in zip("ABCD", (5, 32, 24, 20)):
+    for col, width in zip("ABCD", (3, 28.3, 24.7, 20)):
         ws.column_dimensions[col].width = width
     for j in range(len(days)):
         ws.column_dimensions[get_column_letter(len(COLUMNS) + 1 + j)].width = 5
     ws.column_dimensions[get_column_letter(len(COLUMNS) + len(days) + 1)].width = 110
-    ws.freeze_panes = ws.cell(5, len(COLUMNS) + 1)
+    ws.freeze_panes = ws.cell(3, len(COLUMNS) + 1)
 
 
 def build(path: Path, months: list[date], now: datetime) -> dict:

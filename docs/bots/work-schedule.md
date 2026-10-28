@@ -9,7 +9,9 @@ YYYY-MM rebuilds that month).
     does, `WORK` in the pipeline; the month sheets have WORK as their last column). The list is `TASKS`
     in `work_schedule/pipeline.py`, the same as `SCHEDULE` in `worker/src/worker.js`: a new
     scheduled task goes in both.
-  * **One sheet a month** (`OCT-26`): the same columns, then a column per day. A box on each day
+  * **One sheet a month** (`OCT-26`): the same columns, then a column per day (header row 1,
+    weekdays row 2, tasks from row 3, no title rows; SCHEDULE left-aligned: the layout set by hand
+    on 28 Oct 2026, kept by every update). A box on each day
     the task is due: ☑ (green) once its workflow ran successfully, ☐ while not, red once the day's
     slot is 12 h (`SLOT_HOURS`) past, grey = not due that day.
 * Filled from the GitHub Actions run history, not by the bots: one writer (runs queue in the
