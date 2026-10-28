@@ -1,0 +1,91 @@
+name: Myntra order + return history
+
+on:
+  # By hand: Myntra Seller_Orders_Report + Seller_Returns_Report, one per month and account, into
+  # Drive AGENT WORK/MYNTRA ORDER RETURN REPORTS <FROM> TO <TO>, plus one merged file per report.
+  # One job per account x report (each its own 6 h), then the merge. Months already saved there
+  # are skipped: a run cut short is simply started again.
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "first month YYYY-MM"
+        default: "2025-04"
+      to:
+        description: "last month YYYY-MM"
+        default: "2026-09"
+
+concurrency:
+  group: myntra-history
+  cancel-in-progress: false
+
+env:
+  TZ: Asia/Kolkata
+  RUN_MODE: github-actions
+  # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+  ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  # the Myntra sessions are read from the worker with the dashboard token
+  DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+  DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+  # Drive AGENT WORK folder; new files go through the Drive relay
+  GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+  DRIVE_RELAY_URL: ${{ secrets.DRIVE_RELAY_URL }}
+  DRIVE_RELAY_TOKEN: ${{ secrets.DRIVE_RELAY_TOKEN }}
+  AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+  IN_FROM: ${{ inputs.from }}
+  IN_TO: ${{ inputs.to }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Drive folders
+        run: bash scripts/github/ci_run.sh myntra-history --step prepare --from "$IN_FROM" --to "$IN_TO"
+
+  fetch:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 355   # GitHub's own runners stop a job at 6 h
+    strategy:
+      fail-fast: false
+      matrix:
+        account: [MAIN, DBCC, FMCC]
+        report: [ORDERS, RETURNS]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: ${{ matrix.account }} ${{ matrix.report }}
+        run: >-
+          bash scripts/github/ci_run.sh myntra-history --step fetch --from "$IN_FROM" --to "$IN_TO"
+          --accounts ${{ matrix.account }} --reports ${{ matrix.report }}
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: myntra-history-${{ matrix.account }}-${{ matrix.report }}-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 3
+
+  merge:
+    needs: [prepare, fetch]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Merge + Telegram
+        run: bash scripts/github/ci_run.sh myntra-history --step merge --from "$IN_FROM" --to "$IN_TO"
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: myntra-history-merge-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 3

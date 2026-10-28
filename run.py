@@ -40,7 +40,8 @@ BOTS = {"sale": "ultron.workings.sale.pipeline", "vms": "ultron.workings.vms.pip
         "mis": "ultron.workings.mis.pipeline", "myntra-otp": "ultron.workings.myntra_otp.pipeline",
         "myntra-reports": "ultron.workings.myntra_reports.pipeline",
         "myntra-zero-td": "ultron.workings.myntra_zero_td.pipeline",
-        "work-schedule": "ultron.workings.work_schedule.pipeline"}
+        "work-schedule": "ultron.workings.work_schedule.pipeline",
+        "myntra-history": "ultron.workings.myntra_history.pipeline"}
 
 
 def main(argv: list[str]) -> int:
