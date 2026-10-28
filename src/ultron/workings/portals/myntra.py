@@ -279,9 +279,19 @@ class MyntraPortal:
         return [{"courier": o.get("courierCode"), "otc": o.get("otc"),
                  "message": (o.get("status") or {}).get("statusMessage")} for o in data.get("otcDetails") or []]
 
-    def jobs(self, size: int = 50) -> list[dict]:
+    def jobs(self, size: int = 50, start: int = 0) -> list[dict]:
         return self._call("GET", "/report/jobs/search",
-                          params={"fetchSize": size, "sortBy": "id", "sortOrder": "desc", "start": 0}).get("data") or []
+                          params={"fetchSize": size, "sortBy": "id", "sortOrder": "desc", "start": start}).get("data") or []
+
+    def all_jobs(self, page: int = 500) -> list[dict]:
+        """The account's whole report job history, newest first (MAIN had 2,169 jobs back to
+        Jan 2024 on 28 Oct 2026; reports of a year ago still download)."""
+        out: list[dict] = []
+        while True:
+            got = self.jobs(page, len(out))
+            out += got
+            if len(got) < page:
+                return out
 
     def schedule(self, start: date | None, end: date | None, report_id: int = REPORT_ID,
                  cooldown_wait: int = COOLDOWN_MINUTES) -> dict:

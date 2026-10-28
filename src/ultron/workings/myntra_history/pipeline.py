@@ -38,7 +38,6 @@ ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 CSV = "text/csv"
 GAP = 16 * 60            # seconds between two requests of the same report of an account
 TRIES = 3           # refused 3 times, each 16 minutes after the last request and the last report done: not kept
-HISTORY_JOBS = 1000      # report jobs read from the portal's history (the newest 200 miss last year's)
 ZIP_OVER = 30_000_000    # bytes: a bigger merged CSV goes up zipped
 
 
@@ -73,7 +72,7 @@ class Line(threading.Thread):
             self.portal = myntra_portal(self.account)
             # the whole job history: full-month reports asked for by hand a year ago are still
             # downloadable, and the portal no longer makes months that old (28 Oct 2026)
-            jobs, ask = self.portal.jobs(HISTORY_JOBS), []
+            jobs, ask = self.portal.all_jobs(), []
             for start, end in self.wanted:      # reports already on the portal first, for every month
                 job = mp.exact_job(jobs, self.rid, start, end)
                 if job and not any(f in str(job.get("status", "")).upper() for f in mp.FAILED):
