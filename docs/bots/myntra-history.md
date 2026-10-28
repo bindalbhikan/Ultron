@@ -12,6 +12,8 @@ its own 6 h), then `--step merge` (merged files + Telegram summary). Locally `--
 * A report already on the portal for exactly that month is used; else one is asked for.
 * The portal takes the same report of an account once in 16 minutes (refusals read "Internal
   server error"): six lines (account x report) run side by side, each asks for its next month 16
-  minutes after the last and downloads what is ready meanwhile. A month refused 3 times is skipped
-  and listed on Telegram (Apr-25 was refused on 28 Oct 2026: older than the portal keeps?).
+  minutes after the last and downloads what is ready meanwhile. Months are asked for newest first;
+  a month refused twice (16 minutes apart, so not the cooldown) is older than the portal keeps, and
+  so is every older one: the line stops there and lists them on Telegram (28 Oct 2026: Apr-25 and
+  May-25 refused, Jul-25 given; asked oldest first, the first run spent 1.5 h on those refusals).
 * Months already in the Drive folder are skipped: a run stopped by GitHub's 6 h limit is run again.

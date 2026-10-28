@@ -38,7 +38,7 @@ AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT 
 ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 CSV = "text/csv"
 GAP = 16 * 60            # seconds between two requests of the same report of an account
-TRIES = 3
+TRIES = 2           # a refusal after the 16-minute gap is not the cooldown: twice = not kept
 RELAY_MAX = 30_000_000   # bytes: a bigger merged CSV goes up zipped
 
 
@@ -79,12 +79,18 @@ class Line(threading.Thread):
                     self.pending.append((start, job))
                 else:
                     ask.append((start, end))
-            for start, end in ask:
+            # newest month first: a month the portal no longer keeps is refused, and so is every
+            # older one, so the line stops there instead of spending 16 minutes a try on each
+            # (28 Oct 2026: Apr-25 and May-25 refused, Jul-25 given)
+            ask.sort(reverse=True)
+            for n, (start, end) in enumerate(ask):
+                got = False
                 for attempt in range(1, TRIES + 1):
                     self.serve_until(self.next_ok)
                     try:
                         self.pending.append((start, self.portal.schedule(start, end, self.rid, cooldown_wait=0)))
                         self.next_ok = time.time() + GAP
+                        got = True
                         break
                     except Exception as exc:  # noqa: BLE001
                         if isinstance(exc, mp.SessionExpired):
@@ -92,9 +98,13 @@ class Line(threading.Thread):
                         self.next_ok = time.time() + GAP
                         log.warning("%s %s refused (try %d of %d): %s", self.name, tag(start), attempt, TRIES,
                                     str(exc)[:120])
-                        if attempt == TRIES:
-                            self.results["failed"].append((self.account, self.label, tag(start),
-                                                           "not given by the portal (too old?)"))
+                if not got:
+                    older = [tag(s) for s, _ in ask[n:]]
+                    log.warning("%s: %s refused %d times, not asking for older months (%s)", self.name,
+                                tag(start), TRIES, ", ".join(older))
+                    self.results["failed"] += [(self.account, self.label, m, "not given by the portal (too old?)")
+                                               for m in older]
+                    break
             self.serve_until(time.time() + num("MYNTRA_HISTORY_WAIT_MINUTES", 90) * 60, all_done=True)
             for start, job in self.pending:
                 self.results["failed"].append((self.account, self.label, tag(start), f"job {job.get('id')} not ready"))
