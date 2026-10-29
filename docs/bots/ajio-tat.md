@@ -10,6 +10,9 @@
 
 * **10:10 rule**: orders from yesterday 10:00 to today 10:00 must be processed and picked up today
   (before 10:00: due the order date; from 10:00: the next day).
+  Processing is on time when ready (RTS) by the END of the due date; the pickup is due by the
+  courier's pickup time that day (Promise Ship Date). Until 29 Oct 2026 processing was held to the
+  pickup time too, so an order after 10 AM processed the next afternoon read Late.
 * OMSGuru order pages (only orders new or still open) + courier tracking for AWBs whose pickup is
   not confirmed: Process / Pickup status, TAT Result (CORRECT / NOT CORRECT / CHECK / PENDING /
   CANCELLED).

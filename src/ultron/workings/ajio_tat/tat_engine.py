@@ -306,11 +306,15 @@ def apply_status(df, as_of):
     today = pd.Timestamp(as_of).normalize()
 
     def proc_flag(r, dl):
+        # processing is due by the END of the due date (10:10 rule); only the pickup is due by the
+        # courier's pickup time (Promise Ship Date). Until 29 Oct 2026 processing was held to the
+        # pickup time too: an order after 10 AM processed the next afternoon read "Late".
+        due = dl.normalize() + pd.Timedelta(hours=23, minutes=59, seconds=59) if pd.notna(dl) else dl
         if pd.isna(r["RTS Time"]):
             if pd.isna(r["Pickup Time"]):
                 return "Not Processed"
-            return "On Time" if r["Pickup Time"] <= dl else "Late"  # picked => was processed
-        return "On Time" if r["RTS Time"] <= dl else "Late"
+            return "On Time" if r["Pickup Time"] <= due else "Late"  # picked => was processed
+        return "On Time" if r["RTS Time"] <= due else "Late"
 
     def pickup_flag(r, dl):
         if pd.notna(r["Pickup Time"]):
