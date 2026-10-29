@@ -23,8 +23,8 @@ old versions under "Manage versions"), and Drive for desktop syncs it into the p
 
 | Bot | Result workbook |
 |---|---|
-| Sale | `G:\My Drive\BINDAL EXPORTS\DAILY SALE REPORT BINDAL\SALE REPORT.xlsx` (`SALE_DRIVE_FILE_ID`) |
-| VMS | `G:\My Drive\BINDAL EXPORTS\VMS\MYNTRA ORDER ID WISE VMS.xlsx` (`VMS_DRIVE_FILE_ID`) |
+| Sale | `G:\My Drive\BINDAL EXPORTS\AGENT WORK\SALE\DAILY SALE REPORT BINDAL\SALE REPORT.xlsx` (`SALE_DRIVE_FILE_ID`) |
+| VMS | `G:\My Drive\BINDAL EXPORTS\AGENT WORK\MYNTRA\VMS\MYNTRA ORDER ID WISE VMS.xlsx` (`VMS_DRIVE_FILE_ID`) |
 | AJIO SPF | `G:\My Drive\BINDAL EXPORTS\SPF\AJIO\AJIO MASTER.xlsx` (`SPF_MASTER_DRIVE_FILE_ID`) |
 | AJIO TAT | `AJIO_TAT_MASTER.xlsx` on Drive (`TAT_DRIVE_FILE_ID`) |
 

@@ -3,7 +3,7 @@
 On the 3rd of every month at 9 AM (worker cron), and again on the 5th when the 3rd's run did
 not save the report (--if-missing). The SRM statement of accounts (the AJIO vendor ledger)
 from STATEMENT_FROM to yesterday is fetched, the hand-run tool's rules build the single-sheet
-report (engine.py, unchanged), and it goes to Drive AJIO/Ajio Ads Gap Working/output/
+report (engine.py, unchanged), and it goes to Drive AGENT WORK/AJIO/Ajio Ads Gap Working/output/
 AJIO_Simple_Monthly_G4_Charges.xlsx (replaced in place), with a Telegram table.
 """
 from __future__ import annotations
@@ -87,7 +87,7 @@ def summary_text(rows: list[list], start: date, end: date, n: int) -> str:
     return "\n".join([f"📣 <b>AJIO ads / TOT gap</b>",
                       f"<i>SRM statement {start:%d %b %Y} - {end:%d %b %Y}, {n} lines</i>", "",
                       "<pre>" + telegram.esc("\n".join(lines)) + "</pre>", "",
-                      "📁 Drive: AJIO / Ajio Ads Gap Working / output"])
+                      "📁 Drive: AGENT WORK / AJIO / Ajio Ads Gap Working / output"])
 
 
 def run(args) -> int:

@@ -1,6 +1,6 @@
 """AJIO ads / TOT gap working.
 
-The hand-run tool AJIO/Ajio Ads Gap Working/main.py, unchanged except that its folder can be set
+The hand-run tool AGENT WORK/AJIO/Ajio Ads Gap Working/main.py, unchanged except that its folder can be set
 with AJIO_ADS_DIR; the bot (bindal/ajio_ads/pipeline.py) fetches the statement from SRM.
 
 Reads the latest statement of account from ./input and writes a single report:
