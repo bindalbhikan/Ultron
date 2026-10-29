@@ -23,7 +23,7 @@ working), **`docs/PORTALS.md`** (every outside system, its API and limits), **`d
 
 ## The agent's folder: Drive `BINDAL EXPORTS/AGENT WORK`
 
-Everything the agent works on lives here, kept by portal (since 29 Oct 2026; moved, so every file
+Everything the agent works on lives here, kept by portal, the daily reports together (since 29 Oct 2026; moved, so every file
 and folder kept its Drive id):
 
 ```
@@ -31,9 +31,9 @@ AGENT WORK/
   AGENT REPORT WORK SCHEDULE REPORT.xlsx   the agent's reporting sheet (below)
   AGENT LOGS/<OCT-26>/<29-10-26>/          every run's hyper log
   MYNTRA/   MYNTRA DAILY REPORTS/, MYNTRA DAILY RETURN DELIVERY REPORT.xlsx, MYNTRA ZERO TD UPDATE SHEET.xlsx,
-            MYNTRA ZERO TD SHEETS/, MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../, VMS/
+            MYNTRA ZERO TD SHEETS/, MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../
   AJIO/     Ajio Daily Order Tat Check Working/ (TAT master), Ajio Ads Gap Working/
-  SALE/     DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx)
+  DAILY REPORTING/   DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx), VMS/ (the daily reports in one place)
 ```
 
 A bot that finds its file by name looks in its portal's folder (`AREA = "MYNTRA"` in the Myntra
