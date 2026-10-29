@@ -800,7 +800,7 @@ def run(args) -> int:
         sheet = MasterSheet(sheet_id)
     drive = folder = None
     if not args.no_drive and env("TAT_DRIVE_FOLDER_ID"):
-        # the master lives in a Drive folder (AJIO/Ajio Daily Order Tat Check Working) by name:
+        # the master lives in a Drive folder (AGENT WORK/AJIO/Ajio Daily Order Tat Check Working) by name:
         # updated in place when it is there, created when it is not (e.g. moved or deleted)
         from ..core.drive import DriveFile, DriveFolder
         folder = DriveFolder(env("TAT_DRIVE_FOLDER_ID"))

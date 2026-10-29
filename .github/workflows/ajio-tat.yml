@@ -33,7 +33,7 @@ jobs:
       OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
       OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
       TAT_DRIVE_FILE_ID: ${{ secrets.TAT_DRIVE_FILE_ID }}
-      # the master by name in the Drive folder AJIO/Ajio Daily Order Tat Check Working (wins over the file id)
+      # the master by name in the Drive folder AGENT WORK/AJIO/Ajio Daily Order Tat Check Working (wins over the file id)
       TAT_DRIVE_FOLDER_ID: ${{ secrets.TAT_DRIVE_FOLDER_ID }}
       # ERP packing report: was the AJIO shipping label printed
       ERP_USERNAME: ${{ secrets.ERP_USERNAME }}

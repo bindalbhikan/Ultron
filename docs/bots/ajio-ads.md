@@ -3,7 +3,7 @@
 **When**: 9:00 AM on the 3rd; on the 5th `--if-missing` (only if this month's report is not saved).
 On demand: `/ajioads`.
 
-**Result**: `AJIO/Ajio Ads Gap Working/output/AJIO_Simple_Monthly_G4_Charges.xlsx`
+**Result**: `AGENT WORK/AJIO/Ajio Ads Gap Working/output/AJIO_Simple_Monthly_G4_Charges.xlsx`
 (`AJIO_ADS_FOLDER_ID`): per month the G4 amount (statement, by document month) against the TOT
 marketing charge (by the narration's Roman month), with / without an assumed 18 % GST, and %.
 

@@ -11,7 +11,7 @@ Every bot sends its report to Telegram **@bindal_exports_bot**.
 | AJIO SPF | `python run.py ajio-spf` | AJIO SPF claims: raise tickets + Gemini-drafted follow-ups, rebuilds `AJIO MASTER.xlsx` | master 9:00 AM daily; tickets + replies only Wed + Sat |
 | Returns | `python run.py returns` | Monthly sale vs return analysis (Myntra MAIN / DBCC / FMCC, Ajio, Flipkart) into `RETURN ANALYSIS/Output/<MON-YY>` on Drive and updates the yearly report `Output/<YYYY>`, Telegram summary | 2:00 PM on the 15th (7:00 AM: report request) |
 | Myntra SPF | `python run.py myntra-spf` | Myntra MAIN / DBCC / FMCC returns with claim aging, tickets, payouts; return received checked in the ERP, then OMSGuru, then the manual sheet; `SPF/MYNTRA/MYNTRA SPF MASTER.xlsx` | 9:00 AM (7:00 AM: report request) |
-| AJIO Ads gap | `python run.py ajio-ads` | Monthly G4 vs TOT marketing charge from the SRM statement, `AJIO/Ajio Ads Gap Working/output/AJIO_Simple_Monthly_G4_Charges.xlsx` | 9:00 AM on the 3rd (again on the 5th if missed) |
+| AJIO Ads gap | `python run.py ajio-ads` | Monthly G4 vs TOT marketing charge from the SRM statement, `AGENT WORK/AJIO/Ajio Ads Gap Working/output/AJIO_Simple_Monthly_G4_Charges.xlsx` | 9:00 AM on the 3rd (again on the 5th if missed) |
 
 `python run.py <bot> --help` lists each bot's options (back-fill dates, `--no-telegram`,
 `--no-drive`, `--snapshot`, ...).

@@ -4,7 +4,7 @@
 7:00 AM `--sjit-request` asks Myntra for the SJIT report. On demand: `/sale`, `/sale today`,
 `/sale FROM TO`, `/salepic [YYYY-MM]` (sheet picture).
 
-**Result**: `DAILY SALE REPORT BINDAL/SALE REPORT.xlsx` (`SALE_DRIVE_FILE_ID`), one sheet per month
+**Result**: `AGENT WORK/SALE/DAILY SALE REPORT BINDAL/SALE REPORT.xlsx` (`SALE_DRIVE_FILE_ID`), one sheet per month
 (blocks per channel, rows GROSS / RETURN / Cancel / NET per day), Telegram day + month table.
 
 **Sources**

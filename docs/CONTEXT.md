@@ -85,4 +85,4 @@ detailed **hyper log** is kept on Drive in `AGENT WORK/AGENT LOGS/<month>/<date>
 ## Hand-run tools the workings came from (still in their Drive folders)
 
 `RETURN ANALYSIS/main.py` → returns · `SPF/MYNTRA/main.py` → myntra-spf · `SPF/AJIO/main.py` →
-ajio-spf (`master_engine.py`) · `AJIO/Ajio Ads Gap Working/main.py` → ajio-ads.
+ajio-spf (`master_engine.py`) · `AGENT WORK/AJIO/Ajio Ads Gap Working/main.py` → ajio-ads.
