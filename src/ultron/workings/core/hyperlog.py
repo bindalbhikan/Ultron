@@ -8,8 +8,8 @@ log goes to Drive:
 
   AGENT WORK/AGENT LOGS/<OCT-26>/<29-10-26>/<BOT> <05.31 PM> <OK|FAIL> #<GitHub run id>.log
 
-(on GitHub always; a local run only with HYPERLOG_UPLOAD=1). The reporting sheet's LOGS tab
-(work_schedule) lists the runs with a link to each log. HYPERLOG=0 turns it off.
+(on GitHub always; a local run only with HYPERLOG_UPLOAD=1). The logs stay on Drive only (no
+sheet lists them). HYPERLOG=0 turns it off.
 """
 from __future__ import annotations
 
