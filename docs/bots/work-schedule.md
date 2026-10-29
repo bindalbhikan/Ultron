@@ -22,10 +22,6 @@ YYYY-MM rebuilds that month).
 * No box before a workflow's first successful run (the repo's history starts 24 Oct 2026, 10:25 PM IST).
 * Only this month's sheet (and SCHEDULE) is rewritten; older month sheets stay as they are. Edits
   made by hand in the current month's sheet are overwritten.
-* **LOGS** tab: every bot run of the last 31 days, newest first (DATE, START, BOT, MINUTES, RESULT,
-  ERROR, HYPER LOG, GITHUB RUN), from the GitHub run history; the agent's own housekeeping runs
-  (Agent watch / chat / work schedule) left out. HYPER LOG links the run's detailed log on Drive;
-  ERROR is read from the log of a failed run.
 
 ## Hyper logs (`core/hyperlog.py`)
 
@@ -36,5 +32,6 @@ size) and a footer (OK / FAIL, exit code, minutes, the full traceback). Password
 cookies, Bearer keys, Telegram bot tokens and long keys are masked first. On GitHub (or locally
 with `HYPERLOG_UPLOAD=1`) it goes to Drive `AGENT WORK/AGENT LOGS/<OCT-26>/<29-10-26>/<BOT>
 <05.31 PM> <OK|FAIL> #<run id>.log` through the owner's OAuth token (every bot workflow has the
-Drive secrets for it). `HYPERLOG=0` turns it off. An upload problem never fails the run.
+Drive secrets for it). `HYPERLOG=0` turns it off. The logs are only on Drive, not in the
+reporting sheet (a LOGS tab there was removed on request, 29 Oct 2026). An upload problem never fails the run.
 

@@ -28,9 +28,9 @@ every scheduled task (SR / TASK NAME / TIME / DAILY/WEEKLY / WORK) and, one shee
 per day ticked ☑ once that task's run succeeded (red = missed). It is rebuilt from the GitHub run
 history after every bot run (`python run.py work-schedule`, `docs/bots/work-schedule.md`). A new
 scheduled task, or a new daily step of a working, goes into `TASKS` / `WORK` in
-`src/ultron/workings/work_schedule/pipeline.py` as well as the worker's `SCHEDULE`. Its **LOGS** tab lists
-every bot run (result, minutes, error) with a link to the run's **hyper log**: the detailed log
-every run keeps on Drive in `AGENT WORK/AGENT LOGS/<month>/<date>/` (`core/hyperlog.py`).
+`src/ultron/workings/work_schedule/pipeline.py` as well as the worker's `SCHEDULE`. Every bot run's
+detailed **hyper log** is kept on Drive in `AGENT WORK/AGENT LOGS/<month>/<date>/`
+(`core/hyperlog.py`), not in this sheet.
 
 ## Rules every working keeps
 
