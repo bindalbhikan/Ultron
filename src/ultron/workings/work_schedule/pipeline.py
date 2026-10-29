@@ -89,6 +89,9 @@ TASKS = [
     Task("Myntra zero TD", "myntra-zero-td.yml", _at(17), "MON-SAT", weekdays=MON_SAT),
     Task("Myntra VMS report", "vms.yml", _at(17, 30), "DAILY"),
     Task("AJIO TAT daily update", "ajio-tat.yml", _at(17, 30), "DAILY"),
+    # two steps of the same AJIO TAT run (ticked with it)
+    Task("AJIO pickup tickets (courier-wise)", "ajio-tat.yml", _at(17, 30), "DAILY"),
+    Task("AJIO Seller Pickup Issue form", "ajio-tat.yml", _at(17, 30), "DAILY"),
     Task("Label check", "labels.yml", _at(18), "DAILY"),
     Task("Myntra courier scorecard", "myntra-tat.yml", _at(18, 30), "DAILY"),
     Task("Evening summary", "evening.yml", _at(20), "DAILY"),
@@ -102,6 +105,8 @@ WORK = {
     "AJIO Ads / TOT gap (if missed)": "Same AJIO Ads / TOT gap report, only if the 3rd did not save it",
     "AJIO SPF (tickets + replies)": "AJIO SPF master updated, SPF claim tickets raised and replies posted on AJIO",
     "AJIO SPF master update": "AJIO SPF master (returns, claims) updated, nothing posted on AJIO",
+    "AJIO pickup tickets (courier-wise)": "One AJIO 'pickup not done' ticket per courier (its pending orders listed + Excel), never twice for an order; follow-up every 24 h",
+    "AJIO Seller Pickup Issue form": "AJIO's Microsoft Form 'Seller Pickup Issue', once a day per courier still not picked up past its deadline",
     "AJIO TAT daily update": "AJIO dispatch TAT master (processing / pickup on time), pickup pending list, courier pickup tickets",
     "Daily sale report": "Gross / return / cancel / net sale per channel into SALE REPORT.xlsx, Telegram day + month table",
     "Dead stock report": "Styles with stock but no sale in 90 days, and slow movers (Telegram)",

@@ -21,6 +21,15 @@ working), **`docs/PORTALS.md`** (every outside system, its API and limits), **`d
 | AJIO ads gap | `python run.py ajio-ads` | G4 vs TOT marketing charge (SRM statement) | 3rd 9 AM (5th if missed) | `docs/bots/ajio-ads.md` |
 | Worker + dashboard | `worker/`, `dashboard/` | Telegram commands, scheduler, dashboard | — | `docs/bots/worker-and-dashboard.md` |
 
+## The agent's reporting sheet
+
+**`AGENT WORK/AGENT REPORT WORK SCHEDULE REPORT.xlsx`** on Drive is the agent's reporting sheet:
+every scheduled task (SR / TASK NAME / TIME / DAILY/WEEKLY / WORK) and, one sheet a month, a box
+per day ticked ☑ once that task's run succeeded (red = missed). It is rebuilt from the GitHub run
+history after every bot run (`python run.py work-schedule`, `docs/bots/work-schedule.md`). A new
+scheduled task, or a new daily step of a working, goes into `TASKS` / `WORK` in
+`src/ultron/workings/work_schedule/pipeline.py` as well as the worker's `SCHEDULE`.
+
 ## Rules every working keeps
 
 - **Data must never be wrong.** A source that fails, or a month whose source data is incomplete
