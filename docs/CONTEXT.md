@@ -21,6 +21,25 @@ working), **`docs/PORTALS.md`** (every outside system, its API and limits), **`d
 | AJIO ads gap | `python run.py ajio-ads` | G4 vs TOT marketing charge (SRM statement) | 3rd 9 AM (5th if missed) | `docs/bots/ajio-ads.md` |
 | Worker + dashboard | `worker/`, `dashboard/` | Telegram commands, scheduler, dashboard | — | `docs/bots/worker-and-dashboard.md` |
 
+## The agent's folder: Drive `BINDAL EXPORTS/AGENT WORK`
+
+Everything the agent works on lives here, kept by portal (since 29 Oct 2026; moved, so every file
+and folder kept its Drive id):
+
+```
+AGENT WORK/
+  AGENT REPORT WORK SCHEDULE REPORT.xlsx   the agent's reporting sheet (below)
+  AGENT LOGS/<OCT-26>/<29-10-26>/          every run's hyper log
+  MYNTRA/   MYNTRA DAILY REPORTS/, MYNTRA DAILY RETURN DELIVERY REPORT.xlsx, MYNTRA ZERO TD UPDATE SHEET.xlsx,
+            MYNTRA ZERO TD SHEETS/, MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../, VMS/
+  AJIO/     Ajio Daily Order Tat Check Working/ (TAT master), Ajio Ads Gap Working/
+  SALE/     DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx)
+```
+
+A bot that finds its file by name looks in its portal's folder (`AREA = "MYNTRA"` in the Myntra
+workings); the others use Drive ids (`SALE_DRIVE_FILE_ID`, `VMS_DRIVE_FILE_ID`,
+`TAT_DRIVE_FOLDER_ID`, `AJIO_ADS_FOLDER_ID`). New agent work goes into the portal's folder.
+
 ## The agent's reporting sheet
 
 **`AGENT WORK/AGENT REPORT WORK SCHEDULE REPORT.xlsx`** on Drive is the agent's reporting sheet:

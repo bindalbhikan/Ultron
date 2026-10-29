@@ -4,7 +4,7 @@
 worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: `/myntrazerotd`, the 🏷 Zero TD
 button on the Myntra menu, or run the workflow. About 1-2 minutes for ~5,900 styles.
 
-* Source: Drive `BINDAL EXPORTS/AGENT WORK/MYNTRA ZERO TD UPDATE SHEET.xlsx`, one tab per account
+* Source: Drive `BINDAL EXPORTS/AGENT WORK/MYNTRA/MYNTRA ZERO TD UPDATE SHEET.xlsx`, one tab per account
   and month (`MAIN-SEP-26`, `DBCC-SEP-26`, `FMCC-SEP-26`; ARTICLE TYPE, BRAND, STYLE ID, MY SKU,
   FINAL SKU, COST, LIQ STYLES). The last tab of each account is read; a new month = a new tab at
   the end. Accounts: `MYNTRA_ZERO_TD_ACCOUNTS` (default MAIN, DBCC, FMCC).
@@ -19,7 +19,7 @@ button on the Myntra menu, or run the workflow. About 1-2 minutes for ~5,900 sty
   once: STYLE ID, SKU (FINAL SKU, else MY SKU), SELLING PRICE), a tab per account (its ZERO TD / PART ZERO TD styles: the sheet's
   columns + STATUS, MRP, SELLING PRICE, SIZES AT MRP, STOCK AT MRP, TOTAL STOCK, SELLER, LINK),
   NOT CHECKED when some had no answer.
-* Drive: the same workbook in `AGENT WORK/MYNTRA ZERO TD SHEETS/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx`.
+* Drive: the same workbook in `AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx`.
 * The buyer side shows a style, not an account: a style id on two account tabs shows the same
   result on both.
 * Runs on the office PC (self-hosted runner BHIKAN-PC, label `bindal-office`, in

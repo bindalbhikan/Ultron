@@ -5,7 +5,7 @@
 its own 6 h), then `--step merge` (merged files + Telegram summary). Locally `--step all` does all three.
 
 * Seller_Orders_Report (4) and Seller_Returns_Report (12) of MAIN, DBCC, FMCC, one report per
-  calendar month, into Drive `AGENT WORK/MYNTRA ORDER RETURN REPORTS <FROM> TO <TO>/`:
+  calendar month, into Drive `AGENT WORK/MYNTRA/MYNTRA ORDER RETURN REPORTS <FROM> TO <TO>/`:
   `ORDERS/<ACCOUNT>/<ACCOUNT> ORDERS APR-25.csv`, `RETURNS/<ACCOUNT>/...`, and per report one merged
   file of every month and account (`MYNTRA ORDERS ALL ACCOUNTS APR-25 TO SEP-26.csv`, ACCOUNT and
   MONTH columns first; zipped when over 30 MB).

@@ -6,8 +6,8 @@ report); a job already on the portal for the same dates (or a listings snapshot 
 The orders report is asked for the last 30 days (the same job the 7 AM SPF run asks for): the
 Orders file keeps only yesterday's lines, the rest tells the return deliveries of type
 RTO_or_Cancel apart by order status (RTO = RTO, F = cancelled; an order older than 30 days counts as RTO).
-The CSVs go to Drive AGENT WORK/MYNTRA DAILY REPORTS/<yesterday>/ ("MAIN Orders 2026-10-23.csv"),
-each account's return deliveries to its PPMP warehouses (not FBM / SJIT) become a row of AGENT WORK/MYNTRA DAILY RETURN DELIVERY REPORT.xlsx
+The CSVs go to Drive AGENT WORK/MYNTRA/MYNTRA DAILY REPORTS/<yesterday>/ ("MAIN Orders 2026-10-23.csv"),
+each account's return deliveries to its PPMP warehouses (not FBM / SJIT) become a row of AGENT WORK/MYNTRA/MYNTRA DAILY RETURN DELIVERY REPORT.xlsx
 (DATE, PORTAL, CUSTOMER RETURN, RTO, CANCELLED, TOTAL; a day run again replaces its rows), and
 Telegram gets one message: the total return delivery, per account the rows of each report and the folder link.
 """
@@ -30,6 +30,7 @@ log = logging.getLogger("bindal.myntra_reports")
 
 ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
+AREA = "MYNTRA"   # the agent's folder is kept by portal: AGENT WORK/MYNTRA (since 29 Oct 2026)
 FOLDER = "MYNTRA DAILY REPORTS"
 WORKBOOK = "MYNTRA DAILY RETURN DELIVERY REPORT.xlsx"
 PORTALS = {"MAIN": "MYNTRA MAIN", "DBCC": "MYNTRA DBCC", "FMCC": "MYNTRA FMCC"}
@@ -151,13 +152,13 @@ def fetch_account(account: str, day: date, dest: Path, wait_minutes: int) -> tup
 
 
 def update_workbook(root, rows: list[tuple[date, str, dict]], work: Path) -> str:
-    """rows (day, account, split) into AGENT WORK/MYNTRA DAILY RETURN DELIVERY REPORT.xlsx (DATA sheet;
+    """rows (day, account, split) into AGENT WORK/MYNTRA/MYNTRA DAILY RETURN DELIVERY REPORT.xlsx (DATA sheet;
     rows of the same day and portal replaced, DASHBOARD built when missing). Returns its link."""
     from ..core.drive import DriveFile
     from . import workbook
     found = root.children().get(WORKBOOK)
     if not found:
-        raise RuntimeError(f"{WORKBOOK} not found in AGENT WORK on Drive")
+        raise RuntimeError(f"{WORKBOOK} not found in AGENT WORK/MYNTRA on Drive")
     drive = DriveFile(found["id"], root.http)
     path = drive.download(work / WORKBOOK, need_edit=True)
     # only DATA's rows change: the dashboard's own formatting and charts (edited in Excel) stay as they are
@@ -210,7 +211,7 @@ def backfill(args) -> int:
             rows.append((day, account, delivery_split(delivery[delivery["_day"] == day], orders)))
         log.info("%s: %d days, %d deliveries", account, len(mp._days(start, end)),
                  int((delivery["_day"].between(start, end)).sum()))
-    root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK))
+    root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(AREA, create=True)
     link = update_workbook(root, rows, Path(tempfile.mkdtemp(prefix="myntra_rd_")))
     total = sum(s["TOTAL"] for _, _, s in rows)
     print(f"{WORKBOOK}: {len(rows)} rows for {start}..{end}, {total} return deliveries. {link}")
@@ -250,7 +251,7 @@ def run(args) -> int:
         notes.append(f"not uploaded to Drive (test run): {dest}")
     else:
         from ..core.drive import DriveFolder
-        root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK))
+        root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(AREA, create=True)
         folder = root.subfolder(FOLDER, create=True).subfolder(f"{day}", create=True)
         for p in files:
             try:
@@ -282,7 +283,7 @@ def run(args) -> int:
         if not results[a]:
             out.append("• no report")
     if link:
-        out += ["", f'📁 <a href="{link}">AGENT WORK / {FOLDER} / {day}</a>']
+        out += ["", f'📁 <a href="{link}">AGENT WORK / MYNTRA / {FOLDER} / {day}</a>']
     if book:
         out.append(f'📗 <a href="{book}">{WORKBOOK}</a>')
     if notes:

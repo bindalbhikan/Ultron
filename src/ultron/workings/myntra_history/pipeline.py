@@ -1,6 +1,6 @@
 """Myntra order and return history: Seller_Orders_Report (4) and Seller_Returns_Report (12) of MAIN,
 DBCC and FMCC, one report per calendar month (--from .. --to, default Apr-25 .. Sep-26), into Drive
-AGENT WORK/MYNTRA ORDER RETURN REPORTS <FROM> TO <TO>/:
+AGENT WORK/MYNTRA/MYNTRA ORDER RETURN REPORTS <FROM> TO <TO>/:
 
   ORDERS/<ACCOUNT>/<ACCOUNT> ORDERS APR-25.csv     RETURNS/<ACCOUNT>/<ACCOUNT> RETURNS APR-25.csv
   MYNTRA ORDERS ALL ACCOUNTS APR-25 TO SEP-26.csv  MYNTRA RETURNS ALL ACCOUNTS APR-25 TO SEP-26.csv
@@ -34,6 +34,7 @@ from ..core.config import env, num
 log = logging.getLogger("bindal.myntra_history")
 
 AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
+AREA = "MYNTRA"   # the agent's folder is kept by portal: AGENT WORK/MYNTRA (since 29 Oct 2026)
 ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 CSV = "text/csv"
 GAP = 16 * 60            # seconds between two requests of the same report of an account
@@ -200,11 +201,11 @@ def run(args) -> int:
     wanted = months(first, last)
     accounts, labels = args.accounts.split(","), args.reports.split(",")
     rids = {"ORDERS": mp.REPORT_ID, "RETURNS": mp.RETURNS_REPORT_ID}
-    root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK))
+    root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(AREA, create=True)
     name = f"MYNTRA ORDER RETURN REPORTS {tag(first)} TO {tag(last)}"
     folder = root.subfolder(name, create=args.step in ("prepare", "all"))
     if folder is None:
-        raise RuntimeError(f"No AGENT WORK/{name} folder on Drive: run --step prepare first")
+        raise RuntimeError(f"No AGENT WORK/MYNTRA/{name} folder on Drive: run --step prepare first")
     if args.step in ("prepare", "all"):
         for label in labels:
             sub = folder.subfolder(label, create=True)
@@ -254,7 +255,7 @@ def run(args) -> int:
             msg.append(f"• {label}: {m[1]:,} rows in {telegram.esc(m[0])}")
     if missing:
         msg.append(f"⚠️ Missing ({len(missing)}): " + ", ".join(missing[:40]))
-    msg.append(f"📁 Drive: AGENT WORK/{name}")
+    msg.append(f"📁 Drive: AGENT WORK/MYNTRA/{name}")
     text = "\n".join(msg)
     if args.no_telegram:
         print(text)

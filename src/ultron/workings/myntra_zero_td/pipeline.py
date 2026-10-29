@@ -2,7 +2,7 @@
 UPDATE SHEET are live on the buyer side (www.myntra.com) with stock and selling at MRP, i.e. with
 no trade discount on.
 
-The sheet (Drive AGENT WORK/MYNTRA ZERO TD UPDATE SHEET.xlsx) has one tab per account and month,
+The sheet (Drive AGENT WORK/MYNTRA/MYNTRA ZERO TD UPDATE SHEET.xlsx) has one tab per account and month,
 "MAIN-SEP-26", "DBCC-SEP-26", "FMCC-SEP-26" (ARTICLE TYPE, BRAND, STYLE ID, MY SKU, FINAL SKU, COST,
 LIQ STYLES); the last tab of each account is the one read. Every style is looked up on the buyer
 side (spider.py). A style is
@@ -14,7 +14,7 @@ side (spider.py). A style is
 Telegram gets one message (per account the zero TD styles and their stock, the biggest ones) and
 one workbook: a tab per account with its ZERO TD and PART ZERO TD styles, SUMMARY, and NOT CHECKED
 when some styles had no answer. The workbook is also kept on Drive:
-AGENT WORK/MYNTRA ZERO TD SHEETS/OCT-26/26-10-26/ZERO TD 26-10-26 10.00 AM.xlsx.
+AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/OCT-26/26-10-26/ZERO TD 26-10-26 10.00 AM.xlsx.
 """
 from __future__ import annotations
 
@@ -32,8 +32,9 @@ from ..core.config import csv_list, env, num, output_dir
 log = logging.getLogger("bindal.myntra_zero_td")
 
 AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
+AREA = "MYNTRA"   # the agent's folder is kept by portal: AGENT WORK/MYNTRA (since 29 Oct 2026)
 SOURCE = "MYNTRA ZERO TD UPDATE SHEET.xlsx"
-FOLDER = "MYNTRA ZERO TD SHEETS"   # AGENT WORK/<FOLDER>/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx
+FOLDER = "MYNTRA ZERO TD SHEETS"   # AGENT WORK/MYNTRA/<FOLDER>/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx
 ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 SHEET_COLUMNS = ["ARTICLE TYPE", "BRAND", "STYLE ID", "MY SKU", "FINAL SKU", "COST", "LIQ STYLES"]
 CHECK_COLUMNS = ["STATUS", "MRP", "SELLING PRICE", "SIZES AT MRP", "STOCK AT MRP", "TOTAL STOCK",
@@ -169,9 +170,9 @@ def file_name(when: datetime) -> str:
 
 
 def save_to_drive(path: Path, when: datetime) -> str:
-    """The workbook into AGENT WORK/MYNTRA ZERO TD SHEETS/OCT-26/26-10-26/; the folder's link."""
+    """The workbook into AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/OCT-26/26-10-26/; the folder's link."""
     from ..core.drive import XLSX, DriveFolder
-    root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK))
+    root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(AREA, create=True)
     folder = (root.subfolder(FOLDER, create=True).subfolder(f"{when:%b-%y}".upper(), create=True)
               .subfolder(f"{when:%d-%m-%y}", create=True))
     folder.put(path, XLSX)
@@ -186,10 +187,10 @@ def run(args) -> int:
         source = Path(args.source)
     else:
         from ..core.drive import DriveFolder
-        source = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).download(
+        source = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(AREA, create=True).download(
             SOURCE, Path(tempfile.mkdtemp(prefix="zero_td_")) / SOURCE)
         if source is None:
-            raise RuntimeError(f"{SOURCE} not found in AGENT WORK on Drive")
+            raise RuntimeError(f"{SOURCE} not found in AGENT WORK/MYNTRA on Drive")
     sheets = read_source(source, accounts)
     if args.limit:
         sheets = {a: df.head(args.limit) for a, df in sheets.items()}
