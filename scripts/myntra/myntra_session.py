@@ -61,11 +61,40 @@ def push(text: str, account: str) -> bool:
     if not w.ok:
         return False
     if account == "MAIN":   # fallback copy for the sale run
-        r = subprocess.run(["gh", "secret", "set", "MYNTRA_SESSION_JSON", "--repo", REPO],
-                           input=text, text=True, capture_output=True, cwd=ROOT)
-        print(f"GitHub secret MYNTRA_SESSION_JSON updated on {REPO}" if not r.returncode
-              else f"GitHub secret NOT updated: {(r.stderr or r.stdout).strip()}")
+        try:
+            r = subprocess.run(["gh", "secret", "set", "MYNTRA_SESSION_JSON", "--repo", REPO],
+                               input=text, text=True, capture_output=True, cwd=ROOT)
+            ok, why = not r.returncode, (r.stderr or r.stdout).strip()
+        except OSError:     # no GitHub CLI here: the REST API with git's saved GitHub login
+            ok, why = secret_by_api("MYNTRA_SESSION_JSON", text)
+        print(f"GitHub secret MYNTRA_SESSION_JSON updated on {REPO}" if ok else f"GitHub secret NOT updated: {why}")
     return True
+
+
+def secret_by_api(name: str, value: str) -> tuple[bool, str]:
+    """Set a repo secret without the GitHub CLI: token from `git credential fill`, value sealed
+    with the repo's public key (PyNaCl)."""
+    import base64
+    import requests
+    try:
+        from nacl import encoding, public
+    except ImportError:
+        return False, "install PyNaCl (python -m pip install pynacl) or the GitHub CLI"
+    r = subprocess.run(["git", "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
+                       text=True, capture_output=True, cwd=ROOT, timeout=30)
+    token = next((l.split("=", 1)[1] for l in r.stdout.splitlines() if l.startswith("password=")), "")
+    if not token:
+        return False, "no saved GitHub login in git"
+    api = f"https://api.github.com/repos/{REPO}/actions/secrets"
+    head = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    k = requests.get(f"{api}/public-key", headers=head, timeout=30)
+    if not k.ok:
+        return False, f"public key: HTTP {k.status_code}"
+    box = public.SealedBox(public.PublicKey(k.json()["key"].encode(), encoding.Base64Encoder()))
+    sealed = base64.b64encode(box.encrypt(value.encode())).decode()
+    p = requests.put(f"{api}/{name}", headers=head, timeout=30,
+                     json={"encrypted_value": sealed, "key_id": k.json()["key_id"]})
+    return p.ok, f"HTTP {p.status_code}"
 
 
 def save(account: str, text: str, where: str, push_it: bool) -> bool:
