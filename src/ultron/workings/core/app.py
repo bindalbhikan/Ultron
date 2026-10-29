@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 import time
 import traceback
 from datetime import datetime
 from typing import Callable
 
-from . import dashboard, telegram
+from . import dashboard, hyperlog, telegram
 from .config import env, load_dotenv, setup_logging
 
 log = logging.getLogger("bindal")
@@ -24,13 +25,14 @@ def run_bot(title: str, parser: argparse.ArgumentParser, run: Callable[[argparse
     if not any(a.dest == "no_telegram" for a in parser._actions):
         parser.add_argument("--no-telegram", action="store_true", help="print the report instead of sending it")
     args = parser.parse_args(argv)
-    started, error, code = time.time(), "", 1
+    hl = hyperlog.start(title, list(argv) if argv is not None else sys.argv[1:])
+    started, error, code, trace = time.time(), "", 1, ""
     try:
         code = run(args)
         return code
     except Exception as exc:  # noqa: BLE001 - the whole point is to report any failure
-        error = str(exc)
-        log.error("%s failed:\n%s", title, traceback.format_exc())
+        error, trace = str(exc), traceback.format_exc()
+        log.error("%s failed:\n%s", title, trace)
         msg = (f"❌ <b>{telegram.esc(title)} failed</b>\n"
                f"<i>{telegram.esc(env('RUN_MODE', 'local'))}</i>\n\n"
                f"<code>{telegram.esc(str(exc)[:1500])}</code>")
@@ -43,6 +45,8 @@ def run_bot(title: str, parser: argparse.ArgumentParser, run: Callable[[argparse
             telegram.send(msg)
         return 1
     finally:
+        if hl:
+            hl.finish(code, error, trace)
         if key:
             dashboard.publish(f"run_{key}", {
                 "ok": code == 0 and not error, "error": error[:500], "mode": env("RUN_MODE", "local"),

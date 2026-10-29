@@ -268,6 +268,100 @@ def write_month(wb, month: date, done: set, now: datetime, since: dict[str, date
     ws.freeze_panes = ws.cell(3, len(COLUMNS) + 1)
 
 
+LOGS = "LOGS"
+LOG_DAYS = 31
+NOT_LOGGED = {"Agent watch", "Agent chat", "Agent work schedule"}   # the agent's own housekeeping runs
+
+
+def all_runs(since: date, repo: str, s) -> list[dict]:
+    """Every workflow run created from `since` (newest first)."""
+    out, page = [], 1
+    while True:
+        r = s.get(f"https://api.github.com/repos/{repo}/actions/runs", timeout=60,
+                  params={"created": f">={since}", "per_page": 100, "page": page})
+        r.raise_for_status()
+        runs = r.json().get("workflow_runs") or []
+        out += runs
+        if len(runs) < 100 or page >= 30:
+            return out
+        page += 1
+
+
+def hyper_logs(since: date) -> dict[str, tuple[str, str]]:
+    """GitHub run id -> (Drive link, error line) of the hyper logs in AGENT WORK/AGENT LOGS
+    (core/hyperlog.py: '<BOT> <time> <OK|FAIL> #<run id>.log'); the error read from FAIL logs."""
+    import re
+    import tempfile
+    from ..core.drive import DriveFolder
+    out: dict[str, tuple[str, str]] = {}
+    try:
+        logs = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder("AGENT LOGS")
+    except Exception as exc:  # noqa: BLE001 - the sheet still gets its runs
+        log.warning("AGENT LOGS not read: %s", exc)
+        return out
+    if not logs:
+        return out
+    work, reads = Path(tempfile.mkdtemp(prefix="hyperlogs_")), 0
+    m = since.replace(day=1)
+    while m <= date.today():
+        month = logs.subfolder(f"{m:%b-%y}".upper())
+        for day_name, day in (month.children().items() if month else []):
+            if day.get("mimeType") != DriveFolder.FOLDER:
+                continue
+            folder = month.subfolder(day_name)
+            for name, f in folder.children().items():
+                hit = re.search(r"#(\d+)\.log$", name)
+                if not hit:
+                    continue
+                error = ""
+                if " FAIL " in name and reads < 60:
+                    reads += 1
+                    try:
+                        text = folder.download(name, work / name).read_text(encoding="utf-8", errors="replace")
+                        error = next((ln.split("ERROR: ", 1)[1] for ln in text.splitlines() if "| ERROR: " in ln), "")
+                    except Exception:  # noqa: BLE001
+                        pass
+                out[hit.group(1)] = (f"https://drive.google.com/file/d/{f['id']}/view", error[:300])
+        m = (m.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return out
+
+
+def write_logs(wb, now: datetime, repo: str, s) -> None:
+    """LOGS: every bot run of the last LOG_DAYS days, newest first: date, start, bot, minutes,
+    result, the error and links to its hyper log on Drive and its GitHub run."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    since = (now - timedelta(days=LOG_DAYS)).date()
+    runs = [r for r in all_runs(since, repo, s) if r.get("name") not in NOT_LOGGED]
+    links = hyper_logs(since)
+    if LOGS in wb.sheetnames:
+        del wb[LOGS]
+    ws = wb.create_sheet(LOGS)
+    ws.append(["DATE", "START", "BOT", "MINUTES", "RESULT", "ERROR", "HYPER LOG", "GITHUB RUN"])
+    fills = {"success": "C6EFCE", "failure": "FFC7CE", "timed_out": "FFC7CE", "cancelled": "F2F2F2"}
+    for r in runs:
+        start = datetime.fromisoformat((r.get("run_started_at") or r["created_at"]).replace("Z", "+00:00")
+                                       ).astimezone(IST).replace(tzinfo=None)
+        end = datetime.fromisoformat(r["updated_at"].replace("Z", "+00:00")).astimezone(IST).replace(tzinfo=None)
+        result = r.get("conclusion") or r.get("status") or ""
+        link, error = links.get(str(r["id"]), ("", ""))
+        ws.append([f"{start:%d-%m-%y}", f"{start:%I:%M %p}", r.get("name"),
+                   round((end - start).total_seconds() / 60, 1) if r.get("status") == "completed" else None,
+                   result.upper(), error, "log" if link else "", "run"])
+        row = ws.max_row
+        if link:
+            ws.cell(row, 7).hyperlink, ws.cell(row, 7).font = link, Font(color="0563C1", underline="single")
+        ws.cell(row, 8).hyperlink, ws.cell(row, 8).font = r["html_url"], Font(color="0563C1", underline="single")
+        if result in fills:
+            ws.cell(row, 5).fill = PatternFill("solid", fgColor=fills[result])
+    head = PatternFill("solid", fgColor="1F4E78")
+    for c in ws[1]:
+        c.font, c.fill, c.alignment = Font(bold=True, color="FFFFFF"), head, Alignment(horizontal="left")
+    for col, width in zip("ABCDEFGH", (10, 10, 30, 9, 11, 80, 10, 10)):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+
+
 def build(path: Path, months: list[date], now: datetime) -> dict:
     from openpyxl import Workbook, load_workbook
     wb = load_workbook(path) if path.exists() else Workbook()
@@ -281,6 +375,10 @@ def build(path: Path, months: list[date], now: datetime) -> dict:
     write_schedule(wb)
     for m in months:
         write_month(wb, m, done, now, since)
+    try:
+        write_logs(wb, now, repo, s)
+    except Exception as exc:  # noqa: BLE001 - the schedule sheets still go out
+        log.warning("LOGS sheet not written: %s", exc)
     wb.active = wb.sheetnames.index(month_sheet(max(months)))
     wb.save(path)
     today = now.date()

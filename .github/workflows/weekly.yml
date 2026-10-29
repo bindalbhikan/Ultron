@@ -18,6 +18,12 @@ jobs:
       RUN_MODE: github-actions
       # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
       ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      # hyper log (core/hyperlog.py): the run's detailed log into Drive AGENT WORK/AGENT LOGS
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
       OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
       OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
       OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}

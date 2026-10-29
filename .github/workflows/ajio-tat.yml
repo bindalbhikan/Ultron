@@ -27,6 +27,8 @@ jobs:
       RUN_MODE: github-actions
       # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
       ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      # hyper log (core/hyperlog.py): the run's detailed log into Drive AGENT WORK/AGENT LOGS
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
       OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
       OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
       OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
