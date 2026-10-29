@@ -60,6 +60,11 @@ jobs:
       TICKET_ONLY_OVER: ${{ vars.TICKET_ONLY_OVER }}
       TICKET_GRACE_HOURS: ${{ vars.TICKET_GRACE_HOURS }}
       TICKET_CAP: ${{ vars.TICKET_CAP }}
+      # after the tickets: AJIO's "Seller Pickup Issue" form, once a day per courier with parcels not
+      # picked up past their deadline (sent when AJIO_PICKUP_FORM is 1; the contact number is a repo
+      # variable, not in this public file)
+      AJIO_PICKUP_FORM: ${{ vars.AJIO_PICKUP_FORM }}
+      AJIO_FORM_CONTACT: ${{ vars.AJIO_FORM_CONTACT }}
       IN_ORDERS: ${{ inputs.orders }}
     steps:
       - uses: actions/checkout@v4

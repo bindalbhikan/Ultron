@@ -11,7 +11,7 @@ import shutil
 import tempfile
 import time
 import zipfile
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -524,6 +524,7 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
         rec = {"Order ID": oid, "AWB": str(r["AWB"]), "Courier": str(r["Courier"]),
                "Pickup Deadline": r["Dispatch Deadline"], "Ticket": ", ".join(ids.get(oid, [])), "Result": ""}
         seen = courier.get(str(r["AWB"]), "not checked")
+        rec["Courier Site"] = seen
         in_master = [x.strip() for x in str(r.get("Pickup Ticket") or "").split(",")
                      if x.strip() and x.strip().lower() != "nan"]
         if ids.get(oid) or in_master:
@@ -612,7 +613,36 @@ def pickup_tickets(df, args, errors: list[str]):
     except Exception as exc:  # noqa: BLE001 - the TAT report still goes out
         log.exception("Pickup tickets not raised")
         return df, [f"⚠️ AJIO pickup tickets not raised: {telegram.esc(str(exc)[:150])}"]
-    return add_ticket_ids(df, ids), pickup_ticket_report(done)
+    return add_ticket_ids(df, ids), pickup_ticket_report(done) + pickup_forms(done, dry=args.tickets_dry)
+
+
+FORM_LOG = "AJIO_PICKUP_FORMS.json"   # {"2026-10-29": ["Bluedart", ...]}: a courier's form once a day
+
+
+def pickup_forms(done: list[dict], dry: bool) -> list[str]:
+    """The AJIO "Seller Pickup Issue" form, once a day per courier with parcels not picked up past
+    their deadline (pickup_form.py); the couriers sent each day are kept in FORM_LOG next to the
+    master, so a second run that day does not send them again."""
+    from .pickup_form import send_forms
+    if dry:
+        return []
+    try:
+        from ..core.drive import DriveFolder
+        folder = DriveFolder(env("TAT_DRIVE_FOLDER_ID")) if env("TAT_DRIVE_FOLDER_ID") else None
+        work = Path(tempfile.mkdtemp(prefix="ajio_form_"))
+        log_path = folder.download(FORM_LOG, work / FORM_LOG) if folder else None
+        sent_log = json.loads(log_path.read_text(encoding="utf-8")) if log_path else {}
+        today = f"{date.today()}"
+        lines, sent = send_forms(done, pd.Timestamp.now(), set(sent_log.get(today, [])))
+        if sent and folder:
+            sent_log[today] = sorted(set(sent_log.get(today, [])) | sent)
+            keep = sorted(sent_log)[-60:]
+            (work / FORM_LOG).write_text(json.dumps({k: sent_log[k] for k in keep}, indent=1), encoding="utf-8")
+            folder.put(work / FORM_LOG, "application/json")
+        return lines
+    except Exception as exc:  # noqa: BLE001 - the TAT report still goes out
+        log.exception("Pickup forms not sent")
+        return [f"⚠️ AJIO pickup form not sent: {telegram.esc(str(exc)[:150])}"]
 
 
 def pickup_ticket_report(done: list[dict]) -> list:

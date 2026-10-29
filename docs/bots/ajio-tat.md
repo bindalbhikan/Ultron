@@ -55,3 +55,9 @@
   gets one follow-up comment listing them every 24 h. `TICKET_DELAY_MS` (30) between two ticket calls. The master's Pickup Ticket holds every
   pickup ticket id of the order (old one-per-order and courier tickets, comma separated), filled
   from all pickup tickets of the last 30 days on every run.
+* **Pickup form** (after the tickets, `pickup_form.py`): AJIO's Microsoft Form "Seller Pickup Issue",
+  one response a day per courier whose parcels the courier's site shows not picked up past their
+  pickup deadline: Bindal Exports Limited, POB 348890 (last six digits), contact (repo variable
+  `AJIO_FORM_CONTACT`), "Pick-up not done", the courier, the date of its oldest such deadline.
+  Sent only with `AJIO_PICKUP_FORM=1`, else listed on Telegram as "would send". The couriers sent
+  each day are kept in `AJIO_PICKUP_FORMS.json` next to the master (no second form that day).
