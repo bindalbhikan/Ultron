@@ -146,8 +146,9 @@ def read_master_xlsx(path: Path):
     return m, as_of
 
 
-def save_master_xlsx(df, path: Path, note: str, as_of) -> None:
-    """Backup the current master, write a temp file, verify it, then swap it in."""
+def save_master_xlsx(df, path: Path, note: str, as_of, **summary) -> None:
+    """Backup the current master, write a temp file, verify it, then swap it in. summary: title /
+    rule of the Summary tab (Flipkart TAT)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         bdir = path.parent / "backup"
@@ -156,7 +157,7 @@ def save_master_xlsx(df, path: Path, note: str, as_of) -> None:
         for old in sorted(bdir.glob(f"{path.stem}_*.xlsx"))[:-KEEP_BACKUPS]:
             old.unlink()
     tmp = path.with_name(path.stem + "_tmp.xlsx")
-    write_excel(df, tmp, note, as_of)
+    write_excel(df, tmp, note, as_of, **summary)
     if len(read_master_xlsx(tmp)[0]) != len(df):
         raise RuntimeError(f"New master failed verification; old master left unchanged ({tmp})")
     try:
@@ -292,7 +293,7 @@ def pickup_pending_mask(df: pd.DataFrame, now: pd.Timestamp) -> pd.Series:
 
 # Telegram on a phone shows ~28 monospace characters per line: every <pre> table stays within that.
 SHORT_COURIER = {"BLUEDART": "BluDart", "DELHIVERY": "Delhvry", "SHADOWFAX": "Shdwfax",
-                 "XPRESSBEES": "XpresBz", "EKART": "Ekart", "VALMO": "Valmo", "UNKNOWN": "?"}
+                 "XPRESSBEES": "XpresBz", "EKART": "Ekart", "E-KART": "Ekart", "VALMO": "Valmo", "UNKNOWN": "?"}
 
 
 def short_courier(name) -> str:

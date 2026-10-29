@@ -5,7 +5,7 @@ on:
   # (rebuilt from the GitHub run history each time, so a missed update is caught by the next one).
   # Not after the inventory push (8 runs a day): its runs are counted by the next update.
   workflow_run:
-    workflows: ["AJIO ads TOT gap", "AJIO SPF run", "AJIO TAT daily update",
+    workflows: ["AJIO ads TOT gap", "AJIO SPF run", "AJIO TAT daily update", "Flipkart TAT daily update",
                 "Myntra SPF master", "Return analysis", "Daily sale report", "Myntra VMS report",
                 "Morning report", "SLA warning", "Label check", "Stock-out alert",
                 "Evening summary", "Weekly review", "Dead stock report", "Listing health",

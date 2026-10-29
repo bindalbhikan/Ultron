@@ -1,0 +1,52 @@
+name: Flipkart TAT daily update
+
+on:
+  # 6 PM IST every day (GitHub's own schedule; it can start some minutes late)
+  schedule:
+    - cron: "30 12 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "OMSGuru window: today plus N previous days (default 4)"
+        default: ""
+
+concurrency:
+  group: flipkart-tat
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TZ: Asia/Kolkata
+      RUN_MODE: github-actions
+      # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+      ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      # the master in Drive AGENT WORK/FLIPKART; the hyper log in AGENT WORK/AGENT LOGS
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
+      OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
+      OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
+      OMSGURU_WAREHOUSE_IDS: ${{ vars.OMSGURU_WAREHOUSE_IDS }}
+      FLIPKART_CHANNEL_IDS: ${{ vars.FLIPKART_CHANNEL_IDS }}
+      FK_TAT_DAYS: ${{ inputs.days || vars.FK_TAT_DAYS }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Run report
+        run: bash scripts/github/ci_run.sh flipkart-tat
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flipkart-tat-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -43,7 +43,8 @@ PICKUP_STATUSES = {
 # Events that happen BEFORE pickup (ignored when falling back to first movement).
 PRE_PICKUP = re.compile(
     r"data received|manifest|pickup employee|out for pick|pickup has been|"
-    r"pickup re-scheduled|auto pickup|p/u|pending|registered|order cancelled|pickup scheduled",
+    r"pickup re-scheduled|auto pickup|p/u|pending|registered|order cancelled|pickup scheduled|"
+    r"shipment created",   # Ekart (Flipkart): the shipment exists, the parcel is still with us
     re.I,
 )
 # Courier scans that mean a pickup was booked / an agent is on the way (pickup attempt).
@@ -400,7 +401,7 @@ def summarize(df):
 
 # ------------------------------------------------------------ local xlsx copy
 
-def write_excel(data, path, source_note, as_of):
+def write_excel(data, path, source_note, as_of, title=None, rule=None):
     df = data.reindex(columns=REPORT_COLS).copy()
     exact = data["RTS Exact"].fillna(True).astype(bool)
     with pd.ExcelWriter(path, engine="openpyxl") as xw:
@@ -457,7 +458,7 @@ def write_excel(data, path, source_note, as_of):
                 ws.conditional_formatting.add(rng, CellIsRule(operator="equal", formula=[f'"{txt}"'], fill=fill))
 
     ws = wb["Summary"]
-    for r, row in enumerate(summary_rows(summarize(data), as_of, source_note), start=1):
+    for r, row in enumerate(summary_rows(summarize(data), as_of, source_note, title, rule), start=1):
         for j, v in enumerate(row, start=1):
             c = ws.cell(r, j, v)
             c.font = font
@@ -473,11 +474,12 @@ def write_excel(data, path, source_note, as_of):
     wb.save(path)
 
 
-def summary_rows(s, as_of, source_note):
-    """The Summary tab as a plain grid (shared by the Sheet and the xlsx)."""
+def summary_rows(s, as_of, source_note, title=None, rule=None):
+    """The Summary tab as a plain grid (shared by the Sheet and the xlsx); title / rule: another
+    portal's (Flipkart TAT)."""
     rows = [
-        ["AJIO Dispatch TAT Summary"],
-        ["Rule (10:10): order before 10 AM -> dispatch same day; 10 AM or later -> next day. By the courier "
+        [title or "AJIO Dispatch TAT Summary"],
+        [rule or "Rule (10:10): order before 10 AM -> dispatch same day; 10 AM or later -> next day. By the courier "
          "pickup time (XB / BlueDart 12:00 PM, Shadowfax / Delhivery 12:30 PM) from 29 Jul 2026, 11:59 PM before."],
         [f"Tracking as of {as_of:%d-%b-%Y %I:%M %p}  |  {source_note}" if pd.notna(as_of)
          else f"Tracking time not known  |  {source_note}"],

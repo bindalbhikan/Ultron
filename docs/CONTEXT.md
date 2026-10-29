@@ -15,6 +15,7 @@ working), **`docs/PORTALS.md`** (every outside system, its API and limits), **`d
 | Sale | `python run.py sale` | OMSGuru + Flipkart FBF + Myntra SJIT into `SALE REPORT.xlsx` | 3:30 PM (7 AM SJIT request) | `docs/bots/sale.md` |
 | VMS | `python run.py vms` | Myntra packing-video check + ERP vs VMS | 5:30 PM | `docs/bots/vms.md` |
 | AJIO TAT | `python run.py ajio-tat` | 10:10 dispatch rule + ERP label print, `AJIO_TAT_MASTER.xlsx` | 5:30 PM | `docs/bots/ajio-tat.md` |
+| Flipkart TAT | `python run.py flipkart-tat` | Flipkart SLA (OMSGuru SLA Date) + Ekart pickup, `AGENT WORK/FLIPKART/FLIPKART_TAT_MASTER.xlsx`; sheet only, no ticket / form | 6 PM | `docs/bots/flipkart-tat.md` |
 | AJIO SPF | `python run.py ajio-spf` | AJIO returns master; SPF tickets + replies | 9 AM master; tickets Wed + Sat | `docs/bots/ajio-spf.md` |
 | Myntra SPF | `python run.py myntra-spf` | Myntra MAIN / DBCC / FMCC returns master, claim aging | 7 AM request, 9 AM master | `docs/bots/myntra-spf.md` |
 | Return analysis | `python run.py returns` | Monthly + yearly sale vs return, 5 portals | 15th: 7 AM request, 2 PM report | `docs/bots/returns.md` |

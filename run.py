@@ -4,6 +4,7 @@
   sale       daily sale report            python run.py sale --help
   vms        Myntra VMS report            python run.py vms --help
   ajio-tat   AJIO dispatch TAT            python run.py ajio-tat --help
+  flipkart-tat 6 PM Flipkart dispatch TAT (sheet only)  python run.py flipkart-tat --help
   ajio-spf   AJIO SPF claims              python run.py ajio-spf --help
   returns    monthly return analysis      python run.py returns --help
   myntra-spf Myntra SPF master            python run.py myntra-spf --help
@@ -29,7 +30,7 @@ import importlib
 import sys
 
 BOTS = {"sale": "ultron.workings.sale.pipeline", "vms": "ultron.workings.vms.pipeline",
-        "ajio-tat": "ultron.workings.ajio_tat.pipeline", "ajio-spf": "ultron.workings.ajio_spf.pipeline",
+        "ajio-tat": "ultron.workings.ajio_tat.pipeline", "flipkart-tat": "ultron.workings.flipkart_tat.pipeline", "ajio-spf": "ultron.workings.ajio_spf.pipeline",
         "returns": "ultron.workings.return_analysis.pipeline", "myntra-spf": "ultron.workings.myntra_spf.pipeline",
         "ajio-ads": "ultron.workings.ajio_ads.pipeline", "inv-push": "ultron.workings.inv_push.pipeline",
         "agent-watch": "ultron.agents.watch", "agent-chat": "ultron.agents.chat", "morning": "ultron.workings.morning.pipeline",

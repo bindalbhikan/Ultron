@@ -89,6 +89,7 @@ TASKS = [
     Task("Myntra zero TD", "myntra-zero-td.yml", _at(17), "MON-SAT", weekdays=MON_SAT),
     Task("Myntra VMS report", "vms.yml", _at(17, 30), "DAILY"),
     Task("AJIO TAT daily update", "ajio-tat.yml", _at(17, 30), "DAILY"),
+    Task("Flipkart TAT daily update", "flipkart-tat.yml", _at(18, 0), "DAILY"),
     # two steps of the same AJIO TAT run (ticked with it)
     Task("AJIO pickup tickets (courier-wise)", "ajio-tat.yml", _at(17, 30), "DAILY"),
     Task("AJIO Seller Pickup Issue form", "ajio-tat.yml", _at(17, 30), "DAILY"),
@@ -108,6 +109,7 @@ WORK = {
     "AJIO pickup tickets (courier-wise)": "One AJIO 'pickup not done' ticket per courier (its pending orders listed + Excel), never twice for an order; follow-up every 24 h",
     "AJIO Seller Pickup Issue form": "AJIO's Microsoft Form 'Seller Pickup Issue', once a day per courier still not picked up past its deadline",
     "AJIO TAT daily update": "AJIO dispatch TAT master (processing / pickup on time), pickup pending list, courier pickup tickets",
+    "Flipkart TAT daily update": "Flipkart dispatch TAT master (processing / Ekart pickup vs the SLA) in AGENT WORK/FLIPKART, sheet only: no ticket, no form",
     "Daily sale report": "Gross / return / cancel / net sale per channel into SALE REPORT.xlsx, Telegram day + month table",
     "Dead stock report": "Styles with stock but no sale in 90 days, and slow movers (Telegram)",
     "Evening summary": "Today's sale so far vs last week, orders still not ready to ship, today's bot runs (Telegram)",
