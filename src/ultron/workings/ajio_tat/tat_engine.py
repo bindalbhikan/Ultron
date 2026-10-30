@@ -44,11 +44,13 @@ PICKUP_STATUSES = {
 PRE_PICKUP = re.compile(
     r"data received|manifest|pickup employee|out for pick|pickup has been|"
     r"pickup re-scheduled|auto pickup|p/u|pending|registered|order cancelled|pickup scheduled|"
-    r"shipment created",   # Ekart (Flipkart): the shipment exists, the parcel is still with us
+    r"shipment created|outforpickup|notpicked|rtoconfirmed|marked rto",   # Ekart (Flipkart): still with us; RTO before any movement = never picked
     re.I,
 )
 # Courier scans that mean a pickup was booked / an agent is on the way (pickup attempt).
-PICKUP_ATTEMPT = r"pickup employee|out for pick|pickup has been|auto pickup|pickup scheduled"
+PICKUP_ATTEMPT = r"pickup employee|out for pick|pickup has been|auto pickup|pickup scheduled|outforpickup"
+# Ekart's pickup scan carries the hub after it ("PickupReceived - Motavarachahub_STV_PL")
+PICKUP_SCAN = r"^(?:pickupreceived|pickup from seller)\b"
 
 # An order processed (RTS) today at or after this time is picked up by the courier tomorrow:
 # its Pickup Status is "Next Day Pickup", not "Pending Pickup". Next run it becomes
@@ -131,7 +133,7 @@ def pickup_times(ev):
     rows = []
     for awb, g in ev.groupby("AWB", sort=False):
         st = g["STATUS"].astype(str).str.strip()
-        exact = g[st.str.lower().isin(PICKUP_STATUSES)]
+        exact = g[st.str.lower().isin(PICKUP_STATUSES) | st.str.contains(PICKUP_SCAN, case=False, regex=True)]
         attempt = g[st.str.contains(PICKUP_ATTEMPT, case=False, regex=True)]
         first_attempt = attempt["ts"].iloc[0] if len(attempt) else pd.NaT
         if len(exact):
