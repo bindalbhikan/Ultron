@@ -157,7 +157,7 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
         notes.append(f"{account}: older order reports still to fetch (next runs): {', '.join(left)}")
     if ticketed is not None:
         try:
-            ticketed[account] = tickets.portal_tickets(portal, account, dest.parent, cached, details)
+            ticketed[account] = tickets.portal_tickets(portal, account, dest.parent, cached, details, notes)
         except Exception as exc:  # noqa: BLE001 - no claims for this account then
             log.exception("%s SPF tickets not read", account)
             notes.append(f"{account} SPF tickets not read, no claims raised: {str(exc)[:80]}")

@@ -142,7 +142,7 @@ def write_ticket_file(path: Path, rows: list[dict]) -> None:
 
 
 def portal_tickets(portal, account: str, dest: Path, cached: dict | None = None,
-                   details: dict | None = None) -> set[str]:
+                   details: dict | None = None, replies: list | None = None) -> set[str]:
     """Every ticket of the account into dest/<account>/TICKET_FILE; the order lines they cover.
     With `details` (account -> TICKETS rows), the recent / open claims are read in full too
     (ticket_details, reusing `cached` rows of unchanged tickets) and a rejection's reason goes
@@ -162,8 +162,71 @@ def portal_tickets(portal, account: str, dest: Path, cached: dict | None = None,
         for t in rows:
             t["validationReason"] = reason.get(str(t.get("ticketId")))
     write_ticket_file(dest / account / TICKET_FILE, rows)
+    if replies is not None:     # claims waiting on our reply (MYNTRA_SPF_REPLY=1 sends them)
+        replies += reply_waiting(portal, account, rows, live=num("MYNTRA_SPF_REPLY", 0) == 1)
     log.info("%s: %d SPF tickets on the portal", account, len(rows))
     return {norm(t.get("orderLineId")) for t in rows if t.get("orderLineId")}
+
+
+# ------------------------------------------------------------------ replies to claims waiting on us
+
+# A claim that turns AWAITING_SELLER_RESPONSE closes by itself after the portal's autoCloseTAT (4 days):
+# the reply is chosen from Myntra's last message, as the QUIRY SPF bulk reply tool does
+# (tools/myntra-spf-bulk-reply.js); the first rule that matches wins, else the default.
+REPLY_RULES = [
+    (re.compile(r"shipping label|label (photo|image|proof)", re.I),
+     "The shipping label photograph is already attached to this ticket. "
+     "Kindly re-check the uploaded proof and let us know if anything else is needed."),
+    (re.compile(r"(share|provide|upload|attach).{0,40}(proof|photo|image|document|pod)", re.I),
+     "The available proofs are already attached to this ticket. "
+     "Please confirm exactly which document is still required so we can upload it."),
+    (re.compile(r"return (has been|was) delivered|delivered to (the )?seller", re.I),
+     "The return has not been received at our warehouse. Kindly share the POD for the delivery, "
+     "or process the claim."),
+    (re.compile(r"working on (it|this|your)|will (get back|update)|under (review|process)", re.I),
+     "Requesting an update on this claim. Kindly share the current status."),
+]
+DEFAULT_REPLY = ("Requesting an update on this claim. The return has still not been received at our end. "
+                 "Kindly re-check and share the current status.")
+OURS = re.compile(r"vendor|bindal", re.I)   # our side signs "<name> - Vendor"; Myntra "Sellersupport", agents
+
+
+def reply_for(comments: list[dict]) -> tuple[str, str] | None:
+    """(rule, reply) for a claim's support thread (newest first); None when we spoke last."""
+    if comments and OURS.search(str(comments[0].get("user") or "")):
+        return None
+    theirs = next((c for c in comments if not OURS.search(str(c.get("user") or ""))), {})
+    text = plain(theirs.get("comment"))
+    for i, (pattern, reply) in enumerate(REPLY_RULES, 1):
+        if pattern.search(text):
+            return f"rule {i}", reply
+    return "default", DEFAULT_REPLY
+
+
+def reply_waiting(portal, account: str, rows: list[dict], live: bool) -> list[str]:
+    """Answer the account's claims waiting on us (live), or list what would be sent. Lines for
+    the report."""
+    lines = []
+    for t in [t for t in rows if t.get("status") == AWAITING_US]:
+        tid = t.get("ticketId")
+        try:
+            claim = portal.spf_claim(tid)
+            fw = claim.get("fwTicketId")
+            if claim.get("status") != AWAITING_US or not fw or not claim.get("description"):
+                continue
+            pick = reply_for(portal.spf_comments(fw))
+            if not pick:
+                lines.append(f"{account} SPF {tid}: we replied last, left")
+                continue
+            rule, reply = pick
+            if live:
+                portal.spf_reply(claim, reply)
+                time.sleep(1.2)
+            lines.append(f"{account} SPF {tid} waiting on us: {'replied' if live else 'would reply'} ({rule})")
+        except Exception as exc:  # noqa: BLE001 - the next ticket still goes
+            log.warning("%s SPF %s reply failed: %s", account, tid, exc)
+            lines.append(f"{account} SPF {tid} waiting on us: reply failed ({str(exc)[:60]})")
+    return lines
 
 
 # ------------------------------------------------------------------ ticket details

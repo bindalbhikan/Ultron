@@ -279,6 +279,43 @@ class MyntraPortal:
         return [{"courier": o.get("courierCode"), "otc": o.get("otc"),
                  "message": (o.get("status") or {}).get("statusMessage")} for o in data.get("otcDetails") or []]
 
+    def payment_history(self, start: date, end: date, kind: str = "TOTAL", size: int = 100) -> list[dict]:
+        """Every payout (UTR) paid start..end (Payments > Payment Summary): paymentDate, utrNumber,
+        amount, yearMonth, adviceId and utrDetailsLink, a signed link to the line-level CSV.
+        kind TOTAL | PREPAID | POSTPAID. Taken from the QUIRY payment export tool."""
+        out: list[dict] = []
+        page = 0
+        while True:
+            d = self._call("GET", "/report/summary/payment-history",
+                           params={"fromDate": f"{start}", "toDate": f"{end}", "type": kind,
+                                   "pageNo": page, "pageSize": size}).get("data") or {}
+            got = d.get("payments") or []
+            out += got
+            page += 1
+            if not got or len(out) >= (d.get("totalElements") or 0) or page >= (d.get("totalPages") or page + 1):
+                return out
+
+    def payment_advices(self) -> dict[str, list]:
+        """utrNumber -> advice ids of the payouts the dashboard still shows (Last Payment)."""
+        out: dict[str, list] = {}
+        for d in self._call("GET", "/report/summary/last-payment").get("data") or []:
+            for p in (d.get("prepaid") or []) + (d.get("postpaid") or []):
+                if p.get("adviceId") and p.get("utrNumber"):
+                    out.setdefault(p["utrNumber"], []).append(p["adviceId"])
+        return out
+
+    def payment_breakup(self, advice_id, size: int = 500) -> list[dict]:
+        """The line-level rows of one payment advice, from the API (used when the CSV link is broken)."""
+        rows, page = [], 0
+        while True:
+            d = self._call("GET", "/report/summary/last-payment/breakup",
+                           params={"page_number": page, "page_size": size,
+                                   "paymentAdvisorId": advice_id}).get("data") or {}
+            rows += [{"adviceId": advice_id, **c} for c in d.get("content") or []]
+            if d.get("last") is not False:
+                return rows
+            page += 1
+
     def jobs(self, size: int = 50, start: int = 0) -> list[dict]:
         return self._call("GET", "/report/jobs/search",
                           params={"fetchSize": size, "sortBy": "id", "sortOrder": "desc", "start": start}).get("data") or []
@@ -455,6 +492,43 @@ class MyntraPortal:
         """The Seller Support replies of a claim's fwTicketId: comment (HTML), user, createdOn
         (MM-DD-YYYY HH:MM:SS IST), newest first."""
         return self._call("GET", f"{SPF_API}/getComments", params={"fwTicketId": fw_ticket_id}).get("data") or []
+
+    def spf_reply(self, claim: dict, comment: str) -> None:
+        """Answer a claim waiting on us (AWAITING_SELLER_RESPONSE), as the portal's Edit screen does
+        (QUIRY tools/myntra-spf-bulk-reply.js): PUT updateClaim with the whole claim sent back
+        unchanged (proof links as lists, meta as an object), minus styleInfo / sellerId, plus
+        status OPEN, replyComment and no attachments."""
+        meta = claim.get("meta") or {}
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except ValueError:
+                meta = {}
+        meta = dict(meta)
+        for key, src in (("returnTrackingId", "returnTrackingId"), ("tagLoopId", "tagLoopId"),
+                         ("finalAmount", "finalAmount"), ("isOCRVerified", "ocrVerified")):
+            if claim.get(src) is not None:
+                meta[key] = claim[src]
+        if claim.get("eligibleForTagLoop") is not None:
+            meta["isEligibleForTagLoop"] = str(claim["eligibleForTagLoop"])
+
+        def proofs(one, many):
+            v = claim.get(many) if claim.get(many) is not None else claim.get(one)
+            v = v if isinstance(v, list) else str(v or "").split(",")
+            return [x.strip() for x in v if x and str(x).strip()]
+
+        video = proofs("videoProofUrl", "videoProofUrls")
+        body = {k: v for k, v in claim.items() if k not in ("styleInfo", "sellerId")}
+        body.update({"lmdoLastModifiedOn": claim.get("returnDeliveredDate") or claim.get("lmdoLastModifiedOn"),
+                     "meta": meta, "isOCRVerified": str(meta.get("isOCRVerified")).lower() == "true",
+                     "status": "OPEN", "replyComment": comment[:300], "attachments": [],
+                     "shippingLabelProofUrl": proofs("shippingLabelProofUrl", "shippingLabelProofUrls"),
+                     "productProofUrl": proofs("productProofUrl", "productProofUrls"),
+                     "videoProofUrl": video[0] if video else None})
+        data = self._call("PUT", f"{SPF_API}/updateClaim", json=body)
+        st = data.get("status") or {}
+        if st and st.get("statusType") not in (None, "SUCCESS"):
+            raise RuntimeError(f"Myntra refused the reply: {st.get('statusMessage')}")
 
     def spf_bulk_claim(self, order_line_ids: list, category: str, description: str,
                        model: str = "PPMP", seller: int | None = None) -> int:

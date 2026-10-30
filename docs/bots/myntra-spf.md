@@ -23,6 +23,11 @@ On demand: `/myntraspf`.
 * **SPF tickets from the portal**: every run reads each account's SPF tickets (all statuses,
   `api/spf/v2/getTickets`) as one more ticket report, so TICKET ID / STATUS follow the portal
   without a hand-dropped Ticket1 (a rejection reason from Ticket1 is kept).
+* **Claims waiting on our reply** (`AWAITING_SELLER_RESPONSE`, closed by Myntra after 4 days):
+  every run reads Myntra's last message and picks a reply as the QUIRY SPF bulk reply tool does
+  (label / proof / delivered / working-on-it rules, else a status request); not when we replied
+  last. Sent (portal `updateClaim`, as its Edit screen) only with the repo variable
+  `MYNTRA_SPF_REPLY=1`; otherwise the Telegram notes list what would be sent.
 * **Auto claims** (`tickets.py`), after the first engine run, on the SPF POLICY v5 timelines:
   * *Return Not Received* (`RTS_ORDER_WAS_NEVER_DELIVERED`): delivered to us per Myntra, not
     received; raised 4 to 7 days after the delivery date (`MYNTRA_SPF_RNR_AFTER_DAYS` /
