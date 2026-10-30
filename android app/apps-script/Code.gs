@@ -286,8 +286,9 @@ function returns(from, body, deviceTime, p) {
       : ids.size ? [sms.courier, pod.dispatch || time, portal, sms.status].join('|')
       : [sms.courier, portal, sms.status, day].join('|');
     const logged = logRows.find(r => r[0] === ref);
-    // an SMS older than the one already filed for these shipments (a rework): changes nothing filed
-    const older = !!(logged && logged[6] && deviceTime && deviceTime < logged[6]);
+    // a code older than the one already filed for these shipments (a rework): changes nothing filed.
+    // SMS TIME is the time of the filed code's SMS (a final POD after it carries no code).
+    const older = !!(sms.otp && logged && logged[6] && deviceTime && deviceTime < logged[6]);
     const otp = older ? logged[4] : sms.otp || (logged ? logged[4] : '');
 
     if (older) {
@@ -309,7 +310,7 @@ function returns(from, body, deviceTime, p) {
       const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getDisplayValues() : [];
       putOtp(sheet, rows, day, sp, sms.status, logged[4], count, logged, true);
     }
-    const entry = [ref, day, sp, sms.status, otp, count, deviceTime, new Date()];
+    const entry = [ref, day, sp, sms.status, otp, count, sms.otp ? deviceTime : (logged ? logged[6] : ''), new Date()];
     if (logged) {
       logTab.getRange(logRows.indexOf(logged) + 2, 1, 1, entry.length).setValues([entry.map(asText)]);
       logged.splice(0, entry.length, ...entry.map(String));
