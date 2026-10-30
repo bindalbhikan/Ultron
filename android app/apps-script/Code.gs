@@ -322,7 +322,7 @@ function setupSecret() {
 // Run once from the editor after an update: asks for the new permissions (the Daily OTP sheet, Drive).
 function authorize() {
   SpreadsheetApp.openById(OTP_SHEET_ID).getName();
-  DriveApp.getFolderById(AGENT_WORK_ID).getName();
+  podFolder(Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'));   // creates folders: the full Drive permission
 }
 
 function testInsert() {
