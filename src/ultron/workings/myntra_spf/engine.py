@@ -2494,9 +2494,11 @@ def cleanup_inputs(data, log, dry_run=False):
 
 
 # ------------------------------------------------------------- young in-transit rows
-def is_settled(rec):
+def is_settled(rec, payment=True):
     """Python twin of the FINAL RETURN STATUS formula: True when that cell would hold a
-    value (SPF Paid / SPF Accepted / Return Received / Payment Received), i.e. the return is resolved."""
+    value (SPF Paid / SPF Accepted / Return Received / Payment Received), i.e. the return is resolved.
+    payment=False leaves out "Payment Received" (the order was paid out, no return debit yet): that
+    says nothing about the return itself, so it does not keep a young in-transit row on the sheet."""
     if rec.get('FINAL RETURN STATUS') not in (None, ''):     # typed over the formula
         return True
     if rec.get('SPF PAID') is not None:
@@ -2507,7 +2509,7 @@ def is_settled(rec):
     man = str(rec.get('MANUAL RETURN STATUS') or '').upper()
     if 'RECEIVED' in oms or 'RECEIVED' in man or 'PICKUP NOT DONE' in man:
         return True
-    return (isinstance(rec.get('ORDER SETTLEMENT'), (int, float))
+    return (payment and isinstance(rec.get('ORDER SETTLEMENT'), (int, float))
             and rec.get('RETURN DEBIT') is None and rec.get('RETURN CHARGE') is None)
 
 
@@ -2531,7 +2533,9 @@ def is_young_in_transit(rec, today):
         return False
     if rec.get('deliver_to_seller_date') or is_delivered_status(rec.get('status')):
         return False
-    if is_settled(rec):
+    # an order payout alone ("Payment Received") is no return result: 530 young in-transit
+    # rows stayed on MAIN / DBCC / FMCC that way until 30 Oct 2026
+    if is_settled(rec, payment=False):
         return False
     if (norm(rec.get('status')) not in IN_TRANSIT_STATUSES
             and norm(rec.get('type')) == 'RETURN'
