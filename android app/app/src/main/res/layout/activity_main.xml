@@ -149,6 +149,14 @@
                         style="@style/Action"
                         android:text="Send test row" />
                 </LinearLayout>
+
+                <Button
+                    android:id="@+id/importButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Import old SMS (last 60 days)"
+                    android:textAllCaps="false" />
             </LinearLayout>
 
             <Button

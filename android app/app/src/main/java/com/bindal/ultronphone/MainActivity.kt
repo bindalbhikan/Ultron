@@ -57,6 +57,7 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.saveButton).setOnClickListener { save() }
         findViewById<Button>(R.id.permissionButton).setOnClickListener { requestSms() }
         findViewById<Button>(R.id.testButton).setOnClickListener { sendTest() }
+        findViewById<Button>(R.id.importButton).setOnClickListener { importOld() }
         findViewById<Button>(R.id.batteryButton).setOnClickListener { askBattery() }
         findViewById<Button>(R.id.appSettingsButton).setOnClickListener { openAppSettings() }
         findViewById<Button>(R.id.refreshButton).setOnClickListener { refresh() }
@@ -105,6 +106,17 @@ class MainActivity : Activity() {
         refresh()
     }
 
+    private fun importOld() {
+        if (Prefs.getUrl(this).isBlank()) return toast("Save the sheet URL and secret key first")
+        if (checkSelfPermission(Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return requestPermissions(arrayOf(Manifest.permission.READ_SMS), REQ_READ)
+        }
+        Thread {
+            val n = SmsImport.run(this)
+            runOnUiThread { toast("$n old SMS queued for the sheet"); refresh() }
+        }.start()
+    }
+
     private fun requestSms() {
         if (hasSms()) return toast("SMS permission already granted")
         requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS), REQ_SMS)
@@ -112,6 +124,7 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_READ && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) importOld()
         if (requestCode == REQ_SMS && !hasSms()) toast("Not allowed. App settings > Permissions > SMS (Android 13+: first ⋮ > Allow restricted settings).")
         refresh()
     }
@@ -156,5 +169,6 @@ class MainActivity : Activity() {
     companion object {
         private const val REQ_SMS = 101
         private const val REQ_NOTE = 102
+        private const val REQ_READ = 103
     }
 }

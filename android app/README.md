@@ -30,7 +30,8 @@ Ultron Phone works.
 3. **Phone setup**: Battery -> allow (no battery optimisation). Xiaomi / Oppo / Vivo / Realme:
    App settings -> Autostart on.
 4. **SMS to sheet** (optional, for the OTPs later): see below, then Allow SMS (Android 13+: if it is
-   greyed out, App info -> ⋮ -> Allow restricted settings first), Send test row.
+   greyed out, App info -> ⋮ -> Allow restricted settings first), Send test row. **Import old SMS**
+   sends the inbox of the last 60 days (Senders filter applies; anything already in the sheet is skipped).
 
 ## SMS sheet (Google Sheet + Apps Script)
 
