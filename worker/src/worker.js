@@ -252,6 +252,7 @@ const SCREENS = {
       [["⏰ SLA warning", "r:sla"], ["📉 Stock-out", "r:stock"]],
       [["🏷 Label check", "r:labels"], ["🧩 Listing health", "r:listings"]],
       [["🔄 Inventory push", "m:inv"], ["🌙 Evening summary", "r:evening"]],
+      [["📨 Returns SMS / POD catch-up", "r:smscatchup"]],
       back(),
     ],
   },
