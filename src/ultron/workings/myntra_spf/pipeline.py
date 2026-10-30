@@ -7,8 +7,10 @@ folder in a work folder:
     Return_Delivery_Report for the last RETURN_DAYS, Seller_Orders_Report for the last
     ORDER_DAYS (one month per job; the same report again only after the 15-minute cooldown)
   * ERP: GR GRN report and the dispatch (packing) report
-  * Drive SPF/MYNTRA/input: what is still dropped by hand - each account's Ticket1 and payment
-    exports, MANUAL RETURN and LEGACY MASTER
+  * Myntra payments of each account for the last MYNTRA_SPF_PAY_DAYS (150): every payout with its
+    line rows, as the QUIRY payment export tool gets them (payments.py)
+  * Drive SPF/MYNTRA/input: what is still dropped by hand - each account's Ticket1 and older
+    payment exports, MANUAL RETURN and LEGACY MASTER
   * Myntra SPF tickets of each account (portal API), read as one more ticket report
 After the first engine run the SPF claims due by the policy timelines are raised (tickets.py,
 only with MYNTRA_SPF_TICKETS=1; otherwise they are only counted in the report).
@@ -34,7 +36,7 @@ from ..core import dashboard, telegram
 from ..core.app import run_bot
 from ..core.config import env, num, output_dir
 from ..core.drive import DriveFile, DriveFolder
-from . import tickets
+from . import payments, tickets
 
 log = logging.getLogger("bindal.myntra_spf")
 
@@ -159,6 +161,17 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
         except Exception as exc:  # noqa: BLE001 - no claims for this account then
             log.exception("%s SPF tickets not read", account)
             notes.append(f"{account} SPF tickets not read, no claims raised: {str(exc)[:80]}")
+    # the payments (SPF paid, return charges, order settlements): no longer dropped by hand
+    try:
+        start = today - timedelta(days=num("MYNTRA_SPF_PAY_DAYS", 150))
+        got = payments.account_payments(portal, start, today,
+                                        dest / f"myntra-payments-TOTAL-{start}_to_{today}-{account}.csv")
+        if got["without_lines"]:
+            notes.append(f"{account} payments: {got['without_lines']} of {got['payouts']} payouts without line rows "
+                         f"(Rs {got['missing_amount']:,}, Myntra link defect)")
+    except Exception as exc:  # noqa: BLE001 - the hand-dropped payment exports still count
+        log.exception("%s payments not downloaded", account)
+        notes.append(f"{account} payments not downloaded: {str(exc)[:80]}")
     mp.save_to_worker(env, portal.cookies(), account)
 
 

@@ -9,8 +9,10 @@ On demand: `/myntraspf`.
 * Rules: the hand-run tool `SPF/MYNTRA/main.py` as `engine.py` (only its folder `MYNTRA_SPF_DIR`
   and an `OMS_RESULTS` hook added). The previous master is the base: rows update, never duplicate.
 * Inputs: Myntra returns / delivery (last 30 days) and orders (last 60 days, 30-day jobs) per
-  account; ERP GRN + dispatch; from Drive `SPF/MYNTRA/input`: Ticket1 + payment exports per account
-  (still dropped by hand), MANUAL RETURN, LEGACY MASTER, and the courier POD sheet at the input
+  account; **payments of the last `MYNTRA_SPF_PAY_DAYS` (150) per account, downloaded by the bot**
+  (`payments.py`, the QUIRY payment export tool's method: every payout + its line CSV; Myntra's
+  broken detail links are probed, repaired or replaced by the breakup API); ERP GRN + dispatch;
+  from Drive `SPF/MYNTRA/input`: Ticket1 and older payment exports per account (by hand, optional), MANUAL RETURN, LEGACY MASTER, and the courier POD sheet at the input
   root (`MYNTRA RETURN PICKUP POD.xlsx` -> PICKUP POD / RETURN POD / RETURN POD DATE, the last
   columns; refreshed every run, kept as they were when the file is missing).
 * **Young in-transit returns stay off the sheets**: a return still in transit, not received or
