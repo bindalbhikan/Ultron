@@ -133,6 +133,35 @@
                     style="@style/Field"
                     android:hint="MYNTRA, DELHIVERY" />
 
+                <TextView style="@style/Label" android:text="SMS of which SIM go to the sheet" />
+                <RadioGroup
+                    android:id="@+id/simGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/simBoth"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Both" />
+
+                    <RadioButton
+                        android:id="@+id/sim1"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="SIM 1" />
+
+                    <RadioButton
+                        android:id="@+id/sim2"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="SIM 2" />
+                </RadioGroup>
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

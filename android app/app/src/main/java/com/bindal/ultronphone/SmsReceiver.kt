@@ -27,17 +27,28 @@ class SmsReceiver : BroadcastReceiver() {
                 Prefs.addLog(context, "SMS skipped (filter) $from")
                 return@forEach
             }
+            if (!Prefs.simAllowed(context, sim)) {
+                Prefs.addLog(context, "SMS skipped ($sim, sheet takes ${Prefs.getSim(context)}) $from")
+                return@forEach
+            }
 
             UploadWorker.enqueue(context, from, body, timestamp, sim)
             Prefs.addLog(context, "SMS queued $from ($sim)")
         }
     }
 
-    /** "SIM 1" / "SIM 2" from the slot index the phone puts on the broadcast; makers use different extras. */
+    /**
+     * "SIM 1" / "SIM 2" from the slot index the phone puts on the broadcast (makers use different
+     * extras), else from its subscription id.
+     */
     private fun simOf(intent: Intent): String {
         val slot = listOf("android.telephony.extra.SLOT_INDEX", "slot", "simSlot", "slot_id", "simId")
             .map { intent.getIntExtra(it, -1) }
             .firstOrNull { it >= 0 }
-        return if (slot == null) "SIM ?" else "SIM ${slot + 1}"
+        if (slot != null) return "SIM ${slot + 1}"
+        val subId = listOf("android.telephony.extra.SUBSCRIPTION_INDEX", "subscription")
+            .map { intent.getIntExtra(it, -1) }
+            .firstOrNull { it >= 0 } ?: -1
+        return SmsImport.simOf(subId)
     }
 }

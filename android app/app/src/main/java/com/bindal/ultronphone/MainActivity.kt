@@ -13,6 +13,7 @@ import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.RadioGroup
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -24,6 +25,7 @@ class MainActivity : Activity() {
     private lateinit var urlInput: EditText
     private lateinit var secretInput: EditText
     private lateinit var filterInput: EditText
+    private lateinit var simGroup: RadioGroup
     private lateinit var agentSwitch: Switch
     private lateinit var agentDot: View
     private lateinit var agentText: TextView
@@ -39,6 +41,7 @@ class MainActivity : Activity() {
         urlInput = findViewById(R.id.urlInput)
         secretInput = findViewById(R.id.secretInput)
         filterInput = findViewById(R.id.filterInput)
+        simGroup = findViewById(R.id.simGroup)
         agentSwitch = findViewById(R.id.agentSwitch)
         agentDot = findViewById(R.id.agentDot)
         agentText = findViewById(R.id.agentText)
@@ -51,6 +54,7 @@ class MainActivity : Activity() {
         urlInput.setText(Prefs.getUrl(this))
         secretInput.setText(Prefs.getSecret(this))
         filterInput.setText(Prefs.getFilter(this))
+        simGroup.check(when (Prefs.getSim(this)) { "SIM 1" -> R.id.sim1; "SIM 2" -> R.id.sim2; else -> R.id.simBoth })
         agentSwitch.isChecked = Prefs.agentOn(this)
 
         agentSwitch.setOnCheckedChangeListener { _, on -> setAgent(on) }
@@ -80,6 +84,7 @@ class MainActivity : Activity() {
         }
         if (url.isNotEmpty() && secret.length < 8) return toast("Secret key should be at least 8 characters")
         Prefs.save(this, url, secret, filterInput.text.toString(), worker, tokenInput.text.toString())
+        Prefs.setSim(this, when (simGroup.checkedRadioButtonId) { R.id.sim1 -> "SIM 1"; R.id.sim2 -> "SIM 2"; else -> "" })
         toast("Saved")
         refresh()
     }
@@ -159,6 +164,7 @@ class MainActivity : Activity() {
             append("SMS permission: ").append(if (hasSms()) "allowed" else "not allowed").append('\n')
             append("Sheet: ").append(if (Prefs.getUrl(this@MainActivity).isNotBlank()) "set" else "not set").append('\n')
             append("Senders: ").append(Prefs.getFilter(this@MainActivity).ifBlank { "all" }).append('\n')
+            append("SIM: ").append(Prefs.getSim(this@MainActivity).ifBlank { "both" }).append('\n')
             append("Battery optimisation: ").append(if (pm.isIgnoringBatteryOptimizations(packageName)) "off (good)" else "on")
         }
         logText.text = Prefs.getLog(this).ifBlank { "No activity yet" }

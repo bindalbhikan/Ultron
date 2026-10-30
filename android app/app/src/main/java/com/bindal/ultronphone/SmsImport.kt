@@ -6,7 +6,7 @@ import android.provider.Telephony
 import android.telephony.SubscriptionManager
 
 /**
- * "Import old SMS": the inbox of the last [days] days (the Senders filter applies) queued to the sheet
+ * "Import old SMS": the inbox of the last [days] days (the Senders filter and SIM choice apply) queued to the sheet
  * like new ones, oldest first, each with its SIM. The script skips any already there, so a second
  * import adds only what is new.
  */
@@ -26,6 +26,7 @@ object SmsImport {
                 val from = c.getString(0) ?: ""
                 if (!Prefs.senderAllowed(context, from)) continue
                 val sim = if (hasSub) simOf(c.getInt(3)) else "SIM ?"
+                if (!Prefs.simAllowed(context, sim)) continue
                 UploadWorker.enqueue(context, from, c.getString(1) ?: "", c.getLong(2), sim)
                 n++
             }
@@ -35,7 +36,7 @@ object SmsImport {
     }
 
     /** "SIM 1" / "SIM 2" of a subscription id (the slot index needs no permission from Android 10). */
-    private fun simOf(subId: Int): String {
+    fun simOf(subId: Int): String {
         if (subId < 0 || Build.VERSION.SDK_INT < 29) return "SIM ?"
         val slot = SubscriptionManager.getSlotIndex(subId)
         return if (slot >= 0) "SIM ${slot + 1}" else "SIM ?"

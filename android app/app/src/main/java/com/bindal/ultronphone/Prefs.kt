@@ -12,6 +12,7 @@ object Prefs {
     private const val KEY_URL = "url"
     private const val KEY_SECRET = "secret"
     private const val KEY_FILTER = "filter"
+    private const val KEY_SIM = "sim"
     private const val KEY_WORKER = "worker"
     private const val KEY_TOKEN = "token"
     private const val KEY_AGENT = "agent"
@@ -29,6 +30,12 @@ object Prefs {
     fun getUrl(context: Context) = str(context, KEY_URL)
     fun getSecret(context: Context) = str(context, KEY_SECRET)
     fun getFilter(context: Context) = str(context, KEY_FILTER)
+    /** "" = both SIMs, else "SIM 1" / "SIM 2": only SMS that came in on that SIM go to the sheet. */
+    fun getSim(context: Context) = str(context, KEY_SIM)
+    fun setSim(context: Context, sim: String) = sp(context).edit().putString(KEY_SIM, sim).apply()
+
+    /** An SMS on [sim] passes the SIM choice; one whose SIM is unknown passes only when both SIMs are chosen. */
+    fun simAllowed(context: Context, sim: String) = getSim(context).let { it.isEmpty() || it == sim }
 
     // Agent mode (the Telegram worker's /api/phone routes)
     fun getWorker(context: Context) = str(context, KEY_WORKER).trimEnd('/')
