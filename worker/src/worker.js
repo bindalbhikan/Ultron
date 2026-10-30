@@ -46,6 +46,9 @@ const COMMANDS = {
                   examples: ["/myntrazerotd"], inputs: none("/myntrazerotd") },
   myntratat: { workflow: "myntra-tat.yml", icon: "🚚", name: "Myntra courier scorecard", portal: "myntra", minutes: 3,
                examples: ["/myntratat"], inputs: none("/myntratat") },
+  // Flipkart
+  fktat: { workflow: "flipkart-tat.yml", icon: "📦", name: "Flipkart TAT", portal: "flipkart", chat: true, minutes: 6,
+           examples: ["/fktat"], inputs: none("/fktat") },
   // AJIO
   ajiotat: { workflow: "ajio-tat.yml", icon: "📦", name: "AJIO TAT", portal: "ajio", chat: true, minutes: 2,
              examples: ["/ajiotat", "/ajiotat 3"],
@@ -159,6 +162,7 @@ const SCHEDULE = [
   { ist: "12:00 PM daily", cron: "30 6 * * *", cmd: "sla" },
   { ist: "3:00 PM daily", cron: "30 9 * * *", cmd: "sla" },
   { ist: "6:00 PM daily", cron: "30 12 * * *", cmd: "labels" },
+  { ist: "6:00 PM daily", cron: "30 12 * * *", cmd: "fktat" },
   { ist: "6:30 PM daily", cron: "0 13 * * *", cmd: "myntratat" },
   { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "evening" },
   ...INV_PUSH_HOURS.map((h) => ({ ist: "every 3 hours from 6 AM", cron: `30 ${h} * * *`, cmd: "invpush" })),
@@ -230,6 +234,7 @@ const SCREENS = {
     title: "🛒 <b>Flipkart</b>\n<i>incl. FBF</i>\n\nWhat do you need?",
     rows: [
       [["📈 Orders yesterday", "a:fk_orders"], ["⏰ Due today", "a:fk_due"]],
+      [["📦 Flipkart TAT", "r:fktat"]],
       [["📈 Sale report", "m:sale"], ["↩️ Return analysis", "m:returns"]],
       back(),
     ],

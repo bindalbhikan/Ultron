@@ -1,6 +1,7 @@
 # Flipkart TAT — `python run.py flipkart-tat`
 
-6 PM daily (GitHub schedule, `.github/workflows/flipkart-tat.yml`). The AJIO TAT working for Flipkart,
+6 PM daily, started by the worker's cron (`fktat` in `worker/src/worker.js`; GitHub's own schedule ran
+it 6 hours late). On demand: `/fktat` or Flipkart > Flipkart TAT in the bot menu. The AJIO TAT working for Flipkart,
 **sheet only**: no Flipkart ticket, no form.
 
 **Result**: `AGENT WORK/FLIPKART/FLIPKART_TAT_MASTER.xlsx` (Summary, TAT Report, Late Orders),

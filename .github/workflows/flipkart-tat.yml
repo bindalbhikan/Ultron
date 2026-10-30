@@ -1,13 +1,15 @@
 name: Flipkart TAT daily update
 
 on:
-  # 6 PM IST every day (GitHub's own schedule; it can start some minutes late)
-  schedule:
-    - cron: "30 12 * * *"
+  # The daily run (6 PM IST) is started by the Telegram bot's Cloudflare cron (worker/src/worker.js):
+  # GitHub's own schedule ran it 6 hours late on 29 Oct 2026.
   workflow_dispatch:
     inputs:
       days:
         description: "OMSGuru window: today plus N previous days (default 4)"
+        default: ""
+      chat_id:
+        description: "Telegram chat for this run's report (empty = default chat)"
         default: ""
 
 concurrency:
@@ -36,7 +38,7 @@ jobs:
       FLIPKART_CHANNEL_IDS: ${{ vars.FLIPKART_CHANNEL_IDS }}
       FK_TAT_DAYS: ${{ inputs.days || vars.FK_TAT_DAYS }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup

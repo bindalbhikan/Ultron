@@ -13,7 +13,7 @@ workers_dev = true
 #            5 -> 11:00 AM  Myntra OTP retry; dead stock (1st), monthly MIS (2nd)
 #            6 -> 12:00 PM  SLA warning;   8 -> 2:00 PM return analysis (15th);   9 -> 3:00 PM SLA
 #            4, 8, 11 -> 10 AM, 2 PM, 5 PM  Myntra zero TD (Mon-Sat)
-#           12 -> 6:00 PM   label check;  14 -> 8:00 PM evening summary
+#           12 -> 6:00 PM   label check, Flipkart TAT;  14 -> 8:00 PM evening summary
 #   :00 past  4 -> 9:30 AM morning;  6 -> 11:30 AM listings;  10 -> 3:30 PM sale;
 #            12 -> 5:30 PM VMS, AJIO TAT;  13 -> 6:30 PM Myntra courier scorecard
 #   4:45      -> 10:15 AM weekly review (Mondays only, by SCHEDULE)
@@ -45,6 +45,7 @@ deadstock = { workflow = "deadstock.yml", inputs = [] }
 listings = { workflow = "listings.yml", inputs = [] }
 mis = { workflow = "mis.yml", inputs = ["day"] }
 myntratat = { workflow = "myntra-tat.yml", inputs = [] }
+fktat = { workflow = "flipkart-tat.yml", inputs = ["days"] }
 returns = { workflow = "returns.yml", inputs = ["month"] }
 ajioads = { workflow = "ajio-ads.yml", inputs = [] }
 myntraotp = { workflow = "myntra-otp.yml", inputs = [] }
