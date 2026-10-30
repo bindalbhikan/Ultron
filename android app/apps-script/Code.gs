@@ -148,6 +148,7 @@ function parseSms(from, body) {
     return m ? { courier: 'Ekart', status: m[3].toUpperCase(), otp: m[1], count: '', seller: m[2].toUpperCase(), pod: false } : null;
   }
   if (/XPBEES/.test(code)) {
+    if (/return attempted/i.test(body)) return { courier: 'Xpressbees', status: 'RETURN', otp: '', count: num(/Acc:\s*(\d+)/i), pod: true };
     const otp = num(/OTP:?\s*(\d+)/i);
     return otp ? { courier: 'Xpressbees', status: 'PICKUP', otp, count: '', pod: /https?:\/\//.test(body) } : null;
   }
@@ -176,6 +177,17 @@ function parsePod(text) {
   if (!text) return out;
   const d = text.match(/Dispatch ID\s*(\d+)/i);
   if (d) out.dispatch = d[1];
+  if (/AWB\s*:\s*\d/i.test(text)) {                              // Xpressbees: "Client : X", "AWB : n" blocks
+    const client = (text.match(/Client\s*:\s*([^\n]+)/i) || [, ''])[1].trim();
+    for (const block of text.split(/AWB\s*:\s*/i).slice(1)) {
+      const awb = (block.match(/^(\d+)/) || [, ''])[1];
+      if (!awb) continue;
+      const type = (block.match(/\b(DTO|RTO|FWD)\b/) || [, ''])[1];
+      const status = (block.match(/\b(Undelivered|Delivered|Rejected)\b/i) || [, ''])[1].toUpperCase();
+      out.awbs.push({ awb, type, status: status === 'UNDELIVERED' ? 'REJECTED' : status, portal: portalOf(client) });
+    }
+    if (out.awbs.length) return out;
+  }
   if (/Client:/i.test(text)) {                                   // Delhivery: "Client: X" sections
     const parts = text.split(/Client:\s*/i).slice(1);
     for (const part of parts) {
@@ -220,7 +232,7 @@ function returns(from, body, deviceTime, p) {
   const day = Utilities.formatDate(when, TZ, 'dd-MM-yyyy');
   const time = Utilities.formatDate(when, TZ, 'HH:mm');
   const otpSheet = sms.otp ? SpreadsheetApp.openById(OTP_SHEET_ID).getSheets()[0] : null;
-  const otpRows = otpSheet && otpSheet.getLastRow() > 1 ? otpSheet.getRange(2, 1, otpSheet.getLastRow() - 1, 5).getDisplayValues() : [];
+  const otpRows = otpSheet && otpSheet.getLastRow() > 1 ? otpSheet.getRange(2, 1, otpSheet.getLastRow() - 1, 6).getDisplayValues() : [];
   if (sms.courier === 'Ekart' && EKART_SELLERS[sms.seller] === 'Myntra') {
     return { note: 'Myntra Ekart: left to the Myntra OTP bot', filled: otpRows.some(r => r[0] === day && r[3] === sms.otp) };
   }
@@ -274,15 +286,27 @@ function returns(from, body, deviceTime, p) {
       : ids.size ? [sms.courier, pod.dispatch || time, portal, sms.status].join('|')
       : [sms.courier, portal, sms.status, day].join('|');
     const logged = logRows.find(r => r[0] === ref);
-    const otp = sms.otp || (logged ? logged[4] : '');
+    // an SMS older than the one already filed for these shipments (a rework): changes nothing filed
+    const older = !!(logged && logged[6] && deviceTime && deviceTime < logged[6]);
+    const otp = older ? logged[4] : sms.otp || (logged ? logged[4] : '');
 
+    if (older) {
+      notes.push(sp + ': a later code (' + logged[4] + ') is filed');
+      if (sms.otp && !otpRows.some(r => r[0] === day && r[1] === sp && r[3] === logged[4])) filled = false;
+      if (!podRows.some(r => r[P.ref] === ref) && awbs.length) {
+        const rows = awbs.map(a => [day, portal, sms.courier, a.awb, otp, sms.status, a.type, a.status, time, ref, file]);
+        podTab.getRange(podTab.getLastRow() + 1, 1, rows.length, POD_HEADERS.length).setValues(rows.map(r => r.map(asText)));
+        rows.forEach(r => podRows.push(r.map(String)));
+      }
+      continue;
+    }
     if (sms.otp) {
       const put = putOtp(otpSheet, otpRows, day, sp, sms.status, otp, count, logged, fresh);
       notes.push(sp + ' ' + count + ' OTP ' + otp + ': ' + put);
       if (put === 'not in the sheet') filled = false;
     } else if (logged && logged[4] && count && fresh) {           // final POD: the count only
       const sheet = SpreadsheetApp.openById(OTP_SHEET_ID).getSheets()[0];
-      const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getDisplayValues() : [];
+      const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getDisplayValues() : [];
       putOtp(sheet, rows, day, sp, sms.status, logged[4], count, logged, true);
     }
     const entry = [ref, day, sp, sms.status, otp, count, deviceTime, new Date()];
@@ -318,10 +342,12 @@ function putOtp(sheet, rows, day, portal, status, otp, count, logged, write) {
     rows[old][3] = otp;
     return logged[4] === otp ? 'count updated' : 'resent, replaced ' + logged[4];
   }
-  if (at(otp) >= 0 || rows.some(r => r[0] === day && r[3] === otp)) return 'already in the sheet';
+  // the team's own row of this code (their portal name may differ); the agent's rows of other portals
+  // with the same code (one POD, several portals) do not count
+  if (at(otp) >= 0 || rows.some(r => r[0] === day && r[3] === otp && r[5] !== OTP_NAME)) return 'already in the sheet';
   if (!write) return 'not in the sheet';
   sheet.appendRow([day, portal, count, otp, status, OTP_NAME, '']);
-  rows.push([day, portal, count, otp, status]);
+  rows.push([day, portal, count, otp, status, OTP_NAME]);
   return 'added';
 }
 
@@ -347,9 +373,10 @@ function master() {
 
 function tab(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
-  if (!sheet) {
-    sheet = ss.insertSheet(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  if (sheet.getLastRow() === 0) {                                // new, or the first tab of a new spreadsheet
     sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
     sheet.setFrozenRows(1);
   }
   return sheet;
