@@ -338,6 +338,12 @@ function putOtp(sheet, rows, day, portal, status, otp, count, logged, write) {
   const at = (code) => rows.findIndex(r => r[0] === day && r[1] === portal && r[3] === code && r[4].toUpperCase() === status);
   const old = logged && logged[4] ? at(logged[4]) : -1;
   if (old >= 0 && write) {
+    const team = rows.findIndex((r, i) => i !== old && r[0] === day && r[1] === portal && r[3] === otp && r[4].toUpperCase() === status);
+    if (team >= 0 && rows[old][5] === OTP_NAME) {                // the team already wrote the new code: ours goes
+      sheet.deleteRow(old + 2);
+      rows.splice(old, 1);
+      return 'resent, ' + otp + ' already in the sheet (removed our ' + logged[4] + ')';
+    }
     sheet.getRange(old + 2, 3, 1, 2).setValues([[count, otp]]);
     rows[old][2] = count;
     rows[old][3] = otp;
