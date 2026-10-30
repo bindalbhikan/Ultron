@@ -156,10 +156,37 @@ EARLIEST_RETURN = dt.datetime(2026, 1, 1)
 # is too young to act on. Each run asks in the terminal whether such rows go into the
 # sheet (y) or are left out (n); anything already received is always kept.
 YOUNG_TRANSIT_DAYS = 60
-# Rows left out (n) wait on this hidden sheet of the master and come back on their own.
-PARKED_SHEET = 'YOUNG IN TRANSIT'
+# Every return still in transit (not delivered, not received or settled), whatever its age, is
+# on this sheet of the master instead of its account sheet, all three accounts together with an
+# ACCOUNT column (the last one, so the formulas line up with the account sheets). A row moves to
+# its account sheet on the first run after it is delivered or received. Before 30 Oct 2026 only
+# the young ones (< 60 days) were set aside, on the hidden sheet OLD_PARKED_SHEETS (still read).
+PARKED_SHEET = 'RETURN IN TRANSIT'
+OLD_PARKED_SHEETS = ['YOUNG IN TRANSIT']
 PARKED_ACCOUNT = 'ACCOUNT'
 PARKED = {}
+
+
+def master_rows(wb, account):
+    """Every row of one account in an openpyxl master (read_only): its account sheet, then its
+    rows on the in-transit sheet (and the old hidden one). Each row as {header: value}."""
+    for sheet in [account, PARKED_SHEET] + OLD_PARKED_SHEETS:
+        if sheet not in wb.sheetnames:
+            continue
+        rows = wb[sheet].iter_rows(values_only=True)
+        head = []
+        for probe in rows:
+            head = [str(h).strip() if h is not None else '' for h in probe]
+            if 'order_line_id' in head:
+                break
+        if 'order_line_id' not in head:
+            continue
+        for values in rows:
+            r = dict(zip(head, values))
+            if sheet != account and r.get(PARKED_ACCOUNT) != account:
+                continue
+            if r.get('order_line_id') not in (None, ''):
+                yield r
 
 # Raw columns, in the requested order. Both report types carry `type` / `status`, so
 # that pair appears once.
@@ -1619,7 +1646,7 @@ def read_old_master():
     # rather than its values, and calamine only ever returns values. read_only keeps it
     # to a row-by-row scan instead of building a cell object for all 1.6M cells.
     wb = openpyxl.load_workbook(MASTER, read_only=True, data_only=False)
-    for sheet in SHEETS + [PARKED_SHEET]:
+    for sheet in SHEETS + [PARKED_SHEET] + OLD_PARKED_SHEETS:
         if sheet not in wb.sheetnames:
             continue
         ws = wb[sheet]
@@ -1966,6 +1993,7 @@ def write_subtotals(ws, f, last):
 _PENDING = ('FINAL RETURN STATUS', '')
 SUMMARY_COLS = [
     ('TOTAL RETURNS', 'count', None, []),
+    ('IN TRANSIT', 'transit', None, []),      # only the RETURN IN TRANSIT sheet
     ('RETURN RECEIVED', 'count', None, [('FINAL RETURN STATUS', 'Return Received')]),
     ('SPF PAID', 'count', None, [('FINAL RETURN STATUS', 'SPF Paid')]),
     ('SPF ACCEPTED', 'count', None, [('FINAL RETURN STATUS', 'SPF Accepted')]),
@@ -1986,7 +2014,7 @@ SUMMARY_COLS = [
 # The day-wise sheet has ~750 rows, so it carries only the columns that answer "what is
 # still open from that day" - enough to act on without making Excel crawl.
 DATE_SUMMARY_COLS = [c for c in SUMMARY_COLS if c[0] in (
-    'TOTAL RETURNS', 'RETURN RECEIVED', 'SPF PAID', 'SPF ACCEPTED', 'SPF ACCEPTED AMT', 'PAYMENT RECEIVED', 'PENDING',
+    'TOTAL RETURNS', 'IN TRANSIT', 'RETURN RECEIVED', 'SPF PAID', 'SPF ACCEPTED', 'SPF ACCEPTED AMT', 'PAYMENT RECEIVED', 'PENDING',
     'PENDING AMT', 'ELIGIBLE CLAIMS', 'PENDING CLAIM AMT', 'SPF PAID AMT')]
 SUMMARY_SHEET = 'SUMMARY'
 DATE_SUMMARY_SHEET = 'DATE SUMMARY'
@@ -2129,23 +2157,30 @@ def write_summary(wb, f, data, title, cols, by_day):
                        if isinstance(rows, tuple)
                        else '=' + '+'.join('%s%d' % (col, x) for x in rows))
             put(ws, r - 1, j - 1, formula,
-                f['tot_%s_%s' % (tag, 'count' if kind == 'count' else 'amount')])
+                f['tot_%s_%s' % (tag, 'amount' if kind == 'sum' else 'count')])
 
     r = 2
     totals = []
+    # every count / sum is the account sheet's plus that account's rows on the in-transit sheet
+    n_transit = sum(len(PARKED.get(name, [])) for name in SHEETS)
+
+    def sheet_ranges(sheet, n):
+        last = n + FIRST_DATA_ROW - 1
+        out = {h: "'%s'!$%s$%d:$%s$%d" % (sheet, C[h], FIRST_DATA_ROW, C[h], last) for h in HEADERS}
+        acc = L(len(HEADERS) + 1)
+        out[PARKED_ACCOUNT] = "'%s'!$%s$%d:$%s$%d" % (sheet, acc, FIRST_DATA_ROW, acc, last)
+        return out
+
     for name in SHEETS:
-        recs = [rec for rec in data[name]
+        recs = [rec for rec in data[name] + PARKED.get(name, [])
                 if isinstance(rec.get('return_created_date'), dt.datetime)
                 and str(rec.get('model') or '').upper() not in SUMMARY_EXCLUDE_MODELS]
         if not recs:
             continue
-        last = len(data[name]) + FIRST_DATA_ROW - 1
-        ranges = {h: "'%s'!$%s$%d:$%s$%d" % (name, C[h], FIRST_DATA_ROW, C[h], last)
-                  for h in HEADERS}
-        rng = ranges.__getitem__
-        base = []
-        for mdl in SUMMARY_EXCLUDE_MODELS:
-            base += [rng('model'), '"<>%s"' % mdl]
+        parts_of = [(sheet_ranges(name, len(data[name])), [])]
+        if n_transit:
+            t = sheet_ranges(PARKED_SHEET, n_transit)
+            parts_of.append((t, [t[PARKED_ACCOUNT], '"%s"' % name]))
         if by_day:
             buckets = sorted({rec['return_created_date'].date() for rec in recs})
         else:
@@ -2156,20 +2191,28 @@ def write_summary(wb, f, data, title, cols, by_day):
             put(ws, r - 1, 0, name)
             if by_day:
                 put(ws, r - 1, 1, dt.datetime(bk.year, bk.month, bk.day), f['date'])
-                d = 'DATE(%d,%d,%d)' % (bk.year, bk.month, bk.day)
-                when = [rng('return_created_date'), '">="&' + d,
-                        rng('return_created_date'), '"<"&(' + d + '+1)']
             else:
                 put(ws, r - 1, 1, bk)
-                when = [rng('RETURN MONTH'), '"%s"' % bk]
             for j, (_, kind, val, crit) in enumerate(cols, start=3):
-                parts = when + base
-                for ch, cv in crit:
-                    parts += [rng(ch), '"%s"' % cv]
-                formula = ('=COUNTIFS(%s)' % ','.join(parts) if kind == 'count'
-                           else '=SUMIFS(%s,%s)' % (rng(val), ','.join(parts)))
-                put(ws, r - 1, j - 1, formula,
-                    f['count'] if kind == 'count' else f['amount'])
+                terms = []
+                for k, (rg, extra) in enumerate(parts_of):
+                    if kind == 'transit' and k == 0:
+                        continue                  # IN TRANSIT: the in-transit sheet only
+                    if by_day:
+                        d = 'DATE(%d,%d,%d)' % (bk.year, bk.month, bk.day)
+                        parts = [rg['return_created_date'], '">="&' + d,
+                                 rg['return_created_date'], '"<"&(' + d + '+1)']
+                    else:
+                        parts = [rg['RETURN MONTH'], '"%s"' % bk]
+                    for mdl in SUMMARY_EXCLUDE_MODELS:
+                        parts += [rg['model'], '"<>%s"' % mdl]
+                    parts += extra
+                    for ch, cv in crit:
+                        parts += [rg[ch], '"%s"' % cv]
+                    terms.append('SUMIFS(%s,%s)' % (rg[val], ','.join(parts)) if kind == 'sum'
+                                 else 'COUNTIFS(%s)' % ','.join(parts))
+                put(ws, r - 1, j - 1, '=' + ('+'.join(terms) or '0'),
+                    f['amount'] if kind == 'sum' else f['count'])
             r += 1
         put_total(r, name, 'TOTAL', (first, r - 1), 'mid')
         totals.append(r)
@@ -2325,18 +2368,27 @@ def write_master(data):
     f = build_formats(wb)
     # the two summary sheets first - xlsxwriter keeps sheets in creation order
     ws, r = write_summary(wb, f, data, SUMMARY_SHEET, SUMMARY_COLS, False)
-    write_coverage(ws, f, r + 3, log, data)
+    # coverage and claim TAT look at every return, the in-transit sheet's too
+    full = {name: data[name] + PARKED.get(name, []) for name in SHEETS}
+    write_coverage(ws, f, r + 3, log, full)
     write_summary(wb, f, data, DATE_SUMMARY_SHEET, DATE_SUMMARY_COLS, True)
-    write_claim_tat(wb, f, data)
+    write_claim_tat(wb, f, full)
 
     col_fmt = [cell_format(f, h) for h in HEADERS]
     # Which columns hold what, decided once for all three sheets. Per cell this was
     # three isinstance checks and a dict lookup, 1.7M times over.
     is_date = [h in DATE_COLS or h in DTIME_COLS for h in HEADERS]
     is_formula = [h in FORMULA_COLS for h in HEADERS]
-    for name in SHEETS:
+    # the account sheets, then the in-transit returns of all three (ACCOUNT as the last column,
+    # so every formula column is where it is on the account sheets)
+    transit = [(name, rec) for name in SHEETS for rec in PARKED.get(name, [])]
+    sheets = [(name, [(None, rec) for rec in data[name]]) for name in SHEETS]
+    if transit:
+        sheets.append((PARKED_SHEET, transit))
+    acc_col = len(HEADERS)
+    for name, rows in sheets:
         ws = wb.add_worksheet(name)
-        last = len(data[name]) + FIRST_DATA_ROW - 1
+        last = len(rows) + FIRST_DATA_ROW - 1
         # Row 1 is the SUBTOTAL band, row 2 the headers, data from row 3. The totals sit
         # ABOVE the headers on purpose: that keeps them outside the autofilter range, so
         # filtering can never hide them, and the frozen pane keeps them on screen while
@@ -2350,11 +2402,16 @@ def write_master(data):
             if h in NOTES:
                 ws.write_comment(HEADER_ROW - 1, i, NOTES[h],
                                  {'width': 430, 'height': 230})
+        if name == PARKED_SHEET:
+            put(ws, HEADER_ROW - 1, acc_col, PARKED_ACCOUNT, f['head'])
+            ws.set_column(acc_col, acc_col, 10)
         ws.set_row(HEADER_ROW - 1, 18)
         ws.freeze_panes(FIRST_DATA_ROW - 1, 0)
 
-        for r, rec in enumerate(data[name], start=FIRST_DATA_ROW):
+        for r, (account, rec) in enumerate(rows, start=FIRST_DATA_ROW):
             row = r - 1
+            if account:
+                ws.write(row, acc_col, account)
             formulas = build_formulas(r)
             # a formula column you overwrote by hand keeps your value
             locked = rec.get('_locked') or ()
@@ -2369,9 +2426,8 @@ def write_master(data):
                     ws.write_datetime(row, i, v)
                 else:
                     ws.write(row, i, v)
-        if data[name]:
-            ws.autofilter(HEADER_ROW - 1, 0, last - 1, len(HEADERS) - 1)
-    write_parked(wb, is_date)
+        if rows:
+            ws.autofilter(HEADER_ROW - 1, 0, last - 1, len(HEADERS) - (0 if name == PARKED_SHEET else 1))
     write_ticket_details(wb, f)
     write_input_log(wb, f, log)
     wb.close()
@@ -2411,33 +2467,6 @@ def write_ticket_details(wb, f):
 PORTAL_TICKET_FILES = {'SPF Tickets (portal).xlsx', 'SPF Tickets (new).xlsx', 'SPF Tickets (raised by bot).xlsx'}
 # Bot only: the TICKETS sheet's rows, filled by bindal/myntra_spf/pipeline.py
 TICKET_DETAILS = []
-
-
-def write_parked(wb, is_date):
-    """The young in-transit rows left out of the account sheets, on a hidden sheet of
-    their own, so the next run reads them back (read_old_master) and moves each one to
-    its account sheet once it is YOUNG_TRANSIT_DAYS old. Without this a return left out
-    would be gone for good once it falls outside the portal reports' date window."""
-    rows = [(name, rec) for name in SHEETS for rec in PARKED.get(name, [])]
-    if not rows:
-        return
-    ws = wb.add_worksheet(PARKED_SHEET)
-    ws.hide()
-    hdr = [PARKED_ACCOUNT] + HEADERS
-    for i, h in enumerate(hdr):
-        ws.write(0, i, h)
-    formula = set(FORMULA_COLS)
-    for r, (name, rec) in enumerate(rows, start=1):
-        ws.write(r, 0, name)
-        locked = rec.get('_locked') or ()
-        for i, h in enumerate(HEADERS, start=1):
-            v = rec.get(h)
-            if v is None or (h in formula and h not in locked):
-                continue
-            if is_date[i - 1] and isinstance(v, (dt.datetime, dt.date)):
-                ws.write_datetime(r, i, v)
-            else:
-                ws.write(r, i, v)
 
 
 # ------------------------------------------------------------------ input cleanup
@@ -2519,8 +2548,14 @@ IN_TRANSIT_STATUSES = {'RET CREATED', 'RET DISPATCHED', 'RTO CREATED', 'DISPATCH
 
 
 def is_young_in_transit(rec, today):
-    """Exactly the rows the sheet shows as CLAIM TYPE = RETURN IN TRANSIT with
-    AGE (DAYS) < YOUNG_TRANSIT_DAYS, and nothing else.
+    """In transit and younger than YOUNG_TRANSIT_DAYS (see is_in_transit)."""
+    created = rec.get('return_created_date')
+    return (is_in_transit(rec) and isinstance(created, dt.datetime)
+            and (today - created.date()).days < YOUNG_TRANSIT_DAYS)
+
+
+def is_in_transit(rec):
+    """Exactly the rows the sheet shows as CLAIM TYPE = RETURN IN TRANSIT, any age.
 
     Never matched: anything delivered (a delivery date, or "Delivered" in the status),
     anything resolved (FINAL RETURN STATUS would hold a value), and a Return with no
@@ -2541,7 +2576,7 @@ def is_young_in_transit(rec, today):
             and norm(rec.get('type')) == 'RETURN'
             and not rec.get('return_tracking_number')):
         return False
-    return (today - created.date()).days < YOUNG_TRANSIT_DAYS
+    return True
 
 
 def ask_yes_no(question):
@@ -2558,21 +2593,21 @@ def ask_yes_no(question):
 
 
 def drop_young_in_transit(data, args):
-    """Ask whether young in-transit, unreceived returns belong in the sheet.
+    """Ask whether the in-transit, unreceived returns (any age) go on their own sheet
+    (PARKED_SHEET, n) or stay on the account sheets (y).
 
-    --in-transit y/n answers up front. Otherwise the question is asked in the terminal.
-    With no terminal to ask (output piped, scheduled run) the rows are kept, since
-    leaving data out silently is the worse mistake. A dry run with no answer only
-    reports the count.
+    --in-transit y/n answers up front (the bot passes n). Otherwise the question is asked in
+    the terminal. With no terminal to ask (output piped) the rows are kept on the account
+    sheets. A dry run with no answer only reports the count.
     """
     today = dt.date.today()
-    young = {name: [r for r in rows if is_young_in_transit(r, today)]
-             for name, rows in data.items()}
+    young = {name: [r for r in rows if is_in_transit(r)] for name, rows in data.items()}
     total = sum(len(v) for v in young.values())
     if not total:
         return
-    print('RETURNS IN TRANSIT, NOT RECEIVED, CREATED LESS THAN %d DAYS AGO: %d'
-          % (YOUNG_TRANSIT_DAYS, total))
+    print('RETURNS IN TRANSIT, NOT RECEIVED: %d (under %d days old: %d)'
+          % (total, YOUNG_TRANSIT_DAYS,
+             sum(is_young_in_transit(r, today) for v in young.values() for r in v)))
     for name in SHEETS:
         print('  %-5s %6d' % (name, len(young.get(name, []))))
 
@@ -2582,7 +2617,7 @@ def drop_young_in_transit(data, args):
         print('  (dry run - not asking; pass --in-transit y or n to preview either way)\n')
         return
     elif sys.stdin is not None and sys.stdin.isatty():
-        keep = ask_yes_no('Include these rows in the sheet? [y/n]: ')
+        keep = ask_yes_no('Keep them on the account sheets (n = the %s sheet)? [y/n]: ' % PARKED_SHEET)
         if keep is None:
             keep = True
     else:
@@ -2596,8 +2631,8 @@ def drop_young_in_transit(data, args):
         drop = {id(r) for r in young.get(name, [])}
         data[name] = [r for r in rows if id(r) not in drop]
         PARKED[name] = young.get(name, [])
-    print('  -> left out of the sheet, kept on the hidden %s sheet (they come back on a'
-          ' later run once they are older, delivered or received)\n' % PARKED_SHEET)
+    print('  -> on the %s sheet (each moves to its account sheet once delivered or received)\n'
+          % PARKED_SHEET)
 
 
 # --------------------------------------------------------------------------- main

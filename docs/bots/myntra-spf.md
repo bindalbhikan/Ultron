@@ -15,11 +15,14 @@ On demand: `/myntraspf`.
   from Drive `SPF/MYNTRA/input`: Ticket1 and older payment exports per account (by hand, optional), MANUAL RETURN, LEGACY MASTER, and the courier POD sheet at the input
   root (`MYNTRA RETURN PICKUP POD.xlsx` -> PICKUP POD / RETURN POD / RETURN POD DATE, the last
   columns; refreshed every run, kept as they were when the file is missing).
-* **Young in-transit returns stay off the sheets**: a return still in transit, not received or
-  settled, and created fewer than 60 days ago (`YOUNG_TRANSIT_DAYS`) is not on MAIN / DBCC /
-  FMCC. It waits on the hidden sheet `YOUNG IN TRANSIT` of the master (the portal reports only
-  cover 30 days, so it would otherwise be lost) and moves to its account sheet on the first run
-  after it turns 60 days old, is delivered or is received. OMSGuru checks the parked rows too.
+* **RETURN IN TRANSIT sheet**: every return still in transit (not delivered, not received or
+  settled), whatever its age, is on its own sheet of the master: all three accounts, ACCOUNT as the
+  last column, same columns and formulas as the account sheets. MAIN / DBCC / FMCC hold the
+  delivered / received returns. A row moves to its account sheet on the first run after it is
+  delivered or received. SUMMARY / DATE SUMMARY stay one: every figure counts both sheets, plus an
+  IN TRANSIT column. Claims, OMSGuru checks and the stats read both (`engine.master_rows`). Until
+  30 Oct 2026 only the young ones (< 60 days) were set aside, on the hidden `YOUNG IN TRANSIT`
+  sheet (still read once, then gone).
 * **SPF tickets from the portal**: every run reads each account's SPF tickets (all statuses,
   `api/spf/v2/getTickets`) as one more ticket report, so TICKET ID / STATUS follow the portal
   without a hand-dropped Ticket1 (a rejection reason from Ticket1 is kept).

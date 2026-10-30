@@ -277,23 +277,16 @@ def missing_order_months(path: Path, today: date) -> dict[str, list[tuple[date, 
     ORDER AMOUNT, the months from MYNTRA_SPF_ORDER_LOOKBACK days (default 45) before it was
     created up to its creation. Months the daily order window already covers are left out."""
     from openpyxl import load_workbook
-    from .engine import FIRST_DATA_ROW, HEADER_ROW
+    from .engine import master_rows
     lookback = timedelta(days=num("MYNTRA_SPF_ORDER_LOOKBACK", 45))
     daily_from = today - timedelta(days=num("MYNTRA_SPF_ORDER_DAYS", 60))
     yesterday = today - timedelta(days=1)
     wb = load_workbook(path, read_only=True)
     out = {}
     for name in ACCOUNTS:
-        if name not in wb.sheetnames:
-            continue
-        rows = wb[name].iter_rows(min_row=HEADER_ROW, values_only=True)
-        head = [str(h).strip() if h is not None else "" for h in next(rows)]
-        for _ in range(FIRST_DATA_ROW - HEADER_ROW - 1):
-            next(rows, None)
         months = set()
-        for values in rows:
-            r = dict(zip(head, values))
-            if not r.get("order_line_id") or not_worked(r) or _num(r.get("ORDER AMOUNT")) is not None:
+        for r in master_rows(wb, name):
+            if not_worked(r) or _num(r.get("ORDER AMOUNT")) is not None:
                 continue
             created = r.get("return_created_date")
             if not hasattr(created, "date"):
@@ -332,25 +325,15 @@ def master_stats(path: Path, today: date, months: int = 6) -> dict:
     received ones were found, claim status with order value, open returns by age, and returns
     per month (last `months`). Same rules as the master's own formulas."""
     from openpyxl import load_workbook
-    from .engine import FIRST_DATA_ROW, HEADER_ROW
+    from .engine import master_rows
     wb = load_workbook(path, read_only=True)
     first_month = (today.replace(day=1) - timedelta(days=31 * (months - 1))).strftime("%Y-%m")
     out = {}
     for name in ACCOUNTS:
-        if name not in wb.sheetnames:
-            continue
-        ws = wb[name]
-        rows = ws.iter_rows(min_row=HEADER_ROW, values_only=True)
-        head = [str(h).strip() if h is not None else "" for h in next(rows)]
-        for _ in range(FIRST_DATA_ROW - HEADER_ROW - 1):
-            next(rows, None)
         a = {"rows": 0, "final": {}, "received_by": {"ERP": 0, "OMSGuru": 0, "Manual": 0},
              "claims": {}, "open_age": {label: {"count": 0, "value": 0.0} for _, label in AGE_BUCKETS},
              "months": {}}
-        for values in rows:
-            r = dict(zip(head, values))
-            if not r.get("order_line_id"):
-                continue
+        for r in master_rows(wb, name):
             if not_worked(r):
                 a["not_worked"] = a.get("not_worked", 0) + 1
                 continue
@@ -394,22 +377,12 @@ def open_returns(path: Path, since: date) -> dict[tuple, dict]:
     """(order_line_id, return_id) -> lookup terms for every row whose FINAL RETURN STATUS is
     blank, created since `since`. Only these are looked up in OMSGuru."""
     from openpyxl import load_workbook
-    from .engine import FIRST_DATA_ROW, HEADER_ROW, PARKED_SHEET, norm
+    from .engine import master_rows, norm
     wb = load_workbook(path, read_only=True)
     out = {}
-    # the account sheets, and the hidden sheet of young in-transit rows (header on row 1)
-    for name in [*ACCOUNTS, PARKED_SHEET]:
-        if name not in wb.sheetnames:
-            continue
-        ws = wb[name]
-        parked = name == PARKED_SHEET
-        rows = ws.iter_rows(min_row=1 if parked else HEADER_ROW, values_only=True)
-        head = [str(h).strip() if h is not None else "" for h in next(rows)]
-        for _ in range(0 if parked else FIRST_DATA_ROW - HEADER_ROW - 1):
-            next(rows, None)
-        for values in rows:
-            r = dict(zip(head, values))
-            if not r.get("order_line_id") or final_status(r) or not_worked(r):
+    for name in ACCOUNTS:      # the account sheets and the RETURN IN TRANSIT sheet
+        for r in master_rows(wb, name):
+            if final_status(r) or not_worked(r):
                 continue
             created = r.get("return_created_date")
             created = created.date() if hasattr(created, "date") else None

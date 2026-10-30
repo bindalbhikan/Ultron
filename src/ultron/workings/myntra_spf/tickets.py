@@ -114,19 +114,12 @@ def candidates(path: Path, today: date, ticketed: dict[str, set[str]],
     ticketed: account -> order lines with a portal ticket. skip: (order_line_id, return_id)
     keys known to be received (OMSGuru) since the master was written."""
     from openpyxl import load_workbook
-    from .engine import FIRST_DATA_ROW, HEADER_ROW, SHEETS, norm
+    from .engine import SHEETS, master_rows, norm
     wb = load_workbook(path, read_only=True)
     out: dict[str, dict[str, list[str]]] = {}
-    for name in SHEETS:
-        if name not in wb.sheetnames:
-            continue
-        rows = wb[name].iter_rows(min_row=HEADER_ROW, values_only=True)
-        head = [str(h).strip() if h is not None else "" for h in next(rows)]
-        for _ in range(FIRST_DATA_ROW - HEADER_ROW - 1):
-            next(rows, None)
+    for name in SHEETS:          # the account sheet and its rows on the RETURN IN TRANSIT sheet
         seen: set[str] = set()
-        for values in rows:
-            r = dict(zip(head, values))
+        for r in master_rows(wb, name):
             if (norm(r.get("order_line_id")), norm(r.get("return_id"))) in skip:
                 continue
             cat = claim_of(r, today, ticketed.get(name, set()))
