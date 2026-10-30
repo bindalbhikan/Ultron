@@ -42,7 +42,7 @@ const COMMANDS = {
   myntrareports: { workflow: "myntra-reports.yml", icon: "📊", name: "Myntra daily reports", portal: "myntra", minutes: 8,
                    examples: ["/myntrareports", "/myntrareports 2026-10-23"],
                    inputs: oneDate("date", "/myntrareports or /myntrareports YYYY-MM-DD") },
-  myntrazerotd: { workflow: "myntra-zero-td.yml", icon: "🏷", name: "Myntra zero TD", portal: "myntra", minutes: 3,
+  myntrazerotd: { workflow: "myntra-zero-td.yml", icon: "🏷", name: "Myntra zero TD", portal: "myntra", minutes: 3, office: true,
                   examples: ["/myntrazerotd"], inputs: none("/myntrazerotd") },
   myntratat: { workflow: "myntra-tat.yml", icon: "🚚", name: "Myntra courier scorecard", portal: "myntra", minutes: 3,
                examples: ["/myntratat"], inputs: none("/myntratat") },
@@ -368,6 +368,7 @@ export default {
     if (path.startsWith("/api/push/")) return pushDashboard(request, env, path.slice("/api/push/".length));
     if (path === "/api/myntra-session") return saveMyntraSession(request, env);
     if (path === "/api/myntra-session/read") return readMyntraSession(request, env);
+    if (path.startsWith("/api/phone/")) return phoneApi(request, env, path.slice("/api/phone/".length));
     if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.WEBHOOK_SECRET) {
       return new Response("forbidden", { status: 403 });
     }
@@ -675,6 +676,71 @@ async function readMyntraSession(request, env) {
   return body ? new Response(body, { headers: { "Content-Type": "application/json" } }) : new Response("none", { status: 404 });
 }
 
+// ------------------------------------------------------------------ Ultron Phone
+// The Android app (android app/) as a worker for what only a phone line can do: www.myntra.com
+// refuses GitHub's runners, so a bot run hands its lookups to the phone through here. All POST,
+// DASHBOARD_TOKEN. One job at a time:
+//   job      {id, kind, items}    a bot run queues it (kind "myntra_style": style ids)
+//   next     {device, battery}    the phone asks for work; answers the open job, or {}
+//   result   ?job=&part=&last=1   the phone's answers, a part at a time (JSON object)
+//   collect  ?job=                the bot run reads {done, parts, taken, results}
+//   status                        when the phone last asked, from which device
+// KV free plan: 1,000 writes a day, so the phone's "seen" is written at most every 10 minutes.
+const PHONE_SEEN = "phone_seen";
+const PHONE_JOB = "phone_job";
+
+async function phoneApi(request, env, action) {
+  if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+  const q = new URL(request.url).searchParams;
+  const json = (data) => new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
+  if (action === "job") {
+    const job = await request.json().catch(() => null);
+    if (!job?.id || !job.kind || !Array.isArray(job.items)) return new Response("bad job", { status: 400 });
+    await env.DASH.put(PHONE_JOB, JSON.stringify({ ...job, created: Date.now(), taken: 0 }), { expirationTtl: 86400 });
+    return json({ queued: job.id });
+  }
+  if (action === "next") {
+    const me = await request.json().catch(() => ({}));
+    const seen = JSON.parse((await env.DASH.get(PHONE_SEEN)) || "{}");
+    if (Date.now() - (seen.at || 0) > 10 * 60 * 1000) {
+      await env.DASH.put(PHONE_SEEN, JSON.stringify({ at: Date.now(), device: me.device || "", battery: me.battery ?? null,
+                                                       version: me.version || "" }));
+    }
+    const job = JSON.parse((await env.DASH.get(PHONE_JOB)) || "null");
+    if (!job || job.done) return json({});
+    if (!job.taken || Date.now() - job.taken > 30 * 60 * 1000) {   // a phone that took it and died: given again
+      job.taken = Date.now();
+      await env.DASH.put(PHONE_JOB, JSON.stringify(job), { expirationTtl: 86400 });
+    }
+    return json({ id: job.id, kind: job.kind, items: job.items });
+  }
+  if (action === "result") {
+    const id = q.get("job") || "";
+    const part = Number(q.get("part") || 0);
+    const job = JSON.parse((await env.DASH.get(PHONE_JOB)) || "null");
+    if (!job || job.id !== id) return new Response("no such job", { status: 404 });
+    const body = await request.text();
+    if (body.length > 20_000_000) return new Response("too large", { status: 413 });
+    await env.DASH.put(`phone_result:${id}:${part}`, body, { expirationTtl: 86400 });
+    if (q.get("last") === "1") {
+      job.done = part + 1;
+      await env.DASH.put(PHONE_JOB, JSON.stringify(job), { expirationTtl: 86400 });
+    }
+    return json({ stored: part });
+  }
+  if (action === "collect") {
+    const id = q.get("job") || "";
+    const job = JSON.parse((await env.DASH.get(PHONE_JOB)) || "null");
+    if (!job || job.id !== id) return json({ done: 0, missing: true });
+    if (!job.done) return json({ done: 0, taken: job.taken || 0 });
+    const results = {};
+    for (let i = 0; i < job.done; i++) Object.assign(results, JSON.parse((await env.DASH.get(`phone_result:${id}:${i}`)) || "{}"));
+    return json({ done: job.done, taken: job.taken, results });
+  }
+  if (action === "status") return json(JSON.parse((await env.DASH.get(PHONE_SEEN)) || "{}"));
+  return new Response("unknown", { status: 404 });
+}
+
 // ------------------------------------------------------------------ Ultron
 // The agent's routes are ../agent.js, the same for every seller. Plain text in an allowed chat goes
 // to the agent-chat workflow (ultron.agents.chat), which answers in the same chat. The agent can
@@ -704,11 +770,26 @@ function b64url(bytes) {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function dispatch(env, cmd, inputs) {
+async function dispatch(env, cmd, inputs) {
+  // office: true - the office PC's runner when it is online, else GitHub's runner with Ultron Phone
+  if (cmd.office && !inputs.runner) inputs = { ...inputs, runner: (await officeOnline(env)) ? "office" : "cloud" };
   return github(env, `/repos/${OWNER}/${REPO}/actions/workflows/${cmd.workflow}/dispatches`, {
     method: "POST",
     body: JSON.stringify({ ref: "main", inputs }),
   });
+}
+
+// Is the office PC's self-hosted runner (label bindal-office) online? When GitHub does not say, the
+// office is assumed, as before Ultron Phone.
+async function officeOnline(env) {
+  try {
+    const res = await github(env, `/repos/${OWNER}/${REPO}/actions/runners`);
+    if (!res.ok) return true;
+    const runners = (await res.json()).runners || [];
+    return runners.some((r) => r.status === "online" && (r.labels || []).some((l) => l.name === "bindal-office"));
+  } catch {
+    return true;
+  }
 }
 
 function keyboard(rows) {

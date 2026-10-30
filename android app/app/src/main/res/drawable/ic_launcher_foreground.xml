@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App icon foreground: the "U" of Ultron, inside the adaptive icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M38,32h9v26a7,7 0 0,0 14,0V32h9v26a16,16 0 0,1 -32,0Z" />
+    <path android:fillColor="#FF7CE0C3"
+        android:pathData="M36,78h36v5H36Z" />
+</vector>

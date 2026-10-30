@@ -35,3 +35,9 @@ desktop.ini
 
 .claude/settings.local.json
 client_secret*.json
+
+# Android app (built on GitHub, kept in Drive AGENT WORK/ULTRON PHONE)
+android app/.gradle/
+android app/local.properties
+*.apk
+*.keystore

@@ -69,6 +69,26 @@ def read_source(path: Path, accounts: list[str]) -> dict[str, pd.DataFrame]:
     return out
 
 
+def lookup(ids: list[int]) -> dict[int, dict | str]:
+    """Each style's buyer-side answer: straight from www.myntra.com, and through Ultron Phone
+    (core/phone.py, the Android app on a mobile line) when myntra.com refuses this machine (403 on
+    GitHub's runners) or MYNTRA_ZERO_TD_VIA=phone. The phone answers the same "style" object,
+    cut down to what check() reads."""
+    from ..core import phone
+    from .spider import fetch
+    via = (env("MYNTRA_ZERO_TD_VIA") or "").lower()
+    answers: dict[int, dict | str] = {}
+    if via != "phone":
+        answers = fetch(ids, num("MYNTRA_ZERO_TD_CONCURRENCY", 8))
+        refused = sum(1 for a in answers.values() if a == "HTTP 403")
+        if refused < len(ids) / 2:
+            return answers
+        log.warning("www.myntra.com refused this machine (%d of %d styles HTTP 403): asking Ultron Phone",
+                    refused, len(ids))
+    got = phone.run_job("myntra_style", ids, wait_minutes=num("MYNTRA_ZERO_TD_PHONE_MINUTES", 40))
+    return {i: got.get(str(i), "no answer from the phone") for i in ids}
+
+
 def check(answer: dict | str) -> dict:
     """The CHECK_COLUMNS of one style from its buyer-side answer."""
     from .spider import sizes_in_stock
@@ -181,7 +201,6 @@ def save_to_drive(path: Path, when: datetime) -> str:
 
 def run(args) -> int:
     import tempfile
-    from .spider import fetch
     accounts = [a.upper() for a in (csv_list("MYNTRA_ZERO_TD_ACCOUNTS") or ACCOUNTS)]
     if args.source:
         source = Path(args.source)
@@ -197,7 +216,7 @@ def run(args) -> int:
 
     ids = sorted({int(i) for df in sheets.values() for i in df["STYLE ID"]})
     log.info("Looking up %d styles on www.myntra.com", len(ids))
-    answers = fetch(ids, num("MYNTRA_ZERO_TD_CONCURRENCY", 8))
+    answers = lookup(ids)
     found = {i: check(a) for i, a in answers.items()}
     unchecked = sum(1 for c in found.values() if c["STATUS"] == "NOT CHECKED")
     if unchecked == len(ids):
