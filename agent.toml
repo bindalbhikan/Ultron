@@ -75,6 +75,7 @@ listings = { workflow = "listings.yml", inputs = [], about = "Listing health che
 mis = { workflow = "mis.yml", inputs = ["day"], about = "Monthly MIS and plan now (last month). inputs: day (YYYY-MM-DD)" }
 myntratat = { workflow = "myntra-tat.yml", inputs = [], about = "Myntra courier pickup scorecard now. no inputs" }
 fktat = { workflow = "flipkart-tat.yml", inputs = ["days"], about = "Flipkart dispatch TAT sheet (AGENT WORK/FLIPKART) now. inputs: days (OMSGuru window)" }
+smscatchup = { workflow = "sms-catchup.yml", inputs = [], about = "Returns SMS catch-up now: courier SMS of the last 2 days the phone sheet script did not file, worked again. no inputs" }
 returns = { workflow = "returns.yml", inputs = ["month"], about = "Return analysis of a month (Myntra x3, Ajio, Flipkart). inputs: month (YYYY-MM; default last month)" }
 ajioads = { workflow = "ajio-ads.yml", inputs = [], about = "AJIO ads / TOT gap report now. no inputs" }
 myntraotp = { workflow = "myntra-otp.yml", inputs = [], about = "Myntra courier pickup / return OTPs now. no inputs" }

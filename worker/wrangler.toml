@@ -46,6 +46,7 @@ listings = { workflow = "listings.yml", inputs = [] }
 mis = { workflow = "mis.yml", inputs = ["day"] }
 myntratat = { workflow = "myntra-tat.yml", inputs = [] }
 fktat = { workflow = "flipkart-tat.yml", inputs = ["days"] }
+smscatchup = { workflow = "sms-catchup.yml", inputs = [] }
 returns = { workflow = "returns.yml", inputs = ["month"] }
 ajioads = { workflow = "ajio-ads.yml", inputs = [] }
 myntraotp = { workflow = "myntra-otp.yml", inputs = [] }

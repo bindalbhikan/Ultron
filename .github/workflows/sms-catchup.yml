@@ -1,0 +1,35 @@
+name: Returns SMS catch-up
+
+on:
+  # Started by the Telegram bot's Cloudflare cron (worker/src/worker.js, /smscatchup): the courier SMS of
+  # the last 2 days the SMS sheet's Apps Script did not work, failed on, or got no POD for (a passing
+  # reason) are worked again (scripts/phone/rework_sms.py --pending); Telegram hears of any still failing.
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "SMS of the last N days"
+        default: "2"
+
+concurrency:
+  group: sms-catchup
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Kolkata
+      RUN_MODE: github-actions
+      # the SMS sheet (shared with the service account) and the web app that files the SMS
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      SMS_WEBAPP_URL: ${{ secrets.SMS_WEBAPP_URL }}
+      SMS_WEBAPP_KEY: ${{ secrets.SMS_WEBAPP_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      IN_DAYS: ${{ inputs.days }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Work the pending SMS again
+        run: python scripts/phone/rework_sms.py --pending --days "${IN_DAYS:-2}"

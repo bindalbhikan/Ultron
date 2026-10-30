@@ -49,6 +49,9 @@ const COMMANDS = {
   // Flipkart
   fktat: { workflow: "flipkart-tat.yml", icon: "📦", name: "Flipkart TAT", portal: "flipkart", chat: true, minutes: 6,
            examples: ["/fktat"], inputs: none("/fktat") },
+  // Ultron Phone: courier SMS the SMS sheet's script did not file (returns OTP / POD), worked again
+  smscatchup: { workflow: "sms-catchup.yml", icon: "📨", name: "Returns SMS catch-up", portal: "all", minutes: 2,
+                examples: ["/smscatchup"], inputs: none("/smscatchup") },
   // AJIO
   ajiotat: { workflow: "ajio-tat.yml", icon: "📦", name: "AJIO TAT", portal: "ajio", chat: true, minutes: 2,
              examples: ["/ajiotat", "/ajiotat 3"],
@@ -163,6 +166,9 @@ const SCHEDULE = [
   { ist: "3:00 PM daily", cron: "30 9 * * *", cmd: "sla" },
   { ist: "6:00 PM daily", cron: "30 12 * * *", cmd: "labels" },
   { ist: "6:00 PM daily", cron: "30 12 * * *", cmd: "fktat" },
+  // returns SMS the phone's sheet script missed: worked again every 3 hours, 9 AM to 9 PM
+  ...[["9:00 AM", 3], ["12:00 PM", 6], ["3:00 PM", 9], ["6:00 PM", 12], ["9:00 PM", 15]].map(([ist, h]) => (
+    { ist: `${ist} daily`, cron: `30 ${h} * * *`, cmd: "smscatchup" })),
   { ist: "6:30 PM daily", cron: "0 13 * * *", cmd: "myntratat" },
   { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "evening" },
   ...INV_PUSH_HOURS.map((h) => ({ ist: "every 3 hours from 6 AM", cron: `30 ${h} * * *`, cmd: "invpush" })),
