@@ -8,21 +8,25 @@
 //     code and count in its row: never a second row, never a double count;
 //   - its POD (the PDF behind the SMS link, downloaded and read by the phone, as links expire) is saved
 //     in Drive AGENT WORK/RETURN PODS/<yyyy-mm-dd>/, and its AWBs, each with its portal, go to the
-//     RETURN PODS tab. One POD can hold several portals (Delhivery "Client:" sections, Shadowfax's
-//     Client Name column): each portal gets its own OTP row and count.
+//     RETURN PODS MASTER sheet in that folder. One POD can hold several portals (Delhivery "Client:"
+//     sections, Shadowfax's Client Name column): each portal gets its own OTP row and count;
+//   - the SMS tab's last column (OTP SHEET) is a checkbox, ticked once its OTP is in the Daily OTP sheet.
 // Myntra's own Ekart codes (Seller MYE / MYS) are left to the Myntra OTP bot, which reads them per
 // account from the portal. OTP rows are written only for SMS of the last OTP_DAYS days, so an import
-// of old SMS fills the POD tab and folder without old rows in the team's sheet.
+// of old SMS fills the POD master and folder without old rows in the team's sheet.
+// rework=1 (scripts/phone/rework_sms.py): an SMS already on the SMS tab worked again, with its POD.
 
 const SHEET_NAME = 'SMS';
-const HEADERS = ['Received At', 'From', 'Message', 'Device Time', 'SIM', 'Agent'];
+const HEADERS = ['Received At', 'From', 'Message', 'Device Time', 'SIM', 'Agent', 'OTP SHEET'];
 const DEDUPE_LOOKBACK = 50;
 
 const OTP_SHEET_ID = '1dKfym74siyYHPM-JgisDq_2LcOckiqod59aibOAHbAA';   // Daily OTP 2026
 const AGENT_WORK_ID = '1uO-aOha_QKkI3f19EA7sweYPgkjMukZI';            // Drive BINDAL EXPORTS/AGENT WORK
 const POD_FOLDER = 'RETURN PODS';
-const POD_TAB = 'RETURN PODS';
-const POD_HEADERS = ['DATE', 'TIME', 'COURIER', 'PORTAL', 'STATUS', 'AWB', 'TYPE', 'AWB STATUS', 'OTP', 'REF', 'POD FILE'];
+const POD_MASTER = 'RETURN PODS MASTER';
+const POD_TAB = 'PODS';
+const POD_HEADERS = ['DATE', 'PORTAL', 'COURIER', 'AWB', 'OTP', 'STATUS', 'TYPE', 'AWB STATUS', 'TIME', 'REF', 'POD FILE'];
+const P = { day: 0, portal: 1, awb: 3, ref: 9 };                      // POD_HEADERS columns used to match
 const LOG_TAB = 'OTP LOG';
 const LOG_HEADERS = ['REF', 'DATE', 'PORTAL', 'STATUS', 'OTP', 'COUNT', 'SMS TIME', 'UPDATED'];
 const OTP_NAME = 'Agent';
@@ -50,20 +54,23 @@ function doPost(e) {
     }
 
     const sheet = getSheet();
+    let row = p.rework === '1' ? findRow(sheet, from, body, deviceTime) : 0;
 
-    if (isDuplicate(sheet, from, body, deviceTime)) {
-      return respond('duplicate');
+    if (!row) {
+      if (isDuplicate(sheet, from, body, deviceTime)) {
+        return respond('duplicate');
+      }
+      sheet.appendRow([new Date(), asText(from), asText(body), asText(deviceTime), asText(sim)]);
+      row = sheet.getLastRow();
     }
-
-    sheet.appendRow([new Date(), asText(from), asText(body), asText(deviceTime), asText(sim)]);
-    const row = sheet.getLastRow();
-    let note = '';
+    let done = { note: '', filled: null };
     try {
-      note = returns(from, body, deviceTime, p);
+      done = returns(from, body, deviceTime, p);
     } catch (err) {
-      note = 'error: ' + err.message;
+      done.note = 'error: ' + err.message;
     }
-    if (note) sheet.getRange(row, 6).setValue(note);
+    if (done.note) sheet.getRange(row, 6).setValue(done.note);
+    if (done.filled !== null) sheet.getRange(row, 7).insertCheckboxes().setValue(done.filled);
     return respond('ok');
   } catch (err) {
     return respond('error: ' + err.message);
@@ -81,8 +88,19 @@ function getSheet() {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(HEADERS);
     sheet.setFrozenRows(1);
+  } else if (sheet.getRange(1, HEADERS.length).getValue() !== HEADERS[HEADERS.length - 1]) {
+    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);   // a sheet from before the Agent columns
   }
   return sheet;
+}
+
+// The SMS tab row of this SMS (1-based), or 0.
+function findRow(sheet, from, body, deviceTime) {
+  const last = sheet.getLastRow();
+  if (last < 2) return 0;
+  const rows = sheet.getRange(2, 2, last - 1, 3).getDisplayValues();
+  const i = rows.findIndex(r => r[0] === from && r[1] === body && r[2] === deviceTime);
+  return i < 0 ? 0 : i + 2;
 }
 
 // Skips a row only when sender, message and device time all match a recent row,
@@ -192,15 +210,20 @@ function parsePod(text) {
   return out;
 }
 
-// Works one SMS; returns the note for the SMS tab's Agent column ('' = not a courier SMS).
+// Works one SMS: {note for the SMS tab's Agent column ('' = not a courier SMS), filled: whether its
+// OTP is in the Daily OTP sheet (null = the SMS has no OTP)}.
 function returns(from, body, deviceTime, p) {
   const sms = parseSms(from, body);
-  if (!sms) return '';
-  if (sms.courier === 'Ekart' && EKART_SELLERS[sms.seller] === 'Myntra') return 'Myntra Ekart: left to the Myntra OTP bot';
+  if (!sms) return { note: '', filled: null };
 
   const when = deviceTime ? new Date(deviceTime.replace(' ', 'T') + '+05:30') : new Date();
   const day = Utilities.formatDate(when, TZ, 'dd-MM-yyyy');
   const time = Utilities.formatDate(when, TZ, 'HH:mm');
+  const otpSheet = sms.otp ? SpreadsheetApp.openById(OTP_SHEET_ID).getSheets()[0] : null;
+  const otpRows = otpSheet && otpSheet.getLastRow() > 1 ? otpSheet.getRange(2, 1, otpSheet.getLastRow() - 1, 5).getDisplayValues() : [];
+  if (sms.courier === 'Ekart' && EKART_SELLERS[sms.seller] === 'Myntra') {
+    return { note: 'Myntra Ekart: left to the Myntra OTP bot', filled: otpRows.some(r => r[0] === day && r[3] === sms.otp) };
+  }
   const pod = parsePod(p.pdftext || '');
   const notes = [];
 
@@ -223,20 +246,21 @@ function returns(from, body, deviceTime, p) {
     const portals = Object.keys(groups).join(' + ');
     const name = Utilities.formatDate(when, TZ, 'HH-mm') + ' ' + sms.courier + ' ' + portals + ' ' + sms.status +
                  (sms.otp ? ' OTP ' + sms.otp : ' POD') + '.pdf';
-    const blob = Utilities.newBlob(Utilities.base64Decode(p.pdf), 'application/pdf', name);
-    file = podFolder(Utilities.formatDate(when, TZ, 'yyyy-MM-dd')).createFile(blob).getUrl();
+    const folder = podFolder(Utilities.formatDate(when, TZ, 'yyyy-MM-dd'));
+    const have = folder.getFilesByName(name);                     // a reworked SMS: its POD once
+    file = (have.hasNext() ? have.next()
+      : folder.createFile(Utilities.newBlob(Utilities.base64Decode(p.pdf), 'application/pdf', name))).getUrl();
     notes.push('POD saved');
   } else if (sms.pod) {
     notes.push('POD not downloaded' + (p.pdferror ? ' (' + p.pdferror + ')' : ''));
   }
 
-  const ss = SpreadsheetApp.getActive();
-  const podTab = tab(ss, POD_TAB, POD_HEADERS);
-  const logTab = tab(ss, LOG_TAB, LOG_HEADERS);
+  const podTab = master();
+  const logTab = tab(SpreadsheetApp.getActive(), LOG_TAB, LOG_HEADERS);
   const podRows = podTab.getLastRow() > 1 ? podTab.getRange(2, 1, podTab.getLastRow() - 1, POD_HEADERS.length).getDisplayValues() : [];
   const logRows = logTab.getLastRow() > 1 ? logTab.getRange(2, 1, logTab.getLastRow() - 1, LOG_HEADERS.length).getDisplayValues() : [];
   const fresh = (Date.now() - when.getTime()) <= OTP_DAYS * 86400000;
-  const otpSheet = fresh ? SpreadsheetApp.openById(OTP_SHEET_ID).getSheets()[0] : null;
+  let filled = sms.otp ? true : null;
 
   for (const portal of Object.keys(groups)) {
     const awbs = groups[portal];
@@ -245,17 +269,21 @@ function returns(from, body, deviceTime, p) {
 
     // the same shipments seen before (a resent OTP, or the final POD of a dispatch): its REF
     const ids = new Set(awbs.map(a => a.awb));
-    const seen = ids.size ? podRows.find(r => r[0] === day && r[3] === portal && ids.has(r[5])) : null;
-    const ref = seen ? seen[9]
+    const seen = ids.size ? podRows.find(r => r[P.day] === day && r[P.portal] === portal && ids.has(r[P.awb])) : null;
+    const ref = seen ? seen[P.ref]
       : ids.size ? [sms.courier, pod.dispatch || time, portal, sms.status].join('|')
       : [sms.courier, portal, sms.status, day].join('|');
     const logged = logRows.find(r => r[0] === ref);
     const otp = sms.otp || (logged ? logged[4] : '');
 
-    if (otp && otpSheet && sms.otp) {
-      notes.push(sp + ' ' + count + ' OTP ' + otp + ': ' + putOtp(otpSheet, day, sp, sms.status, otp, count, logged));
-    } else if (logged && count && otpSheet) {
-      putOtp(otpSheet, day, sp, sms.status, logged[4], count, logged);   // final POD: the count only
+    if (sms.otp) {
+      const put = putOtp(otpSheet, otpRows, day, sp, sms.status, otp, count, logged, fresh);
+      notes.push(sp + ' ' + count + ' OTP ' + otp + ': ' + put);
+      if (put === 'not in the sheet') filled = false;
+    } else if (logged && logged[4] && count && fresh) {           // final POD: the count only
+      const sheet = SpreadsheetApp.openById(OTP_SHEET_ID).getSheets()[0];
+      const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getDisplayValues() : [];
+      putOtp(sheet, rows, day, sp, sms.status, logged[4], count, logged, true);
     }
     const entry = [ref, day, sp, sms.status, otp, count, deviceTime, new Date()];
     if (logged) {
@@ -269,31 +297,52 @@ function returns(from, body, deviceTime, p) {
     // the AWBs of this REF, replaced by this POD's
     if (awbs.length) {
       for (let i = podRows.length - 1; i >= 0; i--) {
-        if (podRows[i][9] === ref) { podTab.deleteRow(i + 2); podRows.splice(i, 1); }
+        if (podRows[i][P.ref] === ref) { podTab.deleteRow(i + 2); podRows.splice(i, 1); }
       }
-      const rows = awbs.map(a => [day, time, sms.courier, portal, sms.status, a.awb, a.type, a.status, otp, ref, file]);
+      const rows = awbs.map(a => [day, portal, sms.courier, a.awb, otp, sms.status, a.type, a.status, time, ref, file]);
       podTab.getRange(podTab.getLastRow() + 1, 1, rows.length, POD_HEADERS.length).setValues(rows.map(r => r.map(asText)));
       rows.forEach(r => podRows.push(r.map(String)));
     }
   }
-  if (!fresh && sms.otp) notes.push('older than ' + OTP_DAYS + ' days: not in the OTP sheet');
-  return notes.join('; ') || 'worked';
+  return { note: notes.join('; ') || 'worked', filled };
 }
 
 // One OTP row of the team's sheet: the row of the earlier code of this REF updated (a resend), a row
-// the team already wrote left alone, else a new row.
-function putOtp(sheet, day, portal, status, otp, count, logged) {
-  const last = sheet.getLastRow();
-  const rows = last > 1 ? sheet.getRange(2, 1, last - 1, 5).getDisplayValues() : [];
+// the team already wrote left alone, else a new row. Older SMS (write = false) are only looked up.
+function putOtp(sheet, rows, day, portal, status, otp, count, logged, write) {
   const at = (code) => rows.findIndex(r => r[0] === day && r[1] === portal && r[3] === code && r[4].toUpperCase() === status);
-  const old = logged ? at(logged[4]) : -1;
-  if (old >= 0) {
+  const old = logged && logged[4] ? at(logged[4]) : -1;
+  if (old >= 0 && write) {
     sheet.getRange(old + 2, 3, 1, 2).setValues([[count, otp]]);
+    rows[old][2] = count;
+    rows[old][3] = otp;
     return logged[4] === otp ? 'count updated' : 'resent, replaced ' + logged[4];
   }
-  if (at(otp) >= 0) return 'already in the sheet';
+  if (at(otp) >= 0 || rows.some(r => r[0] === day && r[3] === otp)) return 'already in the sheet';
+  if (!write) return 'not in the sheet';
   sheet.appendRow([day, portal, count, otp, status, OTP_NAME, '']);
+  rows.push([day, portal, count, otp, status]);
   return 'added';
+}
+
+// The RETURN PODS MASTER sheet in Drive AGENT WORK/RETURN PODS (made on first use).
+function master() {
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty('POD_MASTER_ID');
+  if (!id) {
+    const folder = podFolder('');
+    const found = folder.getFilesByName(POD_MASTER);
+    if (found.hasNext()) {
+      id = found.next().getId();
+    } else {
+      const ss = SpreadsheetApp.create(POD_MASTER);
+      DriveApp.getFileById(ss.getId()).moveTo(folder);
+      ss.getSheets()[0].setName(POD_TAB);
+      id = ss.getId();
+    }
+    props.setProperty('POD_MASTER_ID', id);
+  }
+  return tab(SpreadsheetApp.openById(id), POD_TAB, POD_HEADERS);
 }
 
 function tab(ss, name, headers) {
@@ -311,7 +360,8 @@ function podFolder(day) {
     const it = parent.getFoldersByName(name);
     return it.hasNext() ? it.next() : parent.createFolder(name);
   };
-  return sub(sub(DriveApp.getFolderById(AGENT_WORK_ID), POD_FOLDER), day);
+  const pods = sub(DriveApp.getFolderById(AGENT_WORK_ID), POD_FOLDER);
+  return day ? sub(pods, day) : pods;
 }
 
 // Run once from the editor after putting your own key below.
@@ -321,6 +371,7 @@ function setupSecret() {
 
 // Run once from the editor after an update: asks for the new permissions (the Daily OTP sheet, Drive).
 function authorize() {
+  master();
   SpreadsheetApp.openById(OTP_SHEET_ID).getName();
   podFolder(Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'));   // creates folders: the full Drive permission
 }
