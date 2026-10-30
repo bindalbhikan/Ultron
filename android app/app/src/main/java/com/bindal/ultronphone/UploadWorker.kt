@@ -21,7 +21,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * Posts one SMS to the Apps Script web app.
+ * Posts one SMS to the Apps Script web app, with the POD PDF (and its text) of a courier SMS.
  * Runs only when the network is available; WorkManager retries with backoff on failure.
  */
 class UploadWorker(context: Context, params: WorkerParameters) :
@@ -49,12 +49,19 @@ class UploadWorker(context: Context, params: WorkerParameters) :
         val deviceTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH)
             .format(Date(timestamp))
 
+        // a courier SMS's POD, read now (its link expires); the script files the OTP by its portals
+        val pod = Pod.fetch(ctx, from, body)
+        if (pod != null) Prefs.addLog(ctx, if (pod.error.isEmpty()) "POD read $from" else "POD not read $from: ${pod.error}")
+
         val form = mapOf(
             "key" to secret,
             "from" to from,
             "body" to body,
             "time" to deviceTime,
-            "sim" to sim
+            "sim" to sim,
+            "pdf" to (pod?.pdfBase64 ?: ""),
+            "pdftext" to (pod?.text ?: ""),
+            "pdferror" to (pod?.error ?: "")
         ).entries.joinToString("&") { (k, v) ->
             "${enc(k)}=${enc(v)}"
         }
@@ -92,7 +99,7 @@ class UploadWorker(context: Context, params: WorkerParameters) :
             requestMethod = "POST"
             instanceFollowRedirects = true
             connectTimeout = 20_000
-            readTimeout = 30_000
+            readTimeout = 90_000        // the script also files the OTP and saves the POD
             doOutput = true
             setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
         }

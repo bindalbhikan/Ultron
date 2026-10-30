@@ -13,6 +13,13 @@ The Bindal agent's Android app (was "SMS to Sheet"). Two jobs:
    on the second SIM can be read from the sheet later. Event-driven (`SMS_RECEIVED`), uploaded by
    WorkManager once online, retried with backoff, never twice (the script skips duplicates).
 
+3. **Returns OTP + POD** - a courier SMS (Delhivery, Shadowfax, Ekart, Xpressbees) is worked the
+   moment it comes: the phone downloads the POD behind its link (links expire) and reads its text
+   (`Pod.kt`, PdfBox), the Apps Script puts the OTP in the team's Daily OTP sheet one row per portal
+   (a resent OTP for the same AWBs replaces the earlier code and count), saves the PDF in Drive
+   AGENT WORK/RETURN PODS/<date>/ and lists its AWBs on the RETURN PODS tab (OTP LOG: what it wrote).
+   Myntra's own Ekart codes stay with the Myntra OTP bot.
+
 ## Install / update
 
 The APK is built on GitHub (`.github/workflows/android-app.yml`, on every change to this folder or
@@ -41,7 +48,8 @@ Ultron Phone works.
 2. In `setupSecret()` put a long random key, run it once, allow the permissions.
 3. Run `testInsert`: a header row and a test row appear in the `SMS` tab.
 4. Deploy -> New deployment -> Web app, execute as Me, access Anyone; copy the `/exec` URL into the app
-   with the same key. Later script changes: Manage deployments -> Edit -> New version (same URL).
+   with the same key. Later script changes: Manage deployments -> Edit -> New version (same URL);
+   after one that needs new permissions run `authorize` once from the editor.
 
 ## Log
 

@@ -53,4 +53,6 @@ android {
 
 dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // reads the courier POD PDFs on the phone (Pod.kt)
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }
