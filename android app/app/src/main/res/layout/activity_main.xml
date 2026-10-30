@@ -125,7 +125,7 @@
                 <EditText
                     android:id="@+id/secretInput"
                     style="@style/Field"
-                    android:inputType="textPassword" />
+                    android:inputType="textVisiblePassword" />
 
                 <TextView style="@style/Label" android:text="Senders (comma separated, empty = all)" />
                 <EditText
