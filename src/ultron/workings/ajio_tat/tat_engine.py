@@ -185,8 +185,9 @@ def build_report(o, hist, summ, ev):
         return hist[hist["Status"] == status].groupby("Internal Order ID")["ts"].min()
 
     h_proc, h_rts = first_ts("Processing"), first_ts("Ready to ship")
-    agg["hist_proc"] = agg["internal_id"].map(h_proc)
-    agg["hist_rts"] = agg["internal_id"].map(h_rts)
+    # as dicts: an empty datetime Series (no history in this run) cannot be mapped (TypeError, 30 Oct 2026)
+    agg["hist_proc"] = pd.to_datetime(agg["internal_id"].map(h_proc.to_dict()), errors="coerce")
+    agg["hist_rts"] = pd.to_datetime(agg["internal_id"].map(h_rts.to_dict()), errors="coerce")
 
     # Processed time: history 'Processing' else Invoice generation time
     agg["Processed Time"] = agg["hist_proc"].fillna(agg["Invoice Time"])
