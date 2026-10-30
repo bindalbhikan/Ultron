@@ -7,9 +7,13 @@ Fund > Create New Claim > "Here"): an xlsx of order line ids per issue category.
       Myntra shows the return delivered to us, but it never reached the warehouse. Policy:
       within 7 days of the delivery date. Raised from day MYNTRA_SPF_RNR_AFTER_DAYS (4) after
       delivery, so the GRN / OMSGuru have had time to book a return that did arrive.
-  Delayed Returns      (DELAYED_DELIVERED_RETURN)
-      Still in transit, or no return tracking at all. Policy: after 60 and up to 120 days from
-      the return / RTO creation date. Raised from day MYNTRA_SPF_DELAY_AFTER_DAYS (61).
+  Return Not Received, in transit  (RTS_ORDER_WAS_NEVER_DELIVERED, description "Return Pending")
+      Still in transit, or no return tracking at all, 61 (MYNTRA_SPF_DELAY_AFTER_DAYS) to 120 days
+      from the return / RTO creation date. Until 30 Oct 2026 these went in as Delayed Returns
+      (DELAYED_DELIVERED_RETURN): Myntra rejected all 906 of those ("Not_eligible_tat_less_than_120_days",
+      whatever the age), while 83 in-transit returns claimed as Return Not Received at 61-113
+      days were paid or accepted. One claim per order line, so a rejected one is lost for good.
+      MYNTRA_SPF_TRANSIT_CATEGORY=DELAYED brings the old category back.
 
 A row is claimed only when nothing says it is settled: no ticket on it (master TICKET ID or
 any ticket on the portal for that order line, any status - the policy allows one claim per
@@ -31,16 +35,19 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from ..core.config import num
+from ..core.config import env, num
 
 log = logging.getLogger(__name__)
 
 RNR = "RTS_ORDER_WAS_NEVER_DELIVERED"
 DELAYED = "DELAYED_DELIVERED_RETURN"
-CATEGORY_NAME = {RNR: "Return Not Received", DELAYED: "Delayed Returns"}
+TRANSIT = "RNR_TRANSIT"        # ours only: claimed on Myntra as RNR, with its own description
+ISSUE = {TRANSIT: RNR}
+CATEGORY_NAME = {RNR: "Return Not Received", DELAYED: "Delayed Returns", TRANSIT: "Return Not Received (in transit)"}
 DESCRIPTION = {
     RNR: "RETURN DELIVERED BUT PHYSICAL RETURN PARCEL NOT RECEIVED YET",
     DELAYED: "RETURN SHOWING IN TRANSIT, KINDLY CHECK AND RETURN THE PARCEL ASAP",
+    TRANSIT: "Return Pending",       # the wording of the in-transit claims Myntra paid
 }
 # The ticket report the engine reads (kind TICKET: ticketId + orderLineId columns)
 TICKET_FILE = "SPF Tickets (portal).xlsx"
@@ -96,7 +103,9 @@ def claim_of(r: dict, today: date, ticketed: set[str]) -> str | None:
         return None
     age = (today - created).days
     lo, hi = num("MYNTRA_SPF_DELAY_AFTER_DAYS", 61), num("MYNTRA_SPF_DELAY_MAX_DAYS", 120)
-    return DELAYED if lo <= age <= hi else None
+    if not lo <= age <= hi:
+        return None
+    return DELAYED if str(env("MYNTRA_SPF_TRANSIT_CATEGORY", "")).upper() == "DELAYED" else TRANSIT
 
 
 def candidates(path: Path, today: date, ticketed: dict[str, set[str]],
@@ -379,7 +388,7 @@ def raise_claims(portal, account: str, wanted: dict[str, list[str]], dest: Path,
     lines, raised = [], []
     started = datetime.now()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    for cat in (RNR, DELAYED):
+    for cat in (RNR, TRANSIT, DELAYED):
         ids = wanted.get(cat) or []
         if not ids:
             continue
@@ -392,16 +401,16 @@ def raise_claims(portal, account: str, wanted: dict[str, list[str]], dest: Path,
         for i in range(0, len(todo), SPF_BULK_MAX):
             part = todo[i:i + SPF_BULK_MAX]
             try:
-                job = portal.spf_bulk_claim(part, cat, DESCRIPTION[cat], seller=seller)
+                job = portal.spf_bulk_claim(part, ISSUE.get(cat, cat), DESCRIPTION[cat], seller=seller)
             except Exception as exc:  # noqa: BLE001 - the other category / account still go
                 log.exception("%s %s claim failed", account, cat)
                 lines.append(f"{account} {CATEGORY_NAME[cat]}: {len(part)} NOT raised: {str(exc)[:80]}")
                 continue
             jobs.append(job)
-            raised += [{"ticketId": f"BOT JOB {job}", "orderLineId": o, "issueCategory": cat,
-                        "status": "RAISED BY BOT", "createdOn": now} for o in part]
+            raised += [{"ticketId": f"BOT JOB {job}", "orderLineId": o, "issueCategory": ISSUE.get(cat, cat),
+                        "status": "RAISED BY BOT", "createdOn": now, "_ours": cat} for o in part]
         if jobs:
-            n = sum(1 for t in raised if t["issueCategory"] == cat)
+            n = sum(1 for t in raised if t["_ours"] == cat)
             lines.append(f"{account} {CATEGORY_NAME[cat]}: {n} raised (job {', '.join(map(str, jobs))}){more}")
     if raised:
         real = resolve_raised(portal, account, [t["orderLineId"] for t in raised], started,

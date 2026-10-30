@@ -32,9 +32,12 @@ On demand: `/myntraspf`.
   * *Return Not Received* (`RTS_ORDER_WAS_NEVER_DELIVERED`): delivered to us per Myntra, not
     received; raised 4 to 7 days after the delivery date (`MYNTRA_SPF_RNR_AFTER_DAYS` /
     `_MAX_DAYS`; policy: within 7 days).
-  * *Delayed Returns* (`DELAYED_DELIVERED_RETURN`): in transit or no return tracking; raised 61
-    to 120 days after the return / RTO creation date (`MYNTRA_SPF_DELAY_AFTER_DAYS` / `_MAX_DAYS`;
-    policy: after 60, up to 120).
+  * *In transit* (`RTS_ORDER_WAS_NEVER_DELIVERED`, description "Return Pending"): in transit or no
+    return tracking; raised 61 to 120 days after the return / RTO creation date
+    (`MYNTRA_SPF_DELAY_AFTER_DAYS` / `_MAX_DAYS`). Until 30 Oct 2026 these were *Delayed Returns*
+    (`DELAYED_DELIVERED_RETURN`): Myntra rejected all 906 ("Not_eligible_tat_less_than_120_days"),
+    while 83 in-transit returns claimed as Return Not Received were paid / accepted. One claim per
+    order line, so the category matters. `MYNTRA_SPF_TRANSIT_CATEGORY=DELAYED` brings the old one back.
   * Only rows with no ticket (master TICKET ID or any portal ticket for the order line - the
     policy allows one claim per order and treats repeats as fraud), a blank FINAL RETURN STATUS
     (OMSGuru received results of this run included), PPMP (not SJIT / FBM) and no courier RETURN
