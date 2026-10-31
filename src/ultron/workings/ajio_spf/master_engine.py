@@ -592,6 +592,122 @@ def computed_formulas(column_of, row):
     }
 
 
+def computed_values(get, today=None):
+    """What computed_formulas' four formulas give for one row, worked out here (`get(header)` is
+    the row's value). Saved with each formula (store_values), so the numbers show where nothing
+    recalculates - Drive preview, Excel Protected View, phones; Excel still recalculates on open."""
+    today = today or date.today()
+
+    def number(header):
+        value = as_number(get(header))
+        return value or 0.0
+
+    delivered, created = parse_date(get("Delivery Challan Date")), parse_date(get("Return Created Date"))
+    start = delivered or created
+    age = max(0, (today - start).days) if start else ""
+    if delivered:
+        claim = "ELIGIBLE" if age <= 7 else "NON ELIGIBLE"
+    elif created:
+        claim = "UPCOMING CLAIM" if age < 60 else "ELIGIBLE" if age <= 90 else "NON ELIGIBLE"
+    else:
+        claim = ""
+    oms, manual = str(get("OMSGURU STATUS") or "").upper(), str(get("MANUAL RETURN STATUS") or "").strip()
+    if "RECEIVED" in oms or manual.upper() == RECEIVED.upper():
+        final = RECEIVED
+    elif number("G4 PAYMENT") != 0 and number("IC REVERSE") == 0:
+        final = PAYMENT_DONE
+    else:
+        final = ""
+    carrier = str(get("3PL Delivery Status") or "")
+    if final in (RECEIVED, PAYMENT_DONE):
+        claim_type = ""
+    elif delivered or carrier.strip().upper() == "RETURN DELIVERED":
+        claim_type = "RETURN NOT RECEIVED"
+    elif "CANCEL" in carrier.upper():
+        claim_type = "RETURN CANCELLED"
+    else:
+        claim_type = "RETURN IN TRANSIT"
+    return {"AGE (DAYS)": age, "CLAIM STATUS": claim, "CLAIM TYPE": claim_type,
+            "FINAL RETURN STATUS": final}
+
+
+_CELL = re.compile(r'<c r="([A-Z]+[0-9]+)"([^>]*?)>(<f>.*?</f>)(?:<v>.*?</v>|<v/>)?</c>', re.S)
+
+
+def store_values(path, values):
+    """Save each formula's worked-out value next to it in the saved workbook - openpyxl writes
+    formulas only. `values` = {sheet title: {"A1": value}}; the formulas are left as they are."""
+    import html
+    import zipfile
+    from openpyxl import load_workbook as _open
+
+    book = _open(path, read_only=True)
+    titles = book.sheetnames
+    book.close()                                     # Windows: no rename over an open file
+    targets = {f"xl/worksheets/sheet{i}.xml": values[t] for i, t in enumerate(titles, start=1) if t in values}
+    temp = Path(str(path) + ".tmp")
+    with zipfile.ZipFile(path) as src, zipfile.ZipFile(temp, "w", zipfile.ZIP_DEFLATED) as out:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            cells = targets.get(item.filename)
+            if cells:
+                def put(m):
+                    ref, attrs, formula = m.group(1), re.sub(r'\s+t="[^"]*"', "", m.group(2)), m.group(3)
+                    if ref not in cells:
+                        return m.group(0)
+                    v = cells[ref]
+                    if isinstance(v, bool):
+                        return f'<c r="{ref}"{attrs} t="b">{formula}<v>{int(v)}</v></c>'
+                    if isinstance(v, (int, float)):
+                        return f'<c r="{ref}"{attrs}>{formula}<v>{v}</v></c>'
+                    return f'<c r="{ref}"{attrs} t="str">{formula}<v>{html.escape(str(v))}</v></c>'
+                data = _CELL.sub(put, data.decode("utf-8")).encode("utf-8")
+            out.writestr(item, data)
+    temp.replace(path)
+
+
+_SAVED = re.compile(r'<c r="([A-Z]+[0-9]+)"([^>]*?)><f>.*?</f><v>(.*?)</v></c>', re.S)
+
+
+def saved_values(path):
+    """{sheet title: {"A1": value}} of the formula cells that carry a saved value."""
+    import html
+    import zipfile
+    from openpyxl import load_workbook as _open
+
+    book = _open(path, read_only=True)
+    titles = book.sheetnames
+    book.close()
+    out = {}
+    with zipfile.ZipFile(path) as src:
+        for i, title in enumerate(titles, start=1):
+            name = f"xl/worksheets/sheet{i}.xml"
+            if name not in src.namelist():
+                continue
+            cells = {}
+            for ref, attrs, raw in _SAVED.findall(src.read(name).decode("utf-8")):
+                raw = html.unescape(raw)
+                if 't="str"' in attrs or 't="s"' in attrs or 't="e"' in attrs:
+                    cells[ref] = raw
+                elif 't="b"' in attrs:
+                    cells[ref] = raw == "1"
+                else:
+                    try:
+                        cells[ref] = float(raw)
+                    except ValueError:
+                        cells[ref] = raw
+            out[title] = cells
+    return out
+
+
+def resave(workbook, path):
+    """workbook.save(path) for a master opened with openpyxl (the bot log, pickups, tickets typed
+    in): openpyxl drops every formula's saved value, so they are read first and put back."""
+    kept = saved_values(path)
+    workbook.save(path)
+    store_values(path, kept)
+
+
 def waiting_files():
     """Every workbook under input/, subfolders included, except an archive/ and
     the OMS Guru / manual sheets in Manual Sheet/, which are lookups."""
@@ -2044,9 +2160,16 @@ def write(final_headers, records, out_index, log):
             if body_fonts[column - 1] is not None:
                 cell.font = copy(body_fonts[column - 1])
 
+    today = date.today()
+    sheet_values, row_values = {}, []
     for row in range(2, len(records) + 2):
+        record = records[row - 2]
+        worked = computed_values(
+            lambda header: record[out_index[header]] if header in out_index else None, today)
+        row_values.append(worked)
         for header, formula in computed_formulas(column_of, row).items():
             column = column_of[header] + 1
+            sheet_values[f"{get_column_letter(column)}{row}"] = worked[header]
             cell = sheet.cell(row, column, formula)
             number_format = body_formats[column - 1]
             if number_format != "General":
@@ -2079,7 +2202,7 @@ def write(final_headers, records, out_index, log):
     if freeze:
         sheet.freeze_panes = freeze
     sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{len(records) + 1}"
-    last = write_summary(workbook, column_of, records, out_index)
+    last, summary_values = write_summary(workbook, column_of, records, out_index, row_values)
     write_claim_tat(workbook, records, out_index)
     write_coverage(workbook, last + 3, log)
     write_input_log(workbook, log)
@@ -2088,6 +2211,8 @@ def write(final_headers, records, out_index, log):
     except AttributeError:
         pass
     workbook.save(SOURCE_MASTER)
+    # each formula's worked-out value saved with it (openpyxl writes formulas only)
+    store_values(SOURCE_MASTER, {SHEET: sheet_values, SUMMARY_SHEET: summary_values})
 
 
 # Every claim raised (a TICKET ID on Sheet1), by account and the month the ticket was
@@ -2190,16 +2315,20 @@ def write_claim_tat(workbook, records, record_index):
                               "paid (not reversed by an IC).")
 
 
-def write_summary(workbook, column_of, records, record_index):
-    """Add the SUMMARY sheet in the layout of "summary example.xlsx".
+def write_summary(workbook, column_of, records, record_index, row_values=None):
+    """Add the SUMMARY sheet: one row per account and return month, a TOTAL row per account, a
+    blank row between accounts and a GRAND TOTAL at the bottom - the same columns as the Myntra
+    SPF summary. Open returns are split: IN TRANSIT (still on the road, CLAIM TYPE "RETURN IN
+    TRANSIT") and DELIVERED PENDING (handed to us but not received, "RETURN NOT RECEIVED"), so a
+    month of returns still on the way does not read as money pending with us.
+    TOTAL = RECEIVED + PAYMENT DONE + IN TRANSIT + DELIVERED PENDING (+ cancelled, not shown).
 
-    One row per account and return month, a TOTAL row per account, a blank
-    row between accounts and a GRAND TOTAL at the bottom. Every figure is a
-    COUNTIFS/SUMIFS over Sheet1 rather than a number worked out here, so it
-    follows any edit made in Excel - a ticket typed in, a status changed -
-    and the day-dependent claim columns as they age.
+    Every figure is a COUNTIFS/SUMIFS over Sheet1, so it follows any edit made in Excel; its
+    worked-out value (row_values: computed_values of each Sheet1 row) is returned to be saved
+    with it. Returns (last row, {"C2": value, ...}).
     """
     sheet = workbook.create_sheet(SUMMARY_SHEET)
+    row_values = row_values or [{} for _ in records]
 
     def whole(header):
         letter = get_column_letter(column_of[header] + 1)
@@ -2214,13 +2343,16 @@ def write_summary(workbook, column_of, records, record_index):
     claim_status = whole("CLAIM STATUS")
     claim_type = whole("CLAIM TYPE")
     ticket = whole("TICKET ID")
-    ticket_status = whole("STATUS")
     invoice = whole(SUMMARY_AMOUNT_HEADER)
 
     received = (final, quoted(RECEIVED))
     payment_done = (final, quoted(PAYMENT_DONE))
     # Still open: neither back on the shelf nor settled by payment.
     not_received = ((final, quoted("<>" + RECEIVED)), (final, quoted("<>" + PAYMENT_DONE)))
+    in_transit = (claim_type, quoted("RETURN IN TRANSIT"))
+    delivered = (claim_type, quoted("RETURN NOT RECEIVED"))
+    eligible = (claim_status, quoted("ELIGIBLE"))
+    upcoming = (claim_status, quoted("UPCOMING CLAIM"))
 
     def criteria(row, pairs):
         # Account in column A, month as "yyyy-mm" text in column B.
@@ -2254,54 +2386,58 @@ def write_summary(workbook, column_of, records, record_index):
             f"-{build((ticket, quoted('#N/A')))(row)}"
         )
 
-    letter_of = {}
+    # the same tests over the rows, for the saved values
+    def cell(i, header):
+        return records[i][record_index[header]] if header in record_index else None
 
-    def same_row(template):
-        """A formula over other summary columns in the same row."""
-        return lambda row: template.format(row=row, **letter_of)
+    def worked(i, header):
+        return row_values[i].get(header, "")
 
-    eligible = (claim_status, quoted("ELIGIBLE"))
-    upcoming = (claim_status, quoted("UPCOMING CLAIM"))
-    missed = (claim_status, quoted("NON ELIGIBLE"))
+    def amount_of(i, header=SUMMARY_AMOUNT_HEADER):
+        value = cell(i, header)
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
 
-    # Same order and number formats as the example; the AJIO-only measures
-    # follow its columns. (header, number format, formula, SUM on totals?)
+    def is_open(i):
+        return worked(i, "FINAL RETURN STATUS") not in (RECEIVED, PAYMENT_DONE)
+
+    def ticketless(i):
+        return text(cell(i, "TICKET ID")) in ("", "#N/A")
+
+    def open_as(i, kind):
+        return is_open(i) and worked(i, "CLAIM TYPE") == kind
+
+    def claimable(i, status):
+        return is_open(i) and worked(i, "CLAIM STATUS") == status
+
+    # (header, number format, formula, value of one row)
     columns = [
-        ("TOTAL RETURNS", COUNT_FORMAT, count(), True),
-        ("RETURN RECEIVED", COUNT_FORMAT, count(received), True),
-        ("PAYMENT DONE", COUNT_FORMAT, count(payment_done), True),
-        ("PENDING", COUNT_FORMAT, count(*not_received), True),
-        ("PENDING AMT", AMOUNT_FORMAT, total(*not_received), True),
-        ("ELIGIBLE CLAIMS", COUNT_FORMAT, no_ticket(count, *not_received, eligible), True),
-        ("PENDING CLAIM AMT", AMOUNT_FORMAT, no_ticket(total, *not_received, eligible), True),
-        ("UPCOMING CLAIMS", COUNT_FORMAT, count(*not_received, upcoming), True),
-        ("UPCOMING CLAIM AMT", AMOUNT_FORMAT, total(*not_received, upcoming), True),
-        ("CLAIM DONE", COUNT_FORMAT, has_ticket(count), True),
-        ("CLAIM DONE AMT", AMOUNT_FORMAT, has_ticket(total), True),
-        ("CLAIM RESOLVED", COUNT_FORMAT, count((ticket_status, quoted("RESOLVED"))), True),
-        ("CLAIM REJECTED", COUNT_FORMAT, count((ticket_status, quoted("REJECTED"))), True),
-        ("CLAIM OPEN", COUNT_FORMAT, same_row("{DONE}{row}-{RESOLVED}{row}-{REJECTED}{row}"), False),
-        ("MISSED CLAIMS", COUNT_FORMAT, no_ticket(count, *not_received, missed), True),
-        ("MISSED CLAIM AMT", AMOUNT_FORMAT, no_ticket(total, *not_received, missed), True),
-        ("IN TRANSIT", COUNT_FORMAT, count((claim_type, quoted("RETURN IN TRANSIT"))), True),
-        ("RETURN CANCELLED", COUNT_FORMAT, count((claim_type, quoted("RETURN CANCELLED"))), True),
-        ("DELIVERED NOT RECEIVED", COUNT_FORMAT, count((claim_type, quoted("RETURN NOT RECEIVED"))), True),
-        ("CREDIT NOTE VALUE", AMOUNT_FORMAT, total(amount=whole("Credit Note Value")), True),
-        ("G4 PAYMENT", AMOUNT_FORMAT, total(amount=whole("G4 PAYMENT")), True),
-        ("IC REVERSE", AMOUNT_FORMAT, total(amount=whole("IC REVERSE")), True),
-        # G4 is paid to us (positive), IC takes it back (positive).
-        ("NET", AMOUNT_FORMAT, same_row("{G4}{row}-{IC}{row}"), False),
+        ("TOTAL RETURNS", COUNT_FORMAT, count(), lambda i: 1),
+        ("RETURN RECEIVED", COUNT_FORMAT, count(received),
+         lambda i: worked(i, "FINAL RETURN STATUS") == RECEIVED),
+        ("PAYMENT DONE", COUNT_FORMAT, count(payment_done),
+         lambda i: worked(i, "FINAL RETURN STATUS") == PAYMENT_DONE),
+        ("IN TRANSIT", COUNT_FORMAT, count(*not_received, in_transit),
+         lambda i: open_as(i, "RETURN IN TRANSIT")),
+        ("IN TRANSIT AMT", AMOUNT_FORMAT, total(*not_received, in_transit),
+         lambda i: amount_of(i) if open_as(i, "RETURN IN TRANSIT") else 0),
+        ("DELIVERED PENDING", COUNT_FORMAT, count(*not_received, delivered),
+         lambda i: open_as(i, "RETURN NOT RECEIVED")),
+        ("DELIVERED PENDING AMT", AMOUNT_FORMAT, total(*not_received, delivered),
+         lambda i: amount_of(i) if open_as(i, "RETURN NOT RECEIVED") else 0),
+        ("ELIGIBLE CLAIMS", COUNT_FORMAT, no_ticket(count, *not_received, eligible),
+         lambda i: claimable(i, "ELIGIBLE") and ticketless(i)),
+        ("ELIGIBLE CLAIM AMT", AMOUNT_FORMAT, no_ticket(total, *not_received, eligible),
+         lambda i: amount_of(i) if claimable(i, "ELIGIBLE") and ticketless(i) else 0),
+        ("UPCOMING CLAIM AMT", AMOUNT_FORMAT, total(*not_received, upcoming),
+         lambda i: amount_of(i) if claimable(i, "UPCOMING CLAIM") else 0),
+        ("CLAIM DONE", COUNT_FORMAT, has_ticket(count), lambda i: not ticketless(i)),
+        # what AJIO paid on the claims: G4 paid to us, less IC taken back
+        ("SPF PAID AMT", AMOUNT_FORMAT,
+         lambda row: f"{total(amount=whole('G4 PAYMENT'))(row)}-{total(amount=whole('IC REVERSE'))(row)}",
+         lambda i: amount_of(i, "G4 PAYMENT") - amount_of(i, "IC REVERSE")),
     ]
     first_data_column = 3
     positions = {header: first_data_column + i for i, (header, *_) in enumerate(columns)}
-    for alias, header in (
-        ("DONE", "CLAIM DONE"),
-        ("RESOLVED", "CLAIM RESOLVED"),
-        ("REJECTED", "CLAIM REJECTED"),
-        ("G4", "G4 PAYMENT"),
-        ("IC", "IC REVERSE"),
-    ):
-        letter_of[alias] = get_column_letter(positions[header])
 
     headers = ["ACCOUNT", "RETURN MONTH"] + [header for header, *_ in columns]
     width = len(headers)
@@ -2312,9 +2448,9 @@ def write_summary(workbook, column_of, records, record_index):
 
     def paint(row, fill):
         for position in range(1, width + 1):
-            cell = sheet.cell(row, position)
-            cell.font = highlight_font
-            cell.fill = fill
+            target = sheet.cell(row, position)
+            target.font = highlight_font
+            target.fill = fill
 
     for position, header in enumerate(headers, start=1):
         sheet.cell(1, position, header)
@@ -2323,11 +2459,8 @@ def write_summary(workbook, column_of, records, record_index):
     # column_of places Sheet1's columns; the records keep the script's order.
     created_column = record_index["Return Created Date"]
     account_column = record_index[SUMMARY_ACCOUNT_HEADER]
-    months = [
-        parsed.replace(day=1)
-        for parsed in (parse_date(record[created_column]) for record in records)
-        if parsed is not None
-    ]
+    created_of = [parse_date(record[created_column]) for record in records]
+    months = [parsed.replace(day=1) for parsed in created_of if parsed is not None]
     today = date.today().replace(day=1)
     cursor = min(months, default=today)
     end = max(months + [today])
@@ -2338,19 +2471,30 @@ def write_summary(workbook, column_of, records, record_index):
     accounts = sorted(
         {text(record[account_column]) for record in records if text(record[account_column])}
     )
+    # the rows of each account and month, for the saved values
+    rows_of = {}
+    for i, record in enumerate(records):
+        if created_of[i] is not None:
+            rows_of.setdefault((text(record[account_column]), f"{created_of[i]:%Y-%m}"), []).append(i)
 
-    def fill_row(row, is_total, block=None):
-        for header, number_format, build, summed in columns:
-            position = positions[header]
-            letter = get_column_letter(position)
-            if not is_total or not summed:
+    values = {}
+
+    def fill_row(row, is_total, members=(), block=None):
+        for header, number_format, build, one in columns:
+            letter = get_column_letter(positions[header])
+            if not is_total:
                 formula = build(row)
+                value = sum(float(one(i)) for i in members)
             elif block is None:
-                formula = f"SUM({letter}{row - len(month_labels)}:{letter}{row - 1})"
+                span = range(row - len(month_labels), row)
+                formula = f"SUM({letter}{span[0]}:{letter}{span[-1]})"
+                value = sum(values.get(f"{letter}{r}", 0) for r in span)
             else:
                 formula = "+".join(f"{letter}{total_row}" for total_row in block)
-            cell = sheet.cell(row, position, f"={formula}")
-            cell.number_format = number_format
+                value = sum(values.get(f"{letter}{r}", 0) for r in block)
+            values[f"{letter}{row}"] = int(round(value)) if number_format == COUNT_FORMAT else round(value, 2)
+            target = sheet.cell(row, positions[header], f"={formula}")
+            target.number_format = number_format
 
     row = 2
     total_rows = []
@@ -2358,7 +2502,7 @@ def write_summary(workbook, column_of, records, record_index):
         for label in month_labels:
             sheet.cell(row, 1, name)
             sheet.cell(row, 2, label)
-            fill_row(row, is_total=False)
+            fill_row(row, is_total=False, members=rows_of.get((name, label), ()))
             row += 1
         sheet.cell(row, 1, name)
         sheet.cell(row, 2, "TOTAL")
@@ -2374,14 +2518,13 @@ def write_summary(workbook, column_of, records, record_index):
 
     body_font = Font(name="Aptos Narrow", size=11)
     for line in sheet.iter_rows(min_row=1, max_row=row, max_col=width):
-        for cell in line:
-            cell.alignment = left
-            if cell.fill.fill_type is None:
-                cell.font = body_font
+        for target in line:
+            target.alignment = left
+            if target.fill.fill_type is None:
+                target.font = body_font
     for position, header in enumerate(headers, start=1):
         sheet.column_dimensions[get_column_letter(position)].width = max(len(header) + 2, 9)
-    return row
-
+    return row, values
 
 if __name__ == "__main__":
     main()

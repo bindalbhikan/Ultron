@@ -30,7 +30,7 @@ from pathlib import Path
 from ..core import dashboard, telegram
 from ..core.app import run_bot
 from ..core.config import env, flag, num, output_dir
-from . import claims, followup, inputs
+from . import claims, followup, inputs, master_engine
 from .inputs import OMS_COLUMNS, write_xlsx
 
 OUTPUT = output_dir("ajio_spf")
@@ -243,7 +243,7 @@ def oms_lookup(today: date, ctx: dict) -> int:
                 and current != res["status"]):
             row[col["OMSGURU STATUS"]].value = res["status"]
             statuses += 1
-    wb.save(path)
+    master_engine.resave(wb, path)      # keeps the formulas' saved values
     log.info("OMSGuru: %d forward AWBs and %d return statuses written to the master, %d receipts",
              awbs, statuses, len(received))
     ctx.update(oms_checked=len(wanted), oms_found=len(received), fwd_awbs=awbs)
@@ -414,7 +414,7 @@ def write_bot_log(path: Path, previous: list[list], raised: list[dict], replies:
                     row[tid - 1].value = ticket
                     if st:
                         row[st - 1].value = "CREATED (bot)"
-    wb.save(path)
+    master_engine.resave(wb, path)      # keeps the formulas' saved values
 
 
 # ------------------------------------------------------------------ report

@@ -26,7 +26,7 @@ from openpyxl import load_workbook
 from ..awb_tracker import CourierRegistry, Job, track_all
 from ..awb_tracker import models as m
 from ..core.config import ROOT, env
-from . import claims
+from . import claims, master_engine
 
 log = logging.getLogger(__name__)
 
@@ -162,6 +162,6 @@ def check(path: Path, workers: int = 8) -> dict:
         v = claims.txt(row[head["COURIER PICKUP"] - 1].value)
         if v in counts:
             counts[v] += 1
-    wb.save(path)
+    master_engine.resave(wb, path)      # keeps the formulas' saved values
     log.info("Courier pickup: %s", counts)
     return counts
