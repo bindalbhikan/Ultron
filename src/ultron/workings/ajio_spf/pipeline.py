@@ -1,10 +1,12 @@
 """Daily AJIO SPF run.
 
   fetch     AJIO returns report + SPF tickets, ERP GRN and dispatch, SRM ledger,
-            manual register (Drive)
+            manual register (Drive), returns POD register (RETURN PODS MASTER)
   build     the user's master script (master_engine.py) on those inputs, then
             OMSGuru order lookups for the returns still open, and a rebuild
-  raise     SPF tickets for returns that crossed a claim threshold (claims.py)
+  raise     SPF tickets for returns that crossed a claim threshold (claims.py); on the
+            days between the Wed + Sat runs (--disputes) only the delivery disputes, so
+            each is raised on day 6, inside AJIO's 7-day TAT
   follow    reply on / re-open tickets where AJIO answered (followup.py)
   publish   master back to Drive, action list + summary to Telegram
 
@@ -36,6 +38,9 @@ from .inputs import OMS_COLUMNS, write_xlsx
 OUTPUT = output_dir("ajio_spf")
 WORK = OUTPUT / "work"
 MASTER_NAME = "AJIO MASTER.xlsx"
+# RETURN PODS MASTER (Drive AGENT WORK/RETURN PODS), filled by the phone app's Apps Script
+POD_SHEET = "1_q_x-bnV6Zx0StH6PF1ex2HM_t9krAWUeidHIngYw3k"
+POD_TAB = "PODS"
 ENGINE = __package__ + ".master_engine"
 log = logging.getLogger("bindal.ajio_spf")
 
@@ -161,9 +166,23 @@ def fetch_all(today: date, ctx: dict) -> None:
         rows = payment_rows(items)
         write_xlsx(inp / "PAYMENT.xlsx", {"data": (list(rows[0].keys()) if rows else [], rows)})
 
+    def pods():
+        # the parcels the courier handed over to us (our OTP): received, even before OMS / ERP book them
+        import gspread
+        from ..core.gauth import credentials
+        values = gspread.authorize(credentials(["https://www.googleapis.com/auth/spreadsheets"])).open_by_key(
+            env("POD_MASTER_SHEET_ID") or POD_SHEET).worksheet(POD_TAB).get_all_values()
+        head = [h.strip() for h in values[0]] if values else []
+        rows = [dict(zip(head, r)) for r in values[1:] if any(c.strip() for c in r)]
+        for r in rows:
+            r["DATE"] = claims.as_date(r.get("DATE")) or r.get("DATE")
+        write_xlsx(inp / "RETURN PODS.xlsx", {POD_TAB: (head, rows)})
+        log.info("Return PODs: %d rows", len(rows))
+
     step("AJIO", ajio)
     step("ERP", erp)
     step("SRM", srm)
+    step("Return PODs", pods)
 
 
 def fetch_drive(ctx: dict) -> None:
@@ -458,6 +477,23 @@ def write_bot_log(path: Path, previous: list[list], raised: list[dict], replies:
 
 # ------------------------------------------------------------------ report
 
+CLOSED_TICKETS = ("RESOLVED", "CLOSED")
+
+
+def pod_tickets(rows) -> list[tuple[str, str, str]]:
+    """(return order, ticket, ticket status) of the returns the courier handed over to us (POD) whose
+    claim ticket is still open: the team books the parcel in and has the ticket closed."""
+    seen, out = set(), []
+    for r in rows:
+        rt = claims.txt(r.get("RETURN ORDER NUMBER"))
+        status = claims.txt(r.get("STATUS"))
+        if (claims.txt(r.get("OMSGURU STATUS")) == master_engine.POD_RECEIVED and claims.has_ticket(r)
+                and status.upper() not in CLOSED_TICKETS and rt not in seen):
+            seen.add(rt)
+            out.append((rt, claims.txt(r.get("TICKET ID")), status))
+    return out
+
+
 def summary(rows, raised, replies, soon, ctx, dry, today) -> str:
     """Short lines for a phone screen."""
     esc = telegram.esc
@@ -469,7 +505,10 @@ def summary(rows, raised, replies, soon, ctx, dry, today) -> str:
     sent = [r for r in replies if r["result"] in ("sent", "dry-run")]
     kind = {claims.DISPUTE: "Dispute", claims.NOT_DELIVERED: "Not delivered"}
     lines = [f"🧾 <b>AJIO SPF · {today:%d %b %Y}</b>"]
-    if ctx.get("master_only"):
+    if ctx.get("disputes_only"):
+        lines.append("<i>Master + delivery disputes due (day 6) — replies and transit tickets on Wed + Sat</i>"
+                     + (" · 🧪 dry run" if dry else ""))
+    elif ctx.get("master_only"):
         lines.append("<i>Master update — tickets and replies run on Wed + Sat</i>")
     elif dry:
         lines.append("🧪 <i>Dry run — nothing posted</i>")
@@ -492,6 +531,13 @@ def summary(rows, raised, replies, soon, ctx, dry, today) -> str:
         lines.append(f"🚚 Pickup check failed: {esc(ctx['pickup_error'])[:120]}")
     if soon["missed_dispute"]:
         lines.append(f"⌛ Too old for a ticket (>{num('DISPUTE_MAX_DAYS', 365)} days): {soon['missed_dispute']}")
+    pod_open = pod_tickets(rows)
+    if pod_open:
+        lines += ["", f"📬 <b>Parcel came back (POD), ticket still open</b>: {len(pod_open)}",
+                  "<i>book it in OMS / ERP and get the ticket closed - the bot no longer answers it</i>"]
+        lines += [f"• {esc(rt)} · {esc(t)} <i>{esc(st)}</i>" for rt, t, st in pod_open[:15]]
+        if len(pod_open) > 15:
+            lines.append(f"… +{len(pod_open) - 15} more (OMSGURU STATUS = {master_engine.POD_RECEIVED})")
     manual = ctx.get("manual") or []
     if manual:
         lines += ["", f"✋ <b>Claim by hand</b> (credit note accepted, bot leaves these): {len(manual)}"]
@@ -582,15 +628,21 @@ def run(args) -> int:
             log.error("Courier pickup check failed: %s", exc)
             ctx["pickup_error"] = str(exc)
         rows = claims.read_sheet(WORK / MASTER_NAME)
-        rules = claims.Rules(num("DISPUTE_AFTER_DAYS", 5), num("DISPUTE_MAX_DAYS", 365),
+        rules = claims.Rules(num("DISPUTE_AFTER_DAYS", claims.DISPUTE_AFTER), num("DISPUTE_MAX_DAYS", 365),
                              num("TRANSIT_AFTER_DAYS", 60), num("TRANSIT_MAX_DAYS", 90))
         # A missing lookup source could make a received parcel look lost, so
         # nothing is posted to AJIO on a run where any source failed.
         act_dry = dry or bool(ctx["errors"])
         ctx["master_only"] = args.master_only
+        ctx["disputes_only"] = args.disputes and not args.master_only
         if args.master_only:
-            # daily 9 AM update: the master only; tickets and replies stay on their own days
+            # the master only; tickets and replies stay on their own days
             raised, replies = [], []
+        elif args.disputes:
+            # the 9 AM run between Wed and Sat: a delivery dispute must reach AJIO within 7 days of
+            # the delivery, so the ones due (day 6) are raised every day; no replies, no transit tickets
+            due = [c for c in claims.candidates(rows, today, rules) if c.sub_issue == claims.DISPUTE]
+            raised = raise_tickets(due, ctx, act_dry)
         else:
             raised = raise_tickets(claims.candidates(rows, today, rules), ctx, act_dry)
             replies = follow_up(rows, ctx, act_dry, now)
@@ -635,6 +687,8 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", choices=("0", "1"), default=None, help="override SPF_DRY_RUN")
     p.add_argument("--no-upload", action="store_true", help="build locally, do not write the master to Drive")
     p.add_argument("--master-only", action="store_true",
-                   help="update the master only: no tickets raised, no replies (the daily 9 AM run)")
+                   help="update the master only: no tickets raised, no replies")
+    p.add_argument("--disputes", action="store_true",
+                   help="master + only the delivery-dispute tickets due, no replies (the 9 AM run between Wed and Sat)")
     p.add_argument("--no-telegram", action="store_true", help="do not send the Telegram message")
     return run_bot("AJIO SPF run", p, run, argv, key="ajio_spf")

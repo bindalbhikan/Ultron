@@ -134,11 +134,12 @@ const SCHEDULE = [
     inputs: { request: "1" } },
   { ist: "7:00 AM on the 15th", cron: "30 1 * * *", day: 15, cmd: "returns", label: "Return analysis report request",
     inputs: { request: "1" } },
-  // 9 AM: the SPF masters. AJIO tickets and replies only on Wed + Sat, the other days the master only.
+  // 9 AM: the SPF masters. AJIO tickets and replies on Wed + Sat; the other days the master and the
+  // delivery disputes due (day 6: AJIO takes a dispute only within 7 days of the delivery).
   { ist: "9:00 AM daily", cron: "30 3 * * *", cmd: "myntraspf" },
   { ist: "9:00 AM Wed, Sat", cron: "30 3 * * *", weekdays: [3, 6], cmd: "ajiospf" },
   { ist: "9:00 AM other days", cron: "30 3 * * *", weekdays: [0, 1, 2, 4, 5], cmd: "ajiospf",
-    label: "AJIO SPF master update", inputs: { master_only: "1" } },
+    label: "AJIO SPF master + disputes due", inputs: { disputes: "1" } },
   // AJIO ads / TOT gap: the 3rd, and the 5th only if the 3rd did not save the report
   { ist: "9:00 AM on the 3rd", cron: "30 3 * * *", day: 3, cmd: "ajioads" },
   { ist: "9:00 AM on the 5th", cron: "30 3 * * *", day: 5, cmd: "ajioads", label: "AJIO Ads / TOT gap (if missed)",
@@ -546,6 +547,7 @@ function describe(name, inputs) {
   if (inputs.snapshot) return inputs.snapshot === "current" ? "This month" : inputs.snapshot;
   if (inputs.dry_run) return "Dry run · nothing posted";
   if (inputs.master_only) return "Master sheet only · nothing posted";
+  if (inputs.disputes) return "Master + delivery disputes due · LIVE";
   if (name === "returns") return inputs.month ? `Month ${inputs.month}` : "Last month";
   if (name === "ajiospf") return "LIVE · posts on AJIO";
   if (name === "invpush") return "LIVE · pushes every channel";

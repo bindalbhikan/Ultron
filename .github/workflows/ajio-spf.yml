@@ -2,14 +2,18 @@ name: AJIO SPF run
 
 on:
   # Started by the Telegram bot's Cloudflare cron (worker/src/worker.js) at 9 AM IST: Wednesday +
-  # Saturday the full run (tickets, replies), the other days with master_only=1.
+  # Saturday the full run (tickets, replies), the other days with disputes=1 (the master, and the
+  # delivery disputes due on day 6 - AJIO's dispute TAT is 7 days).
   workflow_dispatch:
     inputs:
       dry_run:
         description: "1 = only report what would be raised / replied, 0 = post to AJIO (empty = repo variable SPF_DRY_RUN, else 1)"
         default: ""
       master_only:
-        description: "1 = update the master only: no tickets, no replies (the daily 9 AM run)"
+        description: "1 = update the master only: no tickets, no replies"
+        default: ""
+      disputes:
+        description: "1 = the master + only the delivery-dispute tickets due, no replies (the 9 AM run between Wed and Sat)"
         default: ""
       chat_id:
         description: "Telegram chat for this run's report (empty = default chat)"
@@ -57,9 +61,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: bash scripts/github/ci_run.sh ajio-spf ${IN_MASTER_ONLY:+--master-only}
+      - run: bash scripts/github/ci_run.sh ajio-spf ${IN_MASTER_ONLY:+--master-only} ${IN_DISPUTES:+--disputes}
         env:
           IN_MASTER_ONLY: ${{ inputs.master_only }}
+          IN_DISPUTES: ${{ inputs.disputes }}
       - name: Upload run output (encrypted)
         if: always()
         uses: actions/upload-artifact@v4

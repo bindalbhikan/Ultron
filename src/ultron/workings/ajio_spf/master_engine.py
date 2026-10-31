@@ -21,7 +21,9 @@ Rules
       more than once, only the latest return survives; two SKUs on one
       invoice are two activities and both stay.
     * OMS Guru and the manual register are lookups only: they say whether a
-      return came back. Their rows are never added to the master.
+      return came back. Their rows are never added to the master. So are the
+      ERP GRN and the returns POD register (input/RETURN PODS.xlsx: the
+      courier handed the parcel over to us), which mark a return received.
 
 Input folder
     Drop new downloads anywhere in input/. Each run first files them: the
@@ -263,6 +265,19 @@ GRN_ORDER_HEADER = "Cust Order No"
 # in "Portal", newer ones in "Order Item Id".
 GRN_ORDER_PREFIX = "NAN-"
 GRN_ORDER_COLUMNS = ("Order Item Id", "Portal")
+
+# The returns POD register (Drive AGENT WORK/RETURN PODS/RETURN PODS MASTER, tab PODS), dropped
+# into input/ as "RETURN PODS.xlsx": one row per AWB the courier handed over to us against our OTP
+# (the phone app files it). A row of ours whose Return AWB No is there, delivered or accepted on or
+# after the return was created, came back - received, under its own wording, even before OMS Guru
+# or the ERP books it in, so it is never claimed as lost.
+POD_FILENAME_HINT = "RETURN PODS"
+POD_RECEIVED = "Return Received POD"
+POD_AWB_FIELD = "AWB"
+POD_DATE_FIELD = "DATE"
+POD_STATUS_FIELD = "AWB STATUS"
+POD_DELIVERED = ("DELIVERED", "ACCEPTED")
+POD_TRACKING_HEADER = "Return AWB No"
 
 # The AJIO seller-portal ticket export, dropped into input/ as a workbook with
 # "TICKET" in its name. Its columns get reordered between exports, so every
@@ -559,8 +574,9 @@ def make_activity_key(position_of):
 # "Return Delivered", or AJIO's Return Status is one of these (the rule claims.py raises tickets on).
 DELIVERED_STATUSES = ("RETURN_DELIVERED", "RETURN_PROCESSED", "CREDIT_NOTE_CREATED")
 # The claim windows are the ones the bot raises tickets on (claims.py): delivered but not received -
-# from 5 days after delivery (up to 365); still in transit - day 60 to 90 after it was created; never
-# picked up from the customer - nothing to claim.
+# from day 6 after delivery (AJIO's dispute TAT is 7 days; up to 365); still in transit - day 60 to 90
+# after it was created; never picked up from the customer - nothing to claim.
+DISPUTE_AFTER_DAYS = 6
 NO_PICKUP = ("NOT PICKED UP", "PICKUP CANCELLED", "PICKUP FAILED")
 # AJIO accepted the credit note (Credit Note Acceptance date): the bot neither raises nor answers
 # that claim - it is MANUAL CLAIM, for the team. Only a return whose credit note is still pending
@@ -623,7 +639,7 @@ def computed_formulas(column_of, row):
     accepted = f'{cn}{row}<>""' if cn else "FALSE"
     back = f'AND({is_delivered},{since}<>"")'
     window = (f'IF({no_pickup},"NON ELIGIBLE",IF({back},'
-              f'IF({age}{row}<5,"UPCOMING CLAIM",IF({age}{row}<=365,"ELIGIBLE","NON ELIGIBLE")),'
+              f'IF({age}{row}<{DISPUTE_AFTER_DAYS},"UPCOMING CLAIM",IF({age}{row}<=365,"ELIGIBLE","NON ELIGIBLE")),'
               f'IF({created}{row}<>"",'
               f'IF({age}{row}<60,"UPCOMING CLAIM",'
               f'IF({age}{row}<=90,"ELIGIBLE","NON ELIGIBLE")),"")))')
@@ -682,7 +698,7 @@ def computed_values(get, today=None):
     if str(get("COURIER PICKUP") or "").strip().upper() in NO_PICKUP:
         claim = "NON ELIGIBLE"
     elif back:
-        claim = "UPCOMING CLAIM" if age < 5 else "ELIGIBLE" if age <= 365 else "NON ELIGIBLE"
+        claim = "UPCOMING CLAIM" if age < DISPUTE_AFTER_DAYS else "ELIGIBLE" if age <= 365 else "NON ELIGIBLE"
     elif created:
         claim = "UPCOMING CLAIM" if age < 60 else "ELIGIBLE" if age <= 90 else "NON ELIGIBLE"
     else:
@@ -844,6 +860,10 @@ def is_credit_note(path):
     return CREDIT_NOTE_FILENAME_HINT in path.name.upper().replace(" ", "")
 
 
+def is_pod(path):
+    return POD_FILENAME_HINT in path.name.upper()
+
+
 def input_files():
     """The AJIO report exports - every file in input/ with the report's headers,
     other than GRNs, tickets, payment ledgers and the dispatch register."""
@@ -855,6 +875,7 @@ def input_files():
         and not is_payment(path)
         and not is_dispatch(path)
         and not is_credit_note(path)
+        and not is_pod(path)
         and is_report(path)
     ]
 
@@ -930,7 +951,8 @@ def organize_inputs():
     moved = dupes = 0
     for path in waiting_files():
         rel = path.relative_to(INPUT_DIR)
-        if is_grn(path) or is_ticket(path) or is_payment(path) or is_dispatch(path) or is_credit_note(path):
+        if (is_grn(path) or is_ticket(path) or is_payment(path) or is_dispatch(path) or is_credit_note(path)
+                or is_pod(path)):
             home, name = INPUT_DIR, path.name
         elif is_report(path):
             period = report_period(path)
@@ -1523,6 +1545,26 @@ def read_grn():
     return by_order, by_tracking, paths
 
 
+def read_pods():
+    """Return parcels handed over to us, by AWB: ({AWB: [POD days]}, files read)."""
+    paths = [path for path in waiting_files() if is_pod(path)]
+    pods = {}
+    for path in paths:
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        stream = workbook[workbook.sheetnames[0]].iter_rows(values_only=True)
+        headers = [str(h or "").strip().upper() for h in next(stream, ())]
+        missing = [f for f in (POD_AWB_FIELD, POD_DATE_FIELD, POD_STATUS_FIELD) if f not in headers]
+        if missing:
+            raise SystemExit(f"{path.name}: POD columns missing: {missing}")
+        awb, day, status = (headers.index(f) for f in (POD_AWB_FIELD, POD_DATE_FIELD, POD_STATUS_FIELD))
+        for values in stream:
+            if not values or text(values[status]) not in POD_DELIVERED or not text(values[awb]):
+                continue
+            pods.setdefault(text(values[awb]), []).append(parse_date(values[day]) or date.min)
+        workbook.close()
+    return pods, paths
+
+
 def read_dispatch():
     """When each parcel left the warehouse, keyed by forward tracking id.
 
@@ -1810,6 +1852,7 @@ def main():
     payments, payment_paths = read_payments()
     dispatch, dispatch_paths = read_dispatch()
     credit_notes, credit_note_paths = read_credit_notes()
+    pods, pod_paths = read_pods()
 
     def oms_lookup(row, since=None):
         """(status, received on, how it matched) for one report row.
@@ -1941,6 +1984,8 @@ def main():
     manual_matched = 0
     imported_checked = 0
     grn_matched = 0
+    pod_matched = 0
+    pod_column = index.get(POD_TRACKING_HEADER)
     for position, row in enumerate(kept):
         record = list(row) + [None] * (len(final_headers) - len(row))
 
@@ -1980,6 +2025,17 @@ def main():
         if any(text(row[column]) in manual_keys for column in identifier_columns if text(row[column])):
             manual_matched += 1
             record[out_index["MANUAL RETURN STATUS"]] = RECEIVED
+
+        # Not booked in anywhere yet, but the courier handed the parcel over to us (POD).
+        oms_now = text(record[out_index["OMSGURU STATUS"]])
+        if (pod_column is not None and "RECEIVED" not in oms_now
+                and text(record[out_index["MANUAL RETURN STATUS"]]) != RECEIVED.upper()):
+            created = parse_date(row[index["Return Created Date"]]) or date.min
+            days = [d for d in pods.get(text(row[pod_column]), []) if d == date.min or d >= created]
+            if days:
+                pod_matched += 1
+                record[out_index["OMSGURU STATUS"]] = POD_RECEIVED
+                record[out_index["OMS RECEIVED DATE"]] = None if max(days) == date.min else max(days)
 
         records.append(record)
 
@@ -2107,6 +2163,9 @@ def main():
     print(f"GRN_KEYS={len(grn_by_order)} order / {len(grn_by_tracking)} tracking")
     print(f"GRN_ORDERS_CONFIRMED={len(grn_confirmed)}")
     print(f"GRN_ROWS_MARKED={grn_matched}")
+    print(f"POD_FILES={len(pod_paths)}")
+    print(f"POD_AWBS={len(pods)}")
+    print(f"POD_ROWS_MARKED={pod_matched}")
     print(f"TICKET_FILES={len(ticket_paths)}")
     for path in ticket_paths:
         print(f"  {path.name}")

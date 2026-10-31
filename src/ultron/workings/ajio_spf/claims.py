@@ -2,8 +2,10 @@
 
 Rules (from the user, 2026-10-12):
   * AJIO marked the return delivered but it never reached us (no OMS Guru
-    receipt, no ERP GRN, not in the manual register): raise DELIVERY DISPUTE
-    RETURNS once 5 days have passed since the Return Delivered Date. This holds
+    receipt, no ERP GRN, not in the manual register, no POD of the courier
+    handing it to us): raise DELIVERY DISPUTE RETURNS on day 6 after the Return
+    Delivered Date - AJIO takes a delivery dispute only within 7 days of the
+    delivery (SOP), so the bot checks every day (2026-10-31). This holds
     even when AJIO already paid the invoice (G4), because a paid return is
     usually reversed later.
   * Return still in transit: raise NOT DELIVERED RETURNS as soon as 60 days
@@ -23,13 +25,14 @@ from datetime import date, datetime
 from openpyxl import load_workbook
 
 DISPUTE = "DELIVERY DISPUTE RETURNS"
+DISPUTE_AFTER = 6                   # days after Return Delivered Date; AJIO's dispute TAT is 7
 NOT_DELIVERED = "NOT DELIVERED RETURNS"
 DELIVERED_STATUSES = {"RETURN_DELIVERED", "RETURN_PROCESSED", "CREDIT_NOTE_CREATED"}
 
 
 @dataclass
 class Rules:
-    dispute_after: int = 5          # days after Return Delivered Date
+    dispute_after: int = DISPUTE_AFTER
     dispute_max: int = 365          # no practical upper limit (user, 2026-10-12)
     transit_after: int = 60         # days after Return Created Date
     transit_max: int = 90
@@ -93,6 +96,7 @@ def txt(value) -> str:
 
 
 def is_received(row: dict) -> bool:
+    # OMSGURU STATUS also holds the ERP GRN ("Return Received ERP") and POD ("Return Received POD") receipts
     return ("RECEIVED" in txt(row.get("OMSGURU STATUS")).upper()
             or txt(row.get("MANUAL RETURN STATUS")).upper() == "RETURN RECEIVED")
 
