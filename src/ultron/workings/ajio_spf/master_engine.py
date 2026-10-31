@@ -536,6 +536,25 @@ def make_activity_key(position_of):
     return activity_key
 
 
+# AJIO puts a Delivery Challan Date on nearly every return, in transit or not, so that date alone
+# does not mean the parcel came back. Delivered = a Return Delivered Date, or the carrier says
+# "Return Delivered", or AJIO's Return Status is one of these (the rule claims.py raises tickets on).
+DELIVERED_STATUSES = ("RETURN_DELIVERED", "RETURN_PROCESSED", "CREDIT_NOTE_CREATED")
+# The claim windows are the ones the bot raises tickets on (claims.py): delivered but not received -
+# from 5 days after delivery (up to 365); still in transit - day 60 to 90 after it was created; never
+# picked up from the customer - nothing to claim.
+NO_PICKUP = ("NOT PICKED UP", "PICKUP CANCELLED", "PICKUP FAILED")
+# Returns still on their way back (open, not delivered) sit on their own sheet, like Myntra's;
+# a row moves to Sheet1 on the run after it is delivered, received or settled.
+TRANSIT_SHEET = "RETURN IN TRANSIT"
+MASTER_SHEETS = (SHEET, TRANSIT_SHEET)
+
+
+def master_sheets(workbook):
+    """The master's row sheets present in an open workbook: Sheet1, then RETURN IN TRANSIT."""
+    return [workbook[name] for name in MASTER_SHEETS if name in workbook.sheetnames]
+
+
 def computed_formulas(column_of, row):
     """The four Excel-computed columns for one sheet row.
 
@@ -547,11 +566,13 @@ def computed_formulas(column_of, row):
 
     age = letter("AGE (DAYS)")
     carrier_status = letter("3PL Delivery Status")
+    status = letter("Return Status")
     # A return in transit ages from the day it was created. Once it reaches
-    # us, it ages from the Delivery Challan Date - the day AJIO booked the
-    # hand-over - not the carrier's Return Delivered Date.
+    # us, it ages from the day it was delivered (Return Delivered Date, else the
+    # Delivery Challan Date AJIO booked the hand-over on).
     created = letter("Return Created Date")
-    delivered = letter("Delivery Challan Date")
+    delivered_date = letter("Return Delivered Date")
+    challan = letter("Delivery Challan Date")
     oms = letter("OMSGURU STATUS")
     manual = letter("MANUAL RETURN STATUS")
     final = letter("FINAL RETURN STATUS")
@@ -560,24 +581,30 @@ def computed_formulas(column_of, row):
     # Text ("NA") and errors ("#N/A") in either column count as no amount.
     paid = f"IFERROR(N({g4}{row})<>0,FALSE)"
     reversed_ = f"IFERROR(N({ic}{row})<>0,FALSE)"
+    is_delivered = (f'OR({delivered_date}{row}<>"",{carrier_status}{row}="Return Delivered",'
+                    + ",".join(f'{status}{row}="{s}"' for s in DELIVERED_STATUSES) + ")")
+    since = f'IF({delivered_date}{row}<>"",{delivered_date}{row},{challan}{row})'
+    # the courier never took it from the customer (COURIER PICKUP, pickup.py): nothing to claim
+    pickup = letter("COURIER PICKUP") if "COURIER PICKUP" in column_of else None
+    no_pickup = ("OR(" + ",".join(f'{pickup}{row}="{v}"' for v in NO_PICKUP) + ")") if pickup else "FALSE"
+    back = f'AND({is_delivered},{since}<>"")'
 
     return {
         "AGE (DAYS)": (
-            f'=IF({delivered}{row}<>"",MAX(0,TODAY()-{delivered}{row}),'
+            f'=IF({back},MAX(0,TODAY()-{since}),'
             f'IF({created}{row}<>"",MAX(0,TODAY()-{created}{row}),""))'
         ),
         "CLAIM STATUS": (
-            f'=IF({delivered}{row}<>"",'
-            f'IF({age}{row}<=7,"ELIGIBLE","NON ELIGIBLE"),'
+            f'=IF({no_pickup},"NON ELIGIBLE",IF({back},'
+            f'IF({age}{row}<5,"UPCOMING CLAIM",IF({age}{row}<=365,"ELIGIBLE","NON ELIGIBLE")),'
             f'IF({created}{row}<>"",'
             f'IF({age}{row}<60,"UPCOMING CLAIM",'
-            f'IF({age}{row}<=90,"ELIGIBLE","NON ELIGIBLE")),""))'
+            f'IF({age}{row}<=90,"ELIGIBLE","NON ELIGIBLE")),"")))'
         ),
         # What the claim would be about, once the parcel is missing.
         "CLAIM TYPE": (
             f'=IF(OR({final}{row}="{RECEIVED}",{final}{row}="{PAYMENT_DONE}"),"",'
-            f'IF(OR({delivered}{row}<>"",{carrier_status}{row}="Return Delivered"),'
-            f'"RETURN NOT RECEIVED",'
+            f'IF({is_delivered},"RETURN NOT RECEIVED",'
             f'IF(ISNUMBER(SEARCH("CANCEL",{carrier_status}{row})),'
             f'"RETURN CANCELLED","RETURN IN TRANSIT")))'
         ),
@@ -592,6 +619,10 @@ def computed_formulas(column_of, row):
     }
 
 
+def _empty(value):
+    return value is None or (isinstance(value, str) and value.strip() == "")
+
+
 def computed_values(get, today=None):
     """What computed_formulas' four formulas give for one row, worked out here (`get(header)` is
     the row's value). Saved with each formula (store_values), so the numbers show where nothing
@@ -602,11 +633,18 @@ def computed_values(get, today=None):
         value = as_number(get(header))
         return value or 0.0
 
-    delivered, created = parse_date(get("Delivery Challan Date")), parse_date(get("Return Created Date"))
-    start = delivered or created
+    created = parse_date(get("Return Created Date"))
+    carrier = str(get("3PL Delivery Status") or "")
+    is_delivered = (not _empty(get("Return Delivered Date")) or carrier.strip().upper() == "RETURN DELIVERED"
+                    or str(get("Return Status") or "").strip().upper() in DELIVERED_STATUSES)
+    since = parse_date(get("Return Delivered Date")) if not _empty(get("Return Delivered Date"))         else parse_date(get("Delivery Challan Date"))
+    back = is_delivered and since is not None
+    start = since if back else created
     age = max(0, (today - start).days) if start else ""
-    if delivered:
-        claim = "ELIGIBLE" if age <= 7 else "NON ELIGIBLE"
+    if str(get("COURIER PICKUP") or "").strip().upper() in NO_PICKUP:
+        claim = "NON ELIGIBLE"
+    elif back:
+        claim = "UPCOMING CLAIM" if age < 5 else "ELIGIBLE" if age <= 365 else "NON ELIGIBLE"
     elif created:
         claim = "UPCOMING CLAIM" if age < 60 else "ELIGIBLE" if age <= 90 else "NON ELIGIBLE"
     else:
@@ -618,10 +656,9 @@ def computed_values(get, today=None):
         final = PAYMENT_DONE
     else:
         final = ""
-    carrier = str(get("3PL Delivery Status") or "")
     if final in (RECEIVED, PAYMENT_DONE):
         claim_type = ""
-    elif delivered or carrier.strip().upper() == "RETURN DELIVERED":
+    elif is_delivered:
         claim_type = "RETURN NOT RECEIVED"
     elif "CANCEL" in carrier.upper():
         claim_type = "RETURN CANCELLED"
@@ -1473,8 +1510,8 @@ def read_dispatch():
 def read_master():
     """Report rows, with every *date* column parsed into a real date."""
     workbook = load_workbook(SOURCE_MASTER, read_only=True, data_only=True)
-    sheet = workbook[workbook.sheetnames[0]]
-    stream = sheet.iter_rows(values_only=True)
+    first = SHEET if SHEET in workbook.sheetnames else workbook.sheetnames[0]
+    stream = workbook[first].iter_rows(values_only=True)
     headers = [header for header in next(stream) if header is not None]
     date_columns = [
         position
@@ -1482,16 +1519,27 @@ def read_master():
         if "date" in str(header).casefold()
     ]
 
-    rows = []
-    for values in stream:
-        row = list(values[: len(headers)])
+    def take(values, order=None):
+        # order: where each of Sheet1's columns sits on the other sheet
+        row = [values[i] if i is not None and i < len(values) else None for i in order]             if order else list(values[: len(headers)])
         if all(value in (None, "") for value in row):
-            continue
+            return
         for position in date_columns:
             parsed = parse_date(row[position])
             if parsed is not None:
                 row[position] = parsed
         rows.append(row)
+
+    rows = []
+    for values in stream:
+        take(values)
+    # the returns still in transit sit on their own sheet: one master all the same
+    if TRANSIT_SHEET in workbook.sheetnames and first == SHEET:
+        stream = workbook[TRANSIT_SHEET].iter_rows(values_only=True)
+        theirs = {header: i for i, header in enumerate(next(stream, ())) if header is not None}
+        order = [theirs.get(header) for header in headers]
+        for values in stream:
+            take(values, order)
     workbook.close()
     return headers, rows
 
@@ -2098,8 +2146,12 @@ def write(final_headers, records, out_index, log):
     sources = [out_index[header] for header in headers]
 
     workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = SHEET
+    # every return worked out first: the ones still in transit go to their own sheet
+    today = date.today()
+    worked_of = [computed_values(
+        lambda header, record=record: record[out_index[header]] if header in out_index else None, today)
+        for record in records]
+    on_road = [w["CLAIM TYPE"] == "RETURN IN TRANSIT" for w in worked_of]
 
     def styled_like(header):
         """The layout entry a column copies: its own, else its block's."""
@@ -2119,89 +2171,99 @@ def write(final_headers, records, out_index, log):
     derived_fill = PatternFill("solid", fgColor=DERIVED_FILL)
     body_formats = []
     body_fonts = []
-    for column, header in enumerate(headers, start=1):
-        cell = sheet.cell(1, column, header)
+    header_styles = []
+    for header in headers:
         model = styled_like(header)
         if model is None:
-            cell.font = header_font
             is_ours = (
                 header in DERIVED_HEADERS
                 or header in TICKET_HEADERS
                 or header in DISPATCH_HEADERS
             )
-            cell.fill = derived_fill if is_ours else source_fill
-            cell.alignment = Alignment(horizontal="left")
+            header_styles.append((header_font, derived_fill if is_ours else source_fill,
+                                  Alignment(horizontal="left"), None))
             body_formats.append("General")
             body_fonts.append(None)
         else:
-            font, fill, alignment, border = layout["header"][model]
-            cell.font, cell.fill = copy(font), copy(fill)
-            cell.alignment, cell.border = copy(alignment), copy(border)
+            header_styles.append(layout["header"][model])
             font, number_format = layout["body"][model]
             body_formats.append(number_format)
             plain = font.name == "Calibri" and font.sz == 11 and not font.b and not font.i
             body_fonts.append(None if plain else font)
 
-    for position, record in enumerate(records, start=2):
-        for column, source in enumerate(sources, start=1):
-            value = record[source]
-            if value in (None, ""):
-                continue
-            cell = sheet.cell(position, column, value)
-            number_format = body_formats[column - 1]
-            if isinstance(value, (datetime, date)):
-                if number_format == "General":
-                    # Comment times carry the hour; report dates are midnight.
-                    timed = isinstance(value, datetime) and value.time() != datetime.min.time()
-                    number_format = DATETIME_FORMAT if timed else DATE_FORMAT
-                cell.number_format = number_format
-            elif number_format != "General":
-                cell.number_format = number_format
-            if body_fonts[column - 1] is not None:
-                cell.font = copy(body_fonts[column - 1])
+    def fill_sheet(sheet, picked):
+        """One master sheet: the header, the rows `picked` (indexes into records) and their
+        formulas; returns {cell: worked-out value} of the formula cells."""
+        for column, header in enumerate(headers, start=1):
+            cell = sheet.cell(1, column, header)
+            font, fill, alignment, border = header_styles[column - 1]
+            cell.font, cell.fill, cell.alignment = copy(font), copy(fill), copy(alignment)
+            if border is not None:
+                cell.border = copy(border)
 
-    today = date.today()
-    sheet_values, row_values = {}, []
-    for row in range(2, len(records) + 2):
-        record = records[row - 2]
-        worked = computed_values(
-            lambda header: record[out_index[header]] if header in out_index else None, today)
-        row_values.append(worked)
-        for header, formula in computed_formulas(column_of, row).items():
-            column = column_of[header] + 1
-            sheet_values[f"{get_column_letter(column)}{row}"] = worked[header]
-            cell = sheet.cell(row, column, formula)
-            number_format = body_formats[column - 1]
-            if number_format != "General":
-                cell.number_format = number_format
-            elif header == "AGE (DAYS)":
-                cell.number_format = "0"
-            if body_fonts[column - 1] is not None:
-                cell.font = copy(body_fonts[column - 1])
+        for position, index in enumerate(picked, start=2):
+            record = records[index]
+            for column, source in enumerate(sources, start=1):
+                value = record[source]
+                if value in (None, ""):
+                    continue
+                cell = sheet.cell(position, column, value)
+                number_format = body_formats[column - 1]
+                if isinstance(value, (datetime, date)):
+                    if number_format == "General":
+                        # Comment times carry the hour; report dates are midnight.
+                        timed = isinstance(value, datetime) and value.time() != datetime.min.time()
+                        number_format = DATETIME_FORMAT if timed else DATE_FORMAT
+                    cell.number_format = number_format
+                elif number_format != "General":
+                    cell.number_format = number_format
+                if body_fonts[column - 1] is not None:
+                    cell.font = copy(body_fonts[column - 1])
 
-    for column, header in enumerate(headers, start=1):
-        model = styled_like(header)
-        width = layout["width"].get(model) if model is not None else None
-        if (
-            header in TICKET_HEADERS + DISPATCH_HEADERS
-            and layout is not None
-            and header not in layout["width"]
-        ):
-            width = max(len(header) + 6, 18)
-        sheet.column_dimensions[get_column_letter(column)].width = width or min(
-            max(len(str(header)) + 4, 12), 30
-        )
-        # Also on the column itself, so a value typed into a blank cell in
-        # Excel picks the format up.
-        if body_formats[column - 1] != "General":
-            sheet.column_dimensions[get_column_letter(column)].number_format = body_formats[
-                column - 1
-            ]
+        values = {}
+        for row, index in enumerate(picked, start=2):
+            for header, formula in computed_formulas(column_of, row).items():
+                column = column_of[header] + 1
+                values[f"{get_column_letter(column)}{row}"] = worked_of[index][header]
+                cell = sheet.cell(row, column, formula)
+                number_format = body_formats[column - 1]
+                if number_format != "General":
+                    cell.number_format = number_format
+                elif header == "AGE (DAYS)":
+                    cell.number_format = "0"
+                if body_fonts[column - 1] is not None:
+                    cell.font = copy(body_fonts[column - 1])
 
-    freeze = layout["freeze"] if layout is not None else "A2"
-    if freeze:
-        sheet.freeze_panes = freeze
-    sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{len(records) + 1}"
+        for column, header in enumerate(headers, start=1):
+            model = styled_like(header)
+            width = layout["width"].get(model) if model is not None else None
+            if (
+                header in TICKET_HEADERS + DISPATCH_HEADERS
+                and layout is not None
+                and header not in layout["width"]
+            ):
+                width = max(len(header) + 6, 18)
+            sheet.column_dimensions[get_column_letter(column)].width = width or min(
+                max(len(str(header)) + 4, 12), 30
+            )
+            # Also on the column itself, so a value typed into a blank cell in
+            # Excel picks the format up.
+            if body_formats[column - 1] != "General":
+                sheet.column_dimensions[get_column_letter(column)].number_format = body_formats[
+                    column - 1
+                ]
+        freeze = layout["freeze"] if layout is not None else "A2"
+        if freeze:
+            sheet.freeze_panes = freeze
+        sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{len(picked) + 1}"
+        return values
+
+    sheet = workbook.active
+    sheet.title = SHEET
+    sheet_values = fill_sheet(sheet, [i for i in range(len(records)) if not on_road[i]])
+    transit_values = fill_sheet(workbook.create_sheet(TRANSIT_SHEET),
+                                [i for i in range(len(records)) if on_road[i]])
+    row_values = worked_of
     last, summary_values = write_summary(workbook, column_of, records, out_index, row_values)
     write_claim_tat(workbook, records, out_index)
     write_coverage(workbook, last + 3, log)
@@ -2212,7 +2274,8 @@ def write(final_headers, records, out_index, log):
         pass
     workbook.save(SOURCE_MASTER)
     # each formula's worked-out value saved with it (openpyxl writes formulas only)
-    store_values(SOURCE_MASTER, {SHEET: sheet_values, SUMMARY_SHEET: summary_values})
+    store_values(SOURCE_MASTER, {SHEET: sheet_values, TRANSIT_SHEET: transit_values,
+                                 SUMMARY_SHEET: summary_values})
 
 
 # Every claim raised (a TICKET ID on Sheet1), by account and the month the ticket was
@@ -2330,20 +2393,21 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
     sheet = workbook.create_sheet(SUMMARY_SHEET)
     row_values = row_values or [{} for _ in records]
 
-    def whole(header):
+    # Sheet1 and the RETURN IN TRANSIT sheet have the same columns; every figure adds up both.
+    def whole(header, sheet=SHEET):
         letter = get_column_letter(column_of[header] + 1)
-        return f"{SHEET}!${letter}:${letter}"
+        return f"'{sheet}'!${letter}:${letter}"
 
     def quoted(value):
         return f'"{value}"'
 
-    account = whole(SUMMARY_ACCOUNT_HEADER)
-    created = whole("Return Created Date")
-    final = whole("FINAL RETURN STATUS")
-    claim_status = whole("CLAIM STATUS")
-    claim_type = whole("CLAIM TYPE")
-    ticket = whole("TICKET ID")
-    invoice = whole(SUMMARY_AMOUNT_HEADER)
+    account = SUMMARY_ACCOUNT_HEADER
+    created = "Return Created Date"
+    final = "FINAL RETURN STATUS"
+    claim_status = "CLAIM STATUS"
+    claim_type = "CLAIM TYPE"
+    ticket = "TICKET ID"
+    invoice = SUMMARY_AMOUNT_HEADER
 
     received = (final, quoted(RECEIVED))
     payment_done = (final, quoted(PAYMENT_DONE))
@@ -2354,7 +2418,7 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
     eligible = (claim_status, quoted("ELIGIBLE"))
     upcoming = (claim_status, quoted("UPCOMING CLAIM"))
 
-    def criteria(row, pairs):
+    def criteria(row, pairs, sheet):
         # Account in column A, month as "yyyy-mm" text in column B.
         month_start = f"DATE(LEFT($B{row},4),RIGHT($B{row},2),1)"
         base = (
@@ -2362,17 +2426,19 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
             (created, f'">="&{month_start}'),
             (created, f'"<"&EDATE({month_start},1)'),
         )
-        return ",".join(f"{rng},{crit}" for rng, crit in base + tuple(pairs))
+        return ",".join(f"{whole(header, sheet)},{crit}" for header, crit in base + tuple(pairs))
 
     def count(*pairs):
-        return lambda row: f"COUNTIFS({criteria(row, pairs)})"
+        return lambda row: "+".join(f"COUNTIFS({criteria(row, pairs, sheet)})" for sheet in MASTER_SHEETS)
 
     def total(*pairs, amount=invoice):
         # G4 PAYMENT and IC REVERSE hold #N/A errors from a stale lookup, and
         # one error in the summed rows would turn the whole SUMIFS into #N/A.
         # Asking for a number in the summed column itself skips them.
         numbers_only = (amount, quoted(">=-1E+307"))
-        return lambda row: f"SUMIFS({amount},{criteria(row, pairs + (numbers_only,))})"
+        return lambda row: "+".join(
+            f"SUMIFS({whole(amount, sheet)},{criteria(row, pairs + (numbers_only,), sheet)})"
+            for sheet in MASTER_SHEETS)
 
     def no_ticket(build, *pairs):
         # A failed lookup leaves "#N/A" behind; that is no ticket too.
@@ -2383,7 +2449,7 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
     def has_ticket(build):
         return lambda row: (
             f"{build((ticket, quoted('<>')))(row)}"
-            f"-{build((ticket, quoted('#N/A')))(row)}"
+            f"-({build((ticket, quoted('#N/A')))(row)})"
         )
 
     # the same tests over the rows, for the saved values
@@ -2433,7 +2499,7 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
         ("CLAIM DONE", COUNT_FORMAT, has_ticket(count), lambda i: not ticketless(i)),
         # what AJIO paid on the claims: G4 paid to us, less IC taken back
         ("SPF PAID AMT", AMOUNT_FORMAT,
-         lambda row: f"{total(amount=whole('G4 PAYMENT'))(row)}-{total(amount=whole('IC REVERSE'))(row)}",
+         lambda row: f"{total(amount='G4 PAYMENT')(row)}-({total(amount='IC REVERSE')(row)})",
          lambda i: amount_of(i, "G4 PAYMENT") - amount_of(i, "IC REVERSE")),
     ]
     first_data_column = 3

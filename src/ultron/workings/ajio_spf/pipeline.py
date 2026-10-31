@@ -85,10 +85,12 @@ def oldest_open() -> date | None:
     from openpyxl import load_workbook
     try:
         wb = load_workbook(WORK / MASTER_NAME, read_only=True, data_only=True)
-        rows = wb["Sheet1"].iter_rows(values_only=True)
-        head = [str(h or "").strip() for h in next(rows)]
-        created, final = head.index("Return Created Date"), head.index("FINAL RETURN STATUS")
-        days = [claims.as_date(r[created]) for r in rows if r and not claims.txt(r[final])]
+        days = []
+        for sheet in master_engine.master_sheets(wb):        # Sheet1 and RETURN IN TRANSIT
+            rows = sheet.iter_rows(values_only=True)
+            head = [str(h or "").strip() for h in next(rows)]
+            created, final = head.index("Return Created Date"), head.index("FINAL RETURN STATUS")
+            days += [claims.as_date(r[created]) for r in rows if r and not claims.txt(r[final])]
         wb.close()
     except Exception as exc:  # noqa: BLE001 - the fixed window then
         log.warning("Oldest open return not read: %s", exc)
@@ -244,27 +246,27 @@ def oms_lookup(today: date, ctx: dict) -> int:
                    {"Sheet1": (OMS_COLUMNS, received)})
     by_key = {(ret["return_order"], ret["sku"]): res for ret, res in found}
     wb = load_workbook(path)
-    ws = wb["Sheet1"]
-    col = {str(c.value).strip(): c.column - 1 for c in ws[1] if c.value}
-    need = ("RETURN ORDER NUMBER", "SELLER SKU", "FWD AWB", "FWD Carrier Name", "OMSGURU STATUS", "MANUAL RETURN STATUS")
-    if any(h not in col for h in need):
-        raise RuntimeError(f"Master Sheet1 lacks one of {need}")
     awbs = statuses = 0
-    for row in ws.iter_rows(min_row=2):
-        res = by_key.get((claims.txt(row[col["RETURN ORDER NUMBER"]].value), claims.txt(row[col["SELLER SKU"]].value)))
-        if not res:
-            continue
-        if res["forward_awb"] and not claims.txt(row[col["FWD AWB"]].value):
-            row[col["FWD AWB"]].value = res["forward_awb"]
-            if res["carrier"] and not claims.txt(row[col["FWD Carrier Name"]].value):
-                row[col["FWD Carrier Name"]].value = res["carrier"]
-            awbs += 1
-        current = claims.txt(row[col["OMSGURU STATUS"]].value)
-        if (res["status"] and not res["received_row"] and "RECEIVED" not in current.upper()
-                and claims.txt(row[col["MANUAL RETURN STATUS"]].value).upper() != "RETURN RECEIVED"
-                and current != res["status"]):
-            row[col["OMSGURU STATUS"]].value = res["status"]
-            statuses += 1
+    for ws in master_engine.master_sheets(wb):          # Sheet1 and RETURN IN TRANSIT
+        col = {str(c.value).strip(): c.column - 1 for c in ws[1] if c.value}
+        need = ("RETURN ORDER NUMBER", "SELLER SKU", "FWD AWB", "FWD Carrier Name", "OMSGURU STATUS", "MANUAL RETURN STATUS")
+        if any(h not in col for h in need):
+            raise RuntimeError(f"Master {ws.title} lacks one of {need}")
+        for row in ws.iter_rows(min_row=2):
+            res = by_key.get((claims.txt(row[col["RETURN ORDER NUMBER"]].value), claims.txt(row[col["SELLER SKU"]].value)))
+            if not res:
+                continue
+            if res["forward_awb"] and not claims.txt(row[col["FWD AWB"]].value):
+                row[col["FWD AWB"]].value = res["forward_awb"]
+                if res["carrier"] and not claims.txt(row[col["FWD Carrier Name"]].value):
+                    row[col["FWD Carrier Name"]].value = res["carrier"]
+                awbs += 1
+            current = claims.txt(row[col["OMSGURU STATUS"]].value)
+            if (res["status"] and not res["received_row"] and "RECEIVED" not in current.upper()
+                    and claims.txt(row[col["MANUAL RETURN STATUS"]].value).upper() != "RETURN RECEIVED"
+                    and current != res["status"]):
+                row[col["OMSGURU STATUS"]].value = res["status"]
+                statuses += 1
     master_engine.resave(wb, path)      # keeps the formulas' saved values
     log.info("OMSGuru: %d forward AWBs and %d return statuses written to the master, %d receipts",
              awbs, statuses, len(received))
@@ -425,8 +427,7 @@ def write_bot_log(path: Path, previous: list[list], raised: list[dict], replies:
         cell.number_format = "dd-mm-yyyy"
 
     created = {r["return_order"]: r["ticket"] for r in raised if r["result"] == "created"}
-    if created:
-        sheet = wb["Sheet1"]
+    for sheet in (master_engine.master_sheets(wb) if created else []):   # Sheet1 and RETURN IN TRANSIT
         head = {str(c.value).strip(): c.column for c in sheet[1] if c.value}
         rt, tid, st = head.get("RETURN ORDER NUMBER"), head.get("TICKET ID"), head.get("STATUS")
         if rt and tid:

@@ -50,11 +50,15 @@ class Candidate:
 
 
 def read_sheet(path) -> list[dict]:
+    """The master's rows: Sheet1 and the RETURN IN TRANSIT sheet (the returns still on their way)."""
     wb = load_workbook(path, read_only=True, data_only=False)
-    ws = wb["Sheet1"]
-    it = ws.iter_rows(values_only=True)
-    headers = [str(h).strip() if h is not None else "" for h in next(it)]
-    rows = [dict(zip(headers, values)) for values in it if any(v not in (None, "") for v in values)]
+    rows = []
+    for name in ("Sheet1", "RETURN IN TRANSIT"):
+        if name not in wb.sheetnames:
+            continue
+        it = wb[name].iter_rows(values_only=True)
+        headers = [str(h).strip() if h is not None else "" for h in next(it, ())]
+        rows += [dict(zip(headers, values)) for values in it if any(v not in (None, "") for v in values)]
     wb.close()
     return rows
 

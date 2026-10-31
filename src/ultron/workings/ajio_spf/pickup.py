@@ -128,40 +128,40 @@ def check(path: Path, workers: int = 8) -> dict:
     results = {r.awb: r for r in track_all(jobs, CourierRegistry(cfg), workers=workers, progress=False)}
 
     wb = load_workbook(path)
-    ws = wb["Sheet1"]
-    head = {str(c.value).strip(): c.column for c in ws[1] if c.value}
-    for name in COLUMNS + FWD_COLUMNS:
-        if name not in head:
-            head[name] = ws.max_column + 1
-            ws.cell(1, head[name], name).font = copy(ws.cell(1, 1).font)
-
-    def put(row, name, value):
-        cell = row[head[name] - 1]
-        cell.value = value
-        if isinstance(value, date):
-            cell.number_format = "dd-mm-yyyy"
-
     counts = {"tracked": len(results), PICKED: 0, NOT_PICKED: 0, CANCELLED: 0, FAILED: 0, NO_TRACKING: 0}
-    for row in ws.iter_rows(min_row=2):
-        if claims.is_received({k: row[c - 1].value for k, c in head.items() if k in
-                               ("OMSGURU STATUS", "MANUAL RETURN STATUS")}):
-            continue
-        awb = claims.txt(row[head["Return AWB No"] - 1].value)
-        ajio = claims.txt(row[head["3PL Delivery Status"] - 1].value) if "3PL Delivery Status" in head else ""
-        res = results.get(awb)
-        if awb and (res is not None or not claims.txt(row[head["COURIER PICKUP"] - 1].value)):
-            v = verdict(res, ajio)
-            put(row, "COURIER PICKUP", v)
-            put(row, "PICKUP DATE", pickup_date(res) if v == PICKED else None)
-            put(row, "COURIER STATUS", (res.status_raw or res.status or res.error) if res else ajio)
-            put(row, "COURIER UPDATED", as_date(res.last_update) if res else None)
-        fwd = results.get(claims.txt(row[head["FWD AWB"] - 1].value)) if "FWD AWB" in head else None
-        if fwd is not None:
-            put(row, "FWD COURIER STATUS", fwd.status_raw or fwd.status or fwd.error)
-            put(row, "FWD COURIER UPDATED", as_date(fwd.last_update))
-        v = claims.txt(row[head["COURIER PICKUP"] - 1].value)
-        if v in counts:
-            counts[v] += 1
+    for ws in master_engine.master_sheets(wb):          # Sheet1 and RETURN IN TRANSIT
+        head = {str(c.value).strip(): c.column for c in ws[1] if c.value}
+        for name in COLUMNS + FWD_COLUMNS:
+            if name not in head:
+                head[name] = ws.max_column + 1
+                ws.cell(1, head[name], name).font = copy(ws.cell(1, 1).font)
+
+        def put(row, name, value, head=head):
+            cell = row[head[name] - 1]
+            cell.value = value
+            if isinstance(value, date):
+                cell.number_format = "dd-mm-yyyy"
+
+        for row in ws.iter_rows(min_row=2):
+            if claims.is_received({k: row[c - 1].value for k, c in head.items() if k in
+                                   ("OMSGURU STATUS", "MANUAL RETURN STATUS")}):
+                continue
+            awb = claims.txt(row[head["Return AWB No"] - 1].value)
+            ajio = claims.txt(row[head["3PL Delivery Status"] - 1].value) if "3PL Delivery Status" in head else ""
+            res = results.get(awb)
+            if awb and (res is not None or not claims.txt(row[head["COURIER PICKUP"] - 1].value)):
+                v = verdict(res, ajio)
+                put(row, "COURIER PICKUP", v)
+                put(row, "PICKUP DATE", pickup_date(res) if v == PICKED else None)
+                put(row, "COURIER STATUS", (res.status_raw or res.status or res.error) if res else ajio)
+                put(row, "COURIER UPDATED", as_date(res.last_update) if res else None)
+            fwd = results.get(claims.txt(row[head["FWD AWB"] - 1].value)) if "FWD AWB" in head else None
+            if fwd is not None:
+                put(row, "FWD COURIER STATUS", fwd.status_raw or fwd.status or fwd.error)
+                put(row, "FWD COURIER UPDATED", as_date(fwd.last_update))
+            v = claims.txt(row[head["COURIER PICKUP"] - 1].value)
+            if v in counts:
+                counts[v] += 1
     master_engine.resave(wb, path)      # keeps the formulas' saved values
     log.info("Courier pickup: %s", counts)
     return counts
