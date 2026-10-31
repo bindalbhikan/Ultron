@@ -151,11 +151,11 @@ function parseSms(from, body) {
   }
   if (/XPBEES/.test(code)) {
     if (/return attempted/i.test(body)) return { courier: 'Xpressbees', status: 'RETURN', otp: '', count: num(/Acc:\s*(\d+)/i), pod: true };
-    // "we have fulfilled your pickup request": the returns handed to us - the final POD, no code
-    if (/fulfilled your pickup request/i.test(body)) return { courier: 'Xpressbees', status: 'RETURN', otp: '', count: '', pod: true };
+    // "we have fulfilled your pickup request": the pickup's final sheet, no code
+    if (/fulfilled your pickup request/i.test(body)) return { courier: 'Xpressbees', status: 'PICKUP', otp: '', count: '', pod: true };
     const otp = num(/OTP:?\s*(\d+)/i);
-    // "attempted your pickup request ... share OTP": Xpressbees bringing returns to us (reverse pickup) - RETURN
-    return otp ? { courier: 'Xpressbees', status: 'RETURN', otp, count: '', pod: /https?:\/\//.test(body) } : null;
+    // "attempted your pickup request ... share OTP": a pickup from us
+    return otp ? { courier: 'Xpressbees', status: 'PICKUP', otp, count: '', pod: /https?:\/\//.test(body) } : null;
   }
   return null;
 }
@@ -296,7 +296,10 @@ function returns(from, body, deviceTime, p) {
   const podRows = podTab.getLastRow() > 1 ? podTab.getRange(2, 1, podTab.getLastRow() - 1, POD_HEADERS.length).getDisplayValues() : [];
   const logRows = logTab.getLastRow() > 1 ? logTab.getRange(2, 1, logTab.getLastRow() - 1, LOG_HEADERS.length).getDisplayValues() : [];
   const fresh = (Date.now() - when.getTime()) <= OTP_DAYS * 86400000;
-  let filled = sms.otp ? true : null;
+  // The team's OTP sheet takes return codes, and of the pickups only Nykaa's Ekart one; every other
+  // pickup code stays on the SMS tab (its POD is still filed).
+  const sheetable = sms.status === 'RETURN' || (sms.courier === 'Ekart' && EKART_SELLERS[sms.seller] === 'Nykaa');
+  let filled = sms.otp && sheetable ? true : null;
 
   for (const portal of Object.keys(groups)) {
     const awbs = groups[portal];
@@ -326,14 +329,16 @@ function returns(from, body, deviceTime, p) {
       }
       continue;
     }
-    if (sms.otp && myntra) {
+    if (sms.otp && !sheetable) {
+      notes.push(sp + ' OTP ' + sms.otp + ': pickup, not for the OTP sheet');
+    } else if (sms.otp && myntra) {
       notes.push(sp + ': left to the Myntra OTP bot');
       if (!otpRows.some(r => r[0] === day && r[3] === sms.otp)) filled = false;
     } else if (sms.otp) {
       const put = putOtp(otpSheet, otpRows, day, sp, sms.status, otp, count, logged, fresh);
       notes.push(sp + ' ' + count + ' OTP ' + otp + ': ' + put);
       if (put === 'not in the sheet') filled = false;
-    } else if (logged && logged[4] && count && fresh && !myntra) {   // final POD: the count only
+    } else if (logged && logged[4] && count && fresh && !myntra && sheetable) {   // final POD: the count only
       const sheet = SpreadsheetApp.openById(OTP_SHEET_ID).getSheets()[0];
       const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getDisplayValues() : [];
       putOtp(sheet, rows, day, sp, sms.status, logged[4], count, logged, true);
