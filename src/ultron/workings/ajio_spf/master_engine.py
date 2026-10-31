@@ -617,23 +617,26 @@ def computed_formulas(column_of, row):
             f'=IF({back},MAX(0,TODAY()-{since}),'
             f'IF({created}{row}<>"",MAX(0,TODAY()-{created}{row}),""))'
         ),
+        # received: nothing to claim. A paid return (G4) is still claimed - AJIO usually reverses it.
         "CLAIM STATUS": (
-            f'=IF(AND({accepted},{final}{row}="",{window}="ELIGIBLE"),"{MANUAL_CLAIM}",{window})'
+            f'=IF({final}{row}="{RECEIVED}","",'
+            f'IF(AND({accepted},{window}="ELIGIBLE"),"{MANUAL_CLAIM}",{window}))'
         ),
         # What the claim would be about, once the parcel is missing.
         "CLAIM TYPE": (
-            f'=IF(OR({final}{row}="{RECEIVED}",{final}{row}="{PAYMENT_DONE}"),"",'
+            f'=IF({final}{row}="{RECEIVED}","",'
             f'IF({is_delivered},"RETURN NOT RECEIVED",'
             f'IF(ISNUMBER(SEARCH("CANCEL",{carrier_status}{row})),'
             f'"RETURN CANCELLED","RETURN IN TRANSIT")))'
         ),
         # Cancelled/partial return received still means the parcel came back.
         # A parcel that never came back is settled once G4 is paid and no IC
-        # reversed it.
+        # reversed it - unless AJIO says it was delivered to us: that one is
+        # still claimed (DELIVERY DISPUTE), a paid return is usually reversed later.
         "FINAL RETURN STATUS": (
             f'=IF(OR(ISNUMBER(SEARCH("RECEIVED",{oms}{row})),'
             f'{manual}{row}="{RECEIVED}"),"{RECEIVED}",'
-            f'IF(AND({paid},NOT({reversed_})),"{PAYMENT_DONE}",""))'
+            f'IF(AND({paid},NOT({reversed_}),NOT({is_delivered})),"{PAYMENT_DONE}",""))'
         ),
     }
 
@@ -671,11 +674,11 @@ def computed_values(get, today=None):
     oms, manual = str(get("OMSGURU STATUS") or "").upper(), str(get("MANUAL RETURN STATUS") or "").strip()
     if "RECEIVED" in oms or manual.upper() == RECEIVED.upper():
         final = RECEIVED
-    elif number("G4 PAYMENT") != 0 and number("IC REVERSE") == 0:
+    elif number("G4 PAYMENT") != 0 and number("IC REVERSE") == 0 and not is_delivered:
         final = PAYMENT_DONE
     else:
         final = ""
-    if final in (RECEIVED, PAYMENT_DONE):
+    if final == RECEIVED:
         claim_type = ""
     elif is_delivered:
         claim_type = "RETURN NOT RECEIVED"
@@ -683,8 +686,10 @@ def computed_values(get, today=None):
         claim_type = "RETURN CANCELLED"
     else:
         claim_type = "RETURN IN TRANSIT"
+    if final == RECEIVED:
+        claim = ""          # back with us: nothing to claim; a paid one is still claimed
     # credit note accepted, still open: the team claims it by hand
-    if claim == "ELIGIBLE" and final == "" and not _empty(get("Credit Note Acceptance date")):
+    elif claim == "ELIGIBLE" and not _empty(get("Credit Note Acceptance date")):
         claim = MANUAL_CLAIM
     return {"AGE (DAYS)": age, "CLAIM STATUS": claim, "CLAIM TYPE": claim_type,
             "FINAL RETURN STATUS": final}
@@ -2172,7 +2177,7 @@ def write(final_headers, records, out_index, log):
     worked_of = [computed_values(
         lambda header, record=record: record[out_index[header]] if header in out_index else None, today)
         for record in records]
-    on_road = [w["CLAIM TYPE"] == "RETURN IN TRANSIT" for w in worked_of]
+    on_road = [w["CLAIM TYPE"] == "RETURN IN TRANSIT" and w["FINAL RETURN STATUS"] == "" for w in worked_of]
 
     def styled_like(header):
         """The layout entry a column copies: its own, else its block's."""
@@ -2434,6 +2439,7 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
     payment_done = (final, quoted(PAYMENT_DONE))
     # Still open: neither back on the shelf nor settled by payment.
     not_received = ((final, quoted("<>" + RECEIVED)), (final, quoted("<>" + PAYMENT_DONE)))
+    not_back = (final, quoted("<>" + RECEIVED))       # claims: open or paid, not received
     in_transit = (claim_type, quoted("RETURN IN TRANSIT"))
     delivered = (claim_type, quoted("RETURN NOT RECEIVED"))
     eligible = (claim_status, quoted("ELIGIBLE"))
@@ -2495,7 +2501,8 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
         return is_open(i) and worked(i, "CLAIM TYPE") == kind
 
     def claimable(i, status):
-        return is_open(i) and worked(i, "CLAIM STATUS") == status
+        # a paid return (Payment Done) is claimed too: only one back with us is not
+        return worked(i, "FINAL RETURN STATUS") != RECEIVED and worked(i, "CLAIM STATUS") == status
 
     # (header, number format, formula, value of one row)
     columns = [
@@ -2512,13 +2519,13 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
          lambda i: open_as(i, "RETURN NOT RECEIVED")),
         ("DELIVERED PENDING AMT", AMOUNT_FORMAT, total(*not_received, delivered),
          lambda i: amount_of(i) if open_as(i, "RETURN NOT RECEIVED") else 0),
-        ("ELIGIBLE CLAIMS", COUNT_FORMAT, no_ticket(count, *not_received, eligible),
+        ("ELIGIBLE CLAIMS", COUNT_FORMAT, no_ticket(count, not_back, eligible),
          lambda i: claimable(i, "ELIGIBLE") and ticketless(i)),
-        ("ELIGIBLE CLAIM AMT", AMOUNT_FORMAT, no_ticket(total, *not_received, eligible),
+        ("ELIGIBLE CLAIM AMT", AMOUNT_FORMAT, no_ticket(total, not_back, eligible),
          lambda i: amount_of(i) if claimable(i, "ELIGIBLE") and ticketless(i) else 0),
-        ("MANUAL CLAIMS", COUNT_FORMAT, no_ticket(count, *not_received, manual),
+        ("MANUAL CLAIMS", COUNT_FORMAT, no_ticket(count, not_back, manual),
          lambda i: claimable(i, MANUAL_CLAIM) and ticketless(i)),
-        ("UPCOMING CLAIM AMT", AMOUNT_FORMAT, total(*not_received, upcoming),
+        ("UPCOMING CLAIM AMT", AMOUNT_FORMAT, total(not_back, upcoming),
          lambda i: amount_of(i) if claimable(i, "UPCOMING CLAIM") else 0),
         ("CLAIM DONE", COUNT_FORMAT, has_ticket(count), lambda i: not ticketless(i)),
         # what AJIO paid on the claims: G4 paid to us, less IC taken back
