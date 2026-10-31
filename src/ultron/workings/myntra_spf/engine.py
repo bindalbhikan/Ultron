@@ -1624,6 +1624,83 @@ def build_formulas(n):
             'CLAIM TYPE': f_type, 'FINAL RETURN STATUS': f_final, 'NET': f_net}
 
 
+def _blank(v):
+    return v is None or (isinstance(v, str) and v.strip() == '')
+
+
+def _num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _value(rec, h):
+    """A column's value on a row: a formula column's worked-out value (rec['_calc']) else the data."""
+    calc = rec.get('_calc')
+    return calc[h] if calc and h in calc else rec.get(h)
+
+
+def row_values(rec, today=None):
+    """What build_formulas' formulas give for this row, worked out here: written as each formula
+    cell's saved value, so the master shows its numbers where nothing recalculates (Drive preview,
+    Excel Protected View, phones). Excel still recalculates on open (AGE counts to that day).
+    A formula column you overwrote by hand (rec['_locked']) keeps your value."""
+    today = today or dt.date.today()
+    locked = rec.get('_locked') or ()
+    out = {}
+
+    def day(v):
+        return v.date() if isinstance(v, dt.datetime) else v if isinstance(v, dt.date) else None
+
+    def get(h, calc):
+        out[h] = rec.get(h) if h in locked else calc()
+        return out[h]
+
+    rcd, dlv = rec.get('return_created_date'), rec.get('deliver_to_seller_date')
+    get('RETURN MONTH', lambda: rcd.strftime('%Y-%m') if day(rcd) else '')
+    start = day(dlv) if not _blank(dlv) else day(rcd)
+    age = get('AGE (DAYS)', lambda: max(0, (today - start).days) if start else '')
+
+    def final():
+        if not _blank(rec.get('SPF PAID')):
+            return 'SPF Paid'
+        if not _blank(rec.get('TICKET ID')) and str(rec.get('STATUS') or '').upper() in (
+                'ACCEPT', 'INVOICE_INITIATED', 'PAYMENT_COMPLETED'):
+            return 'SPF Accepted'
+        oms, man = str(rec.get('OMSGURU STATUS') or '').upper(), str(rec.get('MANUAL RETURN STATUS') or '').upper()
+        if 'RECEIVED' in oms or 'RECEIVED' in man or 'PICKUP NOT DONE' in man:
+            return 'Return Received'
+        if _num(rec.get('ORDER SETTLEMENT')) and _blank(rec.get('RETURN DEBIT')) and _blank(rec.get('RETURN CHARGE')):
+            return 'Payment Received'
+        return ''
+    fin = get('FINAL RETURN STATUS', final)
+
+    def ctype():
+        st = str(rec.get('status') or '').lower()
+        if fin == 'Return Received':
+            return 'RECEIVED'
+        if not _blank(dlv) or st in ('ret delivered', 'delivered'):
+            return 'RETURN NOT RECEIVED'
+        if st in ('ret created', 'ret dispatched', 'rto created', 'dispatched'):
+            return 'RETURN IN TRANSIT'
+        if str(rec.get('type') or '').lower() == 'return' and _blank(rec.get('return_tracking_number')):
+            return 'NO RETURN TRACKING'
+        return 'RETURN IN TRANSIT'
+    get('CLAIM TYPE', ctype)
+
+    def status():
+        if not _blank(rec.get('TICKET ID')):
+            return 'CLAIM DONE'
+        if str(rec.get('model') or '').upper() in NOT_WORKED_MODELS or not _num(age) or not _blank(fin):
+            return 'NON ELIGIBLE'
+        if not _blank(dlv):
+            return 'ELIGIBLE' if age <= 7 else 'EXPIRED'
+        return 'UPCOMING CLAIM' if age < 60 else 'ELIGIBLE' if age <= 120 else 'EXPIRED'
+    get('CLAIM STATUS', status)
+
+    legs = [rec.get(h) for h in ('ORDER SETTLEMENT', 'RETURN DEBIT', 'SPF PAID')]
+    get('NET', lambda: sum(v for v in legs if _num(v)) if any(_num(v) for v in legs) else '')
+    return out
+
+
 # ------------------------------------------------------------------- previous master
 def read_old_master():
     """Read the whole previous master and use it as the base.
@@ -1800,14 +1877,14 @@ def cell_format(f, header):
     return None
 
 
-def put(ws, row, col, v, fmt=None):
+def put(ws, row, col, v, fmt=None, value=0):
     """One cell, 0-indexed, dispatched on what the value actually is. A string
     starting with '=' is a formula - that is how the formula columns arrive."""
     if v is None:
         if fmt is not None:
             ws.write_blank(row, col, None, fmt)
     elif isinstance(v, str) and v.startswith('='):
-        ws.write_formula(row, col, v, fmt)
+        ws.write_formula(row, col, v, fmt, value)      # value: saved with it, shown before a recalc
     elif isinstance(v, (dt.datetime, dt.date)):
         ws.write_datetime(row, col, v, fmt)
     else:
@@ -1965,7 +2042,7 @@ def backup():
 SUBTOTAL_COLS = ['ORDER AMOUNT', 'ORDER SETTLEMENT', 'RETURN DEBIT', 'RETURN CHARGE',
                  'SPF PAID', 'NET']
 
-def write_subtotals(ws, f, last):
+def write_subtotals(ws, f, last, recs=()):
     """SUBTOTAL(9) over the data for every money column, in row 1.
 
     SUBTOTAL(9) - not SUM - because it counts only the rows the autofilter is showing.
@@ -1973,10 +2050,11 @@ def write_subtotals(ws, f, last):
     """
     for i, h in enumerate(HEADERS):
         if h in SUBTOTAL_COLS:
+            total = sum(v for v in (_value(rec, h) for rec in recs) if _num(v))
             ws.write_formula(SUBTOTAL_ROW - 1, i,
                              '=SUBTOTAL(9,{0}{1}:{0}{2})'.format(
                                  L(i + 1), FIRST_DATA_ROW, last),
-                             f['band_total'])
+                             f['band_total'], total)
         else:
             ws.write_blank(SUBTOTAL_ROW - 1, i, None, f['band'])
     ws.set_row(SUBTOTAL_ROW - 1, 18)
@@ -2138,6 +2216,32 @@ def write_claim_tat(wb, f, data):
     put(ws, r + 1, 0, 'Amounts are ORDER AMOUNT of the claimed order lines; SPF PAID AMT is what Myntra paid.')
 
 
+def _summary_value(recs, bk, by_day, base, val, crit):
+    """What a summary cell's COUNTIFS / SUMIFS gives, worked out over the rows (saved with it)."""
+    def same(a, b):
+        return str('' if a is None else a).strip().upper() == str(b).strip().upper()
+
+    total = 0
+    for rec in recs:
+        if str(rec.get('model') or '').upper() in SUMMARY_EXCLUDE_MODELS:
+            continue
+        if by_day:
+            rcd = rec.get('return_created_date')
+            if not isinstance(rcd, dt.datetime) or rcd.date() != bk:
+                continue
+        elif not same(_value(rec, 'RETURN MONTH'), bk):
+            continue
+        if not all(any(same(_value(rec, ch), x) for x in (cv if isinstance(cv, tuple) else (cv,)))
+                   for ch, cv in crit):
+            continue
+        if base == 'sum':
+            v = _value(rec, val)
+            total += v if _num(v) else 0
+        else:
+            total += 1
+    return total
+
+
 def write_summary(wb, f, data, title, cols, by_day):
     """Account-wise summary on its own sheet, bucketed by return month or by day.
 
@@ -2153,6 +2257,8 @@ def write_summary(wb, f, data, title, cols, by_day):
         ws.set_column(i, i, 12 if i < 2 else 19)
     ws.freeze_panes(1, 2)
 
+    values = {}                               # (sheet row, column) -> the cell's worked-out value
+
     def put_total(r, account, label, rows, tag):
         put(ws, r - 1, 0, account, f['tot_%s' % tag])
         put(ws, r - 1, 1, label, f['tot_%s' % tag])
@@ -2161,8 +2267,10 @@ def write_summary(wb, f, data, title, cols, by_day):
             formula = ('=SUM(%s%d:%s%d)' % (col, rows[0], col, rows[1])
                        if isinstance(rows, tuple)
                        else '=' + '+'.join('%s%d' % (col, x) for x in rows))
+            span = range(rows[0], rows[1] + 1) if isinstance(rows, tuple) else rows
+            values[(r, j)] = sum(values.get((x, j), 0) for x in span)
             put(ws, r - 1, j - 1, formula,
-                f['tot_%s_%s' % (tag, 'amount' if _kind(kind)[1] == 'sum' else 'count')])
+                f['tot_%s_%s' % (tag, 'amount' if _kind(kind)[1] == 'sum' else 'count')], values[(r, j)])
 
     r = 2
     totals = []
@@ -2182,6 +2290,7 @@ def write_summary(wb, f, data, title, cols, by_day):
                 and str(rec.get('model') or '').upper() not in SUMMARY_EXCLUDE_MODELS]
         if not recs:
             continue
+        acc_recs, transit_recs = data[name], PARKED.get(name, []) if n_transit else []
         parts_of = [(sheet_ranges(name, len(data[name])), [])]
         if n_transit:
             t = sheet_ranges(PARKED_SHEET, n_transit)
@@ -2221,8 +2330,12 @@ def write_summary(wb, f, data, title, cols, by_day):
                             p += [rg[ch], '"%s"' % (value if isinstance(cv, tuple) else cv)]
                         terms.append('SUMIFS(%s,%s)' % (rg[val], ','.join(p)) if base == 'sum'
                                      else 'COUNTIFS(%s)' % ','.join(p))
+                values[(r, j)] = _summary_value(
+                    [rec for k, recs_k in enumerate((acc_recs, transit_recs))
+                     if not ((where == 't' and k == 0) or (where == 'a' and k > 0)) for rec in recs_k],
+                    bk, by_day, base, val, crit)
                 put(ws, r - 1, j - 1, '=' + ('+'.join(terms) or '0'),
-                    f['amount'] if base == 'sum' else f['count'])
+                    f['amount'] if base == 'sum' else f['count'], values[(r, j)])
             r += 1
         put_total(r, name, 'TOTAL', (first, r - 1), 'mid')
         totals.append(r)
@@ -2408,6 +2521,8 @@ def write_master(data):
     """
     install_formula_fast_path()
     drop_duplicates(data)
+    for rec in [r for name in SHEETS for r in data.get(name, []) + PARKED.get(name, [])]:
+        rec['_calc'] = row_values(rec)        # each formula's value, saved with it
     # read before the old master is overwritten
     log = input_log()
     wb = xlsxwriter.Workbook(MASTER, {'constant_memory': True,
@@ -2440,7 +2555,7 @@ def write_master(data):
         # ABOVE the headers on purpose: that keeps them outside the autofilter range, so
         # filtering can never hide them, and the frozen pane keeps them on screen while
         # you scroll 27k rows.
-        write_subtotals(ws, f, last)
+        write_subtotals(ws, f, last, [rec for _, rec in rows])
         for i, h in enumerate(HEADERS):
             put(ws, HEADER_ROW - 1, i, h, f['head_work'] if h in WORK else f['head'])
             # the number format is set on the column, so a data cell carries no format
@@ -2460,11 +2575,12 @@ def write_master(data):
             if account:
                 ws.write(row, acc_col, account)
             formulas = build_formulas(r)
+            calc = rec.get('_calc') or row_values(rec)
             # a formula column you overwrote by hand keeps your value
             locked = rec.get('_locked') or ()
             for i, h in enumerate(HEADERS):
                 if is_formula[i] and h not in locked:
-                    ws.write_formula(row, i, formulas[h])
+                    ws.write_formula(row, i, formulas[h], None, calc[h])   # with its value saved
                     continue
                 v = rec.get(h)
                 if v is None:
