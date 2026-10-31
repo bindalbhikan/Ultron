@@ -53,7 +53,7 @@ def read_sheet(path) -> list[dict]:
     """The master's rows: Sheet1 and the RETURN IN TRANSIT sheet (the returns still on their way)."""
     wb = load_workbook(path, read_only=True, data_only=False)
     rows = []
-    for name in ("Sheet1", "RETURN IN TRANSIT"):
+    for name in ("RETURN DELIVERED", "Sheet1", "RETURN IN TRANSIT"):   # Sheet1: masters before 31 Oct 2026
         if name not in wb.sheetnames:
             continue
         it = wb[name].iter_rows(values_only=True)
@@ -117,13 +117,23 @@ def not_picked(row: dict) -> bool:
     return txt(row.get("COURIER PICKUP")) in NO_PICKUP
 
 
+def cn_accepted(row: dict) -> bool:
+    """AJIO accepted the credit note: the claim is the team's (by hand), never the bot's."""
+    return bool(as_date(row.get("Credit Note Acceptance date"))) \
+        or txt(row.get("Credit Note Posting Status")).upper() == "POSTING_COMPLETED"
+
+
 def is_cancelled(row: dict) -> bool:
     return "CANCEL" in txt(row.get("3PL Delivery Status")).upper()
 
 
-def decide(row: dict, today: date, rules: Rules) -> tuple[str, str, int] | None:
-    """(sub issue type, reason, age in days) when this row needs a ticket now."""
+def decide(row: dict, today: date, rules: Rules, accepted: bool = False) -> tuple[str, str, int] | None:
+    """(sub issue type, reason, age in days) when this row needs a ticket now. Only a return whose
+    credit note is still pending; accepted=True: only one whose credit note AJIO accepted (the
+    claims left to the team)."""
     if is_received(row) or has_ticket(row) or not_picked(row) or not txt(row.get("RETURN ORDER NUMBER")):
+        return None
+    if cn_accepted(row) != accepted:
         return None
     delivered = delivered_on(row)
     if delivered:
@@ -143,11 +153,12 @@ def decide(row: dict, today: date, rules: Rules) -> tuple[str, str, int] | None:
     return None
 
 
-def candidates(rows: list[dict], today: date, rules: Rules) -> list[Candidate]:
-    """One candidate per return order (a ticket covers every item of the order)."""
+def candidates(rows: list[dict], today: date, rules: Rules, accepted: bool = False) -> list[Candidate]:
+    """One candidate per return order (a ticket covers every item of the order). accepted=True:
+    the ones whose credit note AJIO accepted - claimed by the team, not the bot."""
     found: dict[str, Candidate] = {}
     for row in rows:
-        verdict = decide(row, today, rules)
+        verdict = decide(row, today, rules, accepted)
         if not verdict:
             continue
         rt = txt(row.get("RETURN ORDER NUMBER"))

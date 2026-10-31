@@ -19,15 +19,18 @@ object Pod {
     private val LINK = Regex("https?://[^\\s]+")
     private const val MAX_BYTES = 15 * 1024 * 1024
 
-    class Result(val pdfBase64: String = "", val text: String = "", val error: String = "")
+    class Result(val pdfBase64: String = "", val text: String = "", val error: String = "", val htmlBase64: String = "")
 
-    /** null when the SMS is not a courier's or has no link. */
+    /** null when the SMS is not a courier's or has no link. An HTML page comes back as htmlBase64. */
     fun fetch(context: Context, from: String, body: String): Result? {
         if (!COURIERS.containsMatchIn(from)) return null
         val link = LINK.find(body)?.value?.trimEnd('.', ',', ')') ?: return null
         return try {
             val bytes = download(link)
             if (bytes.size < 5 || String(bytes, 0, 5, Charsets.ISO_8859_1) != "%PDF-") {
+                // Shadowfax's return delivery / pickup sheets are HTML pages: the script saves them as a PDF
+                val head = String(bytes, 0, minOf(bytes.size, 512), Charsets.UTF_8).trimStart().lowercase()
+                if (head.startsWith("<") && "html" in head) return Result(htmlBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP))
                 return Result(error = "link is not a PDF")
             }
             PDFBoxResourceLoader.init(context.applicationContext)

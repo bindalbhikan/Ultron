@@ -139,7 +139,10 @@ NUMERIC_HEADERS = (
 )
 BLANK_ON_IMPORT = ("OMSGURU STATUS", "OMS RECEIVED DATE", "MANUAL RETURN STATUS")
 
-SHEET = "Sheet1"
+# the returns delivered / received / settled; the ones still on their way are on TRANSIT_SHEET.
+# Masters before 31 Oct 2026 called it "Sheet1" (LEGACY_SHEET): still read.
+SHEET = "RETURN DELIVERED"
+LEGACY_SHEET = "Sheet1"
 SUMMARY_SHEET = "SUMMARY"
 # The two AJIO seller accounts are told apart by POB ID (DC CODE follows it).
 SUMMARY_ACCOUNT_HEADER = "POB ID"
@@ -544,6 +547,10 @@ DELIVERED_STATUSES = ("RETURN_DELIVERED", "RETURN_PROCESSED", "CREDIT_NOTE_CREAT
 # from 5 days after delivery (up to 365); still in transit - day 60 to 90 after it was created; never
 # picked up from the customer - nothing to claim.
 NO_PICKUP = ("NOT PICKED UP", "PICKUP CANCELLED", "PICKUP FAILED")
+# AJIO accepted the credit note (Credit Note Acceptance date): the bot neither raises nor answers
+# that claim - it is MANUAL CLAIM, for the team. Only a return whose credit note is still pending
+# is ELIGIBLE (claims.py, the same rule).
+MANUAL_CLAIM = "MANUAL CLAIM"
 # Returns still on their way back (open, not delivered) sit on their own sheet, like Myntra's;
 # a row moves to Sheet1 on the run after it is delivered, received or settled.
 TRANSIT_SHEET = "RETURN IN TRANSIT"
@@ -551,8 +558,17 @@ MASTER_SHEETS = (SHEET, TRANSIT_SHEET)
 
 
 def master_sheets(workbook):
-    """The master's row sheets present in an open workbook: Sheet1, then RETURN IN TRANSIT."""
-    return [workbook[name] for name in MASTER_SHEETS if name in workbook.sheetnames]
+    """The master's row sheets present in an open workbook: RETURN DELIVERED (or the old Sheet1),
+    then RETURN IN TRANSIT."""
+    return [workbook[name] for name in MASTER_SHEETS + (LEGACY_SHEET,) if name in workbook.sheetnames]
+
+
+def first_sheet(workbook):
+    """Name of the delivered-returns sheet of an open master: RETURN DELIVERED, the old Sheet1, else the first."""
+    for name in (SHEET, LEGACY_SHEET):
+        if name in workbook.sheetnames:
+            return name
+    return workbook.sheetnames[0]
 
 
 def computed_formulas(column_of, row):
@@ -587,7 +603,14 @@ def computed_formulas(column_of, row):
     # the courier never took it from the customer (COURIER PICKUP, pickup.py): nothing to claim
     pickup = letter("COURIER PICKUP") if "COURIER PICKUP" in column_of else None
     no_pickup = ("OR(" + ",".join(f'{pickup}{row}="{v}"' for v in NO_PICKUP) + ")") if pickup else "FALSE"
+    cn = letter("Credit Note Acceptance date") if "Credit Note Acceptance date" in column_of else None
+    accepted = f'{cn}{row}<>""' if cn else "FALSE"
     back = f'AND({is_delivered},{since}<>"")'
+    window = (f'IF({no_pickup},"NON ELIGIBLE",IF({back},'
+              f'IF({age}{row}<5,"UPCOMING CLAIM",IF({age}{row}<=365,"ELIGIBLE","NON ELIGIBLE")),'
+              f'IF({created}{row}<>"",'
+              f'IF({age}{row}<60,"UPCOMING CLAIM",'
+              f'IF({age}{row}<=90,"ELIGIBLE","NON ELIGIBLE")),"")))')
 
     return {
         "AGE (DAYS)": (
@@ -595,11 +618,7 @@ def computed_formulas(column_of, row):
             f'IF({created}{row}<>"",MAX(0,TODAY()-{created}{row}),""))'
         ),
         "CLAIM STATUS": (
-            f'=IF({no_pickup},"NON ELIGIBLE",IF({back},'
-            f'IF({age}{row}<5,"UPCOMING CLAIM",IF({age}{row}<=365,"ELIGIBLE","NON ELIGIBLE")),'
-            f'IF({created}{row}<>"",'
-            f'IF({age}{row}<60,"UPCOMING CLAIM",'
-            f'IF({age}{row}<=90,"ELIGIBLE","NON ELIGIBLE")),"")))'
+            f'=IF(AND({accepted},{final}{row}="",{window}="ELIGIBLE"),"{MANUAL_CLAIM}",{window})'
         ),
         # What the claim would be about, once the parcel is missing.
         "CLAIM TYPE": (
@@ -664,6 +683,9 @@ def computed_values(get, today=None):
         claim_type = "RETURN CANCELLED"
     else:
         claim_type = "RETURN IN TRANSIT"
+    # credit note accepted, still open: the team claims it by hand
+    if claim == "ELIGIBLE" and final == "" and not _empty(get("Credit Note Acceptance date")):
+        claim = MANUAL_CLAIM
     return {"AGE (DAYS)": age, "CLAIM STATUS": claim, "CLAIM TYPE": claim_type,
             "FINAL RETURN STATUS": final}
 
@@ -1510,7 +1532,7 @@ def read_dispatch():
 def read_master():
     """Report rows, with every *date* column parsed into a real date."""
     workbook = load_workbook(SOURCE_MASTER, read_only=True, data_only=True)
-    first = SHEET if SHEET in workbook.sheetnames else workbook.sheetnames[0]
+    first = first_sheet(workbook)
     stream = workbook[first].iter_rows(values_only=True)
     headers = [header for header in next(stream) if header is not None]
     date_columns = [
@@ -1534,7 +1556,7 @@ def read_master():
     for values in stream:
         take(values)
     # the returns still in transit sit on their own sheet: one master all the same
-    if TRANSIT_SHEET in workbook.sheetnames and first == SHEET:
+    if TRANSIT_SHEET in workbook.sheetnames and first in (SHEET, LEGACY_SHEET):
         stream = workbook[TRANSIT_SHEET].iter_rows(values_only=True)
         theirs = {header: i for i, header in enumerate(next(stream, ())) if header is not None}
         order = [theirs.get(header) for header in headers]
@@ -2045,8 +2067,7 @@ def read_layout():
     if not SOURCE_MASTER.exists():
         return None
     workbook = load_workbook(SOURCE_MASTER)
-    name = SHEET if SHEET in workbook.sheetnames else workbook.sheetnames[0]
-    sheet = workbook[name]
+    sheet = workbook[first_sheet(workbook)]
     layout = {"order": [], "header": {}, "body": {}, "width": {}, "freeze": "A2"}
     # A column's number format is whatever its filled cells mostly use. Row 2
     # alone is not enough: it is often blank, and a sparse column such as
@@ -2417,6 +2438,7 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
     delivered = (claim_type, quoted("RETURN NOT RECEIVED"))
     eligible = (claim_status, quoted("ELIGIBLE"))
     upcoming = (claim_status, quoted("UPCOMING CLAIM"))
+    manual = (claim_status, quoted(MANUAL_CLAIM))      # credit note accepted: claimed by hand
 
     def criteria(row, pairs, sheet):
         # Account in column A, month as "yyyy-mm" text in column B.
@@ -2494,6 +2516,8 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
          lambda i: claimable(i, "ELIGIBLE") and ticketless(i)),
         ("ELIGIBLE CLAIM AMT", AMOUNT_FORMAT, no_ticket(total, *not_received, eligible),
          lambda i: amount_of(i) if claimable(i, "ELIGIBLE") and ticketless(i) else 0),
+        ("MANUAL CLAIMS", COUNT_FORMAT, no_ticket(count, *not_received, manual),
+         lambda i: claimable(i, MANUAL_CLAIM) and ticketless(i)),
         ("UPCOMING CLAIM AMT", AMOUNT_FORMAT, total(*not_received, upcoming),
          lambda i: amount_of(i) if claimable(i, "UPCOMING CLAIM") else 0),
         ("CLAIM DONE", COUNT_FORMAT, has_ticket(count), lambda i: not ticketless(i)),

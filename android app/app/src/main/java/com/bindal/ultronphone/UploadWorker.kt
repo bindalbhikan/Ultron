@@ -61,7 +61,8 @@ class UploadWorker(context: Context, params: WorkerParameters) :
             "sim" to sim,
             "pdf" to (pod?.pdfBase64 ?: ""),
             "pdftext" to (pod?.text ?: ""),
-            "pdferror" to (pod?.error ?: "")
+            "pdferror" to (pod?.error ?: ""),
+            "html" to (pod?.htmlBase64 ?: "")
         ).entries.joinToString("&") { (k, v) ->
             "${enc(k)}=${enc(v)}"
         }

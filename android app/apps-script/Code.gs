@@ -138,8 +138,10 @@ function parseSms(from, body) {
     return null;
   }
   if (/SFX/.test(code)) {
-    const count = num(/Your (\d+) shipment/i);
-    if (/Delivery Code/i.test(body)) return { courier: 'Shadowfax', status: 'RETURN', otp: num(/Delivery Code:?\s*(\d+)/i), count, pod: true };
+    const count = num(/Your (\d+) shipment/i) || num(/for (\d+) shipment/i);
+    // "Delivery Code 5371" or "5614 is your Delivery Code for 13 shipments"
+    const code = num(/(\d{4,6}) is your Delivery Code/i) || num(/Delivery Code:?\s*(\d+)/i);
+    if (/Delivery Code/i.test(body)) return { courier: 'Shadowfax', status: 'RETURN', otp: code, count, pod: true };
     if (/Proof of Pickup/i.test(body)) return { courier: 'Shadowfax', status: 'PICKUP', otp: '', count, pod: true };
     return null;
   }
@@ -199,16 +201,20 @@ function parsePod(text) {
     return out;
   }
   const t = text.split(/\s+/).filter(Boolean);                   // Shadowfax: Sr / AWB / COID / Client Name
-  const head = t.findIndex((w, i) => /^Client$/i.test(w) && /^Name$/i.test(t[i + 1] || ''));
+  const isHead = (i) => /^Client$/i.test(t[i] || '') && /^Name$/i.test(t[i + 1] || '');
+  const head = t.findIndex((w, i) => isHead(i));
   if (head >= 0) {
     const isAwb = (w) => /^[A-Z0-9]{8,24}$/i.test(w || '') && /\d/.test(w);
+    const ends = (j, n) => (t[j] === String(n + 1) && isAwb(t[j + 1])) || /^Following$/i.test(t[j])
+      || (/^Sr$/i.test(t[j]) && /^No/i.test(t[j + 1] || '')) || isHead(j);
     let i = head + 2, n = 1;
     while (i < t.length) {
+      if (isHead(i)) { i += 2; n = 1; continue; }           // the next seller account's table
       if (t[i] !== String(n) || !isAwb(t[i + 1])) { i++; continue; }
       const awb = t[i + 1];
       let j = i + 3;
       const client = [];
-      while (j < t.length && !(t[j] === String(n + 1) && isAwb(t[j + 1])) && !/^Following$/i.test(t[j])) client.push(t[j++]);
+      while (j < t.length && !ends(j, n)) client.push(t[j++]);
       out.awbs.push({ awb, type: '', status: 'DELIVERED', portal: portalOf(client.join(' ')) });
       i = j;
       n++;
@@ -220,6 +226,15 @@ function parsePod(text) {
     if (hits) out.awbs.push({ awb: '', type: '', status: '', portal: name, hits });
   }
   return out;
+}
+
+// The text of an HTML page, one cell / line per line (scripts and styles dropped).
+function htmlText(html) {
+  return html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d|td|th)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+    .replace(/[ \t]*\n[ \t\n]*/g, '\n');
 }
 
 // Works one SMS: {note for the SMS tab's Agent column ('' = not a courier SMS), filled: whether its
@@ -235,6 +250,11 @@ function returns(from, body, deviceTime, p) {
   const otpRows = otpSheet && otpSheet.getLastRow() > 1 ? otpSheet.getRange(2, 1, otpSheet.getLastRow() - 1, 6).getDisplayValues() : [];
   if (sms.courier === 'Ekart' && EKART_SELLERS[sms.seller] === 'Myntra') {
     return { note: 'Myntra Ekart: left to the Myntra OTP bot', filled: otpRows.some(r => r[0] === day && r[3] === sms.otp) };
+  }
+  let html = '';
+  if (p.html) {
+    html = Utilities.newBlob(Utilities.base64Decode(p.html)).getDataAsString('UTF-8');
+    if (!p.pdftext) p.pdftext = htmlText(html);
   }
   const pod = parsePod(p.pdftext || '');
   const notes = [];
@@ -254,14 +274,15 @@ function returns(from, body, deviceTime, p) {
 
   // the POD into Drive AGENT WORK/RETURN PODS/<date>/
   let file = '';
-  if (p.pdf) {
+  if (p.pdf || html) {
     const portals = Object.keys(groups).join(' + ');
     const name = Utilities.formatDate(when, TZ, 'HH-mm') + ' ' + sms.courier + ' ' + portals + ' ' + sms.status +
                  (sms.otp ? ' OTP ' + sms.otp : ' POD') + '.pdf';
     const folder = podFolder(Utilities.formatDate(when, TZ, 'yyyy-MM-dd'));
     const have = folder.getFilesByName(name);                     // a reworked SMS: its POD once
-    file = (have.hasNext() ? have.next()
-      : folder.createFile(Utilities.newBlob(Utilities.base64Decode(p.pdf), 'application/pdf', name))).getUrl();
+    const blob = p.pdf ? Utilities.newBlob(Utilities.base64Decode(p.pdf), 'application/pdf', name)
+      : Utilities.newBlob(html, 'text/html', name).getAs('application/pdf').setName(name);
+    file = (have.hasNext() ? have.next() : folder.createFile(blob)).getUrl();
     notes.push('POD saved');
   } else if (sms.pod) {
     notes.push('POD not downloaded' + (p.pdferror ? ' (' + p.pdferror + ')' : ''));

@@ -49,6 +49,9 @@ def pod(body: str) -> dict:
         if r.status_code != 200:
             return {"pdferror": f"HTTP {r.status_code}"}
         if not r.content.startswith(b"%PDF-"):
+            head = r.content[:512].lstrip().lower()
+            if head.startswith(b"<") and b"html" in head:     # Shadowfax's HTML sheets: saved as a PDF by the script
+                return {"html": base64.b64encode(r.content).decode()}
             return {"pdferror": "link is not a PDF"}
         import pypdf
         text = "\n".join(p.extract_text() or "" for p in pypdf.PdfReader(io.BytesIO(r.content)).pages)
@@ -101,7 +104,8 @@ def main() -> int:
             answer = f"error: {type(exc).__name__}"
         if answer != "ok":
             failed.append(f"{time} {sender}: {answer}")
-        print(f"{time}  {sender:12}  {'POD' if fields.get('pdf') else fields.get('pdferror', '-'):18}  {answer}")
+        got = "POD" if fields.get("pdf") else "POD (html)" if fields.get("html") else fields.get("pdferror", "-")
+        print(f"{time}  {sender:12}  {got:18}  {answer}")
 
     if args.pending and todo:
         keys = {(r[1], r[2], r[3]) for r in todo}

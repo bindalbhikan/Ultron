@@ -276,6 +276,11 @@ def oms_lookup(today: date, ctx: dict) -> int:
 
 # ------------------------------------------------------------------ raise
 
+# The bot only claims and answers returns whose credit note AJIO has not accepted (claims.cn_accepted):
+# every ticket and reply says so.
+CN_NOTE = "The credit note for this return has not been accepted."
+
+
 def describe(cand: claims.Candidate) -> str:
     f = claims.row_facts(cand.first)
     if cand.sub_issue == claims.DISPUTE:
@@ -284,9 +289,9 @@ def describe(cand: claims.Candidate) -> str:
                 f"warehouse - there is no inward / GRN entry for it.")
         if f["ic_reversed"]:
             text += " The invoice payment was later reversed."
-        return text + " Kindly share the POD or reimburse the invoice amount under SPF."
+        return text + " " + CN_NOTE + " Kindly share the POD or reimburse the invoice amount under SPF."
     return (f"Return {f['return_order']} (AWB {f['return_awb']}, {f['return_carrier']}) was created on "
-            f"{f['return_created']} and has still not been received at our warehouse. Kindly check and "
+            f"{f['return_created']} and has still not been received at our warehouse. {CN_NOTE} Kindly check and "
             f"refund the invoice amount under SPF.")
 
 
@@ -352,8 +357,9 @@ def follow_up(rows: list[dict], ctx: dict, dry: bool, now: datetime) -> list[dic
         mine = by_rt.get(str(od.get("returnOrderId") or "")) or [
             by_line.get((str(od.get("forwardInvoiceNumber") or ""), str(od.get("skuId") or "")))]
         mine = [r for r in mine if r]
-        # Received, or never picked up from the customer: nothing to chase.
-        if not mine or any(claims.is_received(r) or claims.not_picked(r) for r in mine):
+        # Received, or never picked up from the customer: nothing to chase. Credit note accepted:
+        # the team's claim, the bot does not answer it.
+        if not mine or any(claims.is_received(r) or claims.not_picked(r) or claims.cn_accepted(r) for r in mine):
             continue
         if not followup.needs_us(t, client.seller_id, now, cooldown):
             continue
@@ -363,6 +369,8 @@ def follow_up(rows: list[dict], ctx: dict, dry: bool, now: datetime) -> list[dic
             time.sleep(num("GEMINI_PAUSE_SECONDS", 8))   # free tier: stay under the per-minute limit
         if plan is None:
             continue
+        if CN_NOTE.lower() not in plan.reply.lower():
+            plan.reply = plan.reply.rstrip() + "\n\n" + CN_NOTE     # credit note not accepted (else no reply)
         rec = {"ticket": plan.ticket_id, "return_order": plan.return_order, "status": plan.status,
                "reopen": "yes" if plan.reopen else "", "why": plan.reason, "by": plan.source,
                "reply": plan.reply, "result": "dry-run"}
@@ -476,6 +484,12 @@ def summary(rows, raised, replies, soon, ctx, dry, today) -> str:
         lines.append(f"🚚 Pickup check failed: {esc(ctx['pickup_error'])[:120]}")
     if soon["missed_dispute"]:
         lines.append(f"⌛ Too old for a ticket (>{num('DISPUTE_MAX_DAYS', 365)} days): {soon['missed_dispute']}")
+    manual = ctx.get("manual") or []
+    if manual:
+        lines += ["", f"✋ <b>Claim by hand</b> (credit note accepted, bot leaves these): {len(manual)}"]
+        lines += [f"• {esc(c.return_order)} <i>{esc(c.reason)}</i>" for c in manual[:10]]
+        if len(manual) > 10:
+            lines.append(f"… +{len(manual) - 10} more (CLAIM STATUS = MANUAL CLAIM on the master)")
     other = [r for r in raised if r["result"] not in ("created", "dry-run")]
     if other:
         lines.append(f"↪️ Skipped / failed: {len(other)}")
@@ -573,6 +587,7 @@ def run(args) -> int:
             raised = raise_tickets(claims.candidates(rows, today, rules), ctx, act_dry)
             replies = follow_up(rows, ctx, act_dry, now)
         soon = claims.upcoming(rows, today, rules)
+        ctx["manual"] = claims.candidates(rows, today, rules, accepted=True)
         write_bot_log(WORK / MASTER_NAME, bot_log, raised, replies, act_dry, today)
         upload_failed = False
         try:
