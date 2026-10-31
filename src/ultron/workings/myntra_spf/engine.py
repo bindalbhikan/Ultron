@@ -1852,6 +1852,7 @@ def build_formats(wb):
         'band_total': wb.add_format(dict(BOLD, bg_color=BAND_FILL,
                                          num_format='0.00', **THIN)),
         'date': wb.add_format({'num_format': 'dd-mm-yyyy'}),
+        'alert': wb.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'bold': True}),
         'money': wb.add_format({'num_format': '0.00'}),
         'num': wb.add_format({'num_format': '0'}),
         'count': wb.add_format({'num_format': '0'}),
@@ -2521,10 +2522,12 @@ def write_master(data):
     """
     install_formula_fast_path()
     drop_duplicates(data)
-    for rec in [r for name in SHEETS for r in data.get(name, []) + PARKED.get(name, [])]:
-        rec['_calc'] = row_values(rec)        # each formula's value, saved with it
     # read before the old master is overwritten
     log = input_log()
+    old_tickets = read_old_tickets()
+    ticket_compensation(data, old_tickets)
+    for rec in [r for name in SHEETS for r in data.get(name, []) + PARKED.get(name, [])]:
+        rec['_calc'] = row_values(rec)        # each formula's value, saved with it
     wb = xlsxwriter.Workbook(MASTER, {'constant_memory': True,
                                       'default_date_format': 'dd-mm-yyyy'})
     f = build_formats(wb)
@@ -2591,24 +2594,72 @@ def write_master(data):
                     ws.write(row, i, v)
         if rows:
             ws.autofilter(HEADER_ROW - 1, 0, last - 1, len(HEADERS) - (0 if name == PARKED_SHEET else 1))
-    write_ticket_details(wb, f)
+    write_ticket_details(wb, f, old_tickets)
     write_input_log(wb, f, log)
     wb.close()
 
 
-def write_ticket_details(wb, f):
-    """Bot only: the TICKETS sheet - every recent / open SPF claim of the three accounts as its
-    portal page shows it (status history, reason, payout, Seller Support's last reply), from
-    TICKET_DETAILS (bindal/myntra_spf/tickets.py). Claims waiting on our answer come first."""
+def ticket_compensation(data, old_tickets=()):
+    """A claim Myntra paid out on (TICKETS COMPENSATION > 0 - also one paid after a REJECT) puts that
+    amount in the row's empty SPF PAID, on the account sheets and the RETURN IN TRANSIT sheet alike:
+    the return then counts as SPF Paid, never as pending, even before the payout is on a payment
+    report (SPF PAID from the payment report is never replaced)."""
+    paid = {}
+    for d in list(old_tickets) + list(TICKET_DETAILS):           # the newest read last
+        try:
+            amt = float(str(d.get('COMPENSATION') or '').replace(',', ''))
+        except ValueError:
+            continue
+        oli = str(d.get('ORDER LINE ID') or '').strip()
+        if oli.endswith('.0'):
+            oli = oli[:-2]
+        if amt > 0 and oli:
+            paid[oli] = amt
+    n = 0
+    for rec in [r for name in SHEETS for r in data.get(name, []) + PARKED.get(name, [])]:
+        oli = str(rec.get('order_line_id') or '').strip()
+        if oli.endswith('.0'):
+            oli = oli[:-2]
+        if oli in paid and _blank(rec.get('SPF PAID')):
+            rec['SPF PAID'] = paid[oli]
+            n += 1
+    if n:
+        print('  %d rows: SPF PAID from the claim compensation (TICKETS)' % n)
+
+
+def read_old_tickets():
+    """The previous master's TICKETS sheet as dicts: carried over, so a run that did not read the
+    portal's claims (the engine alone, or an account that failed) keeps the sheet."""
+    from .tickets import DETAIL_SHEET
+    if not os.path.exists(MASTER) or DETAIL_SHEET not in _sheet_names(MASTER):
+        return []
+    it = _iter_sheet(MASTER, DETAIL_SHEET)
+    head = [str(h or '').strip() for h in next(it, [])]
+    return [{h: v for h, v in zip(head, row) if h and v not in (None, '')}
+            for row in it if any(v not in (None, '') for v in row)]
+
+
+def write_ticket_details(wb, f, old=()):
+    """The TICKETS sheet - every recent / open SPF claim of the three accounts as its portal page
+    shows it (status history, reason, payout, Seller Support's last reply), from TICKET_DETAILS
+    (bindal/myntra_spf/tickets.py, a bot run), on top of the previous master's sheet (`old`): a
+    claim read again replaces its old row. Claims waiting on our answer come first. Styled like
+    the other sheets (yellow work headers, the frozen top row)."""
     from .tickets import DETAIL_COLS, DETAIL_SHEET
-    if not TICKET_DETAILS:
+    merged = {str(d.get('TICKET ID')): d for d in old if d.get('TICKET ID') not in (None, '')}
+    merged.update({str(d.get('TICKET ID')): d for d in TICKET_DETAILS})
+    if not merged:
         return
-    rows = sorted(TICKET_DETAILS, key=lambda d: (d.get('NEEDS OUR REPLY') != 'YES', str(d.get('ACCOUNT')),
-                                                 -int(str(d.get('TICKET ID') or 0) or 0)))
+
+    def tid(d):
+        try:
+            return -int(float(str(d.get('TICKET ID') or 0)))
+        except ValueError:
+            return 0
+    rows = sorted(merged.values(), key=lambda d: (d.get('NEEDS OUR REPLY') != 'YES', str(d.get('ACCOUNT')), tid(d)))
     ws = wb.add_worksheet(DETAIL_SHEET)
-    hdr = wb.add_format({'bold': True, 'bg_color': '#1F4E78', 'font_color': '#FFFFFF', 'border': 1,
-                         'text_wrap': True, 'valign': 'vcenter'})
-    alert = wb.add_format({'bg_color': '#FFC7CE'})
+    hdr = f['head_work']
+    alert = f['alert']
     widths = {'ACCOUNT': 8, 'TICKET ID': 11, 'ORDER LINE ID': 14, 'RETURN ID': 14, 'ORDER ID': 14,
               'CATEGORY': 18, 'STATUS': 18, 'NEEDS OUR REPLY': 9, 'CREATED': 17, 'LAST UPDATED': 17,
               'STATUS HISTORY': 40, 'REASON': 40, 'COMPENSATION': 12, 'UTR': 18, 'PAYMENT INITIATED': 17,
@@ -2617,11 +2668,18 @@ def write_ticket_details(wb, f):
     for i, h in enumerate(DETAIL_COLS):
         ws.write(0, i, h, hdr)
         ws.set_column(i, i, widths.get(h, 14))
+    ws.set_row(0, 18)
     for r, d in enumerate(rows, start=1):
         for i, h in enumerate(DETAIL_COLS):
             v = d.get(h)
-            if v not in (None, ''):
-                ws.write(r, i, v, alert if h == 'NEEDS OUR REPLY' else None)
+            if v in (None, ''):
+                continue
+            if isinstance(v, float) and v.is_integer():
+                v = int(v)                                # ids read back from the old sheet
+            if isinstance(v, (dt.datetime, dt.date)):
+                ws.write_datetime(r, i, v, f['date'])
+            else:
+                ws.write(r, i, v, alert if h == 'NEEDS OUR REPLY' and v == 'YES' else None)
     ws.freeze_panes(1, 2)
     ws.autofilter(0, 0, len(rows), len(DETAIL_COLS) - 1)
 
