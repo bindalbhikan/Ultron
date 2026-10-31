@@ -1,0 +1,132 @@
+name: Claude fix on failure
+
+# When AJIO SPF or Myntra SPF fails, Claude Code (the owner's subscription, CLAUDE_CODE_OAUTH_TOKEN)
+# reads the failed run's log (decrypted from its artifact with ARTIFACT_KEY) and, when the cause is
+# in the code, proposes a fix as a pull request - never merged by itself. A failure the code cannot
+# fix (session expired, portal down, password) gets no PR. Telegram hears either way.
+# The repository is public: the log stays on the runner, and the PR carries code and one line only.
+# Only these workflows trigger it (they start by workflow_dispatch / the Telegram worker, never by a
+# pull request from outside), and the workflow runs from main.
+on:
+  workflow_run:
+    workflows: ["AJIO SPF run", "Myntra SPF master"]
+    types: [completed]
+
+concurrency:
+  group: ci-fix-${{ github.event.workflow_run.name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  fix:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TZ: Asia/Kolkata
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      RUN_NAME: ${{ github.event.workflow_run.name }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+      GH_TOKEN: ${{ github.token }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - name: Fix already waiting?
+        id: open
+        run: |
+          slug=$(echo "$RUN_NAME" | tr 'A-Z ' 'a-z-')
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+          if gh pr list --state open --json headRefName -q '.[].headRefName' | grep -q "^claude-fix/$slug-"; then
+            echo "waiting=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Failed run's log
+        if: steps.open.outputs.waiting != '1'
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/failed
+          merge-multiple: true
+
+      - name: Decrypt the log
+        if: steps.open.outputs.waiting != '1'
+        env:
+          ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+        run: |
+          mkdir -p .ci-failure
+          cd "$RUNNER_TEMP/failed"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:ARTIFACT_KEY -in output.tar.gz.enc | tar -xzf -
+          tail -n 400 output/run.log > "$GITHUB_WORKSPACE/.ci-failure/run.log"
+
+      - name: Claude looks for the cause
+        if: steps.open.outputs.waiting != '1'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          claude_args: >-
+            --max-turns 40
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(python -m py_compile:*),Bash(python -m pytest:*),Bash(git diff:*),Bash(git log:*)"
+          prompt: |
+            The GitHub Actions workflow "${{ github.event.workflow_run.name }}" of this repository failed.
+            The last 400 lines of its bot log are in .ci-failure/run.log. Read the log and the code it points to,
+            and find the cause.
+
+            * The cause is in this repository's code (a changed report column, an unknown status, a crash on a value):
+              fix it with the smallest change, in the style of the code around it, and check every changed Python file
+              with `python -m py_compile`. Do not commit or push.
+            * The code cannot fix it (login / session expired, password, OTP or CAPTCHA, portal down or slow, a network
+              error, a missing secret): change nothing.
+
+            Then write .ci-failure/result.md. Line 1: "FIX: <what was wrong and what you changed>" or
+            "NO FIX: <the cause and what the owner must do>", in plain Hinglish, under 150 characters. After it, at most
+            8 short lines of detail in Hinglish.
+
+            The repository is public. Never copy business data from the log into code, comments or line 1 of
+            result.md: no order / return numbers, AWBs, invoice numbers, amounts, names, emails, phone numbers, tokens.
+
+      - name: Pull request
+        if: steps.open.outputs.waiting != '1'
+        id: pr
+        run: |
+          first=$(head -n 1 .ci-failure/result.md 2>/dev/null || echo "NO FIX: Claude ne result nahi likha")
+          echo "first=$first" >> "$GITHUB_OUTPUT"
+          if [ -z "$(git status --porcelain -- . ':!.ci-failure')" ]; then exit 0; fi
+          branch="claude-fix/${{ steps.open.outputs.slug }}-$RUN_ID"
+          git config user.name "claude-fix[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A -- . ':!.ci-failure'
+          git commit -q -m "$RUN_NAME: ${first#FIX: }" -m "Failed run: $RUN_URL" \
+            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+          git push -q origin "$branch"
+          url=$(gh pr create --head "$branch" --title "$RUN_NAME: ${first#FIX: }" \
+                --body "$(printf 'Proposed by Claude after a failed run: %s\n\n%s\n\nCheck the change before merging.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)' "$RUN_URL" "$first")" \
+                || echo "https://github.com/$GITHUB_REPOSITORY/compare/$branch")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Telegram
+        if: always()
+        env:
+          WAITING: ${{ steps.open.outputs.waiting }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          if [ "$WAITING" = "1" ]; then
+            text="🛠️ $RUN_NAME failed again - Claude's earlier fix PR is still open, merge or close it first. $RUN_URL"
+          else
+            detail=$(head -c 1500 .ci-failure/result.md 2>/dev/null || echo "Claude could not finish - see the run.")
+            text=$(printf '🛠️ %s failed\n\n%s\n\n%s\nRun: %s' "$RUN_NAME" "$detail" "${PR_URL:+PR: $PR_URL}" "$RUN_URL")
+          fi
+          IFS=',' read -ra chats <<< "$TELEGRAM_CHAT_ID"
+          for chat in "${chats[@]}"; do
+            curl -s -o /dev/null "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+              --data-urlencode "chat_id=${chat// /}" --data-urlencode "text=$text"
+          done
