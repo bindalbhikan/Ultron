@@ -151,6 +151,8 @@ function parseSms(from, body) {
   }
   if (/XPBEES/.test(code)) {
     if (/return attempted/i.test(body)) return { courier: 'Xpressbees', status: 'RETURN', otp: '', count: num(/Acc:\s*(\d+)/i), pod: true };
+    // "we have fulfilled your pickup request": the returns handed to us - the final POD, no code
+    if (/fulfilled your pickup request/i.test(body)) return { courier: 'Xpressbees', status: 'RETURN', otp: '', count: '', pod: true };
     const otp = num(/OTP:?\s*(\d+)/i);
     // "attempted your pickup request ... share OTP": Xpressbees bringing returns to us (reverse pickup) - RETURN
     return otp ? { courier: 'Xpressbees', status: 'RETURN', otp, count: '', pod: /https?:\/\//.test(body) } : null;
