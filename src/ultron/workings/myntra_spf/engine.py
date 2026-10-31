@@ -1989,33 +1989,38 @@ def write_subtotals(ws, f, last):
 #
 # Every cell is a COUNTIFS / SUMIFS over the full account sheet, so a status edited by
 # hand, or a re-sort of the sheet, still gives the right numbers.
-#   (label, kind, value column, [(criteria column, criteria), ...])
+#   (label, kind, value column, [(criteria column, criteria or (several, values)), ...])
+# kind: count / sum over both sheets; t_count / t_sum only the RETURN IN TRANSIT sheet (on its way
+# back), a_count / a_sum only the account sheets (delivered back). Open returns are split that way,
+# so a month full of returns still on the road does not read as money pending with us.
+# TOTAL = RECEIVED + SETTLED + IN TRANSIT + DELIVERED PENDING.
 _PENDING = ('FINAL RETURN STATUS', '')
 SUMMARY_COLS = [
     ('TOTAL RETURNS', 'count', None, []),
-    ('IN TRANSIT', 'transit', None, []),      # only the RETURN IN TRANSIT sheet
     ('RETURN RECEIVED', 'count', None, [('FINAL RETURN STATUS', 'Return Received')]),
-    ('SPF PAID', 'count', None, [('FINAL RETURN STATUS', 'SPF Paid')]),
-    ('SPF ACCEPTED', 'count', None, [('FINAL RETURN STATUS', 'SPF Accepted')]),
-    ('SPF ACCEPTED AMT', 'sum', 'ORDER AMOUNT', [('FINAL RETURN STATUS', 'SPF Accepted')]),
-    ('PAYMENT RECEIVED', 'count', None, [('FINAL RETURN STATUS', 'Payment Received')]),
-    ('PENDING', 'count', None, [_PENDING]),
-    ('PENDING AMT', 'sum', 'ORDER AMOUNT', [_PENDING]),
+    ('SPF / PAYMENT SETTLED', 'count', None,
+     [('FINAL RETURN STATUS', ('SPF Paid', 'SPF Accepted', 'Payment Received'))]),
+    ('IN TRANSIT', 't_count', None, [_PENDING]),
+    ('IN TRANSIT AMT', 't_sum', 'ORDER AMOUNT', [_PENDING]),
+    ('DELIVERED PENDING', 'a_count', None, [_PENDING]),
+    ('DELIVERED PENDING AMT', 'a_sum', 'ORDER AMOUNT', [_PENDING]),
     ('ELIGIBLE CLAIMS', 'count', None, [('CLAIM STATUS', 'ELIGIBLE')]),
-    ('PENDING CLAIM AMT', 'sum', 'ORDER AMOUNT', [('CLAIM STATUS', 'ELIGIBLE')]),
+    ('ELIGIBLE CLAIM AMT', 'sum', 'ORDER AMOUNT', [('CLAIM STATUS', 'ELIGIBLE')]),
     ('UPCOMING CLAIM AMT', 'sum', 'ORDER AMOUNT', [('CLAIM STATUS', 'UPCOMING CLAIM')]),
     ('CLAIM DONE', 'count', None, [('CLAIM STATUS', 'CLAIM DONE')]),
     ('SPF PAID AMT', 'sum', 'SPF PAID', []),
-    ('SETTLEMENT RECEIVED', 'sum', 'ORDER SETTLEMENT', []),
-    ('RETURN DEBIT', 'sum', 'RETURN DEBIT', []),
-    ('RETURN CHARGE', 'sum', 'RETURN CHARGE', []),
-    ('NET', 'sum', 'NET', []),
 ]
 # The day-wise sheet has ~750 rows, so it carries only the columns that answer "what is
 # still open from that day" - enough to act on without making Excel crawl.
 DATE_SUMMARY_COLS = [c for c in SUMMARY_COLS if c[0] in (
-    'TOTAL RETURNS', 'IN TRANSIT', 'RETURN RECEIVED', 'SPF PAID', 'SPF ACCEPTED', 'SPF ACCEPTED AMT', 'PAYMENT RECEIVED', 'PENDING',
-    'PENDING AMT', 'ELIGIBLE CLAIMS', 'PENDING CLAIM AMT', 'SPF PAID AMT')]
+    'TOTAL RETURNS', 'RETURN RECEIVED', 'IN TRANSIT', 'IN TRANSIT AMT', 'DELIVERED PENDING',
+    'DELIVERED PENDING AMT', 'ELIGIBLE CLAIMS', 'ELIGIBLE CLAIM AMT')]
+
+
+def _kind(kind):
+    """('t' in-transit sheet only / 'a' account sheets only / '' both, 'count' or 'sum')."""
+    where, _, base = kind.rpartition('_')
+    return where, base
 SUMMARY_SHEET = 'SUMMARY'
 DATE_SUMMARY_SHEET = 'DATE SUMMARY'
 # SJIT and FBM orders are not worked for SPF: no claim, no OMSGuru check, left out of both
@@ -2157,7 +2162,7 @@ def write_summary(wb, f, data, title, cols, by_day):
                        if isinstance(rows, tuple)
                        else '=' + '+'.join('%s%d' % (col, x) for x in rows))
             put(ws, r - 1, j - 1, formula,
-                f['tot_%s_%s' % (tag, 'amount' if kind == 'sum' else 'count')])
+                f['tot_%s_%s' % (tag, 'amount' if _kind(kind)[1] == 'sum' else 'count')])
 
     r = 2
     totals = []
@@ -2194,10 +2199,11 @@ def write_summary(wb, f, data, title, cols, by_day):
             else:
                 put(ws, r - 1, 1, bk)
             for j, (_, kind, val, crit) in enumerate(cols, start=3):
+                where, base = _kind(kind)
                 terms = []
                 for k, (rg, extra) in enumerate(parts_of):
-                    if kind == 'transit' and k == 0:
-                        continue                  # IN TRANSIT: the in-transit sheet only
+                    if (where == 't' and k == 0) or (where == 'a' and k > 0):
+                        continue                  # in-transit sheet only / account sheet only
                     if by_day:
                         d = 'DATE(%d,%d,%d)' % (bk.year, bk.month, bk.day)
                         parts = [rg['return_created_date'], '">="&' + d,
@@ -2207,12 +2213,16 @@ def write_summary(wb, f, data, title, cols, by_day):
                     for mdl in SUMMARY_EXCLUDE_MODELS:
                         parts += [rg['model'], '"<>%s"' % mdl]
                     parts += extra
-                    for ch, cv in crit:
-                        parts += [rg[ch], '"%s"' % cv]
-                    terms.append('SUMIFS(%s,%s)' % (rg[val], ','.join(parts)) if kind == 'sum'
-                                 else 'COUNTIFS(%s)' % ','.join(parts))
+                    # one criterion may list several values: one term per value, added up
+                    multi = [(ch, cv) for ch, cv in crit if isinstance(cv, tuple)]
+                    for value in (multi[0][1] if multi else (None,)):
+                        p = list(parts)
+                        for ch, cv in crit:
+                            p += [rg[ch], '"%s"' % (value if isinstance(cv, tuple) else cv)]
+                        terms.append('SUMIFS(%s,%s)' % (rg[val], ','.join(p)) if base == 'sum'
+                                     else 'COUNTIFS(%s)' % ','.join(p))
                 put(ws, r - 1, j - 1, '=' + ('+'.join(terms) or '0'),
-                    f['amount'] if kind == 'sum' else f['count'])
+                    f['amount'] if base == 'sum' else f['count'])
             r += 1
         put_total(r, name, 'TOTAL', (first, r - 1), 'mid')
         totals.append(r)
@@ -2351,6 +2361,42 @@ def write_input_log(wb, f, log):
 
 
 
+def drop_duplicates(data):
+    """One row per return line in the whole master: an order line on an account sheet (delivered /
+    received) is never also on the RETURN IN TRANSIT sheet, and no sheet holds a line twice (the
+    first row is kept). Lines without an order_line_id are left alone."""
+    def key(rec):
+        k = rec.get('order_line_id')
+        return str(k).strip() if k not in (None, '') else None
+
+    on_accounts = set()
+    for name in SHEETS:
+        seen, keep = set(), []
+        for rec in data.get(name, []):
+            k = key(rec)
+            if k is None or k not in seen:
+                keep.append(rec)
+                if k is not None:
+                    seen.add(k)
+        if len(keep) != len(data.get(name, [])):
+            print('  %s: %d duplicate rows dropped' % (name, len(data[name]) - len(keep)))
+        data[name] = keep
+        on_accounts |= seen
+    for name in list(PARKED):
+        seen, keep = set(), []
+        for rec in PARKED[name]:
+            k = key(rec)
+            if k is not None and (k in on_accounts or k in seen):
+                continue
+            keep.append(rec)
+            if k is not None:
+                seen.add(k)
+        if len(keep) != len(PARKED[name]):
+            print('  %s: %d in-transit rows dropped (already delivered / on the sheet)'
+                  % (name, len(PARKED[name]) - len(keep)))
+        PARKED[name] = keep
+
+
 def write_master(data):
     """Write the workbook.
 
@@ -2361,6 +2407,7 @@ def write_master(data):
     SUBTOTAL band (row 1) is written before the headers and the data.
     """
     install_formula_fast_path()
+    drop_duplicates(data)
     # read before the old master is overwritten
     log = input_log()
     wb = xlsxwriter.Workbook(MASTER, {'constant_memory': True,
