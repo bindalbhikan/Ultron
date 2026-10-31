@@ -277,6 +277,7 @@ function returns(from, body, deviceTime, p) {
   for (const portal of Object.keys(groups)) {
     const awbs = groups[portal];
     const sp = sheetPortal(portal, sms.courier);
+    const myntra = portal === 'Myntra';                         // Myntra's codes: the Myntra OTP bot's rows
     const count = awbs.length ? String(awbs.filter(a => a.status !== 'REJECTED').length) : String(sms.count || '');
 
     // the same shipments seen before (a resent OTP, or the final POD of a dispatch): its REF
@@ -301,11 +302,14 @@ function returns(from, body, deviceTime, p) {
       }
       continue;
     }
-    if (sms.otp) {
+    if (sms.otp && myntra) {
+      notes.push(sp + ': left to the Myntra OTP bot');
+      if (!otpRows.some(r => r[0] === day && r[3] === sms.otp)) filled = false;
+    } else if (sms.otp) {
       const put = putOtp(otpSheet, otpRows, day, sp, sms.status, otp, count, logged, fresh);
       notes.push(sp + ' ' + count + ' OTP ' + otp + ': ' + put);
       if (put === 'not in the sheet') filled = false;
-    } else if (logged && logged[4] && count && fresh) {           // final POD: the count only
+    } else if (logged && logged[4] && count && fresh && !myntra) {   // final POD: the count only
       const sheet = SpreadsheetApp.openById(OTP_SHEET_ID).getSheets()[0];
       const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getDisplayValues() : [];
       putOtp(sheet, rows, day, sp, sms.status, logged[4], count, logged, true);
@@ -343,6 +347,9 @@ function putOtp(sheet, rows, day, portal, status, otp, count, logged, write) {
       sheet.deleteRow(old + 2);
       rows.splice(old, 1);
       return 'resent, ' + otp + ' already in the sheet (removed our ' + logged[4] + ')';
+    }
+    if (rows[old][5] !== OTP_NAME) {                              // a row the team wrote: never changed
+      return logged[4] === otp ? 'already in the sheet' : 'resent ' + otp + ': not written, the team\'s row has ' + logged[4];
     }
     sheet.getRange(old + 2, 3, 1, 2).setValues([[count, otp]]);
     rows[old][2] = count;

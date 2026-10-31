@@ -8,7 +8,8 @@ C45111W17453 names channel 45111): TLPL = MAIN 46148, MMRJ = DBCC 50829, BOAT = 
 The codes go to Telegram and into the team's "Daily OTP 2026" Google Sheet (MYNTRA_OTP_SHEET_ID),
 one row per code in its own layout: DATE, PORTAL, COUNT (left empty, filled in by hand), OTP,
 STATUS (PICKUP / RETURN), Name (MYNTRA_OTP_NAME, Bhikan) and the courier as the team writes it (MYE = EK, MYS = FL).
-A code the sheet already has for that date, portal and status is not added again. Nothing is logged.
+A code the sheet already has that day is not added again; a code Myntra changed replaces the bot's own
+row (COUNT still empty) and never a row the team filled (Telegram is told). Nothing is logged.
 --retry (11 AM): a courier often has no trip yet at 10 AM. The codes are read again; Telegram
 hears only when there is a code the sheet did not have yet (or the sheet has no code of today at all).
 """
@@ -82,36 +83,50 @@ PORTAL_NAMES = {"TLPL": "Myntra_Main_TLPL", "MMRJ": "Myntra_DBCC_MMRJ", "BOAT": 
 COURIER_TAGS = {"MYE": "EK", "MYS": "FL"}
 
 
-def sheet_rows(rows, now: datetime, existing: list[list[str]]) -> list[list[str]]:
-    """The sheet's new rows: one per code, none the sheet already has (same date, portal, OTP, status)."""
-    have = {(r[0].strip(), r[1].strip(), r[3].strip(), r[4].strip().upper())
-            for r in (list(map(str, x)) + [""] * 5 for x in existing)}
-    day, out = f"{now:%d-%m-%Y}", []
+def sheet_rows(rows, now: datetime, existing: list[list[str]], notes: list[str] | None = None):
+    """(new rows, {sheet row number: new code}) for today's codes - never a second row and never a
+    team row changed:
+      - a code the sheet has that day (any portal: Ultron Phone or the team may have written it) - nothing;
+      - a courier whose row of that day, portal and status has another code (Myntra changed it by the
+        11 AM retry) - the code of that row is replaced only while its COUNT is empty (the bot's own
+        row, not yet worked by the team); a row the team filled is left alone and named in `notes`;
+      - else a new row."""
+    grid = [(list(map(str, x)) + [""] * 7)[:7] for x in existing]
+    day, out, replace = f"{now:%d-%m-%Y}", [], {}
+    codes_today = {r[3].strip() for r in grid if r[0].strip() == day}
     for code, label, codes in rows:
         for courier, otc in codes.items():
-            if otc in (None, "", "-"):
+            if otc in (None, "", "-") or str(otc) in codes_today:
                 continue
-            row = [day, PORTAL_NAMES.get(code, f"Myntra_{code}"), "", str(otc), label.upper(),
-                   env("MYNTRA_OTP_NAME") or "Bhikan",
-                   COURIER_TAGS.get(courier, courier)]
-            if (row[0], row[1], row[3], row[4]) not in have:
-                have.add((row[0], row[1], row[3], row[4]))
-                out.append(row)
-    return out
+            portal, status, tag = PORTAL_NAMES.get(code, f"Myntra_{code}"), label.upper(), COURIER_TAGS.get(courier, courier)
+            mine = [i for i, r in enumerate(grid) if r[0].strip() == day and r[1].strip() == portal
+                    and r[4].strip().upper() == status and r[6].strip() == tag]
+            codes_today.add(str(otc))
+            if mine:
+                i = mine[-1]
+                if grid[i][2].strip() == "":
+                    replace[i + 1] = str(otc)                # sheet row number (the header is row 1)
+                elif notes is not None:
+                    notes.append(f"{portal} {tag} {status}: new code {otc}, the team's row has {grid[i][3]} (left)")
+                continue
+            out.append([day, portal, "", str(otc), status, env("MYNTRA_OTP_NAME") or "Bhikan", tag])
+    return out, replace
 
 
-def write_sheet(rows, now: datetime) -> tuple[int, bool]:
-    """Append today's codes to the OTP sheet: (rows added, whether the sheet had a code of today before)."""
+def write_sheet(rows, now: datetime, notes: list[str] | None = None) -> tuple[int, bool]:
+    """Today's codes into the OTP sheet: (rows added or changed, whether the sheet had a code of today before)."""
     import gspread
     from ..core.gauth import credentials
     ws = gspread.authorize(credentials(["https://www.googleapis.com/auth/spreadsheets"])).open_by_key(
         env("MYNTRA_OTP_SHEET_ID") or SHEET_ID).sheet1
     existing = ws.get_all_values()
     had_today = any(r and str(r[0]).strip() == f"{now:%d-%m-%Y}" for r in existing)
-    new = sheet_rows(rows, now, existing)
+    new, replace = sheet_rows(rows, now, existing, notes)
+    for row, otc in replace.items():
+        ws.update_cell(row, 4, otc)                         # the OTP cell only
     if new:
         ws.append_rows(new, value_input_option="RAW")       # RAW: an OTP keeps its leading zeros
-    return len(new), had_today
+    return len(new) + len(replace), had_today
 
 
 def run(args) -> int:
@@ -120,12 +135,12 @@ def run(args) -> int:
     added, had_today = None, False
     if rows and not args.no_sheet:
         try:
-            added, had_today = write_sheet(rows, now)
+            added, had_today = write_sheet(rows, now, notes)
             log.info("OTP sheet: %d rows added", added)
         except Exception as exc:  # noqa: BLE001 - the Telegram message still goes out
             log.warning("OTP sheet not updated: %s", exc)
             notes.append(f"OTP sheet not updated: {type(exc).__name__} {str(exc)[:80]}")
-    if args.retry and added == 0 and had_today:
+    if args.retry and added == 0 and had_today and not any(n.endswith("(left)") for n in notes):
         log.info("Retry: no OTP the 10 AM run did not already send; no message")
         return 0
     text = message(rows, couriers, notes, now)
