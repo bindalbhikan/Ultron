@@ -139,7 +139,7 @@ NUMERIC_HEADERS = (
 )
 BLANK_ON_IMPORT = ("OMSGURU STATUS", "OMS RECEIVED DATE", "MANUAL RETURN STATUS")
 
-# the returns delivered / received / settled; the ones still on their way are on TRANSIT_SHEET.
+# the returns delivered to us or received; the ones not delivered (in transit or cancelled) are on TRANSIT_SHEET.
 # Masters before 31 Oct 2026 called it "Sheet1" (LEGACY_SHEET): still read.
 SHEET = "RETURN DELIVERED"
 LEGACY_SHEET = "Sheet1"
@@ -324,6 +324,21 @@ DISPATCH_TRACKING_HEADER = "FWD AWB"
 DISPATCH_DATE_HEADER = "DISPATCH DATE"
 DISPATCH_VOUCHER_HEADER = "DISPATCH VOUCHER NO"
 DISPATCH_HEADERS = (DISPATCH_DATE_HEADER, DISPATCH_VOUCHER_HEADER)
+
+# AJIO's Credit Note Report (seller portal Reports > Credit Note Report, "CreditNoteReports..."
+# in its name; the SPF bot downloads it): one row per credit note AJIO received against a forward
+# invoice - RECEIVING_DATE, INVOICE_NUMBER (our FWD B2B INVOICE No), REMARKS POSTING_COMPLETED
+# (accepted) or NEW (still pending). It fills a return's Credit Note Posting Status / Acceptance
+# date only where the returns report left them blank, and marks it accepted only when every credit
+# note on that invoice is posted and there are at least as many as the invoice's returns.
+CREDIT_NOTE_FILENAME_HINT = "CREDITNOTE"
+CREDIT_NOTE_INVOICE_FIELD = "INVOICE_NUMBER"
+CREDIT_NOTE_DATE_FIELD = "RECEIVING_DATE"
+CREDIT_NOTE_REMARK_FIELD = "REMARKS"
+CREDIT_NOTE_INVOICE_HEADER = "FWD B2B INVOICE No"
+CREDIT_NOTE_STATUS_HEADER = "Credit Note Posting Status"
+CREDIT_NOTE_ACCEPTED_HEADER = "Credit Note Acceptance date"
+CREDIT_NOTE_POSTED = "POSTING_COMPLETED"
 
 # The AJIO vendor ledger export, dropped into input/ as a workbook with
 # "PAYMENT" in its name: one row per accounting document. Fields are found by
@@ -551,8 +566,9 @@ NO_PICKUP = ("NOT PICKED UP", "PICKUP CANCELLED", "PICKUP FAILED")
 # that claim - it is MANUAL CLAIM, for the team. Only a return whose credit note is still pending
 # is ELIGIBLE (claims.py, the same rule).
 MANUAL_CLAIM = "MANUAL CLAIM"
-# Returns still on their way back (open, not delivered) sit on their own sheet, like Myntra's;
-# a row moves to Sheet1 on the run after it is delivered, received or settled.
+# Returns AJIO has not delivered to us and we have not received (in transit or cancelled, paid or
+# not) sit on their own sheet, like Myntra's; a row moves to RETURN DELIVERED on the run after it is
+# delivered or received.
 TRANSIT_SHEET = "RETURN IN TRANSIT"
 MASTER_SHEETS = (SHEET, TRANSIT_SHEET)
 
@@ -824,6 +840,10 @@ def is_dispatch(path):
     return DISPATCH_FILENAME_HINT in path.name.upper()
 
 
+def is_credit_note(path):
+    return CREDIT_NOTE_FILENAME_HINT in path.name.upper().replace(" ", "")
+
+
 def input_files():
     """The AJIO report exports - every file in input/ with the report's headers,
     other than GRNs, tickets, payment ledgers and the dispatch register."""
@@ -834,6 +854,7 @@ def input_files():
         and not is_ticket(path)
         and not is_payment(path)
         and not is_dispatch(path)
+        and not is_credit_note(path)
         and is_report(path)
     ]
 
@@ -909,7 +930,7 @@ def organize_inputs():
     moved = dupes = 0
     for path in waiting_files():
         rel = path.relative_to(INPUT_DIR)
-        if is_grn(path) or is_ticket(path) or is_payment(path) or is_dispatch(path):
+        if is_grn(path) or is_ticket(path) or is_payment(path) or is_dispatch(path) or is_credit_note(path):
             home, name = INPUT_DIR, path.name
         elif is_report(path):
             period = report_period(path)
@@ -1094,6 +1115,28 @@ def read_payments():
                 amounts[(column, key)] = round(amounts.get((column, key), 0) + signed, 2)
 
     return amounts, paths
+
+
+def read_credit_notes():
+    """{invoice number: [(receiving date, remark)]} from every Credit Note Report in input/, a
+    credit note seen in more than one export counted once; and the files read."""
+    paths = [path for path in waiting_files() if is_credit_note(path)]
+    notes, seen = {}, set()
+    for path in paths:
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        sheet = workbook[workbook.sheetnames[0]]
+        sheet.reset_dimensions()          # the portal writes a wrong sheet size
+        records = sheet_records(workbook, workbook.sheetnames[0]) or []
+        workbook.close()
+        for record in records:
+            invoice = text(record.get(field_name(CREDIT_NOTE_INVOICE_FIELD)))
+            remark = text(record.get(field_name(CREDIT_NOTE_REMARK_FIELD)))
+            received = parse_date(record.get(field_name(CREDIT_NOTE_DATE_FIELD)))
+            if not invoice or (invoice, received, remark) in seen:
+                continue
+            seen.add((invoice, received, remark))
+            notes.setdefault(invoice, []).append((received, remark))
+    return notes, paths
 
 
 def share_out(amount, weights):
@@ -1766,6 +1809,7 @@ def main():
     tickets, ticket_paths = read_tickets()
     payments, payment_paths = read_payments()
     dispatch, dispatch_paths = read_dispatch()
+    credit_notes, credit_note_paths = read_credit_notes()
 
     def oms_lookup(row, since=None):
         """(status, received on, how it matched) for one report row.
@@ -2001,6 +2045,28 @@ def main():
             payments_filled[column] += len(group)
             payments_shared[column] += len(group) > 1
 
+    # Credit Note Report: only where the returns report has no credit note status yet
+    credit_accepted = credit_pending = 0
+    if credit_notes and all(h in out_index for h in (
+            CREDIT_NOTE_INVOICE_HEADER, CREDIT_NOTE_STATUS_HEADER, CREDIT_NOTE_ACCEPTED_HEADER)):
+        returns_of = Counter(text(record[out_index[CREDIT_NOTE_INVOICE_HEADER]]) for record in records)
+        for record in records:
+            notes = credit_notes.get(text(record[out_index[CREDIT_NOTE_INVOICE_HEADER]]))
+            if (not notes or text(record[out_index[CREDIT_NOTE_STATUS_HEADER]])
+                    or record[out_index[CREDIT_NOTE_ACCEPTED_HEADER]] not in (None, "")):
+                continue
+            invoice = text(record[out_index[CREDIT_NOTE_INVOICE_HEADER]])
+            posted = all(remark == CREDIT_NOTE_POSTED for _, remark in notes)
+            if posted and len(notes) >= returns_of[invoice]:
+                record[out_index[CREDIT_NOTE_STATUS_HEADER]] = CREDIT_NOTE_POSTED
+                record[out_index[CREDIT_NOTE_ACCEPTED_HEADER]] = max(
+                    (d for d, _ in notes if d), default=None)
+                credit_accepted += 1
+            elif not posted:
+                record[out_index[CREDIT_NOTE_STATUS_HEADER]] = next(
+                    remark for _, remark in notes if remark != CREDIT_NOTE_POSTED)
+                credit_pending += 1
+
     # read before the master is rewritten
     log = input_log(ingested_files)
     write(final_headers, records, out_index, log)
@@ -2052,6 +2118,10 @@ def main():
     print(f"DISPATCH_KEYS={len(dispatch)}")
     print(f"DISPATCH_ROWS_MATCHED={dispatch_matched}")
     print(f"DISPATCH_MATCHED_OTHER_SKU={dispatch_other_sku}")
+    print(f"CREDIT_NOTE_FILES={len(credit_note_paths)}")
+    print(f"CREDIT_NOTE_INVOICES={len(credit_notes)}")
+    print(f"CREDIT_NOTE_ACCEPTED_FILLED={credit_accepted}")
+    print(f"CREDIT_NOTE_PENDING_FILLED={credit_pending}")
     print(f"PAYMENT_FILES={len(payment_paths)}")
     for path in payment_paths:
         print(f"  {path.name}")
@@ -2177,7 +2247,8 @@ def write(final_headers, records, out_index, log):
     worked_of = [computed_values(
         lambda header, record=record: record[out_index[header]] if header in out_index else None, today)
         for record in records]
-    on_road = [w["CLAIM TYPE"] == "RETURN IN TRANSIT" and w["FINAL RETURN STATUS"] == "" for w in worked_of]
+    # not delivered to us and not received (paid or not): in transit or cancelled on the way
+    on_road = [w["CLAIM TYPE"] in ("RETURN IN TRANSIT", "RETURN CANCELLED") for w in worked_of]
 
     def styled_like(header):
         """The layout entry a column copies: its own, else its block's."""

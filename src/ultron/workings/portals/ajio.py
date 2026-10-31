@@ -127,6 +127,31 @@ class AjioClient:
             raise AjioError(f"RTV report download failed: HTTP {r.status_code} {r.text[:200]}")
         return r.content
 
+    def credit_note_reports(self, start: date, end: date, days: int = 7):
+        """(from, to, xlsx bytes) per window of the Credit Note Report; short windows, so no
+        download comes near the portal's row limit."""
+        cursor = start
+        while cursor <= end:
+            stop = min(cursor + timedelta(days=days - 1), end)
+            blob = self.credit_note_report(cursor, stop)
+            if blob:
+                yield cursor, stop, blob
+            cursor = stop + timedelta(days=1)
+
+    def credit_note_report(self, start: date, end: date) -> bytes:
+        """The Dropship Credit Note Report (xlsx) for both POBs, by forward invoice date: each credit
+        note AJIO received (RECEIVING_DATE) against an invoice, REMARKS POSTING_COMPLETED or NEW."""
+        r = self._req("POST", f"/malekith/vision/v1/dropship/credit_note/report/download?from={start}&to={end}",
+                      data="pobIds=" + "%2C".join(POB_IDS),
+                      headers={"Accept": "application/json, text/plain, */*", "X-Tenant": "AJIO",
+                               "x-pob-id": POB_IDS[0], "businessModel": "B2C",
+                               "Content-Type": "application/x-www-form-urlencoded"})
+        if r.status_code == 404 and "No records found" in r.text:
+            return b""
+        if r.status_code != 200 or "spreadsheet" not in r.headers.get("content-type", ""):
+            raise AjioError(f"Credit note report download failed: HTTP {r.status_code} {r.text[:200]}")
+        return r.content
+
     def order_report(self, start: date, end: date) -> bytes:
         """The Dropship order report (xlsx, "DropShipOrderReports") for both POBs (max 31 days)."""
         r = self._req("POST", f"/malekith/vision/v1/dropship/order/report/download?from={start}&to={end}",

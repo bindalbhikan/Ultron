@@ -126,6 +126,14 @@ def fetch_all(today: date, ctx: dict) -> None:
         start = rtv_start(today)
         for a, b, blob in client.rtv_reports(start, today):
             (inp / f"{a:%Y-%m-%d} to {b:%Y-%m-%d}.xlsx").write_bytes(blob)
+        # Credit Note Report (by forward invoice date): from a month before the oldest open
+        # return, at least CN_DAYS (120), at most CN_MAX_DAYS (400) - fills a blank credit note status
+        cn_from = max(min(today - timedelta(days=num("CN_DAYS", 120)),
+                          (oldest_open() or today) - timedelta(days=30)),
+                      today - timedelta(days=num("CN_MAX_DAYS", 400)))
+        for a, b, blob in client.credit_note_reports(cn_from, today):
+            (inp / f"CreditNoteReports {a:%Y-%m-%d} to {b:%Y-%m-%d}.xlsx").write_bytes(blob)
+        log.info("AJIO: credit note report from %s", cn_from)
         listed = client.ticket_list(today - timedelta(days=num("TICKET_DAYS", 240)), today)
         spf_ids = [str(t["ticketId"]) for t in listed if str(t.get("ticketType") or "").upper() == "SPF"]
         details = client.ticket_details(spf_ids)
