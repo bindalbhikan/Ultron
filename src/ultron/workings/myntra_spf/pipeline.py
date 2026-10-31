@@ -68,7 +68,7 @@ def _windows(today: date) -> dict[int, list[tuple[date, date]]]:
 def fetch_account(account: str, today: date, dest: Path, notes: list[str],
                   old_orders: list[tuple[date, date]] | None = None,
                   ticketed: dict[str, set[str]] | None = None, cached: dict | None = None,
-                  details: dict | None = None) -> None:
+                  details: dict | None = None, pay_from: date | None = None) -> None:
     """The account's returns, delivery and order reports into dest. Different reports are asked
     for together; the same report again only after the cooldown. Jobs for the same dates are reused.
 
@@ -163,7 +163,10 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
             notes.append(f"{account} SPF tickets not read, no claims raised: {str(exc)[:80]}")
     # the payments (SPF paid, return charges, order settlements): no longer dropped by hand
     try:
-        start = today - timedelta(days=num("MYNTRA_SPF_PAY_DAYS", 150))
+        # from the oldest return still open (its payout can come any day), at least the last
+        # MYNTRA_SPF_PAY_DAYS (150), at most MYNTRA_SPF_PAY_MAX_DAYS (400)
+        start = max(min(today - timedelta(days=num("MYNTRA_SPF_PAY_DAYS", 150)), pay_from or today),
+                    today - timedelta(days=num("MYNTRA_SPF_PAY_MAX_DAYS", 400)))
         got = payments.account_payments(portal, start, today,
                                         dest / f"myntra-payments-TOTAL-{start}_to_{today}-{account}.csv")
         if got["without_lines"]:
@@ -373,6 +376,25 @@ def master_stats(path: Path, today: date, months: int = 6) -> dict:
     return out
 
 
+def oldest_open(path: Path) -> dict[str, date]:
+    """account -> the created day of its oldest return still open (FINAL RETURN STATUS blank,
+    account and in-transit sheets): payments are downloaded from there, so no payout is missed."""
+    from openpyxl import load_workbook
+    from .engine import master_rows
+    wb = load_workbook(path, read_only=True)
+    out = {}
+    for name in ACCOUNTS:
+        for r in master_rows(wb, name):
+            if final_status(r) or not_worked(r):
+                continue
+            created = r.get("return_created_date")
+            created = created.date() if hasattr(created, "date") else None
+            if created and (name not in out or created < out[name]):
+                out[name] = created
+    wb.close()
+    return out
+
+
 def open_returns(path: Path, since: date) -> dict[tuple, dict]:
     """(order_line_id, return_id) -> lookup terms for every row whose FINAL RETURN STATUS is
     blank, created since `since`. Only these are looked up in OMSGuru."""
@@ -554,7 +576,14 @@ def run(args) -> int:
         log.exception("Previous TICKETS sheet not read")
         cached = {}
     details: dict[str, list[dict]] = {}
-    tasks = {a: (fetch_account, (a, today, inp / a, notes, old_orders.get(a), ticketed, cached, details))
+    try:
+        pay_from = oldest_open(work / MASTER_NAME)
+        log.info("Payments downloaded from the oldest open return: %s", pay_from)
+    except Exception:  # noqa: BLE001 - the fixed window then
+        log.exception("Oldest open return not worked out")
+        pay_from = {}
+    tasks = {a: (fetch_account, (a, today, inp / a, notes, old_orders.get(a), ticketed, cached, details,
+                                 pay_from.get(a)))
              for a in ACCOUNTS}
     with ThreadPoolExecutor(max_workers=len(tasks) + 1) as pool:
         futures = {name: pool.submit(fn, *a) for name, (fn, a) in tasks.items()}

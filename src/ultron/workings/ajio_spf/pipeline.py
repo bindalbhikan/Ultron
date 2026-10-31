@@ -80,6 +80,23 @@ def rtv_start(today: date) -> date:
     return min(first_missing, refresh)
 
 
+def oldest_open() -> date | None:
+    """Created day of the master's oldest return still open (FINAL RETURN STATUS blank on Sheet1)."""
+    from openpyxl import load_workbook
+    try:
+        wb = load_workbook(WORK / MASTER_NAME, read_only=True, data_only=True)
+        rows = wb["Sheet1"].iter_rows(values_only=True)
+        head = [str(h or "").strip() for h in next(rows)]
+        created, final = head.index("Return Created Date"), head.index("FINAL RETURN STATUS")
+        days = [claims.as_date(r[created]) for r in rows if r and not claims.txt(r[final])]
+        wb.close()
+    except Exception as exc:  # noqa: BLE001 - the fixed window then
+        log.warning("Oldest open return not read: %s", exc)
+        return None
+    days = [d for d in days if d]
+    return min(days) if days else None
+
+
 def fetch_all(today: date, ctx: dict) -> None:
     """Fill WORK/input with fresh exports. Any failure is recorded in ctx['errors']."""
     from ..portals.ajio import AjioClient
@@ -125,7 +142,12 @@ def fetch_all(today: date, ctx: dict) -> None:
     def srm():
         client = Srm(env("SRM_USERNAME"), env("SRM_PASSWORD"))
         client.login()
-        items = client.statement(today - timedelta(days=num("SRM_DAYS", 365)), today)
+        # from the oldest return still open (its G4 / IC can come any day), at least the last
+        # SRM_DAYS (365), at most SRM_MAX_DAYS (540)
+        start = max(min(today - timedelta(days=num("SRM_DAYS", 365)), oldest_open() or today),
+                    today - timedelta(days=num("SRM_MAX_DAYS", 540)))
+        log.info("SRM ledger from %s", start)
+        items = client.statement(start, today)
         rows = payment_rows(items)
         write_xlsx(inp / "PAYMENT.xlsx", {"data": (list(rows[0].keys()) if rows else [], rows)})
 
