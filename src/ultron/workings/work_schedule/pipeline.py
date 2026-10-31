@@ -5,7 +5,7 @@ the same list as SCHEDULE in worker/src/worker.js. One sheet a month (OCT-26): t
 column per day of the month and WORK last, with a check box on the days the task is due: ☑ once the task's GitHub workflow ran
 successfully for that slot, ☐ while it has not (red once the day is over).
 
-Filled from the GitHub Actions run history, not by the bots themselves: work-schedule.yml runs after
+Filled from the GitHub Actions run history, not by the bots themselves: agent-watch.yml (its schedule job) runs after
 every bot run (workflow_run) and rebuilds this month's sheet (and last month's, for the runs after
 midnight) from the successful runs (no box before a workflow's first run: the task did not exist yet), so the bots never write the file at the same time and a missed
 update is caught by the next one. A run counts for the latest slot of its workflow at or before
@@ -68,7 +68,7 @@ TASKS = [
     Task("Return analysis report request", "returns.yml", _at(7), "MONTHLY (15th)", day=15),
     Task("Myntra SPF master", "myntra-spf.yml", _at(9), "DAILY"),
     Task("AJIO SPF (tickets + replies)", "ajio-spf.yml", _at(9), "WEEKLY (WED, SAT)", weekdays=(2, 5)),
-    Task("AJIO SPF master update", "ajio-spf.yml", _at(9), "DAILY (not WED, SAT)", weekdays=(0, 1, 3, 4, 6)),
+    Task("AJIO SPF master + disputes due", "ajio-spf.yml", _at(9), "DAILY (not WED, SAT)", weekdays=(0, 1, 3, 4, 6)),
     Task("AJIO Ads / TOT gap", "ajio-ads.yml", _at(9), "MONTHLY (3rd)", day=3),
     Task("AJIO Ads / TOT gap (if missed)", "ajio-ads.yml", _at(9), "MONTHLY (5th)", day=5),
     Task("Morning report", "morning.yml", _at(9, 30), "DAILY"),
@@ -105,7 +105,7 @@ WORK = {
     "AJIO Ads / TOT gap": "AJIO statement: G4 ads amount vs TOT marketing charge per month, saved in Ajio Ads Gap Working",
     "AJIO Ads / TOT gap (if missed)": "Same AJIO Ads / TOT gap report, only if the 3rd did not save it",
     "AJIO SPF (tickets + replies)": "AJIO SPF master updated, SPF claim tickets raised and replies posted on AJIO",
-    "AJIO SPF master update": "AJIO SPF master (returns, claims) updated, nothing posted on AJIO",
+    "AJIO SPF master + disputes due": "AJIO SPF master (returns, claims) updated, and the delivery-dispute tickets due on day 6 raised on AJIO (no replies)",
     "AJIO pickup tickets (courier-wise)": "One AJIO 'pickup not done' ticket per courier (its pending orders listed + Excel), never twice for an order; follow-up every 24 h",
     "AJIO Seller Pickup Issue form": "AJIO's Microsoft Form 'Seller Pickup Issue', once a day per courier still not picked up past its deadline",
     "AJIO TAT daily update": "AJIO dispatch TAT master (processing / pickup on time), pickup pending list, courier pickup tickets",

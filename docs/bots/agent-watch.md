@@ -1,7 +1,8 @@
 # Agent watch — `python run.py agent-watch --run-id <id>`
 
 **When**: as every bot workflow finishes (`agent-watch.yml`, `workflow_run`); the inventory push
-only when it did not succeed. By hand: run the workflow with a run id.
+only when it did not succeed. By hand: run the workflow with a run id. The same workflow's
+`schedule` job updates the work schedule (`docs/bots/work-schedule.md`).
 
 * **Free model**: Cloudflare Workers AI `@cf/openai/gpt-oss-120b` (repo variable `AGENT_MODEL` to
   change it) on the account's free daily allocation (10,000 neurons), through the Telegram

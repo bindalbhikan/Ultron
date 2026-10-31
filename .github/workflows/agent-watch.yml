@@ -1,10 +1,16 @@
 name: Agent watch
 
 on:
-  # The agent (Cloudflare Workers AI, free allocation) checks every bot run as it finishes (ultron.agents.watch) and tells Telegram only
-  # when something is wrong. The inventory push (every 3 hours) is checked only when it failed.
+  # After every bot run, one run with two jobs (one workflow, so a bot run starts one run, not two):
+  #   watch     the agent (Cloudflare Workers AI, free allocation) checks the run (ultron.agents.watch) and
+  #             tells Telegram only when something is wrong. The inventory push (every 3 hours) is checked
+  #             only when it failed; Flipkart TAT is not checked.
+  #   schedule  ticks the run's box in Drive AGENT WORK/AGENT REPORT WORK SCHEDULE REPORT.xlsx (rebuilt
+  #             from the GitHub run history each time, so a missed update is caught by the next one).
+  #             Not after the inventory push (8 runs a day): its runs are counted by the next update.
   workflow_run:
     workflows: ["AJIO ads TOT gap", "AJIO SPF run", "AJIO TAT daily update", "OMSGuru inventory push",
+                "Flipkart TAT daily update",
                 "Myntra SPF master", "Return analysis", "Daily sale report", "Myntra VMS report",
                 "Morning report", "SLA warning", "Label check", "Stock-out alert",
                 "Evening summary", "Weekly review", "Dead stock report", "Listing health",
@@ -14,20 +20,25 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: "The bot run to check (its id is in the run's URL)"
-        required: true
+        description: "The bot run to check (its id is in the run's URL); empty = only update the work schedule"
+        default: ""
+      month:
+        description: "work schedule: rebuild this month only, YYYY-MM (empty = this month)"
+        default: ""
 
 permissions:
   actions: read
   contents: read
 
-concurrency:
-  group: agent-watch-${{ github.event.workflow_run.id || inputs.run_id }}
-  cancel-in-progress: false
-
 jobs:
   run:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.name != 'OMSGuru inventory push' || github.event.workflow_run.conclusion != 'success'
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.run_id != '' ||
+      github.event_name == 'workflow_run' && github.event.workflow_run.name != 'Flipkart TAT daily update' &&
+      (github.event.workflow_run.name != 'OMSGuru inventory push' || github.event.workflow_run.conclusion != 'success')
+    concurrency:
+      group: agent-watch-${{ github.event.workflow_run.id || inputs.run_id }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -56,3 +67,45 @@ jobs:
           path: secure/
           if-no-files-found: ignore
           retention-days: 14
+
+  schedule:
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.run_id == '' ||
+      github.event_name == 'workflow_run' && github.event.workflow_run.name != 'OMSGuru inventory push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # one at a time: the workbook is downloaded, rebuilt and uploaded (a queued run replaces an older queued one)
+    concurrency:
+      group: work-schedule
+      cancel-in-progress: false
+    env:
+      TZ: Asia/Kolkata
+      RUN_MODE: github-actions
+      # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+      ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      # hyper log (core/hyperlog.py): the run's detailed log into Drive AGENT WORK/AGENT LOGS
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      GITHUB_TOKEN: ${{ github.token }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+      IN_MONTH: ${{ inputs.month }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Update the work schedule
+        run: |
+          set --
+          if [ -n "$IN_MONTH" ]; then set -- --month "$IN_MONTH"; fi
+          bash scripts/github/ci_run.sh work-schedule "$@"
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: work-schedule-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 3
