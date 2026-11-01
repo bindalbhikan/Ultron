@@ -124,7 +124,7 @@ function monthArg(args) {
 // runs late or not at all (25 Oct 2026: morning, stock-out and listings never ran from it).
 // Cloudflare cron is UTC (IST = UTC + 5:30); each `cron` below ("minute hour") must be one of the
 // times the [triggers] in wrangler.toml fire at. One trigger lists many hours (the free plan allows
-// 5): ":30" past the hours, ":00" past the hours, and Monday 4:45 UTC.
+// 5): ":30" past the hours, ":00" past the hours, 4:45 UTC (Monday) and 6:15 UTC.
 const INV_PUSH_HOURS = [0, 3, 6, 9, 12, 15, 18, 21];   // UTC: 6 AM, 9 AM ... 3 AM IST
 const SCHEDULE = [
   // 7 AM: Myntra report requests - they queue on the portal for a while. The same Myntra report
@@ -144,11 +144,11 @@ const SCHEDULE = [
   { ist: "9:00 AM on the 3rd", cron: "30 3 * * *", day: 3, cmd: "ajioads" },
   { ist: "9:00 AM on the 5th", cron: "30 3 * * *", day: 5, cmd: "ajioads", label: "AJIO Ads / TOT gap (if missed)",
     inputs: { if_missing: "1" } },
-  // 10 AM: Myntra courier OTPs and yesterday's Myntra reports; 11 AM: the OTPs again for couriers
-  // that had no trip yet at 10 (sent only when a new code came)
-  { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "myntraotp" },
+  // 10 AM: yesterday's Myntra reports; 11 AM: Myntra courier OTPs; 11:45 AM: the OTPs again for
+  // couriers that had no trip yet at 11 (sent only when a new code came)
+  { ist: "11:00 AM daily", cron: "30 5 * * *", cmd: "myntraotp" },
   { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "myntrareports" },
-  { ist: "11:00 AM daily", cron: "30 5 * * *", cmd: "myntraotp", label: "Myntra OTP retry", inputs: { retry: "1" } },
+  { ist: "11:45 AM daily", cron: "15 6 * * *", cmd: "myntraotp", label: "Myntra OTP retry", inputs: { retry: "1" } },
   // Myntra zero TD: styles live at MRP on www.myntra.com, every 2 hours 7 AM - 7 PM, Monday to Saturday
   ...[["7:00 AM", 1], ["9:00 AM", 3], ["11:00 AM", 5], ["1:00 PM", 7], ["3:00 PM", 9], ["5:00 PM", 11],
       ["7:00 PM", 13]].map(([ist, h]) => (

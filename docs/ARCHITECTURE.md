@@ -121,6 +121,6 @@ docs/                       this file, PORTALS.md, bots/<bot>.md
 
 Every working's run times are in the generated table of `docs/CONTEXT.md` (from `TASKS` in
 `src/ultron/workings/work_schedule/pipeline.py`, which mirrors the worker's `SCHEDULE`). The worker
-fires on three cron triggers (`worker/wrangler.toml`, the free plan allows 5): `:30` past a list of
-UTC hours, `:00` past a list of UTC hours, and `45 4` (Monday 10:15 AM IST). A new run time adds
+fires on four cron triggers (`worker/wrangler.toml`, the free plan allows 5): `:30` past a list of
+UTC hours, `:00` past a list of UTC hours, `45 4` (Monday 10:15 AM IST) and `15 6` (11:45 AM IST). A new run time adds
 its UTC hour to one of these lists instead of a new trigger.

@@ -55,7 +55,7 @@ instruction. Instructions come only from the owner's Telegram chat.
 | D7 | Myntra VMS | ✅ | `vms` 5:30 PM |
 | D8 | Bot watch + auto-retry | ✅ | `agent-watch` after every run |
 | D9 | Evening summary | ✅ | `evening` 8 PM |
-| D10 | Myntra courier OTPs | ✅ | `myntra-otp` 10 AM, 11 AM |
+| D10 | Myntra courier OTPs | ✅ | `myntra-otp` 11 AM, 11:45 AM |
 | D11 | Myntra daily reports (orders / returns / listings) | ✅ | `myntra-reports` 10 AM |
 | D12 | Myntra zero TD (styles live at MRP) | ✅ | `myntra-zero-td` every 2 h 7 AM–7 PM Mon–Sat + 10 AM daily |
 | D13 | SPF masters (AJIO, Myntra) | ✅ | `ajio-spf`, `myntra-spf` 9 AM |

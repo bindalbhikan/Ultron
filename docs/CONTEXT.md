@@ -32,7 +32,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 | mis | `python run.py mis` | Monthly MIS | `mis.yml` Monthly MIS | 11:00 AM monthly (2nd) | `docs/bots/mis.md` |
 | morning | `python run.py morning` | Morning report | `morning.yml` Morning report | 9:30 AM daily | `docs/bots/morning.md` |
 | myntra-history | `python run.py myntra-history` | Myntra order + return history | `myntra-history.yml` Myntra order + return history | by hand only | `docs/bots/myntra-history.md` |
-| myntra-otp | `python run.py myntra-otp` | Myntra courier OTP | `myntra-otp.yml` Myntra courier OTP | 10:00 AM daily; 11:00 AM daily | `docs/bots/myntra-otp.md` |
+| myntra-otp | `python run.py myntra-otp` | Myntra courier OTP | `myntra-otp.yml` Myntra courier OTP | 11:00 AM daily; 11:45 AM daily | `docs/bots/myntra-otp.md` |
 | myntra-reports | `python run.py myntra-reports` | Myntra daily reports | `myntra-reports.yml` Myntra daily reports | 10:00 AM daily | `docs/bots/myntra-reports.md` |
 | myntra-spf | `python run.py myntra-spf` | Myntra SPF master | `myntra-spf.yml` Myntra SPF master | 7:00 AM daily; 9:00 AM daily | `docs/bots/myntra-spf.md` |
 | myntra-tat | `python run.py myntra-tat` | Myntra courier scorecard | `myntra-tat.yml` Myntra courier scorecard | 6:30 PM daily | `docs/bots/myntra-tat.md` |

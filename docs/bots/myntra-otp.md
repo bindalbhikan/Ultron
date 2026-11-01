@@ -1,6 +1,6 @@
 # Myntra courier OTP — `python run.py myntra-otp [--retry]`
 
-**When**: 10 AM IST daily, and again at 11 AM with `--retry` (worker cron, `SCHEDULE` in
+**When**: 11 AM IST daily, and again at 11:45 AM with `--retry` (worker cron, `SCHEDULE` in
 `worker/src/worker.js`; `myntra-otp.yml`). By hand: the menu (Myntra > Courier OTP) or `/myntraotp`.
 
 * Reads today's PICKUP and RETURN one-time codes of the TLPL, MMRJ and BOAT warehouses from the
@@ -11,7 +11,7 @@
   Name (`MYNTRA_OTP_NAME`) and the courier as the team writes it. A code the sheet already has for
   that date, portal and status is not added again. Codes are never written to the log.
 * A courier with no trip today has no code ("-"): normal, not an error.
-* `--retry` (11 AM): a courier often has no trip yet at 10 AM, so the codes are read again;
+* `--retry` (11:45 AM): a courier often has no trip yet at 11 AM, so the codes are read again;
   Telegram hears only when there is a code the sheet did not have (or no code of today at all).
 * Failures: a logged-out account ("session expired") needs a new login
   (`python scripts/myntra/myntra_session.py`); one account failing does not stop the others.

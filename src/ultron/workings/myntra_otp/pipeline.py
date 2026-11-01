@@ -1,4 +1,4 @@
-"""Myntra courier OTPs (10 AM, again at 11 AM with --retry): today's PICKUP and RETURN one-time codes of the TLPL, MMRJ and BOAT
+"""Myntra courier OTPs (11 AM, again at 11:45 AM with --retry): today's PICKUP and RETURN one-time codes of the TLPL, MMRJ and BOAT
 warehouses, from the partner portal's Orders > OTC page (api/location/otc), to Telegram.
 
 Each OMSGuru channel is one Myntra seller account and its Surat warehouse (the warehouse code
@@ -10,7 +10,7 @@ one row per code in its own layout: DATE, PORTAL, COUNT (left empty, filled in b
 STATUS (PICKUP / RETURN), Name (MYNTRA_OTP_NAME, Bhikan) and the courier as the team writes it (MYE = EK, MYS = FL).
 A code the sheet already has that day is not added again; a code Myntra changed replaces the bot's own
 row (COUNT still empty) and never a row the team filled (Telegram is told). Nothing is logged.
---retry (11 AM): a courier often has no trip yet at 10 AM. The codes are read again; Telegram
+--retry (11:45 AM): a courier often has no trip yet at 11 AM. The codes are read again; Telegram
 hears only when there is a code the sheet did not have yet (or the sheet has no code of today at all).
 """
 from __future__ import annotations
@@ -88,7 +88,7 @@ def sheet_rows(rows, now: datetime, existing: list[list[str]], notes: list[str] 
     team row changed:
       - a code the sheet has that day (any portal: Ultron Phone or the team may have written it) - nothing;
       - a courier whose row of that day, portal and status has another code (Myntra changed it by the
-        11 AM retry) - the code of that row is replaced only while its COUNT is empty (the bot's own
+        11:45 AM retry) - the code of that row is replaced only while its COUNT is empty (the bot's own
         row, not yet worked by the team); a row the team filled is left alone and named in `notes`;
       - else a new row."""
     grid = [(list(map(str, x)) + [""] * 7)[:7] for x in existing]
@@ -141,11 +141,11 @@ def run(args) -> int:
             log.warning("OTP sheet not updated: %s", exc)
             notes.append(f"OTP sheet not updated: {type(exc).__name__} {str(exc)[:80]}")
     if args.retry and added == 0 and had_today and not any(n.endswith("(left)") for n in notes):
-        log.info("Retry: no OTP the 10 AM run did not already send; no message")
+        log.info("Retry: no OTP the 11 AM run did not already send; no message")
         return 0
     text = message(rows, couriers, notes, now)
     if args.retry:
-        text = text.replace("</b>", " · 11 AM update</b>", 1)
+        text = text.replace("</b>", " · 11:45 AM update</b>", 1)
     print(text) if args.no_telegram else telegram.send(text)
     return 0 if rows else 1
 
@@ -155,5 +155,5 @@ def main(argv=None) -> int:
     p.add_argument("--no-telegram", action="store_true", help="print the message instead of sending it")
     p.add_argument("--no-sheet", action="store_true", help="leave the Daily OTP sheet alone")
     p.add_argument("--retry", action="store_true",
-                   help="11 AM: send only when there is an OTP the sheet does not have yet")
+                   help="11:45 AM: send only when there is an OTP the sheet does not have yet")
     return run_bot("Myntra courier OTP", p, run, argv)
