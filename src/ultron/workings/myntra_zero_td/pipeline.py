@@ -1,4 +1,4 @@
-"""Myntra zero TD (10 AM, 2 PM, 5 PM, Monday to Saturday): which styles of the MYNTRA ZERO TD
+"""Myntra zero TD (every 2 hours 7 AM - 7 PM, Monday to Saturday): which styles of the MYNTRA ZERO TD
 UPDATE SHEET are live on the buyer side (www.myntra.com) with stock and selling at MRP, i.e. with
 no trade discount on.
 

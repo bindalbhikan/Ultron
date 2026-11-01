@@ -108,22 +108,19 @@ docs/                       this file, PORTALS.md, bots/<bot>.md
 4. `.github/workflows/<name>.yml`: copy a recent one (`ajio-ads.yml`); `bash scripts/github/ci_run.sh
    <name> …`, upload only `secure/`, pass every secret it needs, sensible `timeout-minutes`.
 5. Worker (`worker/src/worker.js`): a `COMMANDS` entry (`/command`, inputs, usual minutes), a
-   menu button if useful, `SCHEDULE` entries on one of the **existing** 5 cron triggers (use
-   `day` / `weekdays`), the dashboard keys in `DASH_KEYS`; then `cd worker && npx wrangler deploy`
+   menu button if useful, `SCHEDULE` entries on the **existing** cron triggers (add the UTC hour to a
+   trigger's list; use `day` / `weekdays`), the same task in `TASKS`, the dashboard keys in `DASH_KEYS`; then `cd worker && npx wrangler deploy`
    (an undeployed change does not run).
 6. Dashboard: a section in `dashboard/src/page.html` for its pushed numbers; deploy `dashboard/`.
-7. Docs: `docs/bots/<name>.md`, a row in `README.md` and `docs/CONTEXT.md`.
+7. Docs: `docs/bots/<name>.md` (with a `**When**:` line), a row in `README.md`; then
+   `python scripts/docs/sync_docs.py` (the `docs/CONTEXT.md` table and the gaps list in `AGENTS.md`).
 9. Test run first: `--no-upload --no-telegram` locally or the workflow's test input, check the
    numbers against the hand-made result, then switch it on.
 
 ## Daily schedule (IST)
 
-| Time | What | Cron (UTC) |
-|---|---|---|
-| 7:00 AM | Myntra report requests: SJIT, Myntra SPF returns + delivery; return analysis on the 15th | `30 1 * * *` |
-| 9:00 AM | Myntra SPF + AJIO SPF masters (AJIO tickets / replies only Wed + Sat); AJIO ads gap on the 3rd, retry on the 5th | `30 3 * * *` |
-| 2:00 PM | Return analysis, only on the 15th | `30 8 * * *` |
-| 3:30 PM | Daily sale | `0 10 * * *` |
-| 5:30 PM | VMS, AJIO TAT | `0 12 * * *` |
-
-All five triggers are in use: a new working must ride on one of them.
+Every working's run times are in the generated table of `docs/CONTEXT.md` (from `TASKS` in
+`src/ultron/workings/work_schedule/pipeline.py`, which mirrors the worker's `SCHEDULE`). The worker
+fires on three cron triggers (`worker/wrangler.toml`, the free plan allows 5): `:30` past a list of
+UTC hours, `:00` past a list of UTC hours, and `45 4` (Monday 10:15 AM IST). A new run time adds
+its UTC hour to one of these lists instead of a new trigger.

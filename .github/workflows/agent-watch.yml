@@ -27,7 +27,8 @@ on:
         default: ""
 
 permissions:
-  actions: read
+  # write: the watcher reruns a run that failed on a known passing cause, once ([watch] retry, agent.toml)
+  actions: write
   contents: read
 
 jobs:

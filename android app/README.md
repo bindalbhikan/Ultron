@@ -3,7 +3,7 @@
 The Bindal agent's Android app (was "SMS to Sheet"). Two jobs:
 
 1. **Agent mode** - the phone works for the bots when a PC cannot: www.myntra.com refuses GitHub's
-   runners (HTTP 403), so when the office PC is off the Myntra zero TD run (10 AM / 2 PM / 5 PM) runs
+   runners (HTTP 403), so when the office PC is off the Myntra zero TD run (every 2 hours, 7 AM - 7 PM) runs
    on GitHub and hands its style lookups to the phone, which checks them on its own mobile line and
    sends the answers back. A foreground service (notification "Ultron Phone: agent on") asks the
    Telegram worker for work every minute (`POST /api/phone/next`, worker/src/worker.js) and answers a

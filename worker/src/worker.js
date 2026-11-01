@@ -149,9 +149,12 @@ const SCHEDULE = [
   { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "myntraotp" },
   { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "myntrareports" },
   { ist: "11:00 AM daily", cron: "30 5 * * *", cmd: "myntraotp", label: "Myntra OTP retry", inputs: { retry: "1" } },
-  // Myntra zero TD: styles live at MRP on www.myntra.com, Monday to Saturday
-  ...[["10:00 AM", 4], ["2:00 PM", 8], ["5:00 PM", 11]].map(([ist, h]) => (
+  // Myntra zero TD: styles live at MRP on www.myntra.com, every 2 hours 7 AM - 7 PM, Monday to Saturday
+  ...[["7:00 AM", 1], ["9:00 AM", 3], ["11:00 AM", 5], ["1:00 PM", 7], ["3:00 PM", 9], ["5:00 PM", 11],
+      ["7:00 PM", 13]].map(([ist, h]) => (
     { ist: `${ist} Mon-Sat`, cron: `30 ${h} * * *`, weekdays: [1, 2, 3, 4, 5, 6], cmd: "myntrazerotd" })),
+  // and one fixed run every day (Sunday too) at 10 AM
+  { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "myntrazerotd", label: "Myntra zero TD 10 AM" },
   { ist: "2:00 PM on the 15th", cron: "30 8 * * *", day: 15, cmd: "returns" },
   { ist: "3:30 PM daily", cron: "0 10 * * *", cmd: "sale" },
   { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "vms" },

@@ -64,6 +64,8 @@ class Config:
     watch_failure_only: frozenset[str]
     watch_steps: int
     watch_tools: tuple[str, ...]
+    watch_retry: frozenset[str]
+    watch_retry_when: tuple[str, ...]
     chat_steps: int
     chat_tools: tuple[str, ...]
     actions: dict[str, Action] = field(default_factory=dict)
@@ -125,6 +127,8 @@ def parse(path: Path) -> Config:
         watch_failure_only=frozenset(watch.get("failure_only", [])),
         watch_steps=int(watch.get("max_steps", 6)),
         watch_tools=tuple(watch.get("tools", [])),
+        watch_retry=frozenset(watch.get("retry", [])),
+        watch_retry_when=tuple(watch.get("retry_when", [])),
         chat_steps=int(chat.get("max_steps", 8)),
         chat_tools=tuple(chat.get("tools", [])),
         actions=actions,

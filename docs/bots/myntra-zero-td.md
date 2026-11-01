@@ -1,6 +1,6 @@
 # Myntra zero TD — `python run.py myntra-zero-td`
 
-**When**: 10 AM, 2 PM and 5 PM IST, Monday to Saturday (`myntra-zero-td.yml`, started by the
+**When**: every 2 hours from 7 AM to 7 PM IST (7, 9, 11 AM, 1, 3, 5, 7 PM), Monday to Saturday, plus one fixed run every day (Sunday too) at 10 AM (`myntra-zero-td.yml`, started by the
 worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: `/myntrazerotd`, the 🏷 Zero TD
 button on the Myntra menu, or run the workflow. About 1-2 minutes for ~5,900 styles.
 

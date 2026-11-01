@@ -68,7 +68,8 @@ def brief(run: dict) -> dict:
     return {"id": run["id"], "workflow": run.get("name"), "status": run.get("status"),
             "conclusion": run.get("conclusion"), "event": run.get("event"),
             "started": run.get("run_started_at"), "minutes": _minutes(run),
-            "commit": (run.get("head_sha") or "")[:7], "url": run.get("html_url")}
+            "commit": (run.get("head_sha") or "")[:7], "url": run.get("html_url"),
+            "attempt": int(run.get("run_attempt") or 1)}
 
 
 def workflows() -> dict[str, str]:
@@ -95,6 +96,17 @@ def dispatch(workflow_file: str, inputs: dict, ref: str = "main") -> None:
                       headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token()}"},
                       json={"ref": ref, "inputs": {k: str(v) for k, v in inputs.items()}})
     if r.status_code != 204:
+        raise RuntimeError(f"GitHub said {r.status_code}: {r.text[:200]}")
+
+
+def rerun_failed(run_id: int) -> None:
+    """Run the failed jobs of a finished run again (same run id, next attempt). Needs a token with
+    Actions: write (agent-watch.yml grants it to its GITHUB_TOKEN)."""
+    if not token():
+        raise RuntimeError("no GitHub token (GITHUB_TOKEN / GH_TOKEN) to rerun a workflow")
+    r = requests.post(f"{api()}/actions/runs/{run_id}/rerun-failed-jobs", timeout=60,
+                      headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token()}"})
+    if r.status_code != 201:
         raise RuntimeError(f"GitHub said {r.status_code}: {r.text[:200]}")
 
 

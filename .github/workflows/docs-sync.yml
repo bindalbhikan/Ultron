@@ -1,0 +1,39 @@
+name: Docs sync
+
+# After every push to main: rewrite the generated blocks of docs/CONTEXT.md and AGENTS.md from the
+# code (scripts/docs/sync_docs.py) and commit them when they changed, so the docs never fall behind
+# whoever (person or agent) pushed. A push made with GITHUB_TOKEN starts no workflow, so this
+# commit does not run it again.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Asia/Kolkata
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Sync the docs
+        run: python scripts/docs/sync_docs.py
+      - name: Commit when changed
+        run: |
+          if git diff --quiet; then echo "docs in step with the code"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Docs sync: generated blocks of CONTEXT.md / AGENTS.md updated from the code"
+          git pull --rebase -q origin main
+          git push
+          echo "### Docs updated" >> "$GITHUB_STEP_SUMMARY"
+          sed -n '/AUTO:gaps -->/,/\/AUTO:gaps/p' AGENTS.md >> "$GITHUB_STEP_SUMMARY"

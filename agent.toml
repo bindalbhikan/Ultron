@@ -50,6 +50,16 @@ skip =["agent-watch.yml", "agent-chat.yml", "tests.yml"]
 failure_only = ["inv-push.yml"]     # runs every 3 hours: looked at only when it failed
 max_steps = 6
 tools = ["ultron.workings.agent_tools"]     # the watcher can check the Myntra logins
+# A failed first attempt of one of these, whose log matches retry_when, is run again once by itself.
+# Not here: ajio-spf (raises tickets), inv-push (runs again in 3 hours), myntra-otp (time-bound).
+retry = ["sale.yml", "vms.yml", "ajio-tat.yml", "flipkart-tat.yml", "myntra-spf.yml", "returns.yml",
+         "ajio-ads.yml", "morning.yml", "sla.yml", "labels.yml", "stock.yml", "evening.yml",
+         "weekly.yml", "deadstock.yml", "listings.yml", "myntra-tat.yml", "mis.yml",
+         "myntra-reports.yml", "myntra-zero-td.yml"]
+retry_when = ['Read timed out', 'ReadTimeout', 'ConnectTimeout', 'ConnectionError', 'Connection reset',
+              'Connection aborted', 'RemoteDisconnected', 'Max retries exceeded',
+              '\b(502|503|504) (Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out)',
+              'Temporary failure in name resolution', 'rateLimitExceeded', 'backendError']
 
 [chat]
 max_steps = 8

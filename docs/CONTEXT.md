@@ -1,26 +1,56 @@
 # Project context — BINDAL EXPORTS report bots
 
-Last updated: 2026-10-18. Owner: Bhikan (GitHub `bindalbhikan`, commit author
+<!-- AUTO:synced -->Last synced with the code: 2026-11-01.<!-- /AUTO:synced -->
+Owner: Bhikan (GitHub `bindalbhikan`, commit author
 `bhikan.serein@gmail.com`). Every bot reports to Telegram **@bindal_exports_bot**.
 
 This folder is the working copy of the GitHub repo **`bindalbhikan/Ultron`** (public since
 2026-10-18). Read next: **`docs/ARCHITECTURE.md`** (how it fits together + the checklist for a new
 working), **`docs/PORTALS.md`** (every outside system, its API and limits), **`docs/bots/<bot>.md`**
-(one page per working). `README.md` is the short user guide.
+(one page per working). `README.md` is the short user guide. Every agent starts with
+**`AGENTS.md`** (rules + how the docs stay up to date).
 
 ## The workings
 
-| Working | Run | What it does | When (IST) | Page |
-|---|---|---|---|---|
-| Sale | `python run.py sale` | OMSGuru + Flipkart FBF + Myntra SJIT into `SALE REPORT.xlsx` | 3:30 PM (7 AM SJIT request) | `docs/bots/sale.md` |
-| VMS | `python run.py vms` | Myntra packing-video check + ERP vs VMS | 5:30 PM | `docs/bots/vms.md` |
-| AJIO TAT | `python run.py ajio-tat` | 10:10 dispatch rule + ERP label print, `AJIO_TAT_MASTER.xlsx` | 5:30 PM | `docs/bots/ajio-tat.md` |
-| Flipkart TAT | `python run.py flipkart-tat` | Flipkart SLA (OMSGuru SLA Date) + Ekart pickup, `AGENT WORK/FLIPKART/FLIPKART_TAT_MASTER.xlsx`; sheet only, no ticket / form | 6 PM | `docs/bots/flipkart-tat.md` |
-| AJIO SPF | `python run.py ajio-spf` | AJIO returns master; SPF tickets + replies | 9 AM master; tickets Wed + Sat | `docs/bots/ajio-spf.md` |
-| Myntra SPF | `python run.py myntra-spf` | Myntra MAIN / DBCC / FMCC returns master, claim aging | 7 AM request, 9 AM master | `docs/bots/myntra-spf.md` |
-| Return analysis | `python run.py returns` | Monthly + yearly sale vs return, 5 portals | 15th: 7 AM request, 2 PM report | `docs/bots/returns.md` |
-| AJIO ads gap | `python run.py ajio-ads` | G4 vs TOT marketing charge (SRM statement) | 3rd 9 AM (5th if missed) | `docs/bots/ajio-ads.md` |
-| Worker + dashboard | `worker/`, `dashboard/` | Telegram commands, scheduler, dashboard | — | `docs/bots/worker-and-dashboard.md` |
+Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bots/` by
+`python scripts/docs/sync_docs.py` (see `AGENTS.md`); do not edit inside the block.
+
+<!-- AUTO:workings -->
+| Bot | Run | What it does | Workflow | When (IST) | Page |
+|---|---|---|---|---|---|
+| agent-chat | `python run.py agent-chat` | Agent chat | `agent-chat.yml` Agent chat | on a plain-text Telegram message from an allowed chat | `docs/bots/agent-chat.md` |
+| agent-watch | `python run.py agent-watch` | Agent watch | `agent-watch.yml` Agent watch | as every bot workflow finishes | `docs/bots/agent-watch.md` |
+| ajio-ads | `python run.py ajio-ads` | AJIO ads / TOT gap | `ajio-ads.yml` AJIO ads TOT gap | 9:00 AM monthly (3rd); 9:00 AM monthly (5th) | `docs/bots/ajio-ads.md` |
+| ajio-spf | `python run.py ajio-spf` | AJIO SPF | `ajio-spf.yml` AJIO SPF run | 9:00 AM weekly (wed, sat); 9:00 AM daily (not wed, sat) | `docs/bots/ajio-spf.md` |
+| ajio-tat | `python run.py ajio-tat` | AJIO dispatch TAT | `ajio-tat.yml` AJIO TAT daily update | 5:30 PM daily | `docs/bots/ajio-tat.md` |
+| deadstock | `python run.py deadstock` | Dead stock report | `deadstock.yml` Dead stock report | 11:00 AM monthly (1st) | `docs/bots/deadstock.md` |
+| evening | `python run.py evening` | Evening summary | `evening.yml` Evening summary | 8:00 PM daily | `docs/bots/evening.md` |
+| flipkart-tat | `python run.py flipkart-tat` | Flipkart TAT | `flipkart-tat.yml` Flipkart TAT daily update | 6:00 PM daily | `docs/bots/flipkart-tat.md` |
+| inv-push | `python run.py inv-push` | OMSGuru inventory push | `inv-push.yml` OMSGuru inventory push | every 3 hours, 6 AM - 3 AM daily (8 times) | `docs/bots/inv-push.md` |
+| labels | `python run.py labels` | Label check | `labels.yml` Label check | 6:00 PM daily | `docs/bots/labels.md` |
+| listings | `python run.py listings` | Listing health | `listings.yml` Listing health | 11:30 AM daily | `docs/bots/listings.md` |
+| mis | `python run.py mis` | Monthly MIS | `mis.yml` Monthly MIS | 11:00 AM monthly (2nd) | `docs/bots/mis.md` |
+| morning | `python run.py morning` | Morning report | `morning.yml` Morning report | 9:30 AM daily | `docs/bots/morning.md` |
+| myntra-history | `python run.py myntra-history` | Myntra order + return history | `myntra-history.yml` Myntra order + return history | by hand only | `docs/bots/myntra-history.md` |
+| myntra-otp | `python run.py myntra-otp` | Myntra courier OTP | `myntra-otp.yml` Myntra courier OTP | 10:00 AM daily; 11:00 AM daily | `docs/bots/myntra-otp.md` |
+| myntra-reports | `python run.py myntra-reports` | Myntra daily reports | `myntra-reports.yml` Myntra daily reports | 10:00 AM daily | `docs/bots/myntra-reports.md` |
+| myntra-spf | `python run.py myntra-spf` | Myntra SPF master | `myntra-spf.yml` Myntra SPF master | 7:00 AM daily; 9:00 AM daily | `docs/bots/myntra-spf.md` |
+| myntra-tat | `python run.py myntra-tat` | Myntra courier scorecard | `myntra-tat.yml` Myntra courier scorecard | 6:30 PM daily | `docs/bots/myntra-tat.md` |
+| myntra-zero-td | `python run.py myntra-zero-td` | Myntra zero TD | `myntra-zero-td.yml` Myntra zero TD | 7:00 AM mon-sat; 9:00 AM mon-sat; 10:00 AM daily; 11:00 AM mon-sat; 1:00 PM mon-sat; 3:00 PM mon-sat; 5:00 PM mon-sat; 7:00 PM mon-sat | `docs/bots/myntra-zero-td.md` |
+| returns | `python run.py returns` | Return analysis (monthly + yearly) | `returns.yml` Return analysis | 7:00 AM monthly (15th); 2:00 PM monthly (15th) | `docs/bots/returns.md` |
+| sale | `python run.py sale` | Daily sale | `sale.yml` Daily sale report | 7:00 AM daily; 3:30 PM daily | `docs/bots/sale.md` |
+| sla | `python run.py sla` | SLA warning | `sla.yml` SLA warning | 12:00 PM daily; 3:00 PM daily | `docs/bots/sla.md` |
+| stock | `python run.py stock` | Stock-out alert | `stock.yml` Stock-out alert | 10:00 AM daily | `docs/bots/stock.md` |
+| vms | `python run.py vms` | Myntra VMS | `vms.yml` Myntra VMS report | 5:30 PM daily | `docs/bots/vms.md` |
+| weekly | `python run.py weekly` | Weekly review | `weekly.yml` Weekly review | 10:15 AM weekly (mon) | `docs/bots/weekly.md` |
+| work-schedule | `python run.py work-schedule` | Agent work schedule | `agent-watch.yml` Agent watch | after every bot run | `docs/bots/work-schedule.md` |
+<!-- /AUTO:workings -->
+
+Gaps the sync found:
+
+<!-- AUTO:gaps -->
+- none: every bot has its page and its workflow is watched
+<!-- /AUTO:gaps -->
 
 ## The agent's folder: Drive `BINDAL EXPORTS/AGENT WORK`
 

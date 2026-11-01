@@ -19,7 +19,14 @@ only when it did not succeed. By hand: run the workflow with a run id. The same 
   happened, the cause, what it affected, the suggested next step, with the run's link.
 * Model unreachable (free allocation used up for the day, model down): a plain alert with the
   run's ERROR lines instead.
-* It changes nothing: no reruns, no fixes (the next steps of docs/plan.md add those, with approval).
+* **Auto-retry** (1 Nov 2026): a failed **first** attempt of a workflow in `[watch] retry`
+  (`agent.toml`) whose ERROR lines match `[watch] retry_when` (read / connect timeout, connection
+  reset or aborted, 502 / 503 / 504, DNS failure, Google rate limit) is run again once (failed
+  jobs only, `rerun-failed-jobs`; `agent-watch.yml` has `actions: write` for it). Telegram gets a
+  short 🔁 message; the second attempt is watched as usual and never retried. Not retried:
+  `ajio-spf` (raises tickets), `inv-push` (runs again in 3 hours), `myntra-otp` (time-bound), any
+  cancelled run, and any other cause (session expired, password, wrong data).
+* Otherwise it changes nothing: code fixes are proposed by `ci-fix.yml` (Claude Code, SPF runs only).
 * The agent is `ultron/` (the same for every seller); this seller's setup is `agent.toml`
   (company, channels, actions, tools). Setup for another seller: `ultron/README.md`.
 * Memory (`ultron.core.memory`, in the dashboard worker's KV): before judging a run it reads the

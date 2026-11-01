@@ -24,7 +24,7 @@
   myntra-tat 6:30 PM Myntra courier pickups   python run.py myntra-tat --help
   mis        monthly MIS and plan           python run.py mis --help
   myntra-reports 10 AM Myntra orders / returns / listings  python run.py myntra-reports --help
-  myntra-zero-td 10 AM / 2 PM / 5 PM styles live at MRP  python run.py myntra-zero-td --help
+  myntra-zero-td every 2 h 7 AM-7 PM + 10 AM daily, styles live at MRP  python run.py myntra-zero-td --help
 """
 import importlib
 import sys

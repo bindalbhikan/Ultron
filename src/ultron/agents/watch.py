@@ -6,8 +6,10 @@ a run that is plainly fine (succeeded, usual duration, no ERROR in its log) is n
 model at all; a run that is not, but cannot be checked by the model (allocation used up, model
 down), still gets a plain alert with its error lines.
 
-Read-only (ultron.tools.runs and the [watch] tools of agent.toml): it explains and suggests,
-it changes nothing.
+Read-only (ultron.tools.runs and the [watch] tools of agent.toml): it explains and suggests.
+The one thing it does by itself: a failed first attempt of a [watch] retry workflow whose log shows
+a known passing cause ([watch] retry_when: portal timeout, 5xx, connection reset) is run again once
+(failed jobs only); the owner hears it on Telegram, and the second attempt is watched as usual.
 """
 from __future__ import annotations
 
@@ -141,6 +143,40 @@ def plain_alert(info: dict, why: list[str], errors: str, reason: str) -> str:
                       f"(Not checked by the AI: {reason[:150]})"])
 
 
+def retry_reason(info: dict, errors: str) -> str:
+    """The known passing failure ([watch] retry_when) a failed first attempt of a [watch] retry
+    workflow ended on; empty = no automatic retry. A second attempt is never retried."""
+    cfg = config.get()
+    if (info["conclusion"] != "failure" or info.get("attempt", 1) > 1
+            or info["workflow_file"] not in cfg.watch_retry):
+        return ""
+    for pattern in cfg.watch_retry_when:
+        m = re.search(pattern, errors, re.I)
+        if m:
+            return m.group(0)[:120]
+    return ""
+
+
+def retry(info: dict, errors: str, no_telegram: bool) -> bool:
+    """Run the failed jobs again once when the run failed on a known passing cause (portal timeout,
+    5xx, connection reset); True when the retry started (the next attempt is watched as usual)."""
+    reason = retry_reason(info, errors)
+    if not reason:
+        return False
+    try:
+        github.rerun_failed(info["id"])
+    except Exception as exc:  # noqa: BLE001 - the run is then checked as usual
+        log.warning("Automatic retry not started: %s", exc)
+        return False
+    log.info("Run %s %s failed on %r: retried once", info["id"], info["workflow"], reason)
+    note_incident(info, f"failed on a passing cause ({reason}); retried automatically")
+    text = (f"🔁 <b>Ultron: {telegram.esc(info['workflow'] or '')}</b>\n\nFailed on a passing cause, "
+            f"started again once:\n<code>{telegram.esc(reason)}</code>\n\n"
+            f"<a href=\"{info['url']}\">run {info['id']}</a>")
+    print(text) if no_telegram else telegram.send(text)
+    return True
+
+
 def run(args) -> int:
     cfg = config.get()
     info = github.run(args.run_id)
@@ -155,6 +191,8 @@ def run(args) -> int:
     except Exception as exc:  # noqa: BLE001 - no encrypted output (cancelled before upload)
         errors, tail = f"(log not readable: {exc})", ""
     why = unusual(info, earlier, errors)
+    if retry(info, errors, args.no_telegram):
+        return 0
     if not why:
         log.info("Run %s %s: plainly fine (no model call)", args.run_id, info["workflow"])
         return 0
