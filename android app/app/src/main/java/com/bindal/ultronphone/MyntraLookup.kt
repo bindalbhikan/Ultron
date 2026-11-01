@@ -76,7 +76,8 @@ class MyntraLookup(private val threads: Int = 6, private val onProgress: (Int, I
         return "no answer"
     }
 
-    /** Only what the bot's check() reads: id, mrp, sellers' names, sizes with their sellers' stock and prices. */
+    /** Only what the bot reads: id, mrp, sellers' names, sizes with their sellers' stock and prices
+     *  (zero TD), and the colour group - baseColour and colours [{styleId, label}] (colour grouping). */
     private fun trim(s: JSONObject): JSONObject {
         val sellers = JSONArray()
         s.optJSONArray("sellers")?.let { arr ->
@@ -102,7 +103,15 @@ class MyntraLookup(private val threads: Int = 6, private val onProgress: (Int, I
                     .put("sizeSellerData", data))
             }
         }
+        val colours = JSONArray()
+        s.optJSONArray("colours")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val c = arr.optJSONObject(i) ?: continue
+                colours.put(JSONObject().put("styleId", c.opt("styleId")).put("label", c.optString("label")))
+            }
+        }
         return JSONObject().put("id", s.opt("id")).put("mrp", s.opt("mrp")).put("sellers", sellers).put("sizes", sizes)
+            .put("baseColour", s.optString("baseColour")).put("colours", colours)
     }
 
     private fun open(url: String) = (URL(url).openConnection() as HttpURLConnection).apply {

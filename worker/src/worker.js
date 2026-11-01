@@ -106,6 +106,8 @@ const COMMANDS = {
              } },
   weekly: { workflow: "weekly.yml", icon: "📅", name: "Weekly review", portal: "reports", minutes: 5,
             examples: ["/weekly"], inputs: none("/weekly") },
+  grouping: { workflow: "myntra-grouping.yml", icon: "🎨", name: "Myntra colour grouping", portal: "myntra", minutes: 20, office: true,
+              examples: ["/grouping"], inputs: none("/grouping") },
   portalreports: { workflow: "portal-reports.yml", icon: "🗂", name: "Portal reports", portal: "reports", minutes: 30,
                  examples: ["/portalreports", "/portalreports 2026-10"], inputs: (args) => {
                    if (args.length === 0) return {};
@@ -179,6 +181,9 @@ const SCHEDULE = [
   { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "portalreports" },
   { ist: "11:30 AM daily", cron: "0 6 * * *", cmd: "listings" },
   { ist: "12:00 PM daily", cron: "30 6 * * *", cmd: "sla" },
+  // Myntra colour grouping, every 3 days (office PC: myntra.com refuses GitHub's runners)
+  ...[1, 4, 7, 10, 13, 16, 19, 22, 25, 28].map((day) => (
+    { ist: `12:00 PM on the ${day}`, cron: "30 6 * * *", day, cmd: "grouping", label: "Myntra colour grouping" })),
   { ist: "3:00 PM daily", cron: "30 9 * * *", cmd: "sla" },
   { ist: "6:00 PM daily", cron: "30 12 * * *", cmd: "labels" },
   { ist: "6:00 PM daily", cron: "30 12 * * *", cmd: "fktat" },

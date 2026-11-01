@@ -25,6 +25,7 @@
   mis        monthly MIS and plan           python run.py mis --help
   myntra-reports 10 AM Myntra orders / returns / listings  python run.py myntra-reports --help
   business-report sale / return / payment analysis per portal  python run.py business-report --help
+  myntra-grouping Myntra colour grouping master + upload templates  python run.py myntra-grouping --help
   portal-reports 2nd: last month's order + payment reports into PORTAL REPORTS  python run.py portal-reports --help
   myntra-zero-td every 2 h 7 AM-7 PM + 10 AM daily, styles live at MRP  python run.py myntra-zero-td --help
 """
@@ -45,6 +46,7 @@ BOTS = {"sale": "ultron.workings.sale.pipeline", "vms": "ultron.workings.vms.pip
         "myntra-zero-td": "ultron.workings.myntra_zero_td.pipeline",
         "portal-reports": "ultron.workings.portal_monthly.pipeline",
         "business-report": "ultron.workings.business_report.pipeline",
+        "myntra-grouping": "ultron.workings.myntra_grouping.pipeline",
         "work-schedule": "ultron.workings.work_schedule.pipeline",
         "myntra-history": "ultron.workings.myntra_history.pipeline"}
 

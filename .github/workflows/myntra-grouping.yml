@@ -1,0 +1,69 @@
+name: Myntra colour grouping
+
+on:
+  # Every 3 days (the 1st, 4th, ... 28th) at 12 PM IST, started by the Telegram worker's cron (SCHEDULE
+  # in worker/src/worker.js), or by hand / /grouping.
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "office = the office PC; cloud = GitHub's runner, myntra.com through Ultron Phone"
+        default: "office"
+      no_upload:
+        description: "1 = test run: Drive not changed"
+        default: ""
+
+concurrency:
+  group: myntra-grouping
+  cancel-in-progress: false
+
+jobs:
+  run:
+    # The office PC (self-hosted runner, label bindal-office): www.myntra.com refuses GitHub's runners
+    # (HTTP 403). runner=cloud (the worker picks it when the office PC's runner is offline): GitHub's
+    # runner, the styles looked up by Ultron Phone (the same website API from a mobile line).
+    runs-on: ${{ inputs.runner == 'cloud' && 'ubuntu-latest' || fromJSON('["self-hosted", "bindal-office"]') }}
+    timeout-minutes: 60
+    env:
+      RUN_MODE: github-actions
+      # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+      ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+      # OMSGuru's inventory export for the INV column
+      OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
+      OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
+      OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
+      # Ultron Phone, through the worker's /api/phone routes
+      DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+      DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+      MYNTRA_GROUPING_VIA: ${{ inputs.runner == 'cloud' && 'phone' || '' }}
+      IN_NO_UPLOAD: ${{ inputs.no_upload }}
+    steps:
+      - uses: actions/checkout@v4
+      - if: inputs.runner == 'cloud'
+        uses: ./.github/actions/setup
+      - if: inputs.runner == 'cloud'      # IST on GitHub's runner (the office PC's clock is IST already)
+        run: echo "TZ=Asia/Kolkata" >> "$GITHUB_ENV"
+      - name: Install Ultron from this checkout
+        if: inputs.runner != 'cloud'
+        shell: bash
+        run: python -m pip install -q -e ".[workings]"
+      - name: Check the colour groups on myntra.com
+        shell: bash
+        run: |
+          set --
+          if [ -n "$IN_NO_UPLOAD" ]; then set -- --no-upload; fi
+          bash scripts/github/ci_run.sh myntra-grouping "$@"
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: myntra-grouping-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 7

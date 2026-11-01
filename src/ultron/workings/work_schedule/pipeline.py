@@ -45,9 +45,11 @@ class Task:
     every: str                        # the DAILY/WEEKLY column
     weekdays: tuple[int, ...] = ()    # Python weekday(): 0 = Monday
     day: int = 0                      # day of the month
+    days: tuple[int, ...] = ()        # days of the month (every few days)
 
     def due(self, d: date) -> bool:
-        return (not self.weekdays or d.weekday() in self.weekdays) and (not self.day or d.day == self.day)
+        return ((not self.weekdays or d.weekday() in self.weekdays) and (not self.day or d.day == self.day)
+                and (not self.days or d.day in self.days))
 
     @property
     def time(self) -> str:
@@ -88,6 +90,7 @@ TASKS = [
     Task("Portal reports", "portal-reports.yml", _at(11), "MONTHLY (2nd)", day=2),
     Task("Listing health", "listings.yml", _at(11, 30), "DAILY"),
     Task("SLA warning", "sla.yml", _at(12), "DAILY"),
+    Task("Myntra colour grouping", "myntra-grouping.yml", _at(12), "EVERY 3 DAYS", days=(1, 4, 7, 10, 13, 16, 19, 22, 25, 28)),
     Task("Return analysis", "returns.yml", _at(14), "MONTHLY (10th)", day=10),
     Task("Return analysis second try", "returns.yml", _at(14), "MONTHLY (15th)", day=15),
     Task("SLA warning", "sla.yml", _at(15), "DAILY"),
@@ -108,7 +111,7 @@ TASKS = [
 PORTAL_OF_WORKFLOW = {
     "ajio-spf.yml": "AJIO", "ajio-ads.yml": "AJIO", "ajio-tat.yml": "AJIO", "flipkart-tat.yml": "FLIPKART",
     "myntra-spf.yml": "MYNTRA", "myntra-otp.yml": "MYNTRA", "myntra-reports.yml": "MYNTRA",
-    "myntra-zero-td.yml": "MYNTRA", "myntra-tat.yml": "MYNTRA", "vms.yml": "MYNTRA", "inv-push.yml": "OMSGURU"}
+    "myntra-zero-td.yml": "MYNTRA", "myntra-tat.yml": "MYNTRA", "myntra-grouping.yml": "MYNTRA", "vms.yml": "MYNTRA", "inv-push.yml": "OMSGURU"}
 PORTAL_OF_TASK = {"SJIT report request": "MYNTRA"}   # portal-reports.yml / returns.yml: ALL CHANNELS
 
 
@@ -139,6 +142,7 @@ WORK = {
     "Myntra SPF master": "Myntra SPF master (MAIN / DBCC / FMCC returns, claims) updated from the portal reports",
     "Myntra SPF report request": "Asks the Myntra portal for the SPF reports (returns, return delivery) for the 9 AM master",
     "Myntra VMS report": "Myntra orders vs VMS packing scans per SLA date, ERP vs VMS sheets in the VMS workbook",
+    "Myntra colour grouping": "Colour groups of the GROUPING SHEET checked on myntra.com in every account; MYNTRA GROUPING MASTER.xlsx and the pending groups' upload files in AGENT WORK/MYNTRA/LISTING GROUPING",
     "Myntra courier OTP": "Today's Myntra courier pickup / return OTPs of the warehouses (Telegram)",
     "Myntra courier OTP retry": "OTPs again for couriers that had no trip at 11 AM (sent only when a new code came)",
     "Myntra courier scorecard": "Myntra pickups on time per account and courier, last 7 days (Telegram)",
