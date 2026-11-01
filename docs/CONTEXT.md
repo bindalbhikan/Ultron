@@ -65,6 +65,11 @@ AGENT WORK/
             MYNTRA ZERO TD SHEETS/, MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../
   AJIO/     Ajio Daily Order Tat Check Working/ (TAT master), Ajio Ads Gap Working/
   DAILY REPORTING/   DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx), VMS/ (the daily reports in one place)
+  PORTAL REPORTS/    <MYNTRA|AJIO|FLIPKART>/<YYYY>/<Mon-YY>/Sale Report <Mon-YY>/, Return Report <Mon-YY>/
+                     every portal's monthly sale + return reports, one calendar month each (1st to last day),
+                     saved by the return analysis on the 15th; the business reporting reads them
+                     (core/portal_reports.py). A file named ... PARTIAL misses days (its source had gaps)
+  BUSINESS REPORTING/ the owner's Myntra sale / return / payment analysis (CONTEXT.md and scripts in it)
 ```
 
 A bot that finds its file by name looks in its portal's folder (`AREA = "MYNTRA"` in the Myntra

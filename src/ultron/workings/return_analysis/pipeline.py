@@ -47,8 +47,9 @@ def _short_error(exc: Exception) -> str:
 
 # ------------------------------------------------------------------ inputs
 
-def fetch_inputs(inputs: Path, sale, ret, parts, notes: list[str], alerts: list[str]) -> None:
-    """Every portal into inputs/, side by side. A failed portal leaves no folder (engine skips it)."""
+def fetch_inputs(inputs: Path, sale, ret, parts, notes: list[str], alerts: list[str]) -> dict[str, list[Path]]:
+    """Every portal into inputs/, side by side. A failed portal leaves no folder (engine skips it).
+    Returns portal -> the files fetched, the sale report first (for PORTAL REPORTS)."""
     from ..portals import myntra as mp
     wait = num("RETURNS_WAIT_MINUTES", 45)
     folders = {f"MYNTRA {a}": inputs / "Myntra" / a for a in MYNTRA_ACCOUNTS}
@@ -59,10 +60,13 @@ def fetch_inputs(inputs: Path, sale, ret, parts, notes: list[str], alerts: list[
     tasks["FLIPKART"] = (sources.fetch_flipkart, (sale, ret, folders["FLIPKART"], wait))
     with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
         futures = {name: pool.submit(fn, *args) for name, (fn, args) in tasks.items()}
+    got = {}
     for name, fut in futures.items():
         folder = folders[name]
         try:
-            log.info("%s inputs: %s", name, fut.result())
+            names = fut.result()
+            log.info("%s inputs: %s", name, names)
+            got[name] = [folder / n for n in names]
         except mp.SessionExpired as exc:
             alerts.append(f"Myntra {name.split()[-1]} session expired ({exc})")
             notes.append(f"{name} left out: session expired")
@@ -71,6 +75,42 @@ def fetch_inputs(inputs: Path, sale, ret, parts, notes: list[str], alerts: list[
             log.exception("%s inputs failed", name)
             notes.append(f"{name} left out: {_short_error(exc)}")
             shutil.rmtree(folder, ignore_errors=True)
+    return got
+
+
+def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -> None:
+    """The downloaded reports into Drive AGENT WORK/PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/, one
+    calendar month each (1st to last day), the business reporting reads them from there:
+    * sale = the first file of each portal (asked for exactly the month);
+    * returns: Myntra's first returns report is the month itself (the second, this month's 1st to
+      14th, is next month's and is not kept); AJIO's RTV downloads and Flipkart's Returns report
+      run to this month's 14th, so only the month's rows are kept (Return Created Date /
+      return_approval_date).
+    A failure is only noted: the analysis goes on."""
+    import tempfile
+    from ..core import portal_reports as pr
+    from .engine import parse_ajio_date
+    tmp = Path(tempfile.mkdtemp(prefix="portal_reports_"))
+    tag = pr.label(month).upper()
+    for name, files in got.items():
+        portal, _, account = name.partition(" ")
+        try:
+            pr.save(portal, month, "sale", files[:1], account)
+            if portal == "MYNTRA":
+                returns = files[1:2]
+            elif portal == "AJIO":
+                cut = pr.month_slice(files[1:], month, ["Return Created Date"], tmp / f"AJIO RTV {tag}.xlsx",
+                                     parse=parse_ajio_date)
+                returns = [cut[0]] if cut else []
+            else:
+                cut = pr.month_slice(files[1:], month, ["return_approval_date", "return_requested_date"],
+                                     tmp / f"FLIPKART RETURNS {tag}.xlsx", sheet="Returns",
+                                     key=["return_id", "order_item_id"])
+                returns = [cut[0]] if cut else []
+            pr.save(portal, month, "return", returns, account)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("%s reports not saved to PORTAL REPORTS", name)
+            notes.append(f"{name} reports not saved to PORTAL REPORTS: {_short_error(exc)}")
 
 
 def drive_inputs(root: DriveFolder, inputs: Path) -> None:
@@ -222,7 +262,9 @@ def run(args) -> int:
         drive_inputs(root, inputs)
         notes.append("inputs taken from the Drive Input folder")
     else:
-        fetch_inputs(inputs, sale, ret, parts, notes, alerts)
+        got = fetch_inputs(inputs, sale, ret, parts, notes, alerts)
+        if not args.no_upload:
+            archive_reports(month, got, notes)
 
     from .engine import build_all
     results, skipped = build_all(str(inputs), str(work / "Supporting"), str(work / "out"))

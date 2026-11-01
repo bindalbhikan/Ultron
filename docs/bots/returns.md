@@ -15,6 +15,15 @@ identical file by file). Portals: Myntra MAIN / DBCC / FMCC, Ajio, Flipkart.
 | Flipkart sales / returns | Tax `Sales Report` + Fulfilment `Returns` |
 | MasterSheet (+ optional Cost Sheet) | Drive `RETURN ANALYSIS/Supporting` |
 
+**PORTAL REPORTS** (1 Nov 2026): the downloaded reports are also kept in Drive `AGENT WORK/PORTAL
+REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/Sale Report <Mon-YY>/` and `Return Report <Mon-YY>/`, one calendar
+month each (`archive_reports`, `core/portal_reports.py`): the sale report as it is; Myntra's first
+returns report (the month itself; the 1st-14th report of this month is next month's); AJIO RTV and
+Flipkart Returns cut to the month's rows (`Return Created Date` / `return_approval_date`, one row
+per return line). Myntra files carry the account (`MAIN <file>`). Back-filled once: Myntra Apr-25 to
+Sep-26 (`myntra-history` files), Flipkart from the owner's files (months with missing days named
+`... PARTIAL`). Not with `--drive-input` or `--no-upload`.
+
 **Output** (Drive `RETURN ANALYSIS`, `RETURN_DRIVE_FOLDER_ID`): `Output/<MON-YY>/`, one report per
 portal + MYNTRA COMBINED + ALL PORTAL; `Template/<PORTAL> <MON-YY> TEMPLATE.csv`; Telegram table +
 ALL PORTAL workbook. A portal that cannot be fetched, or whose Flipkart returns are incomplete, is
