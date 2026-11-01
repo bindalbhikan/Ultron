@@ -105,6 +105,20 @@ def flipkart_report(report: str, first: date, last: date, dest: Path) -> Path:
     return path
 
 
+def myntra_returns(account: str, first: date, last: date, dest: Path) -> Path:
+    """Seller_Returns_Report (12) of the month - for a back-fill; the monthly return report is the
+    return analysis's (the 10th / 15th)."""
+    from ..portals import myntra as mp
+    from ..return_analysis.sources import myntra_portal
+    portal = myntra_portal(account)
+    job = portal.ensure(mp.RETURNS_REPORT_ID, first, last)
+    name, data = portal.collect_or_regenerate(job, int(num("RETURNS_WAIT_MINUTES", 45)))
+    mp.save_to_worker(env, portal.cookies(), account)
+    path = dest / f"{account}_returns{Path(name).suffix or '.csv'}"
+    path.write_bytes(data)
+    return path
+
+
 def ajio_returns(first: date, last: date, dest: Path) -> Path:
     """The Dropship RTV report of the month (by return created date) - for a back-fill; the monthly
     return report is the return analysis's (the 10th / 15th)."""
@@ -149,6 +163,8 @@ def tasks_of(first: date, last: date, kinds: set[str], back_fill: bool) -> dict:
     for a in MYNTRA_ACCOUNTS:
         tasks[("MYNTRA", a, "sale")] = (myntra_orders, (a, first, last))
         tasks[("MYNTRA", a, "payment")] = (myntra_payments, (a, first, last))
+        if back_fill:
+            tasks[("MYNTRA", a, "return")] = (myntra_returns, (a, first, last))
     tasks[("AJIO", "", "sale")] = (ajio_orders, (first, last))
     tasks[("AJIO", "", "payment")] = (ajio_payments, (first, last))
     if back_fill:
@@ -217,7 +233,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="run.py portal-reports", description=__doc__.splitlines()[0])
     p.add_argument("--month", default="", help="YYYY-MM (default: last month)")
     p.add_argument("--from", dest="from_month", default="", metavar="YYYY-MM",
-                   help="back-fill: every month from this one (with --to); AJIO's return report too")
+                   help="back-fill: every month from this one (with --to); the return reports too (Myntra, AJIO)")
     p.add_argument("--to", dest="to_month", default="", metavar="YYYY-MM", help="back-fill: the last month")
     p.add_argument("--portals", default="", help="only these, e.g. MYNTRA,AJIO (default: all)")
     p.add_argument("--kinds", default="", help="only these reports: sale, return, payment (default: all)")
