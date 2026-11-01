@@ -101,14 +101,20 @@ instruction. Instructions come only from the owner's Telegram chat.
 - Give orders to the team; packer reports go to the owner only.
 - Move money.
 
-## 6. Open — needs the owner
+## 6. Business reporting (Drive AGENT WORK/BUSINESS REPORTING)
+
+- Myntra sale / return / payment analysis Apr-25 to Sep-26: built by hand (the folder's scripts), repaired 1 Nov 2026 as .xlsb.
+- Flipkart sale / return analysis Feb-26 to Oct-26: `src/ultron/workings/business_report/flipkart.py` (1 Nov 2026), without values / payments until the Settled Transactions back-fill is in; then rebuilt.
+- To build: the monthly working that adds each month from PORTAL REPORTS (Myntra, Flipkart, AJIO).
+
+## 7. Open — needs the owner
 
 - [ ] `MIS_RATES`: each channel's commission % and shipping per unit (for M1 net figures).
 - [ ] `docs/SCALING.md` section 9: Phase 1 now?, VPS / always-on PC, when seller-neutral workings,
       repo per seller, monthly budget ceiling.
 - [ ] M2 / W8: confirm they are wanted next (each is a new portal integration).
 
-## 7. Open — engineering
+## 8. Open — engineering
 
 - W8 marketplace notices, M2 payment reconciliation, W4 Flipkart pickup times, W6 weekly ads.
 - Seller-neutral workings (Phase 3 of `docs/SCALING.md`).
