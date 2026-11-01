@@ -190,7 +190,10 @@ def pay_months(p: pd.DataFrame, start: pd.Timestamp) -> pd.DataFrame | None:
     t["Forward Logistics"] = f["Logistics_Commission"].sum()
     t["Return Logistics"] = pp[pp.Order_Type == "Reverse"].groupby("M")["Logistics_Commission"].sum()
     t["TCS + TDS"] = f["TAX"].sum()
-    return t.fillna(0)
+    t = t.fillna(0)
+    t["MoM %"] = t["Net Payout"].pct_change()
+    t.iloc[0, t.columns.get_loc("MoM %")] = float("nan")
+    return t
 
 
 def report(raw: pd.DataFrame, p: pd.DataFrame, input_log: pd.DataFrame) -> Report:
@@ -199,7 +202,7 @@ def report(raw: pd.DataFrame, p: pd.DataFrame, input_log: pd.DataFrame) -> Repor
         portal="MYNTRA", raw=raw, raw_cols=RAW_COLS, value=V, settle="NET SETTLEMENT" if have_pay else None,
         money_cols=MONEY,
         pay_table=[("Forward Settled", "FWD SETTLED AMT"), ("Reverse Debit", "REVERSE SETTLED AMT"),
-                   ("SPF / NOD", "SPF / NOD AMT"), ("Commission", "COMMISSION"), ("Forward Logistics", "FWD LOGISTICS"),
-                   ("Return Logistics", "RETURN LOGISTICS FEE"), ("TCS + TDS", "TCS + TDS"),
-                   ("Net Settlement", "NET SETTLEMENT")],
+                   ("SPF / NOD", "SPF / NOD AMT"), ("Net Settlement", "NET SETTLEMENT"), ("Commission", "COMMISSION"),
+                   ("Forward Logistics", "FWD LOGISTICS"), ("Return Logistics", "RETURN LOGISTICS FEE"),
+                   ("TCS + TDS", "TCS + TDS")],
         pay_months=pay_months(p, raw["ORDER MONTH"].min()), input_log=input_log, min_orders=500)

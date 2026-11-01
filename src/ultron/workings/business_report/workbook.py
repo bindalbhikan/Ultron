@@ -332,7 +332,7 @@ class Writer:
             return
         ws = self.wb.add_worksheet("PAYMENT")
         cols = [("Net Qty", "nq")] + ([("Net Value", "nv")] if self.r.value else []) + \
-               [("Settled Qty", "sq"), ("Pending Qty", "pq")] + list(self.r.pay_table)
+               [("Settled Qty", "sq"), ("Pending Qty", "pq")] + ([("Pending Value", "pv")] if self.r.value else []) +                list(self.r.pay_table)
         hs = ["Order Month"] + [h for h, _ in cols] + (["Settlement %"] if self.r.value else [])
         ws.merge_range(0, 0, 0, len(hs) - 1, "PAYMENT AGAINST ORDERS PLACED IN EACH MONTH (BY ORDER MONTH)", self.title)
         for j, h in enumerate(hs):
@@ -360,6 +360,9 @@ class Writer:
                     fm, v[key] = self.sumifs("QTY", crit + self.crit_status("Delivered") + [settled])
                 elif key == "pq":
                     fm, v[key] = f"={cell['nq']}-{cell['sq']}", v["nq"] - v["sq"]
+                elif key == "pv":
+                    sfm, sv = self.sumifs(self.r.value, crit + self.crit_status("Delivered") + [settled])
+                    fm, v[key] = f"={cell['nv']}-{sfm[1:]}", v["nv"] - sv
                 else:
                     fm, v[key] = self.sumifs(key, crit)
                 if not last:
@@ -376,14 +379,21 @@ class Writer:
             for j, h in enumerate(["Payment Month"] + list(pm.columns)):
                 ws.write(r + 1, j, h, self.hdr)
                 ws.set_column(j, j, max(len(h) + 3, 12))
+            pct_cols = [str(c).endswith("%") for c in pm.columns]
             for i, (m, row) in enumerate(pm.iterrows(), start=r + 2):
                 ws.write_datetime(i, 0, pd.Timestamp(m).to_pydatetime(), self.mon)
                 for j, x in enumerate(row.values, start=1):
-                    ws.write_number(i, j, float(x), self.int)
+                    if pct_cols[j - 1] and (x is None or pd.isna(x)):
+                        ws.write_blank(i, j, None, self.pct)
+                    else:
+                        ws.write_number(i, j, float(x), self.pct if pct_cols[j - 1] else self.int)
             end = r + 2 + len(pm)
             ws.write_string(end, 0, "Total", self.ttxt)
             for j in range(1, len(pm.columns) + 1):
-                ws.write_formula(end, j, f"=SUM({self.cell(r + 2, j)}:{self.cell(end - 1, j)})", self.tint, float(pm.iloc[:, j - 1].sum()))
+                if pct_cols[j - 1]:
+                    ws.write_blank(end, j, None, self.tpct)
+                else:
+                    ws.write_formula(end, j, f"=SUM({self.cell(r + 2, j)}:{self.cell(end - 1, j)})", self.tint, float(pm.iloc[:, j - 1].sum()))
         ws.freeze_panes(0, 1)
 
     def input_log(self) -> None:
