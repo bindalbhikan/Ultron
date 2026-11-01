@@ -9,7 +9,8 @@ return analysis, when the month's returns have come in.
     the payments of the month (every payout and its line rows, myntra_spf/payments.py).
   * AJIO: the Dropship order report of the month, and the SRM statement of accounts (the AJIO
     ledger: G4 payments, reversals) of the month.
-  * Flipkart: the report centre's "Sales Report" of the month (no payment report yet).
+  * Flipkart: the report centre's "Orders" report (Fulfilment Reports) and "Settled Transactions"
+    (Payment Reports) of the month.
 
 A part that fails is named on Telegram and the others are saved; a run again replaces the files.
 """
@@ -92,11 +93,14 @@ def ajio_payments(first: date, last: date, dest: Path) -> Path:
     return path
 
 
-def flipkart_orders(first: date, last: date, dest: Path) -> Path:
+def flipkart_report(report: str, first: date, last: date, dest: Path) -> Path:
+    """A report centre report for exactly the month: "Orders" (Fulfilment Reports, the order
+    report the owner downloads by hand) or "Settled Transactions" (Payment Reports: every
+    transaction settled in the range - orders, SPF, TDS, storage, recall)."""
     from ..return_analysis.sources import flipkart_client
     fk = flipkart_client()
-    name, data = fk.report("Sales Report", first, last, int(num("RETURNS_WAIT_MINUTES", 45)))
-    path = dest / f"flipkart_orders{Path(name).suffix or '.xlsx'}"
+    name, data = fk.report(report, first, last, int(num("RETURNS_WAIT_MINUTES", 45)))
+    path = dest / f"flipkart_{report.lower().replace(' ', '_')}{Path(name).suffix or '.xlsx'}"
     path.write_bytes(data)
     return path
 
@@ -114,7 +118,8 @@ def run(args) -> int:
         tasks[("MYNTRA", a, "payment")] = (myntra_payments, (a, first, last))
     tasks[("AJIO", "", "sale")] = (ajio_orders, (first, last))
     tasks[("AJIO", "", "payment")] = (ajio_payments, (first, last))
-    tasks[("FLIPKART", "", "sale")] = (flipkart_orders, (first, last))
+    tasks[("FLIPKART", "", "sale")] = (flipkart_report, ("Orders", first, last))
+    tasks[("FLIPKART", "", "payment")] = (flipkart_report, ("Settled Transactions", first, last))
     only = {p.strip().upper() for p in (args.portals or "").split(",") if p.strip()}
     tasks = {k: v for k, v in tasks.items() if not only or k[0] in only}
     work = Path(tempfile.mkdtemp(prefix="portal_reports_"))
@@ -138,8 +143,6 @@ def run(args) -> int:
              f"<i>{first:%d %b} to {last:%d %b %Y}, Drive AGENT WORK/PORTAL REPORTS</i>", ""]
     lines += [f"✅ {telegram.esc(n)}" for n in saved]
     lines += [f"❌ {telegram.esc(n)}: {telegram.esc(why)}" for n, why in failed]
-    if not only or "FLIPKART" in only:
-        lines.append("<i>Flipkart payment report: not fetched yet</i>")
     if args.no_upload:
         lines.append("<i>test run: Drive not changed</i>")
     text = "\n".join(lines)

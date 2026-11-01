@@ -16,6 +16,8 @@ Raw captures stay in `netcap/` on the owner's PC (git-ignored: they hold cookies
 - `myntra-partner.md` — Myntra partner portal: what each call is for, what it could give us
   (notices, payments, seller rating, pricing), what is read-only and what changes something.
 - `omsguru.md` — OMSGuru web app calls (inventory push, catalogue sync).
+- `flipkart-seller.md` — Flipkart Seller Hub: every report centre report (Orders, Returns, Sales,
+  Settled Transactions, Profit and Loss ...), payments pages, seller tier (W8).
 - `api/<host>.md` — generated catalogues: every call seen on that host (method, path, query,
   body and answer field names, the page it came from, whether the code uses it yet).
 

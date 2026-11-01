@@ -32,7 +32,7 @@ SKIP = re.compile(r"socket\.io|google|gstatic|doubleclick|facebook|clarity|hotja
                   r"nr-data|analytics|beacon|/collect|telemetry|mixpanel|segment|delighted|"
                   r"blob\.core\.windows\.net|amazonaws\.com|\.(js|css|png|jpe?g|gif|svg|woff2?|ico|map)(\?|$)",
                   re.I)
-ID = re.compile(r"/(\d{3,}|[0-9a-f]{8,}(?:-[0-9a-f]{4,})*|[A-Za-z0-9_]*\d[A-Za-z0-9_]{9,})(?=/|$)")
+ID = re.compile(r"/(\d{3,}|[0-9a-f]{8}-[0-9a-f-]{20,}[^/]*|[0-9a-f]{8,}(?:-[0-9a-f]{4,})*|[A-Za-z0-9_]*\d[A-Za-z0-9_]{9,})(?=/|$)")
 START, END = "<!-- AUTO:catalogue -->", "<!-- /AUTO:catalogue -->"
 
 

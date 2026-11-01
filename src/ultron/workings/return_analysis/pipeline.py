@@ -96,7 +96,8 @@ def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -
     for name, files in got.items():
         portal, _, account = name.partition(" ")
         try:
-            pr.save(portal, month, "sale", files[0] if files else None, account, keep_existing=True)
+            if portal != "FLIPKART":   # its sale file here is the Tax Sales Report, not the Orders report
+                pr.save(portal, month, "sale", files[0] if files else None, account, keep_existing=True)
             if portal == "MYNTRA":
                 ret = files[1] if len(files) > 1 else None
             elif portal == "AJIO":
