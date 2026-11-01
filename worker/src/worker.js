@@ -106,10 +106,10 @@ const COMMANDS = {
              } },
   weekly: { workflow: "weekly.yml", icon: "📅", name: "Weekly review", portal: "reports", minutes: 5,
             examples: ["/weekly"], inputs: none("/weekly") },
-  portalsales: { workflow: "portal-sales.yml", icon: "🗂", name: "Portal sale reports", portal: "reports", minutes: 30,
-                 examples: ["/portalsales", "/portalsales 2026-10"], inputs: (args) => {
+  portalreports: { workflow: "portal-reports.yml", icon: "🗂", name: "Portal reports", portal: "reports", minutes: 30,
+                 examples: ["/portalreports", "/portalreports 2026-10"], inputs: (args) => {
                    if (args.length === 0) return {};
-                   return /^\d{4}-\d{2}$/.test(args[0]) ? { month: args[0] } : "Use /portalsales or /portalsales YYYY-MM";
+                   return /^\d{4}-\d{2}$/.test(args[0]) ? { month: args[0] } : "Use /portalreports or /portalreports YYYY-MM";
                  } },
   mis: { workflow: "mis.yml", icon: "📆", name: "Monthly MIS", portal: "reports", minutes: 6,
          examples: ["/mis", "/mis 2026-10-02"], inputs: oneDate("day", "/mis or /mis YYYY-MM-DD") },
@@ -174,8 +174,9 @@ const SCHEDULE = [
   { ist: "10:15 AM Monday", cron: "45 4 * * *", weekdays: [1], cmd: "weekly" },
   { ist: "11:00 AM on the 1st", cron: "30 5 * * *", day: 1, cmd: "deadstock" },
   { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "mis" },
-  // last month's sale reports of every portal into Drive AGENT WORK/PORTAL REPORTS (returns: the 15th)
-  { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "portalsales" },
+  // last month's order + payment reports of every portal into Drive AGENT WORK/PORTAL REPORTS
+  // (return reports: the return analysis on the 10th / 15th)
+  { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "portalreports" },
   { ist: "11:30 AM daily", cron: "0 6 * * *", cmd: "listings" },
   { ist: "12:00 PM daily", cron: "30 6 * * *", cmd: "sla" },
   { ist: "3:00 PM daily", cron: "30 9 * * *", cmd: "sla" },

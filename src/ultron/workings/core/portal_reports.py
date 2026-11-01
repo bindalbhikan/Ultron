@@ -1,74 +1,97 @@
-"""The portals' monthly sale and return reports, kept on Drive for every later working:
+"""The portals' monthly reports, kept on Drive for every later working:
 
-    AGENT WORK/PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/Sale Report <Mon-YY>/
-                                                     /Return Report <Mon-YY>/
+    AGENT WORK/PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/<PORTAL> [<ACCOUNT>] <KIND> REPORT <MON-YY>[ PARTIAL].<ext>
 
-(e.g. AJIO/2026/Oct-26/Sale Report Oct-26/). The return analysis saves what it downloads on the 15th
-(Myntra orders + returns of every account, AJIO orders + RTV, Flipkart Sales Report + Returns), and
-the business reporting reads them from here: a report is downloaded once. A Myntra file is named
-after its account ("MAIN <file>"); a file already there is replaced (a run again the same month).
+e.g. AJIO/2026/Oct-26/AJIO ORDER REPORT OCT-26.xlsx, MYNTRA/2026/Oct-26/MYNTRA MAIN RETURN REPORT
+OCT-26.csv. No sub folders: the name says what a file is (ORDER / RETURN / PAYMENT REPORT, owner's
+rule 1 Nov 2026). Every file holds one calendar month, 1st to last day; PARTIAL = days are missing
+(its source had gaps). Saved by portal-reports on the 2nd (order + payment reports) and the return
+analysis on the 10th / 15th (return reports); read by the business reporting, so a report is
+downloaded once. A file of the same name is replaced (a run again).
 """
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import tempfile
 from datetime import date
 from pathlib import Path
 
 from .config import env
-from .drive import DriveFolder
+from .drive import API, DriveFolder
 
 log = logging.getLogger("bindal.portal_reports")
 
 AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 ROOT = "PORTAL REPORTS"
-KINDS = {"sale": "Sale Report", "return": "Return Report"}
+KINDS = {"sale": "ORDER REPORT", "return": "RETURN REPORT", "payment": "PAYMENT REPORT"}
 
 
 def label(month: date) -> str:
-    return f"{month:%b-%y}"          # Oct-26
+    return f"{month:%b-%y}"          # Oct-26 (the folder)
 
 
-def month_folder(portal: str, month: date, kind: str, create: bool = False) -> DriveFolder | None:
-    """PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/<Sale|Return> Report <Mon-YY>/ on Drive."""
+def file_name(portal: str, month: date, kind: str, account: str = "", ext: str = ".xlsx",
+              partial: bool = False) -> str:
+    parts = [portal.upper(), account.upper(), KINDS[kind], label(month).upper()] + (["PARTIAL"] if partial else [])
+    return " ".join(p for p in parts if p) + ext
+
+
+def month_folder(portal: str, month: date, create: bool = False) -> DriveFolder | None:
+    """PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/ on Drive."""
     folder = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK))
-    for name in (ROOT, portal.upper(), f"{month:%Y}", label(month), f"{KINDS[kind]} {label(month)}"):
+    for name in (ROOT, portal.upper(), f"{month:%Y}", label(month)):
         folder = folder.subfolder(name, create=create)
         if folder is None:
             return None
     return folder
 
 
-def save(portal: str, month: date, kind: str, files: list[Path], prefix: str = "",
-         keep_existing: bool = False, replace_old: bool = False) -> list[str]:
-    """Upload files into the month's folder (names prefixed, e.g. the Myntra account); names saved.
-    keep_existing: nothing is uploaded when the folder already holds a file (of that prefix).
-    replace_old: the folder's other files of that prefix go to the Drive trash (a newer report of
-    the month replaces an older one under another name)."""
-    if not files:
-        return []
-    folder = month_folder(portal, month, kind, create=True)
-    if keep_existing and any(n.startswith(prefix) for n in folder.children() if n != "desktop.ini"):
-        log.info("PORTAL REPORTS/%s %s %s %s: already there, kept", portal.upper(), label(month), KINDS[kind], prefix)
-        return []
-    saved = []
+def _trash(folder: DriveFolder, file_id: str, name: str) -> None:
+    r = folder.http.patch(f"{API}/{file_id}", params={"supportsAllDrives": "true"}, json={"trashed": True}, timeout=60)
+    folder._check(r, f"trash of {name}")
+    log.info("PORTAL REPORTS: %s moved to the trash", name)
+
+
+def save(portal: str, month: date, kind: str, file: Path | None, account: str = "",
+         keep_existing: bool = False, partial: bool = False) -> str:
+    """Upload file as the month's <kind> report (of the account); the name saved, "" when nothing
+    was. keep_existing: kept as it is when the month already has that report. The other version
+    (PARTIAL or not) of the same report goes to the Drive trash."""
+    if file is None:
+        return ""
+    name = file_name(portal, month, kind, account, file.suffix.lower() or ".xlsx", partial)
+    folder = month_folder(portal, month, create=True)
+    base = file_name(portal, month, kind, account, "")
+    have = {n: m for n, m in folder.children().items() if n.startswith(base)}
+    if keep_existing and have:
+        log.info("PORTAL REPORTS/%s %s: %s already there, kept", portal.upper(), label(month), next(iter(have)))
+        return ""
     with tempfile.TemporaryDirectory() as tmp:
-        for f in files:
-            name = f"{prefix} {f.name}" if prefix and not f.name.startswith(prefix + " ") else f.name
-            src = f if name == f.name else Path(shutil.copy2(f, Path(tmp) / name))
-            folder.put(src, "application/octet-stream")
-            saved.append(name)
-    if replace_old:
-        from .drive import API
-        for n, meta in folder.children().items():
-            if n.startswith(prefix) and n not in saved and n != "desktop.ini":
-                r = folder.http.patch(f"{API}/{meta['id']}", params={"supportsAllDrives": "true"},
-                                      json={"trashed": True}, timeout=60)
-                folder._check(r, f"trash of {n}")
-                log.info("PORTAL REPORTS: older %s moved to the trash", n)
-    log.info("PORTAL REPORTS/%s %s %s: %d file(s)", portal.upper(), label(month), KINDS[kind], len(saved))
-    return saved
+        src = file if file.name == name else Path(shutil.copy2(file, Path(tmp) / name))
+        folder.put(src, "application/octet-stream")
+    for n, meta in have.items():
+        if n != name:
+            _trash(folder, meta["id"], n)
+    log.info("PORTAL REPORTS/%s/%s: %s", portal.upper(), label(month), name)
+    return name
+
+
+def load(portal: str, month: date, kind: str, dest: Path, account: str = "") -> list[Path]:
+    """The month's <kind> report files (every account's when account is empty) into dest."""
+    folder = month_folder(portal, month)
+    if not folder:
+        return []
+    pat = re.compile(rf"^{re.escape(portal.upper())} (\w+ )?{KINDS[kind]} {label(month).upper()}( PARTIAL)?\.")
+    out = []
+    for n in folder.children():
+        m = pat.match(n)
+        if m and (not account or (m.group(1) or "").strip() == account.upper()):
+            p = folder.download(n, dest / n)
+            if p:
+                out.append(p)
+    return out
 
 
 def month_slice(files: list[Path], month: date, date_cols: list[str], out: Path, sheet: str | None = None,
@@ -103,9 +126,3 @@ def month_slice(files: list[Path], month: date, date_cols: list[str], out: Path,
     with pd.ExcelWriter(out) as xw:
         df.to_excel(xw, sheet_name=sheet or "Sheet1", index=False)
     return out, len(df)
-
-
-def load(portal: str, month: date, kind: str, dest: Path) -> list[Path]:
-    """Every file of the month's folder into dest (empty when nothing was saved for that month)."""
-    folder = month_folder(portal, month, kind)
-    return folder.download_all(dest) if folder else []

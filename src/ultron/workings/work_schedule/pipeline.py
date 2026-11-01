@@ -85,7 +85,7 @@ TASKS = [
     Task("Myntra courier OTP retry", "myntra-otp.yml", _at(11, 45), "DAILY"),
     Task("Dead stock report", "deadstock.yml", _at(11), "MONTHLY (1st)", day=1),
     Task("Monthly MIS", "mis.yml", _at(11), "MONTHLY (2nd)", day=2),
-    Task("Portal sale reports", "portal-sales.yml", _at(11), "MONTHLY (2nd)", day=2),
+    Task("Portal reports", "portal-reports.yml", _at(11), "MONTHLY (2nd)", day=2),
     Task("Listing health", "listings.yml", _at(11, 30), "DAILY"),
     Task("SLA warning", "sla.yml", _at(12), "DAILY"),
     Task("Return analysis", "returns.yml", _at(14), "MONTHLY (10th)", day=10),
@@ -109,7 +109,7 @@ PORTAL_OF_WORKFLOW = {
     "ajio-spf.yml": "AJIO", "ajio-ads.yml": "AJIO", "ajio-tat.yml": "AJIO", "flipkart-tat.yml": "FLIPKART",
     "myntra-spf.yml": "MYNTRA", "myntra-otp.yml": "MYNTRA", "myntra-reports.yml": "MYNTRA",
     "myntra-zero-td.yml": "MYNTRA", "myntra-tat.yml": "MYNTRA", "vms.yml": "MYNTRA", "inv-push.yml": "OMSGURU"}
-PORTAL_OF_TASK = {"SJIT report request": "MYNTRA"}   # portal-sales.yml / returns.yml: ALL CHANNELS
+PORTAL_OF_TASK = {"SJIT report request": "MYNTRA"}   # portal-reports.yml / returns.yml: ALL CHANNELS
 
 
 def portal(t: Task) -> str:
@@ -133,7 +133,7 @@ WORK = {
     "Evening summary": "Today's sale so far vs last week, orders still not ready to ship, today's bot runs (Telegram)",
     "Label check": "ERP label prints checked vs OMSGuru: labels printed for cancelled orders, missing prints (Telegram)",
     "Listing health": "Stock not reaching a channel, or listed more than in stock (Telegram)",
-    "Portal sale reports": "Last month's sale reports (Myntra x3, AJIO, Flipkart), 1st to last day, saved in AGENT WORK/PORTAL REPORTS",
+    "Portal reports": "Last month's order reports (Myntra x3, AJIO, Flipkart) and payment reports (Myntra x3, AJIO), 1st to last day, saved in AGENT WORK/PORTAL REPORTS",
     "Monthly MIS": "Last month vs the month before per channel: order value, units, cancel % (Telegram)",
     "Morning report": "Yesterday's sale in units per channel vs the same day last week, cancels (Telegram)",
     "Myntra SPF master": "Myntra SPF master (MAIN / DBCC / FMCC returns, claims) updated from the portal reports",

@@ -20,14 +20,12 @@ identical file by file). Portals: Myntra MAIN / DBCC / FMCC, Ajio, Flipkart.
 | MasterSheet (+ optional Cost Sheet) | Drive `RETURN ANALYSIS/Supporting` |
 
 **PORTAL REPORTS** (1 Nov 2026): the downloaded reports are also kept in Drive `AGENT WORK/PORTAL
-REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/Sale Report <Mon-YY>/` and `Return Report <Mon-YY>/`, one calendar
-month each (`archive_reports`, `core/portal_reports.py`): the sale report only when the 2nd's
-`portal-sales` run did not save it; Myntra's first
-returns report (the month itself; the 1st-14th report of this month is next month's); AJIO RTV and
-Flipkart Returns cut to the month's rows (`Return Created Date` / `return_approval_date`, one row
-per return line); the 15th's return files replace the 10th's. Myntra files carry the account (`MAIN <file>`). Back-filled once: Myntra Apr-25 to
-Sep-26 (`myntra-history` files), Flipkart from the owner's files (months with missing days named
-`... PARTIAL`). Not with `--drive-input` or `--no-upload`.
+REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/` as `<PORTAL> [<ACCOUNT>] ORDER REPORT <MON-YY>` and `... RETURN
+REPORT <MON-YY>`, one calendar month each (`archive_reports`, `core/portal_reports.py`): the order
+report only when the 2nd's `portal-reports` run did not save it; the return report = Myntra's first
+returns report (the month itself), AJIO RTV and Flipkart Returns cut to the month's rows (`Return
+Created Date` / `return_approval_date`, one row per return line). The 15th's return reports replace
+the 10th's. Not with `--drive-input` or `--no-upload`. See `docs/bots/portal-reports.md`.
 
 **Output** (Drive `RETURN ANALYSIS`, `RETURN_DRIVE_FOLDER_ID`): `Output/<MON-YY>/`, one report per
 portal + MYNTRA COMBINED + ALL PORTAL; `Template/<PORTAL> <MON-YY> TEMPLATE.csv`; Telegram table +

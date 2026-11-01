@@ -79,36 +79,35 @@ def fetch_inputs(inputs: Path, sale, ret, parts, notes: list[str], alerts: list[
 
 
 def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -> None:
-    """The downloaded reports into Drive AGENT WORK/PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/, one
-    calendar month each (1st to last day), the business reporting reads them from there:
-    * sale = the first file of each portal (asked for exactly the month), only when the 2nd's run
-      (portal-sales) did not save it already;
-    * returns (the 10th, then the 15th's fresh reports replace them): Myntra's first returns report is the month itself (the second, this month's 1st to
-      14th, is next month's and is not kept); AJIO's RTV downloads and Flipkart's Returns report
-      run to this month's 14th, so only the month's rows are kept (Return Created Date /
-      return_approval_date).
+    """The downloaded reports into Drive AGENT WORK/PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/ as
+    "<PORTAL> [<ACCOUNT>] ORDER / RETURN REPORT <MON-YY>", one calendar month each (1st to last
+    day); the business reporting reads them from there:
+    * order report = the first file of each portal (asked for exactly the month), only when the
+      2nd's run (portal-reports) did not save it already;
+    * return report (the 10th, replaced by the 15th's fresh reports): Myntra's first returns report
+      is the month itself (the second, this month's 1st to the day before, is next month's and is not
+      kept); AJIO's RTV downloads and Flipkart's Returns report run into this month, so only the
+      month's rows are kept (Return Created Date / return_approval_date).
     A failure is only noted: the analysis goes on."""
     import tempfile
     from ..core import portal_reports as pr
     from .engine import parse_ajio_date
     tmp = Path(tempfile.mkdtemp(prefix="portal_reports_"))
-    tag = pr.label(month).upper()
     for name, files in got.items():
         portal, _, account = name.partition(" ")
         try:
-            pr.save(portal, month, "sale", files[:1], account, keep_existing=True)   # the 2nd's report stays
+            pr.save(portal, month, "sale", files[0] if files else None, account, keep_existing=True)
             if portal == "MYNTRA":
-                returns = files[1:2]
+                ret = files[1] if len(files) > 1 else None
             elif portal == "AJIO":
-                cut = pr.month_slice(files[1:], month, ["Return Created Date"], tmp / f"AJIO RTV {tag}.xlsx",
+                cut = pr.month_slice(files[1:], month, ["Return Created Date"], tmp / "ajio_rtv.xlsx",
                                      parse=parse_ajio_date)
-                returns = [cut[0]] if cut else []
+                ret = cut[0] if cut else None
             else:
                 cut = pr.month_slice(files[1:], month, ["return_approval_date", "return_requested_date"],
-                                     tmp / f"FLIPKART RETURNS {tag}.xlsx", sheet="Returns",
-                                     key=["return_id", "order_item_id"])
-                returns = [cut[0]] if cut else []
-            pr.save(portal, month, "return", returns, account, replace_old=True)   # the 15th replaces the 10th's
+                                     tmp / "flipkart_returns.xlsx", sheet="Returns", key=["return_id", "order_item_id"])
+                ret = cut[0] if cut else None
+            pr.save(portal, month, "return", ret, account)
         except Exception as exc:  # noqa: BLE001
             log.exception("%s reports not saved to PORTAL REPORTS", name)
             notes.append(f"{name} reports not saved to PORTAL REPORTS: {_short_error(exc)}")

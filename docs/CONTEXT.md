@@ -37,7 +37,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 | myntra-spf | `python run.py myntra-spf` | Myntra SPF master | `myntra-spf.yml` Myntra SPF master | 7:00 AM daily; 9:00 AM daily | `docs/bots/myntra-spf.md` |
 | myntra-tat | `python run.py myntra-tat` | Myntra courier scorecard | `myntra-tat.yml` Myntra courier scorecard | 6:30 PM daily | `docs/bots/myntra-tat.md` |
 | myntra-zero-td | `python run.py myntra-zero-td` | Myntra zero TD | `myntra-zero-td.yml` Myntra zero TD | 7:00 AM mon-sat; 9:00 AM mon-sat; 10:00 AM daily; 11:00 AM mon-sat; 1:00 PM mon-sat; 3:00 PM mon-sat; 5:00 PM mon-sat; 7:00 PM mon-sat | `docs/bots/myntra-zero-td.md` |
-| portal-sales | `python run.py portal-sales` | Portal sale reports | `portal-sales.yml` Portal sale reports | 11:00 AM monthly (2nd) | `docs/bots/portal-sales.md` |
+| portal-reports | `python run.py portal-reports` | Portal reports | `portal-reports.yml` Portal reports | 11:00 AM monthly (2nd) | `docs/bots/portal-reports.md` |
 | returns | `python run.py returns` | Return analysis (monthly + yearly) | `returns.yml` Return analysis | 7:00 AM monthly (15th); 7:00 AM monthly (10th); 2:00 PM monthly (10th); 2:00 PM monthly (15th) | `docs/bots/returns.md` |
 | sale | `python run.py sale` | Daily sale | `sale.yml` Daily sale report | 7:00 AM daily; 3:30 PM daily | `docs/bots/sale.md` |
 | sla | `python run.py sla` | SLA warning | `sla.yml` SLA warning | 12:00 PM daily; 3:00 PM daily | `docs/bots/sla.md` |
@@ -66,11 +66,11 @@ AGENT WORK/
             MYNTRA ZERO TD SHEETS/, MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../
   AJIO/     Ajio Daily Order Tat Check Working/ (TAT master), Ajio Ads Gap Working/
   DAILY REPORTING/   DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx), VMS/ (the daily reports in one place)
-  PORTAL REPORTS/    <MYNTRA|AJIO|FLIPKART>/<YYYY>/<Mon-YY>/Sale Report <Mon-YY>/, Return Report <Mon-YY>/
-                     every portal's monthly sale + return reports, one calendar month each (1st to last day),
-                     sale reports on the 2nd (portal-sales), return reports by the return analysis on the
-                     10th (replaced by the 15th's fresh second try); the business reporting reads them
-                     (core/portal_reports.py). A file named ... PARTIAL misses days (its source had gaps)
+  PORTAL REPORTS/    <MYNTRA|AJIO|FLIPKART>/<YYYY>/<Mon-YY>/<PORTAL> [<ACCOUNT>] ORDER|RETURN|PAYMENT REPORT <MON-YY>
+                     every portal's monthly reports, one calendar month each, no sub folders (the name says
+                     what it is; PARTIAL = days missing): order + payment reports on the 2nd (portal-reports),
+                     return reports by the return analysis on the 10th (replaced by the 15th's fresh second
+                     try); the business reporting reads them (core/portal_reports.py)
   BUSINESS REPORTING/ the owner's Myntra sale / return / payment analysis (CONTEXT.md and scripts in it)
 ```
 
