@@ -114,17 +114,28 @@ class FlipkartClient:
             raise FlipkartError(f"Flipkart report centre {path.split('?')[0]}: HTTP {r.status_code} {r.text[:200]}")
         return r
 
-    def report_requests(self, pages: int = 3) -> list[dict]:
-        """The report centre's one-time report requests, newest first."""
+    # the report centre's groups (reportCategories); "Analytics Report" holds the DBD breach reports
+    REPORT_GROUPS = ("Fulfilment Reports", "Tax Reports", "Payment Reports", "Invoices", "Analytics Report")
+
+    def report_requests(self, pages: int = 3, name: str | None = None) -> list[dict]:
+        """The report centre's one-time report requests, newest first. Since 1 Nov 2026 the list of
+        every group together answers HTTP 500, so it is read group by group; a group whose list
+        fails is left out (logged)."""
         out = []
-        for page in range(1, pages + 1):
-            data = self._report_api("POST", "report/getReportsV2", json={
-                "reportGroup": None, "reportName": None, "enable": True, "status": None,
-                "page_size": 50, "starting_page": page}).json()
-            out += data.get("report_requests") or []
-            if not data.get("has_more"):
-                break
-        return out
+        for group in self.REPORT_GROUPS:
+            for page in range(1, pages + 1):
+                try:
+                    data = self._report_api("POST", "report/getReportsV2", json={
+                        "reportGroup": group, "reportName": name, "enable": True, "status": None,
+                        "page_size": 50, "starting_page": page}).json()
+                except FlipkartError as exc:
+                    log.warning("Flipkart report list of %s not read: %s", group, str(exc)[:120])
+                    break
+                out += data.get("report_requests") or []
+                if not data.get("has_more"):
+                    break
+        once = {q.get("request_id"): q for q in out}               # a request can come in more than one group
+        return sorted(once.values(), key=lambda q: q.get("created_at") or 0, reverse=True)
 
     @staticmethod
     def _dates(req: dict) -> list[str]:
@@ -135,7 +146,7 @@ class FlipkartClient:
         start..end: a finished or running request for the same dates is reused (unless fresh),
         else one is submitted."""
         want = [f"{start}", f"{end}"]
-        req = None if fresh else next((q for q in self.report_requests() if q.get("report_name") == name
+        req = None if fresh else next((q for q in self.report_requests(name=name) if q.get("report_name") == name
                                        and self._dates(q) == want and q.get("status") not in ("FAILED", "ERROR")),
                                       None)
         if req:
@@ -165,8 +176,8 @@ class FlipkartClient:
         deadline = time.time() + wait_minutes * 60
         while True:
             # an old request can sit beyond the first page of the list
-            req = next((q for q in self.report_requests(1) if q.get("request_id") == rid), None) or \
-                next((q for q in self.report_requests() if q.get("request_id") == rid), req)
+            req = next((q for q in self.report_requests(1, name=name) if q.get("request_id") == rid), None) or \
+                next((q for q in self.report_requests(name=name) if q.get("request_id") == rid), req)
             status = (req or {}).get("status")
             if status == "FILE_STORED":
                 break
