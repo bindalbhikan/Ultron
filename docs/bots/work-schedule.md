@@ -1,8 +1,10 @@
 # Agent work schedule — `python run.py work-schedule`
 
 **When**: after every bot run (the `schedule` job of `agent-watch.yml`, `workflow_run` on the bot
-workflows; not after the inventory push, whose runs the next update counts). By hand: run Agent
-watch with an empty `run_id` (`month` = YYYY-MM rebuilds that month).
+workflows; not after the inventory push, whose runs the next update counts), and on every push to
+main that changes the tasks (the work schedule's `TASKS` / `WORK`, the worker's `SCHEDULE`, `run.py`
+or a workflow), so a new tool or a new run time is on the sheet at once. By hand: run Agent watch
+with an empty `run_id` (`month` = YYYY-MM rebuilds that month).
 
 * Drive `BINDAL EXPORTS/AGENT WORK/AGENT REPORT WORK SCHEDULE REPORT.xlsx`:
   * **SCHEDULE**: every scheduled task A to Z, SR / TASK NAME / TIME / DAILY/WEEKLY / WORK (what it

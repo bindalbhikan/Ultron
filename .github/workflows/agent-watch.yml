@@ -17,6 +17,15 @@ on:
                 "Myntra courier scorecard", "Monthly MIS", "Myntra courier OTP", "Myntra daily reports",
                 "Myntra zero TD"]
     types: [completed]
+  # A new task, a changed run time or a new working: the sheet is rebuilt as soon as it reaches main
+  # (TASKS / WORK in the work schedule, the worker's SCHEDULE, run.py, a workflow).
+  push:
+    branches: [main]
+    paths:
+      - "src/ultron/workings/work_schedule/**"
+      - "worker/src/worker.js"
+      - "run.py"
+      - ".github/workflows/**"
   workflow_dispatch:
     inputs:
       run_id:
@@ -71,6 +80,7 @@ jobs:
 
   schedule:
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' && inputs.run_id == '' ||
       github.event_name == 'workflow_run' && github.event.workflow_run.name != 'OMSGuru inventory push'
     runs-on: ubuntu-latest

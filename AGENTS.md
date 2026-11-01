@@ -41,7 +41,7 @@ The owner must never have to check the docs by hand. Every change you make inclu
 | You changed | Update |
 |---|---|
 | a working's behaviour, inputs, outputs, sheet columns | its `docs/bots/<bot>.md` |
-| a run time | `worker/src/worker.js` `SCHEDULE` (+ `worker/wrangler.toml` triggers), `TASKS` / `WORK` in `src/ultron/workings/work_schedule/pipeline.py`, the page's `**When**:` line, the `run.py` docstring |
+| a run time (the Drive reporting sheet rebuilds itself on push) | `worker/src/worker.js` `SCHEDULE` (+ `worker/wrangler.toml` triggers), `TASKS` / `WORK` in `src/ultron/workings/work_schedule/pipeline.py`, the page's `**When**:` line, the `run.py` docstring |
 | a new working | everything in the `docs/ARCHITECTURE.md` checklist (page, `run.py`, workflow, `agent-watch.yml` list, `TASKS`, `SCHEDULE`, dashboard tab) |
 | a portal / API fact | `docs/PORTALS.md` (a working uses it) or `docs/knowledge/<portal>.md` (not used yet) |
 | a new browser capture in `netcap/` | `python scripts/knowledge/learn_netcap.py`, then what the new calls are for in `docs/knowledge/<portal>.md` |
