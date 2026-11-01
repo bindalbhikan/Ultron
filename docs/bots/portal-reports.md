@@ -2,7 +2,10 @@
 
 **When**: the 2nd of every month, 11 AM IST (`portal-reports.yml`, started by the worker's cron,
 `SCHEDULE` in `worker/src/worker.js`). By hand: `/portalreports [YYYY-MM]` or run the workflow
-(inputs `month`, `portals` e.g. `MYNTRA,AJIO`, `no_upload`).
+(inputs `month`, `portals` e.g. `MYNTRA,AJIO`, `kinds` e.g. `payment`, `no_upload`).
+**Back-fill**: inputs `from` / `to` (YYYY-MM): every month in between, one after the other, AJIO's
+return report (Dropship RTV of the month) too; a report with no rows (the portal no longer keeps
+that month) is not saved and is listed as "no data".
 
 * Last month's reports, 1st to last day, into Drive `AGENT WORK/PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/`
   (`core/portal_reports.py`). No sub folders: the file name says what it is (owner's rule, 1 Nov 2026):

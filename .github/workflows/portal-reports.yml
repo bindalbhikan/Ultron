@@ -9,6 +9,15 @@ on:
       month:
         description: "Month (YYYY-MM), empty = last month"
         default: ""
+      from:
+        description: "Back-fill: first month (YYYY-MM), with to; AJIO's return report too"
+        default: ""
+      to:
+        description: "Back-fill: last month (YYYY-MM)"
+        default: ""
+      kinds:
+        description: "Only these reports: sale, return, payment (empty = all)"
+        default: ""
       portals:
         description: "Only these portals, e.g. MYNTRA,AJIO (empty = all)"
         default: ""
@@ -23,7 +32,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 90   # a Myntra or Flipkart report can take 30-45 minutes to be made
+    timeout-minutes: 330   # a report can take 30-45 minutes to be made; a back-fill does many months
     env:
       TZ: Asia/Kolkata
       RUN_MODE: github-actions
@@ -51,13 +60,16 @@ jobs:
       # inputs reach the shell only as variables, never pasted into the script
       IN_MONTH: ${{ inputs.month }}
       IN_PORTALS: ${{ inputs.portals }}
+      IN_FROM: ${{ inputs.from }}
+      IN_TO: ${{ inputs.to }}
+      IN_KINDS: ${{ inputs.kinds }}
       IN_NO_UPLOAD: ${{ inputs.no_upload }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - name: Run report
         run: |
-          set -- ${IN_MONTH:+--month "$IN_MONTH"} ${IN_PORTALS:+--portals "$IN_PORTALS"}
+          set -- ${IN_MONTH:+--month "$IN_MONTH"} ${IN_PORTALS:+--portals "$IN_PORTALS"}                  ${IN_FROM:+--from "$IN_FROM"} ${IN_TO:+--to "$IN_TO"} ${IN_KINDS:+--kinds "$IN_KINDS"}
           if [ -n "$IN_NO_UPLOAD" ]; then set -- "$@" --no-upload; fi
           bash scripts/github/ci_run.sh portal-reports "$@"
       - name: Upload run output (encrypted)

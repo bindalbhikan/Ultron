@@ -105,54 +105,121 @@ def flipkart_report(report: str, first: date, last: date, dest: Path) -> Path:
     return path
 
 
-def run(args) -> int:
-    month = report_month(args.month, date.today())
-    first, last = month, month.replace(day=calendar.monthrange(month.year, month.month)[1])
-    if last >= date.today():
-        raise ValueError(f"{pr.label(month)} is not over yet: its reports come on the 2nd of the next month")
-    log.info("Portal reports %s: %s..%s", pr.label(month), first, last)
-    # (portal, account, kind) -> (function, arguments)
+def ajio_returns(first: date, last: date, dest: Path) -> Path:
+    """The Dropship RTV report of the month (by return created date) - for a back-fill; the monthly
+    return report is the return analysis's (the 10th / 15th)."""
+    from ..portals.ajio import AjioClient
+    ajio = AjioClient(env("AJIO_USERNAME"), env("AJIO_PASSWORD"))
+    ajio.login()
+    path = dest / "ajio_rtv.xlsx"
+    path.write_bytes(ajio.rtv_report(first, last))
+    return path
+
+
+def data_rows(path: Path) -> int:
+    """Rows below the header (an empty report is a header only: never saved as a month's data)."""
+    if path.suffix.lower() == ".csv":
+        with path.open(encoding="utf-8", errors="ignore") as f:
+            return max(sum(1 for line in f if line.strip()) - 1, 0)
+    from openpyxl import load_workbook
+    wb = load_workbook(path, read_only=True, data_only=True)
+    n = 0
+    for ws in wb.worksheets:
+        if ws.title.lower() == "help":
+            continue
+        ws.reset_dimensions()
+        n = max(n, sum(1 for r in ws.iter_rows(min_row=2, values_only=True) if any(v not in (None, "") for v in r)))
+    return n
+
+
+def months_of(args, today: date) -> list[date]:
+    if args.from_month:
+        start, end = report_month(args.from_month, today), report_month(args.to_month or args.from_month, today)
+        out, m = [], start
+        while m <= end:
+            out.append(m)
+            m = (m.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return out
+    return [report_month(args.month, today)]
+
+
+def tasks_of(first: date, last: date, kinds: set[str], back_fill: bool) -> dict:
+    """(portal, account, kind) -> (function, arguments)"""
     tasks = {}
     for a in MYNTRA_ACCOUNTS:
         tasks[("MYNTRA", a, "sale")] = (myntra_orders, (a, first, last))
         tasks[("MYNTRA", a, "payment")] = (myntra_payments, (a, first, last))
     tasks[("AJIO", "", "sale")] = (ajio_orders, (first, last))
     tasks[("AJIO", "", "payment")] = (ajio_payments, (first, last))
+    if back_fill:
+        tasks[("AJIO", "", "return")] = (ajio_returns, (first, last))
     tasks[("FLIPKART", "", "sale")] = (flipkart_report, ("Orders", first, last))
     tasks[("FLIPKART", "", "payment")] = (flipkart_report, ("Settled Transactions", first, last))
+    return {k: v for k, v in tasks.items() if not kinds or k[2] in kinds}
+
+
+def run(args) -> int:
+    today = date.today()
+    months = months_of(args, today)
     only = {p.strip().upper() for p in (args.portals or "").split(",") if p.strip()}
-    tasks = {k: v for k, v in tasks.items() if not only or k[0] in only}
-    work = Path(tempfile.mkdtemp(prefix="portal_reports_"))
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {}
-        for key, (fn, a) in tasks.items():
-            dest = work / "_".join(p for p in key if p)
-            dest.mkdir(parents=True, exist_ok=True)
-            futures[key] = pool.submit(fn, *a, dest)
-    saved, failed = [], []
-    for (portal, account, kind), fut in futures.items():
-        what = f"{portal} {account} {pr.KINDS[kind]}".replace("  ", " ")
-        try:
-            path = fut.result()
-            name = path.name if args.no_upload else pr.save(portal, month, kind, path, account)
-            saved.append(name or what)
-        except Exception as exc:  # noqa: BLE001 - one part never stops the others
-            log.exception("%s failed", what)
-            failed.append((what, (str(exc).splitlines() or [type(exc).__name__])[0][:150]))
-    lines = [f"🗂 <b>Portal reports {pr.label(month)}</b>",
-             f"<i>{first:%d %b} to {last:%d %b %Y}, Drive AGENT WORK/PORTAL REPORTS</i>", ""]
-    lines += [f"✅ {telegram.esc(n)}" for n in saved]
-    lines += [f"❌ {telegram.esc(n)}: {telegram.esc(why)}" for n, why in failed]
+    kinds = {k.strip().lower() for k in (args.kinds or "").split(",") if k.strip()}
+    back_fill = bool(args.from_month)
+    lines, any_saved, any_failed = [], False, False
+    for month in months:
+        first, last = month, month.replace(day=calendar.monthrange(month.year, month.month)[1])
+        if last >= today:
+            raise ValueError(f"{pr.label(month)} is not over yet: its reports come on the 2nd of the next month")
+        log.info("Portal reports %s: %s..%s", pr.label(month), first, last)
+        tasks = {k: v for k, v in tasks_of(first, last, kinds, back_fill).items() if not only or k[0] in only}
+        work = Path(tempfile.mkdtemp(prefix="portal_reports_"))
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {}
+            for key, (fn, a) in tasks.items():
+                dest = work / "_".join(p for p in key if p)
+                dest.mkdir(parents=True, exist_ok=True)
+                futures[key] = pool.submit(fn, *a, dest)
+        saved, empty, failed = [], [], []
+        for (portal, account, kind), fut in futures.items():
+            what = f"{portal} {account} {pr.KINDS[kind]}".replace("  ", " ")
+            try:
+                path = fut.result()
+                if not data_rows(path):
+                    empty.append(what)       # the portal no longer keeps that month, or there was none
+                    continue
+                name = path.name if args.no_upload else pr.save(portal, month, kind, path, account)
+                saved.append(name or what)
+            except Exception as exc:  # noqa: BLE001 - one part never stops the others
+                log.exception("%s %s failed", what, pr.label(month))
+                failed.append((what, (str(exc).splitlines() or [type(exc).__name__])[0][:150]))
+        any_saved |= bool(saved)
+        any_failed |= bool(failed)
+        if back_fill:
+            lines.append(f"<b>{pr.label(month)}</b>: {len(saved)} saved" + (f", no data: {', '.join(empty)}" if empty else "")
+                         + "".join(f"\n❌ {telegram.esc(n)}: {telegram.esc(why)}" for n, why in failed))
+        else:
+            lines += [f"🗂 <b>Portal reports {pr.label(month)}</b>",
+                      f"<i>{first:%d %b} to {last:%d %b %Y}, Drive AGENT WORK/PORTAL REPORTS</i>", ""]
+            lines += [f"✅ {telegram.esc(n)}" for n in saved]
+            lines += [f"⚪ {telegram.esc(n)}: no data in the report" for n in empty]
+            lines += [f"❌ {telegram.esc(n)}: {telegram.esc(why)}" for n, why in failed]
+    if back_fill:
+        lines.insert(0, f"🗂 <b>Portal reports back-fill {pr.label(months[0])} to {pr.label(months[-1])}</b>"
+                        f"\n<i>{telegram.esc(', '.join(sorted(only)) or 'all portals')}; "
+                        f"{telegram.esc(', '.join(sorted(kinds)) or 'all reports')}</i>\n")
     if args.no_upload:
         lines.append("<i>test run: Drive not changed</i>")
     text = "\n".join(lines)
     print(text) if args.no_telegram else telegram.send(text)
-    return 1 if failed and not saved else 0
+    return 1 if any_failed and not any_saved else 0
 
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="run.py portal-reports", description=__doc__.splitlines()[0])
     p.add_argument("--month", default="", help="YYYY-MM (default: last month)")
+    p.add_argument("--from", dest="from_month", default="", metavar="YYYY-MM",
+                   help="back-fill: every month from this one (with --to); AJIO's return report too")
+    p.add_argument("--to", dest="to_month", default="", metavar="YYYY-MM", help="back-fill: the last month")
     p.add_argument("--portals", default="", help="only these, e.g. MYNTRA,AJIO (default: all)")
+    p.add_argument("--kinds", default="", help="only these reports: sale, return, payment (default: all)")
     p.add_argument("--no-upload", action="store_true", help="download only, Drive not changed (test run)")
     return run_bot("Portal reports", p, run, argv)
