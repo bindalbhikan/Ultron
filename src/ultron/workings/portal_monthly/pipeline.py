@@ -178,10 +178,14 @@ def tasks_of(first: date, last: date, kinds: set[str], back_fill: bool) -> dict:
 def flipkart_sales(first: date, last: date, dest: Path) -> Path:
     """The tax "Sales Report" of the month (every sale, return and cancellation event with its
     invoice value); for months Flipkart has moved out of it, "Sales Report Archived"."""
-    path = flipkart_report("Sales Report", first, last, dest)
-    if not data_rows(path):
-        path = flipkart_report("Sales Report Archived", first, last, dest)
-    return path
+    try:
+        path = flipkart_report("Sales Report", first, last, dest)
+        if data_rows(path):
+            return path
+    except Exception as exc:  # noqa: BLE001 - Flipkart refuses some old months (HTTP 500): try the archive
+        log.warning("Flipkart Sales Report %s..%s not got (%s): asking Sales Report Archived", first, last,
+                    str(exc).splitlines()[0][:120])
+    return flipkart_report("Sales Report Archived", first, last, dest)
 
 
 def run(args) -> int:
