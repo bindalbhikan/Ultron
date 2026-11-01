@@ -16,8 +16,13 @@ FINAL STATUS of an order item:
                       type, otherwise it waits for the returns report (never guessed)
   In Transit          anything else (READY_TO_SHIP, APPROVED, ...)
 
-SALE VALUE = the item's Sale Amount in Settled Transactions (an item not settled yet has none:
-the INPUT LOG says how many); NET SETTLEMENT = the sum of its Bank Settlement Values.
+  SALES REPORT    the tax "Sales Report" (or "Sales Report Archived" for older months): every sale,
+                  return and cancellation event with its invoice value. Months before Feb 2026, whose
+                  Orders report Flipkart no longer gives, come from it (SOURCE = Sales report: status
+                  from the events, the return type from the Returns report when it has the item)
+
+SALE VALUE = the invoice value of the sale in the tax Sales Report, else the item's Sale Amount in
+Settled Transactions; NET SETTLEMENT = the sum of its Bank Settlement Values.
 BRAND / design from MasterSheet (channel FLIPKART); CATEGORY = the article type Myntra lists the
 same design under (else the SKU's category word).
 """
@@ -77,6 +82,49 @@ def read_settled(files: list[Path]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+def read_sales(files: list[Path]) -> pd.DataFrame:
+    """The "Sales Report" sheet of tax Sales Report files (one row per sale / return / cancel event)."""
+    frames = []
+    for f in files:
+        df = pd.read_excel(f, sheet_name="Sales Report", dtype=str)
+        if len(df):
+            frames.append(df.assign(_file=f.name))
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def sales_items(sales: pd.DataFrame) -> pd.DataFrame:
+    """Per order item from the tax Sales Report events: order date, SKU, qty, invoice value of the
+    sale, and its status (Cancellation = cancelled; more Returns than Return Cancellations =
+    returned; else delivered). Rows in the shape of the Orders report, for the months whose
+    Orders report Flipkart no longer gives (before Feb 2026)."""
+    if not len(sales):
+        return pd.DataFrame()
+    s = sales.copy()
+    s["oi"] = oi(s["Order Item ID"])
+    s["sub"] = s["Event Sub Type"].astype(str).str.strip()
+    s["val"] = pd.to_numeric(s["Final Invoice Amount (Price after discount+Shipping Charges)"], errors="coerce")
+    s = s.drop_duplicates(["oi", "sub", "Event Type", "val", "Order Date", "Buyer Invoice ID"])
+    sale = s[s["sub"] == "Sale"].sort_values("Order Date").drop_duplicates("oi", keep="first").set_index("oi")
+    n = s.groupby(["oi", "sub"]).size().unstack(fill_value=0)
+    for c in ["Cancellation", "Return", "Return Cancellation"]:
+        if c not in n.columns:
+            n[c] = 0
+    status = np.where(n["Cancellation"] > 0, "CANCELLED",
+                      np.where(n["Return"] > n["Return Cancellation"], "RETURNED", "DELIVERED"))
+    st = pd.Series(status, index=n.index)
+    items = sale.index
+    out = pd.DataFrame({
+        "order_item_id": items, "order_id": sale["Order ID"].values, "order_date": sale["Order Date"].values,
+        "sku": sale["SKU"].values, "fsn": sale["FSN"].values, "product_title": sale["Product Title/Description"].values,
+        "quantity": sale["Item Quantity"].values, "fulfilment_type": sale["Fulfilment Type"].values,
+        "order_item_status": st.reindex(items).values, "_value": s[s["sub"] == "Sale"].groupby("oi")["val"].sum().reindex(items).values,
+        "_file": "Sales Report"})
+    for c in ["return_reason", "return_sub_reason", "return_id", "order_cancellation_date", "dispatched_date",
+              "order_delivery_date", "dispatch_sla_breached", "pickup_logistics_partner", "delivery_logistics_partner"]:
+        out[c] = None
+    return out
+
+
 SETTLE_COLS = {"Sale Amount (Rs.)": "SALE AMOUNT", "Bank Settlement Value (Rs.)": "NET SETTLEMENT",
                "Marketplace Fee (Rs.)": "MARKETPLACE FEE", "Commission (Rs.)": "COMMISSION",
                "Shipping Fee (Rs.)": "SHIPPING FEE", "Reverse Shipping Fee (Rs.)": "REVERSE SHIPPING FEE",
@@ -103,9 +151,18 @@ def settlement(st: pd.DataFrame) -> pd.DataFrame:
 
 
 def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, settled: pd.DataFrame,
-             category_of_design: dict[str, str] | None = None) -> pd.DataFrame:
+             category_of_design: dict[str, str] | None = None, sales: pd.DataFrame | None = None) -> pd.DataFrame:
     o = orders.copy()
     o["oi"] = oi(o["order_item_id"])
+    o["_source"] = "Orders report"
+    tax = sales_items(sales if sales is not None else pd.DataFrame())
+    tax_value = pd.Series(dtype=float)
+    if len(tax):
+        tax_value = tax.set_index("order_item_id")["_value"]
+        extra = tax[~tax["order_item_id"].isin(o["oi"])].copy()      # items the Orders reports do not have
+        extra["oi"] = extra["order_item_id"]
+        extra["_source"] = "Sales report"
+        o = pd.concat([o, extra.drop(columns=["_value"])], ignore_index=True)
     if len(returns):
         r = returns.copy()
         r["oi"] = oi(r["order_item_id"])
@@ -165,12 +222,16 @@ def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, 
     s = settlement(settled)
     for c in ["SALE VALUE", "PAYMENT DATE", "NEFT ID"] + [c for c in SETTLE_COLS.values() if c != "SALE AMOUNT"]:
         d[c] = key.map(s[c]).values if len(s) else np.nan
+    # sale value: the tax Sales Report's invoice value of the sale, else Settled Transactions' Sale Amount
+    if len(tax_value):
+        d["SALE VALUE"] = key.map(tax_value).fillna(pd.Series(d["SALE VALUE"])).values
+    d["SOURCE"] = o["_source"].values
     d["PAYMENT STATUS"] = np.where(pd.notna(d["NET SETTLEMENT"]), "Settled",
                                    np.where(np.isin(final, ["Delivered", "Customer Return"]), "Payment Pending", "Not Applicable"))
     return d.sort_values(["ORDER DATE", "ORDER ITEM ID"]).reset_index(drop=True)
 
 
-RAW_COLS = ["ORDER DATE", "ORDER MONTH", "ORDER ID", "ORDER ITEM ID", "SKU", "FSN", "PRODUCT TITLE", "MY SKU",
+RAW_COLS = ["ORDER DATE", "ORDER MONTH", "ORDER ID", "ORDER ITEM ID", "SOURCE", "SKU", "FSN", "PRODUCT TITLE", "MY SKU",
             "FINAL SKU", "FINAL MY SKU", "DESIGN-NO", "BRAND", "CATEGORY", "QTY", "SALE VALUE", "FULFILMENT TYPE",
             "PORTAL ORDER STATUS", "FINAL STATUS", "RETURN TYPE SOURCE", "REASON", "SUB REASON", "RETURN ID",
             "RETURN STATUS", "RETURN RESULT", "RETURN DATE", "RETURN MONTH", "CANCELLED DATE", "DISPATCHED DATE",
@@ -183,6 +244,7 @@ MONEY = {"SALE VALUE", "MARKETPLACE FEE", "COMMISSION", "SHIPPING FEE", "REVERSE
 
 def report(raw: pd.DataFrame, settled: pd.DataFrame, input_log: pd.DataFrame) -> Report:
     have_pay = raw["NET SETTLEMENT"].notna().any()
+    have_value = raw["SALE VALUE"].notna().any()
     pay_months = None
     if len(settled):
         s = settled.copy()
@@ -193,7 +255,7 @@ def report(raw: pd.DataFrame, settled: pd.DataFrame, input_log: pd.DataFrame) ->
         pay_months.columns = ["Sale Amount", "Marketplace Fee", "Refund", "TCS", "TDS", "Bank Settlement"]
     return Report(
         portal="FLIPKART", raw=raw, raw_cols=RAW_COLS,
-        value="SALE VALUE" if have_pay else None, settle="NET SETTLEMENT" if have_pay else None, money_cols=MONEY,
+        value="SALE VALUE" if have_value else None, settle="NET SETTLEMENT" if have_pay else None, money_cols=MONEY,
         reasons=[("Customer Return Reason", "Customer Return"), ("RTO Reason", "RTO")],
         pay_table=[("Marketplace Fee", "MARKETPLACE FEE"), ("Commission", "COMMISSION"), ("Refund", "REFUND"),
                    ("TCS", "TCS"), ("TDS", "TDS"), ("Net Settlement", "NET SETTLEMENT")],

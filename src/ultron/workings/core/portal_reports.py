@@ -25,7 +25,8 @@ log = logging.getLogger("bindal.portal_reports")
 
 AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 ROOT = "PORTAL REPORTS"
-KINDS = {"sale": "ORDER REPORT", "return": "RETURN REPORT", "payment": "PAYMENT REPORT"}
+KINDS = {"sale": "ORDER REPORT", "return": "RETURN REPORT", "payment": "PAYMENT REPORT",
+         "sales": "SALES REPORT"}   # SALES REPORT: Flipkart's tax Sales Report (every sale / return / cancel event, invoice value)
 
 
 def label(month: date) -> str:

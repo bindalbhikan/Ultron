@@ -11,9 +11,10 @@
   to the Drive trash.
 * Inputs: every month of Drive `AGENT WORK/PORTAL REPORTS` from `--from` (default 2025-01; a portal
   starts where its reports do) to last month, and `BUSINESS REPORTING/MasterSheet.xlsx`.
-  Months kept on 1 Nov 2026: Myntra orders Apr-25 on (payments Jan-25), Flipkart orders Feb-26 on
-  (payments May-26: older Settled Transactions are refused, HTTP 500), AJIO orders Jan-26 on
-  (older: "No records found"; payments Feb-26).
+  Months kept on 2 Nov 2026: Myntra orders Apr-25 on (older refused; payments Jan-25), Flipkart orders
+  Feb-26 on + the tax Sales Report from Jan-25 (items before Feb-26 come from its events, SOURCE = Sales
+  report; payments May-26 on), AJIO orders from 13 Dec 2025 (Dec-25 PARTIAL, from the Ads Gap
+  working's old download; the portal answers "No records found" before Jan-26; payments Feb-26).
 * The same layout for every portal (`business_report/workbook.py`): RAW DATA, MONTH WISE (SALE,
   CANCELLED, RTO, CUSTOMER RETURN, NET SALE with value, ASP, MoM; LAST YEAR once 13 months are in;
   PAYMENT), BRAND WISE, CATEGORY WISE, BRAND CATEGORY WISE (all together, then one block per group,

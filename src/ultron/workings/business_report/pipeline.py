@@ -30,7 +30,7 @@ from .workbook import build
 log = logging.getLogger("bindal.business_report")
 
 FOLDER = "BUSINESS REPORTING"
-NAME = re.compile(r"^(?P<portal>[A-Z]+) (?:(?P<acc>MAIN|DBCC|FMCC) )?(?P<kind>ORDER|RETURN|PAYMENT) REPORT "
+NAME = re.compile(r"^(?P<portal>[A-Z]+) (?:(?P<acc>MAIN|DBCC|FMCC) )?(?P<kind>ORDER|RETURN|PAYMENT|SALES) REPORT "
                   r"(?P<mon>[A-Z]{3}-\d\d)(?P<partial> PARTIAL)?\.")
 
 
@@ -131,19 +131,23 @@ def category_map(myntra_orders: pd.DataFrame, master: pd.DataFrame) -> dict[str,
 def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict) -> tuple:
     paths = lambda k: [f["path"] for f in files if f["kind"] == k]  # noqa: E731
     o, r, s = flipkart.read_orders(paths("ORDER")), flipkart.read_returns(paths("RETURN")), flipkart.read_settled(paths("PAYMENT"))
+    tax = flipkart.read_sales(paths("SALES"))
+    if not len(o) and not len(tax):
+        raise RuntimeError("no Flipkart order or sales report in PORTAL REPORTS")
     if not len(o):
-        raise RuntimeError("no Flipkart order report in PORTAL REPORTS")
-    raw = flipkart.raw_data(o, r, master, s, cats)
+        o = pd.DataFrame(columns=["order_item_id"])
+    raw = flipkart.raw_data(o, r, master, s, cats, tax)
     frames = {}
-    for df, kind in ((o, "ORDER"), (r, "RETURN"), (s, "PAYMENT")):
+    for df, kind in ((o, "ORDER"), (r, "RETURN"), (s, "PAYMENT"), (tax, "SALES")):
         if len(df):
             for name, g in df.groupby("_file"):
                 frames[name] = g
     lg = log_rows(files, frames, {"ORDER": ("order_date", flipkart.dt), "RETURN": ("return_approval_date", flipkart.dt),
-                                  "PAYMENT": ("Payment Date", flipkart.dt)})
+                                  "PAYMENT": ("Payment Date", flipkart.dt), "SALES": ("Order Date", flipkart.dt)})
     unsettled = int(((raw["FINAL STATUS"] == "Delivered") & raw["SALE VALUE"].isna()).sum())
     lg.append(["Orders used", "-", "one row per order item", len(raw), "Order date", raw["ORDER DATE"].min(), raw["ORDER DATE"].max(),
-               f"sale value = Settled Transactions' Sale Amount; {unsettled:,} delivered items not settled yet have none"])
+               f"sale value = the Sales Report's invoice value, else Settled Transactions' Sale Amount; {unsettled:,} delivered items have none; "
+               f"{int((raw['SOURCE'] == 'Sales report').sum()):,} items from the Sales Report only (months without an Orders report)"])
     lg.append(["SKU master", "-", "MasterSheet.xlsx (channel FLIPKART); category = Myntra's article type of the design",
                len(master), "-", pd.NaT, pd.NaT, ""])
     return flipkart.report(raw, s, pd.DataFrame(lg, columns=LOG_COLS))

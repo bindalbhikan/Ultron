@@ -171,7 +171,17 @@ def tasks_of(first: date, last: date, kinds: set[str], back_fill: bool) -> dict:
         tasks[("AJIO", "", "return")] = (ajio_returns, (first, last))
     tasks[("FLIPKART", "", "sale")] = (flipkart_report, ("Orders", first, last))
     tasks[("FLIPKART", "", "payment")] = (flipkart_report, ("Settled Transactions", first, last))
+    tasks[("FLIPKART", "", "sales")] = (flipkart_sales, (first, last))
     return {k: v for k, v in tasks.items() if not kinds or k[2] in kinds}
+
+
+def flipkart_sales(first: date, last: date, dest: Path) -> Path:
+    """The tax "Sales Report" of the month (every sale, return and cancellation event with its
+    invoice value); for months Flipkart has moved out of it, "Sales Report Archived"."""
+    path = flipkart_report("Sales Report", first, last, dest)
+    if not data_rows(path):
+        path = flipkart_report("Sales Report Archived", first, last, dest)
+    return path
 
 
 def run(args) -> int:
@@ -236,6 +246,6 @@ def main(argv=None) -> int:
                    help="back-fill: every month from this one (with --to); the return reports too (Myntra, AJIO)")
     p.add_argument("--to", dest="to_month", default="", metavar="YYYY-MM", help="back-fill: the last month")
     p.add_argument("--portals", default="", help="only these, e.g. MYNTRA,AJIO (default: all)")
-    p.add_argument("--kinds", default="", help="only these reports: sale, return, payment (default: all)")
+    p.add_argument("--kinds", default="", help="only these reports: sale, return, payment, sales (default: all)")
     p.add_argument("--no-upload", action="store_true", help="download only, Drive not changed (test run)")
     return run_bot("Portal reports", p, run, argv)
