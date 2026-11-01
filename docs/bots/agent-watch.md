@@ -17,8 +17,11 @@ only when it did not succeed. By hand: run the workflow with a run id. The same 
   status), earlier runs of the workflow. The bot's own doc in this folder is its background.
 * Answer STATUS: OK = nothing is sent. STATUS: ALERT = a short English Telegram message: what
   happened, the cause, what it affected, the suggested next step, with the run's link.
-* Model unreachable (free allocation used up for the day, model down): a plain alert with the
+* Model unreachable (free allocation used up for the day, model down), or its answer garbled (its own
+  tool-call markup such as `<|channel|>` instead of a message, 2 Nov 2026): a plain alert with the
   run's ERROR lines instead.
+* A cancelled run with no ERROR line is not reported (a newer run of the same workflow replaced it in
+  the queue, or it was stopped by hand).
 * **Auto-retry** (1 Nov 2026): a failed **first** attempt of a workflow in `[watch] retry`
   (`agent.toml`) whose ERROR lines match `[watch] retry_when` (read / connect timeout, connection
   reset or aborted, 502 / 503 / 504, DNS failure, Google rate limit) is run again once (failed

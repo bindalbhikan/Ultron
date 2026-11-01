@@ -63,9 +63,15 @@ def bot_doc(workflow_file: str) -> str:
     return p.read_text(encoding="utf-8") if p.is_file() else "(no documentation for this workflow)"
 
 
+GARBLED = re.compile(r"<\|(channel|start|end|call|message)\|>|to=functions\.")
+
+
 def verdict(text: str) -> tuple[str, str]:
     """("OK" | "ALERT", message) from the model's answer; an answer in no known shape counts as
-    ALERT, so a confused model is seen rather than silent."""
+    ALERT, so a confused model is seen rather than silent. A garbled answer (the model's own tool-call
+    markup instead of a message, 2 Nov 2026) is "GARBLED": the caller sends the plain alert."""
+    if GARBLED.search(text or ""):
+        return "GARBLED", ""
     m = re.search(r"STATUS:\s*\**\s*(OK|ALERT)\b", text or "", re.I)
     if not m:
         return "ALERT", (text or "").strip() or "(no answer)"
@@ -191,6 +197,10 @@ def run(args) -> int:
     except Exception as exc:  # noqa: BLE001 - no encrypted output (cancelled before upload)
         errors, tail = f"(log not readable: {exc})", ""
     why = unusual(info, earlier, errors)
+    if info["conclusion"] == "cancelled" and "ERROR lines in its log" not in why:
+        # replaced by a newer run of the same workflow (concurrency) or stopped by hand: nothing to say
+        log.info("Run %s %s cancelled without errors: nothing sent", args.run_id, info["workflow"])
+        return 0
     if retry(info, errors, args.no_telegram):
         return 0
     if not why:
@@ -198,6 +208,9 @@ def run(args) -> int:
         return 0
     try:
         status, msg, usage = check(info, earlier, why, errors, tail)
+        if status == "GARBLED":
+            log.warning("The model's answer was garbled: plain alert instead")
+            status, msg = "ALERT", plain_alert(info, why, errors, "the AI's answer was unreadable")
         log.info("Run %s %s: %s (%s steps, %s in + %s out tokens, $%s at list price)", args.run_id,
                  info["workflow"], status, usage["steps"], usage["input"], usage["output"], llm.cost(usage))
     except llm.LLMError as exc:
