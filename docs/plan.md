@@ -3,8 +3,8 @@
 Status of 1 Nov 2026. The original plan of 20 Oct 2026 (Claude API Tool Runner, Opus, about
 $50–80 a month) was replaced by what was actually built: the free Cloudflare Workers AI model
 (`@cf/openai/gpt-oss-120b`, `[model]` in `agent.toml`) through the Telegram worker's `/api/ai`, on
-GitHub Actions; no paid model API. Code fixes use Claude Code on the owner's subscription
-(`ci-fix.yml`). What comes next is in `docs/SCALING.md`. Every working and its run times:
+GitHub Actions; no paid model API. Code fixes use Claude Code on the owner's subscription, with Gemini CLI on the free
+Gemini API key as fallback (`ci-fix.yml`). What comes next is in `docs/SCALING.md`. Every working and its run times:
 `docs/CONTEXT.md` (generated from the code).
 
 ## 1. What the agent is for
@@ -22,7 +22,7 @@ irreversible.
 | 1. Auto-retry | a failed first attempt on a known passing cause (portal timeout, 5xx, connection reset) is rerun once by itself, Telegram told | ✅ `[watch] retry` / `retry_when` in `agent.toml` (1 Nov 2026) |
 | 2. Chat | plain text to the Telegram bot → the agent reads with its tools and answers | ✅ `agent-chat` |
 | 3. Approvals | Approve / Reject buttons; only an Approve starts the action, from a fixed list | ✅ worker `/api/approval`, `AGENT_ACTIONS` = `agent.toml [actions]` |
-| 3. Code-fix PRs | on a failed AJIO / Myntra SPF run Claude Code proposes a fix PR, never merged by itself | ✅ `ci-fix.yml` (31 Oct 2026) |
+| 3. Code-fix PRs | on a failed AJIO / Myntra SPF run Claude Code (fallback: Gemini CLI, 1 Nov 2026) proposes a fix PR, never merged by itself | ✅ `ci-fix.yml` (31 Oct 2026) |
 | 3. What ran / was missed | every scheduled task ticked per day | ✅ Drive work-schedule sheet (`work-schedule`); a weekly "what failed / was fixed" message is not built |
 
 ## 3. Decision rules

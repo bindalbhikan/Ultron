@@ -1,9 +1,15 @@
-name: Claude fix on failure
+name: AI fix on failure
 
-# When AJIO SPF or Myntra SPF fails, Claude Code (the owner's subscription, CLAUDE_CODE_OAUTH_TOKEN)
-# reads the failed run's log (decrypted from its artifact with ARTIFACT_KEY) and, when the cause is
-# in the code, proposes a fix as a pull request - never merged by itself. A failure the code cannot
-# fix (session expired, portal down, password) gets no PR. Telegram hears either way.
+# When AJIO SPF or Myntra SPF fails, an AI coding agent reads the failed run's log (decrypted from
+# its artifact with ARTIFACT_KEY) and, when the cause is in the code, proposes a fix as a pull
+# request - never merged by itself. A failure the code cannot fix (session expired, portal down,
+# password) gets no PR. Telegram hears either way.
+#   1. Claude Code on the owner's subscription (CLAUDE_CODE_OAUTH_TOKEN), when the secret is set.
+#   2. Fallback: Gemini CLI on the free Gemini API key (GEMINI_API_KEY), when Claude is not set up,
+#      fails (plan expired, limit reached) or writes no result. Model: repo variable
+#      CI_FIX_GEMINI_MODEL (default gemini-3.5-flash). Its tools are limited to reading and editing
+#      files, py_compile and git diff / log (tools.core).
+#   Neither works: no PR, Telegram gets the failure and the log's last error lines are not sent.
 # The repository is public: the log stays on the runner, and the PR carries code and one line only.
 # Only these workflows trigger it (they start by workflow_dispatch / the Telegram worker, never by a
 # pull request from outside), and the workflow runs from main.
@@ -25,15 +31,15 @@ jobs:
   fix:
     if: github.event.workflow_run.conclusion == 'failure'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     env:
       TZ: Asia/Kolkata
       RUN_ID: ${{ github.event.workflow_run.id }}
       RUN_NAME: ${{ github.event.workflow_run.name }}
       RUN_URL: ${{ github.event.workflow_run.html_url }}
       GH_TOKEN: ${{ github.token }}
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      HAS_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' && '1' || '' }}
+      HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -43,7 +49,7 @@ jobs:
         run: |
           slug=$(echo "$RUN_NAME" | tr 'A-Z ' 'a-z-')
           echo "slug=$slug" >> "$GITHUB_OUTPUT"
-          if gh pr list --state open --json headRefName -q '.[].headRefName' | grep -q "^claude-fix/$slug-"; then
+          if gh pr list --state open --json headRefName -q '.[].headRefName' | grep -qE "^(claude|ai)-fix/$slug-"; then
             echo "waiting=1" >> "$GITHUB_OUTPUT"
           fi
 
@@ -56,60 +62,95 @@ jobs:
           path: ${{ runner.temp }}/failed
           merge-multiple: true
 
-      - name: Decrypt the log
+      - name: Decrypt the log, write the task
         if: steps.open.outputs.waiting != '1'
+        id: task
         env:
           ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
         run: |
           mkdir -p .ci-failure
-          cd "$RUNNER_TEMP/failed"
-          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:ARTIFACT_KEY -in output.tar.gz.enc | tar -xzf -
-          tail -n 400 output/run.log > "$GITHUB_WORKSPACE/.ci-failure/run.log"
+          ( cd "$RUNNER_TEMP/failed"
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:ARTIFACT_KEY -in output.tar.gz.enc | tar -xzf -
+            tail -n 400 output/run.log > "$GITHUB_WORKSPACE/.ci-failure/run.log" )
+          {
+            echo 'prompt<<PROMPT_END'
+            sed "s/{WORKFLOW}/$RUN_NAME/" .github/ci-fix/prompt.md
+            echo 'PROMPT_END'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Claude looks for the cause
-        if: steps.open.outputs.waiting != '1'
+        if: steps.open.outputs.waiting != '1' && env.HAS_CLAUDE == '1'
+        id: claude
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           claude_args: >-
             --max-turns 40
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(python -m py_compile:*),Bash(python -m pytest:*),Bash(git diff:*),Bash(git log:*)"
-          prompt: |
-            The GitHub Actions workflow "${{ github.event.workflow_run.name }}" of this repository failed.
-            The last 400 lines of its bot log are in .ci-failure/run.log. Read the log and the code it points to,
-            and find the cause.
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(python -m py_compile:*),Bash(git diff:*),Bash(git log:*)"
+          prompt: ${{ steps.task.outputs.prompt }}
 
-            * The cause is in this repository's code (a changed report column, an unknown status, a crash on a value):
-              fix it with the smallest change, in the style of the code around it, and check every changed Python file
-              with `python -m py_compile`. Do not commit or push.
-            * The code cannot fix it (login / session expired, password, OTP or CAPTCHA, portal down or slow, a network
-              error, a missing secret): change nothing.
+      - name: Claude gave no result - undo its half-done edits
+        if: steps.open.outputs.waiting != '1' && hashFiles('.ci-failure/result.md') == ''
+        run: git checkout -- . && git clean -fdq -e .ci-failure
 
-            Then write .ci-failure/result.md. Line 1: "FIX: <what was wrong and what you changed>" or
-            "NO FIX: <the cause and what the owner must do>", in plain Hinglish, under 150 characters. After it, at most
-            8 short lines of detail in Hinglish.
+      - name: Gemini looks for the cause (fallback)
+        if: steps.open.outputs.waiting != '1' && env.HAS_GEMINI == '1' && hashFiles('.ci-failure/result.md') == ''
+        id: gemini
+        continue-on-error: true
+        uses: google-github-actions/run-gemini-cli@v0.1.22
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: ${{ vars.CI_FIX_GEMINI_MODEL || 'gemini-3.5-flash' }}
+          settings: |-
+            {
+              "model": {"maxSessionTurns": 40},
+              "privacy": {"usageStatisticsEnabled": false},
+              "tools": {"core": ["list_directory", "read_file", "write_file", "replace", "glob", "grep_search",
+                                  "run_shell_command(python -m py_compile)", "run_shell_command(git diff)",
+                                  "run_shell_command(git log)"]}
+            }
+          prompt: ${{ steps.task.outputs.prompt }}
 
-            The repository is public. Never copy business data from the log into code, comments or line 1 of
-            result.md: no order / return numbers, AWBs, invoice numbers, amounts, names, emails, phone numbers, tokens.
+      - name: Who answered
+        if: steps.open.outputs.waiting != '1'
+        id: who
+        run: |
+          if [ ! -f .ci-failure/result.md ]; then
+            git checkout -- . && git clean -fdq -e .ci-failure
+            echo "name=" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.gemini.outcome }}" = "success" ]; then
+            echo "name=Gemini" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=Claude" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Pull request
         if: steps.open.outputs.waiting != '1'
         id: pr
+        env:
+          WHO: ${{ steps.who.outputs.name }}
         run: |
-          first=$(head -n 1 .ci-failure/result.md 2>/dev/null || echo "NO FIX: Claude ne result nahi likha")
+          first=$(head -n 1 .ci-failure/result.md 2>/dev/null || echo "NO FIX: no AI agent could look at it (Claude and Gemini both unavailable)")
           echo "first=$first" >> "$GITHUB_OUTPUT"
-          if [ -z "$(git status --porcelain -- . ':!.ci-failure')" ]; then exit 0; fi
-          branch="claude-fix/${{ steps.open.outputs.slug }}-$RUN_ID"
-          git config user.name "claude-fix[bot]"
+          if [ -z "$WHO" ] || [ -z "$(git status --porcelain -- . ':!.ci-failure')" ]; then exit 0; fi
+          branch="ai-fix/${{ steps.open.outputs.slug }}-$RUN_ID"
+          if [ "$WHO" = "Claude" ]; then
+            trailer="Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+            footer='🤖 Generated with [Claude Code](https://claude.com/claude-code)'
+          else
+            trailer="Proposed by Gemini CLI (fallback)"
+            footer='Proposed by Gemini CLI (fallback: Claude Code was not available).'
+          fi
+          git config user.name "ai-fix[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add -A -- . ':!.ci-failure'
-          git commit -q -m "$RUN_NAME: ${first#FIX: }" -m "Failed run: $RUN_URL" \
-            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+          git commit -q -m "$RUN_NAME: ${first#FIX: }" -m "Failed run: $RUN_URL" -m "$trailer"
           git push -q origin "$branch"
           url=$(gh pr create --head "$branch" --title "$RUN_NAME: ${first#FIX: }" \
-                --body "$(printf 'Proposed by Claude after a failed run: %s\n\n%s\n\nCheck the change before merging.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)' "$RUN_URL" "$first")" \
+                --body "$(printf 'Proposed by %s after a failed run: %s\n\n%s\n\nCheck the change before merging.\n\n%s' "$WHO" "$RUN_URL" "$first" "$footer")" \
                 || echo "https://github.com/$GITHUB_REPOSITORY/compare/$branch")
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
@@ -118,12 +159,15 @@ jobs:
         env:
           WAITING: ${{ steps.open.outputs.waiting }}
           PR_URL: ${{ steps.pr.outputs.url }}
+          WHO: ${{ steps.who.outputs.name }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           if [ "$WAITING" = "1" ]; then
-            text="🛠️ $RUN_NAME failed again - Claude's earlier fix PR is still open, merge or close it first. $RUN_URL"
+            text="🛠️ $RUN_NAME failed again - the earlier fix PR is still open, merge or close it first. $RUN_URL"
           else
-            detail=$(head -c 1500 .ci-failure/result.md 2>/dev/null || echo "Claude could not finish - see the run.")
-            text=$(printf '🛠️ %s failed\n\n%s\n\n%s\nRun: %s' "$RUN_NAME" "$detail" "${PR_URL:+PR: $PR_URL}" "$RUN_URL")
+            detail=$(head -c 1500 .ci-failure/result.md 2>/dev/null || echo "No AI agent could look at it (Claude and Gemini both unavailable) - see the run.")
+            text=$(printf '🛠️ %s failed%s\n\n%s\n\n%s\nRun: %s' "$RUN_NAME" "${WHO:+ (checked by $WHO)}" "$detail" "${PR_URL:+PR: $PR_URL}" "$RUN_URL")
           fi
           IFS=',' read -ra chats <<< "$TELEGRAM_CHAT_ID"
           for chat in "${chats[@]}"; do

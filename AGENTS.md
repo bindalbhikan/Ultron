@@ -2,7 +2,7 @@
 
 This repo (`bindalbhikan/Ultron`, **public**) is **Ultron · Ecom Manager**: report bots ("workings")
 for BINDAL EXPORTS on GitHub Actions, a Cloudflare Telegram worker + dashboard, and the Ultron agent
-(`src/ultron/`, seller-neutral, sellable). Any coding agent (Claude Code, the "Claude fix on failure"
+(`src/ultron/`, seller-neutral, sellable). Any coding agent (Claude Code, Gemini CLI, the "AI fix on failure"
 workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 
 <!-- AUTO:synced -->Last synced with the code: 2026-11-01.<!-- /AUTO:synced -->

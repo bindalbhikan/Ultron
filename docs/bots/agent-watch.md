@@ -26,7 +26,7 @@ only when it did not succeed. By hand: run the workflow with a run id. The same 
   short 🔁 message; the second attempt is watched as usual and never retried. Not retried:
   `ajio-spf` (raises tickets), `inv-push` (runs again in 3 hours), `myntra-otp` (time-bound), any
   cancelled run, and any other cause (session expired, password, wrong data).
-* Otherwise it changes nothing: code fixes are proposed by `ci-fix.yml` (Claude Code, SPF runs only).
+* Otherwise it changes nothing: code fixes are proposed by `ci-fix.yml` ("AI fix on failure": Claude Code, else Gemini CLI on the free `GEMINI_API_KEY`; SPF runs only).
 * The agent is `ultron/` (the same for every seller); this seller's setup is `agent.toml`
   (company, channels, actions, tools). Setup for another seller: `ultron/README.md`.
 * Memory (`ultron.core.memory`, in the dashboard worker's KV): before judging a run it reads the
