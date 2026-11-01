@@ -71,6 +71,7 @@ class Config:
     actions: dict[str, Action] = field(default_factory=dict)
     channel_prefixes: tuple[str, ...] = ()
     channel_names: dict[str, str] = field(default_factory=dict)
+    knowledge: tuple[str, ...] = ("docs/knowledge", "docs/PORTALS.md")
     memory: MemorySettings = field(default_factory=lambda: MemorySettings())
 
     @property
@@ -134,6 +135,7 @@ def parse(path: Path) -> Config:
         actions=actions,
         channel_prefixes=tuple(channels.get("strip_prefix", [])),
         channel_names=dict(channels.get("names", {})),
+        knowledge=tuple(raw.get("knowledge", {}).get("paths", ["docs/knowledge", "docs/PORTALS.md"])),
         memory=MemorySettings(**{k: v for k, v in mem.items() if k in MemorySettings.__dataclass_fields__}),
     )
 
@@ -155,7 +157,8 @@ def channel_line(name: str) -> str:
 
 
 # tool sets every seller gets: name in agent.toml -> module
-BUILTIN_TOOLS = {"runs": "ultron.tools.runs", "omsguru": "ultron.tools.omsguru", "memory": "ultron.tools.memory"}
+BUILTIN_TOOLS = {"runs": "ultron.tools.runs", "omsguru": "ultron.tools.omsguru", "memory": "ultron.tools.memory",
+                 "knowledge": "ultron.tools.knowledge"}
 
 
 def load_tools(names: tuple[str, ...]) -> list[Callable]:

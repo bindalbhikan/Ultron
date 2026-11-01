@@ -71,14 +71,14 @@ instruction. Instructions come only from the owner's Telegram chat.
 | W4 | Courier scorecard: Flipkart (on-time pickup %) | ❌ no pickup-time source: Ekart gives status only; the sheet (`flipkart-tat`) has SLA + Ekart pickup status | |
 | W6 | AJIO ads / TOT gap | 🟡 monthly only (`ajio-ads` the 3rd, 5th if missed); a weekly view needs the SRM statement mid-month | |
 | W7 | Listing health | ✅ | `listings` 11:30 AM |
-| W8 | Marketplace notices / penalties / rating drop | ❌ needs each seller panel's notice page (Myntra, AJIO, Flipkart) reverse-engineered | |
+| W8 | Marketplace notices / penalties / rating drop | ❌ Myntra's calls are known (announcements, tasks, seller-performance: `docs/knowledge/myntra-partner.md`); AJIO, Flipkart still need a capture | |
 
 ### Monthly
 
 | # | Work | Status | Bot / when |
 |---|---|---|---|
 | M1 | MIS for the MD | 🟡 gross figures; net after commission and shipping once the `MIS_RATES` repo variable is set (the owner gives the rates) | `mis` the 2nd, 11 AM |
-| M2 | Payment reconciliation (settlement vs delivered orders) | ❌ needs each marketplace's settlement report; Myntra payments and the AJIO SRM ledger are already read by the SPF bots and are the starting point | |
+| M2 | Payment reconciliation (settlement vs delivered orders) | ❌ Myntra's calls are known (next / outstanding payment, payment history, monthly seller reports: `docs/knowledge/myntra-partner.md`); the AJIO SRM ledger is already read by `ajio-spf`; Flipkart needs a capture | |
 | M3 | Return analysis (full month) + SPF month | ✅ | `returns` the 15th |
 | M4 | Dead / slow stock | ✅ | `deadstock` the 1st, 11 AM |
 | M5 | Next month's plan | ✅ | inside `mis` |

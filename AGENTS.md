@@ -14,6 +14,9 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 3. `docs/PORTALS.md` — every outside system, its API and limits.
 4. `docs/bots/<bot>.md` — one page per working (the watcher feeds it to the model on a failure).
 5. `docs/plan.md` — what is built and what is still open; `docs/SCALING.md` — the roadmap.
+6. `docs/knowledge/` — **Ultron's brain**: every portal API call seen (what it is for, read-only or
+   changes something). Look here before saying a portal cannot give some data; the agent reads it
+   with its `knowledge_search` / `knowledge_read` tools.
 
 ## Hard rules
 
@@ -27,6 +30,8 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
   `worker/src/worker.js` must use a time the triggers fire at.
 - Myntra: never bypass reCAPTCHA, never log out of the portal. AJIO SPF tickets / replies only Wed + Sat.
 - Never merge to main by yourself from CI; propose a PR (`ci-fix.yml`).
+- `netcap/` (raw browser captures) is local only: it holds cookies and customer data. Only names
+  (paths, field names, meanings) go into `docs/knowledge/`, never values.
 
 ## Keep the docs up to date — part of every change, not a follow-up
 
@@ -38,7 +43,8 @@ The owner must never have to check the docs by hand. Every change you make inclu
 | a working's behaviour, inputs, outputs, sheet columns | its `docs/bots/<bot>.md` |
 | a run time | `worker/src/worker.js` `SCHEDULE` (+ `worker/wrangler.toml` triggers), `TASKS` / `WORK` in `src/ultron/workings/work_schedule/pipeline.py`, the page's `**When**:` line, the `run.py` docstring |
 | a new working | everything in the `docs/ARCHITECTURE.md` checklist (page, `run.py`, workflow, `agent-watch.yml` list, `TASKS`, `SCHEDULE`, dashboard tab) |
-| a portal / API fact | `docs/PORTALS.md` |
+| a portal / API fact | `docs/PORTALS.md` (a working uses it) or `docs/knowledge/<portal>.md` (not used yet) |
+| a new browser capture in `netcap/` | `python scripts/knowledge/learn_netcap.py`, then what the new calls are for in `docs/knowledge/<portal>.md` |
 | a rule, Drive folder, secret name | the hand-written sections of `docs/CONTEXT.md` |
 | built or dropped a planned item | the status tables of `docs/plan.md` |
 | a fact every agent should know | this file |
