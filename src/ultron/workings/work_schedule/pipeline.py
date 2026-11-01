@@ -1,6 +1,7 @@
 """Agent work schedule: Drive AGENT WORK/AGENT REPORT WORK SCHEDULE REPORT.xlsx.
 
-SCHEDULE: every scheduled bot task A to Z (SR, TASK NAME, TIME, DAILY/WEEKLY, WORK = what it does),
+SCHEDULE: every scheduled bot task, portal A to Z then task A to Z, with filter buttons (SR, PORTAL,
+TASK NAME, TIME, DAILY/WEEKLY, WORK = what it does),
 the same list as SCHEDULE in worker/src/worker.js. One sheet a month (OCT-26): the same columns, a
 column per day of the month and WORK last, with a check box on the days the task is due: ☑ once the task's GitHub workflow ran
 successfully for that slot, ☐ while it has not (red once the day is over).
@@ -32,7 +33,7 @@ AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT 
 WORKBOOK = "AGENT REPORT WORK SCHEDULE REPORT.xlsx"
 IST = timezone(timedelta(hours=5, minutes=30))
 DONE, DUE = "☑", "☐"
-COLUMNS = ["SR", "TASK NAME", "TIME", "DAILY/WEEKLY"]   # then the days, then WORK
+COLUMNS = ["SR", "PORTAL", "TASK NAME", "TIME", "DAILY/WEEKLY"]   # then the days, then WORK
 DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 
 
@@ -99,7 +100,20 @@ TASKS = [
     Task("Evening summary", "evening.yml", _at(20), "DAILY"),
     Task("OMSGuru inventory push", "inv-push.yml", tuple(h * 60 for h in range(6, 28, 3)), "DAILY (8 times)"),
 ]
-TASKS.sort(key=lambda t: (t.name.upper(), t.slots[0]))   # the sheets list them A to Z
+# the PORTAL column: the portal a task works on (by its workflow; a task of another portal than its
+# workflow's by name); ALL CHANNELS = every channel together (OMSGuru / ERP / the sale report)
+PORTAL_OF_WORKFLOW = {
+    "ajio-spf.yml": "AJIO", "ajio-ads.yml": "AJIO", "ajio-tat.yml": "AJIO", "flipkart-tat.yml": "FLIPKART",
+    "myntra-spf.yml": "MYNTRA", "myntra-otp.yml": "MYNTRA", "myntra-reports.yml": "MYNTRA",
+    "myntra-zero-td.yml": "MYNTRA", "myntra-tat.yml": "MYNTRA", "vms.yml": "MYNTRA", "inv-push.yml": "OMSGURU"}
+PORTAL_OF_TASK = {"SJIT report request": "MYNTRA"}
+
+
+def portal(t: Task) -> str:
+    return PORTAL_OF_TASK.get(t.name) or PORTAL_OF_WORKFLOW.get(t.workflow, "ALL CHANNELS")
+
+
+TASKS.sort(key=lambda t: (portal(t), t.name.upper(), t.slots[0]))   # the sheets list them portal A to Z, then task A to Z
 
 # the WORK column: what each task does
 WORK = {
@@ -212,16 +226,17 @@ def write_schedule(wb) -> None:
     ws = wb.create_sheet("SCHEDULE", 0)
     ws.append(COLUMNS + ["WORK"])
     for n, t in enumerate(TASKS, 1):
-        ws.append([n, t.name, t.time, t.every, WORK.get(t.name, "")])
+        ws.append([n, portal(t), t.name, t.time, t.every, WORK.get(t.name, "")])
     head = PatternFill("solid", fgColor="1F4E78")
     for row in ws.iter_rows():   # all left-aligned (the layout set by hand on 28 Oct 2026)
         for c in row:
             c.alignment = Alignment(horizontal="left")
     for c in ws[1]:
         c.font, c.fill = Font(bold=True, color="FFFFFF"), head
-    for col, width in zip("ABCDE", (3.1, 28.3, 24.7, 20, 110)):
+    for col, width in zip("ABCDEF", (3.1, 14, 28.3, 24.7, 20, 110)):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A2"
+    sort_filter(ws, 1, ws.max_row, ws.max_column)
 
 
 def write_month(wb, month: date, done: set, now: datetime, since: dict[str, datetime]) -> None:
@@ -239,7 +254,7 @@ def write_month(wb, month: date, done: set, now: datetime, since: dict[str, date
     ws.append([""] * len(COLUMNS) + [DAYS[d.weekday()] for d in days] + [""])
     green, red, grey = (PatternFill("solid", fgColor=c) for c in ("C6EFCE", "FFC7CE", "F2F2F2"))
     for n, t in enumerate(TASKS):
-        row = [n + 1, t.name, t.time, t.every]
+        row = [n + 1, portal(t), t.name, t.time, t.every]
         for d in days:
             ok = all((n, d, k) in done for k in range(len(t.slots)))
             began = datetime.combine(d, time()) + timedelta(minutes=t.slots[0]) >= since.get(t.workflow, datetime.max)
@@ -264,12 +279,26 @@ def write_month(wb, month: date, done: set, now: datetime, since: dict[str, date
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
         for c in row:
             c.border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    for col, width in zip("ABCD", (3, 28.3, 24.7, 20)):
+    for col, width in zip("ABCDE", (3, 14, 28.3, 24.7, 20)):
         ws.column_dimensions[col].width = width
     for j in range(len(days)):
         ws.column_dimensions[get_column_letter(len(COLUMNS) + 1 + j)].width = 5
     ws.column_dimensions[get_column_letter(len(COLUMNS) + len(days) + 1)].width = 110
     ws.freeze_panes = ws.cell(3, len(COLUMNS) + 1)
+    # the fixed columns and WORK span both header rows; the filter sits on row 2, the rows below it
+    for j in [*range(1, len(COLUMNS) + 1), ws.max_column]:
+        ws.merge_cells(start_row=1, start_column=j, end_row=2, end_column=j)
+    sort_filter(ws, 2, ws.max_row, ws.max_column)
+
+
+def sort_filter(ws, head: int, last: int, cols: int) -> None:
+    """Filter buttons on the header row, sorted PORTAL A to Z then TASK NAME A to Z (the rows are
+    written in that order; Excel shows both sorts on the filter buttons)."""
+    from openpyxl.utils import get_column_letter
+    ws.auto_filter.ref = f"A{head}:{get_column_letter(cols)}{max(last, head + 1)}"
+    for name in ("PORTAL", "TASK NAME"):
+        col = get_column_letter(COLUMNS.index(name) + 1)
+        ws.auto_filter.add_sort_condition(f"{col}{head + 1}:{col}{max(last, head + 1)}")
 
 
 LOGS = "LOGS"   # a tab once here (29 Oct 2026); the run logs stay in Drive AGENT LOGS, not in this sheet

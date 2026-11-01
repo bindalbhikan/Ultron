@@ -7,12 +7,15 @@ or a workflow), so a new tool or a new run time is on the sheet at once. By hand
 with an empty `run_id` (`month` = YYYY-MM rebuilds that month).
 
 * Drive `BINDAL EXPORTS/AGENT WORK/AGENT REPORT WORK SCHEDULE REPORT.xlsx`:
-  * **SCHEDULE**: every scheduled task A to Z, SR / TASK NAME / TIME / DAILY/WEEKLY / WORK (what it
+  * **SCHEDULE**: every scheduled task, sorted PORTAL A to Z then TASK NAME A to Z with filter buttons
+    on the header (both sorts shown on them; owner's rule, 1 Nov 2026), SR / PORTAL (AJIO, ALL CHANNELS,
+    FLIPKART, MYNTRA, OMSGURU: `PORTAL_OF_WORKFLOW` / `PORTAL_OF_TASK`) / TASK NAME / TIME / DAILY/WEEKLY / WORK (what it
     does, `WORK` in the pipeline; the month sheets have WORK as their last column). The list is `TASKS`
     in `work_schedule/pipeline.py`, the same as `SCHEDULE` in `worker/src/worker.js`: a new
     scheduled task goes in both.
   * **One sheet a month** (`OCT-26`): the same columns, then a column per day (header row 1,
-    weekdays row 2, tasks from row 3, no title rows; SCHEDULE left-aligned: the layout set by hand
+    weekdays row 2 (the fixed columns and WORK span both rows; the filter buttons and the same sort
+    on row 2), tasks from row 3, no title rows; SCHEDULE left-aligned: the layout set by hand
     on 28 Oct 2026, kept by every update). A box on each day
     the task is due: ☑ (green) once its workflow ran successfully, ☐ while not, red once the day's
     slot is 12 h (`SLOT_HOURS`) past, grey = not due that day.
