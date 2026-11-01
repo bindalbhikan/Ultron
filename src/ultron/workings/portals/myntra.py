@@ -23,6 +23,7 @@ import json
 import logging
 import re
 import time
+from urllib.parse import unquote
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -565,6 +566,46 @@ class MyntraPortal:
             raise RuntimeError(f"Myntra SPF bulk claim not accepted: {str(data)[:200]}")
         log.info("SPF bulk claim %s: %d order lines, job %s", category, len(order_line_ids), data["jobId"])
         return int(data["jobId"])
+
+
+    # ------------------------------------------------------------ colour grouping (Catalog > My requests)
+    GROUPING_BLOB = "https://myntracms.blob.core.windows.net/diy-assets/"
+
+    def style_grouping_submit(self, name: str, xlsx: bytes, comments: str = "Catalog Hygiene") -> int:
+        """One style-grouping upload, as the partner portal's Catalog > Style Grouping does it (owner's
+        capture, 2 Nov 2026): the xlsx (Unique ID, Group Type, Style ID) is put on the CMS blob store
+        with an upload token, then style-grouping/bulk-upload/submit is called with its link.
+        Returns the job id (its progress: style_grouping_jobs)."""
+        base = API.rsplit("/", 1)[0]
+        token = self._call("GET", f"{base}/file-manager/getUploadToken/cms", params={"fileNames": name}).get(name) or {}
+        if not token.get("sasUrl"):
+            raise RuntimeError("Myntra grouping upload token missing from the portal's answer")
+        r = self.http.put(token["sasUrl"], data=xlsx, timeout=self.timeout,
+                          headers={"x-ms-blob-type": "BlockBlob", "Content-Type": XLSX})
+        if r.status_code not in (200, 201):
+            raise RuntimeError(f"Myntra grouping file upload failed: HTTP {r.status_code}")
+        url = token["sasUrl"].split("?")[0]
+        data = self._call("POST", f"{base}/diy-cataloguing/style-grouping/bulk-upload/submit", json={
+            "urlEntry": {"fileName": unquote(url.rsplit("/", 1)[-1]).rsplit("/", 1)[-1], "url": url},
+            "listingEntry": {"listingComments": comments, "listingStatus": "A"}})
+        if not data.get("id"):
+            raise RuntimeError(f"Myntra grouping upload not accepted: {str(data)[:200]}")
+        log.info("Style grouping %s: job %s", name, data["id"])
+        return int(data["id"])
+
+    def style_grouping_jobs(self, size: int = 100, page: int = 1) -> list[dict]:
+        """The style-grouping upload jobs, newest first: id, status (WAITING / COMPLETED /
+        PARTIAL_COMPLETE / FAILED), totalRecords, processedRecords, erredRecords, createdAt."""
+        base = API.rsplit("/", 1)[0]
+        data = self._call("POST", f"{base}/diy-cataloguing/style-grouping/find/entries",
+                          json={"pageNo": page, "pageSize": size, "sortOrder": "desc", "sortBy": "id"})
+        return data.get("data") or []
+
+    def style_grouping_report(self, job_id: int) -> str:
+        """Download link of a job's result report (a zip: every row, done or why not)."""
+        base = API.rsplit("/", 1)[0]
+        return self._call("POST", f"{base}/diy-cataloguing/style-grouping/export/report",
+                          json={"id": [int(job_id)]}).get("fileDownloadPath") or ""
 
 
 def expiry_warning(session: Session, warn_days: int, now: datetime | None = None, life_days: int = 15) -> str:
