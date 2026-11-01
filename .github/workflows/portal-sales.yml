@@ -1,0 +1,66 @@
+name: Portal sale reports
+
+on:
+  # Started by the Telegram worker's cron (SCHEDULE in worker/src/worker.js) at 11 AM IST on the 2nd:
+  # last month's sale reports of Myntra x3, AJIO and Flipkart into Drive AGENT WORK/PORTAL REPORTS.
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "Month (YYYY-MM), empty = last month"
+        default: ""
+      portals:
+        description: "Only these portals, e.g. MYNTRA,FLIPKART (empty = all)"
+        default: ""
+      no_upload:
+        description: "1 = test run: download only, Drive not changed"
+        default: ""
+
+concurrency:
+  group: portal-sales
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90   # a Myntra or Flipkart report can take 30-45 minutes to be made
+    env:
+      TZ: Asia/Kolkata
+      RUN_MODE: github-actions
+      # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+      ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      # hyper log (core/hyperlog.py) and PORTAL REPORTS: Drive AGENT WORK
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+      AJIO_USERNAME: ${{ secrets.AJIO_USERNAME }}
+      AJIO_PASSWORD: ${{ secrets.AJIO_PASSWORD }}
+      FLIPKART_EMAIL: ${{ secrets.FLIPKART_EMAIL }}
+      FLIPKART_PASSWORD: ${{ secrets.FLIPKART_PASSWORD }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # the Myntra sessions are read from the worker with the dashboard token
+      DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+      DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+      RETURNS_WAIT_MINUTES: ${{ vars.RETURNS_WAIT_MINUTES }}
+      # inputs reach the shell only as variables, never pasted into the script
+      IN_MONTH: ${{ inputs.month }}
+      IN_PORTALS: ${{ inputs.portals }}
+      IN_NO_UPLOAD: ${{ inputs.no_upload }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Run report
+        run: |
+          set -- ${IN_MONTH:+--month "$IN_MONTH"} ${IN_PORTALS:+--portals "$IN_PORTALS"}
+          if [ -n "$IN_NO_UPLOAD" ]; then set -- "$@" --no-upload; fi
+          bash scripts/github/ci_run.sh portal-sales "$@"
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portal-sales-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 14

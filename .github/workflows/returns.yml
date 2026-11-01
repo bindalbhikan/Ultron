@@ -1,15 +1,19 @@
 name: Return analysis
 
 on:
-  # Started by the Telegram bot's Cloudflare cron (worker/src/worker.js): 9:00 AM IST on the 15th
-  # with request=1 (ask the portals for the slow reports), 2:00 PM IST on the 15th for the report.
+  # Started by the Telegram bot's Cloudflare cron (worker/src/worker.js): the 10th (7:00 AM request=1:
+  # ask the portals for the slow reports; 2:00 PM the report), then the 15th as a second try with
+  # fresh reports (7:00 AM request=1 fresh=1; 2:00 PM the report again).
   workflow_dispatch:
     inputs:
       month:
         description: "Report month (YYYY-MM), empty = last month"
         default: ""
       request:
-        description: "1 = only ask the portals for the reports (morning of the 15th)"
+        description: "1 = only ask the portals for the reports (7 AM on the 10th / 15th)"
+        default: ""
+      fresh:
+        description: "With request: 1 = new reports even where ones for the same dates exist (the 15th)"
         default: ""
       drive_input:
         description: "1 = use the files in the Drive folder's Input/ instead of fetching them"
@@ -61,6 +65,7 @@ jobs:
       # inputs reach the shell only as variables, never pasted into the script
       IN_MONTH: ${{ inputs.month }}
       IN_REQUEST: ${{ inputs.request }}
+      IN_FRESH: ${{ inputs.fresh }}
       IN_DRIVE_INPUT: ${{ inputs.drive_input }}
       IN_NO_UPLOAD: ${{ inputs.no_upload }}
       IN_BACKFILL_YEAR: ${{ inputs.backfill_year }}
@@ -72,6 +77,7 @@ jobs:
         run: |
           set -- ${IN_MONTH:+--month "$IN_MONTH"}
           if [ -n "$IN_REQUEST" ]; then set -- "$@" --request; fi
+          if [ -n "$IN_FRESH" ]; then set -- "$@" --fresh; fi
           if [ -n "$IN_DRIVE_INPUT" ]; then set -- "$@" --drive-input; fi
           if [ -n "$IN_NO_UPLOAD" ]; then set -- "$@" --no-upload; fi
           if [ -n "$IN_BACKFILL_YEAR" ]; then set -- "$@" --backfill-year "$IN_BACKFILL_YEAR"; fi

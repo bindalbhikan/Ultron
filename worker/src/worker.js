@@ -106,6 +106,11 @@ const COMMANDS = {
              } },
   weekly: { workflow: "weekly.yml", icon: "📅", name: "Weekly review", portal: "reports", minutes: 5,
             examples: ["/weekly"], inputs: none("/weekly") },
+  portalsales: { workflow: "portal-sales.yml", icon: "🗂", name: "Portal sale reports", portal: "reports", minutes: 30,
+                 examples: ["/portalsales", "/portalsales 2026-10"], inputs: (args) => {
+                   if (args.length === 0) return {};
+                   return /^\d{4}-\d{2}$/.test(args[0]) ? { month: args[0] } : "Use /portalsales or /portalsales YYYY-MM";
+                 } },
   mis: { workflow: "mis.yml", icon: "📆", name: "Monthly MIS", portal: "reports", minutes: 6,
          examples: ["/mis", "/mis 2026-10-02"], inputs: oneDate("day", "/mis or /mis YYYY-MM-DD") },
   deadstock: { workflow: "deadstock.yml", icon: "🪦", name: "Dead stock", portal: "reports", minutes: 6,
@@ -132,8 +137,11 @@ const SCHEDULE = [
   { ist: "7:00 AM daily", cron: "30 1 * * *", cmd: "sale", label: "SJIT report request", inputs: { sjit_request: "1" } },
   { ist: "7:00 AM daily", cron: "30 1 * * *", cmd: "myntraspf", label: "Myntra SPF report request",
     inputs: { request: "1" } },
-  { ist: "7:00 AM on the 15th", cron: "30 1 * * *", day: 15, cmd: "returns", label: "Return analysis report request",
+  // return analysis: the 10th, then a second try on the 15th with fresh reports
+  { ist: "7:00 AM on the 10th", cron: "30 1 * * *", day: 10, cmd: "returns", label: "Return analysis report request",
     inputs: { request: "1" } },
+  { ist: "7:00 AM on the 15th", cron: "30 1 * * *", day: 15, cmd: "returns", label: "Return analysis fresh report request",
+    inputs: { request: "1", fresh: "1" } },
   // 9 AM: the SPF masters. AJIO tickets and replies on Wed + Sat; the other days the master and the
   // delivery disputes due (day 6: AJIO takes a dispute only within 7 days of the delivery).
   { ist: "9:00 AM daily", cron: "30 3 * * *", cmd: "myntraspf" },
@@ -155,7 +163,8 @@ const SCHEDULE = [
     { ist: `${ist} Mon-Sat`, cron: `30 ${h} * * *`, weekdays: [1, 2, 3, 4, 5, 6], cmd: "myntrazerotd" })),
   // and one fixed run every day (Sunday too) at 10 AM
   { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "myntrazerotd", label: "Myntra zero TD 10 AM" },
-  { ist: "2:00 PM on the 15th", cron: "30 8 * * *", day: 15, cmd: "returns" },
+  { ist: "2:00 PM on the 10th", cron: "30 8 * * *", day: 10, cmd: "returns" },
+  { ist: "2:00 PM on the 15th", cron: "30 8 * * *", day: 15, cmd: "returns", label: "Return analysis second try" },
   { ist: "3:30 PM daily", cron: "0 10 * * *", cmd: "sale" },
   { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "vms" },
   { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "ajiotat" },
@@ -165,6 +174,8 @@ const SCHEDULE = [
   { ist: "10:15 AM Monday", cron: "45 4 * * *", weekdays: [1], cmd: "weekly" },
   { ist: "11:00 AM on the 1st", cron: "30 5 * * *", day: 1, cmd: "deadstock" },
   { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "mis" },
+  // last month's sale reports of every portal into Drive AGENT WORK/PORTAL REPORTS (returns: the 15th)
+  { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "portalsales" },
   { ist: "11:30 AM daily", cron: "0 6 * * *", cmd: "listings" },
   { ist: "12:00 PM daily", cron: "30 6 * * *", cmd: "sla" },
   { ist: "3:00 PM daily", cron: "30 9 * * *", cmd: "sla" },

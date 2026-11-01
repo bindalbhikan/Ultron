@@ -47,7 +47,8 @@ def myntra_portal(account: str):
     return portal
 
 
-def request_myntra(account: str, sale: tuple[date, date], parts: list[tuple[date, date]]) -> list[str]:
+def request_myntra(account: str, sale: tuple[date, date], parts: list[tuple[date, date]],
+                   fresh: bool = False) -> list[str]:
     """Morning step (9 AM): ask for the first returns report and the orders report (two different
     reports, so no cooldown between them). Returns first: at the same minute the daily SJIT run
     asks MAIN for an orders report, so MAIN's orders request may have to wait out the cooldown.
@@ -56,7 +57,7 @@ def request_myntra(account: str, sale: tuple[date, date], parts: list[tuple[date
     portal = myntra_portal(account)
     done = []
     for report_id, (start, end) in [(mp.RETURNS_REPORT_ID, parts[0]), (mp.REPORT_ID, sale)]:
-        job = portal.ensure(report_id, start, end)
+        job = portal.ensure(report_id, start, end, fresh=fresh)
         done.append(f"{account} report {report_id} {start}..{end}: job {job.get('id')} {job.get('status')}")
     mp.save_to_worker(env, portal.cookies(), account)
     return done
@@ -155,9 +156,9 @@ def flipkart_client():
     return fk
 
 
-def request_flipkart(sale: tuple[date, date], ret: tuple[date, date]) -> list[str]:
+def request_flipkart(sale: tuple[date, date], ret: tuple[date, date], fresh: bool = False) -> list[str]:
     fk = flipkart_client()
-    return [f"Flipkart {name} {a}..{b}: {fk.request_report(name, a, b)}"
+    return [f"Flipkart {name} {a}..{b}: {fk.request_report(name, a, b, fresh=fresh)}"
             for name, (a, b) in [("Sales Report", sale), ("Returns", ret)]]
 
 

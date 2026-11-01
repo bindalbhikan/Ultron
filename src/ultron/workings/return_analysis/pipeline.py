@@ -81,8 +81,9 @@ def fetch_inputs(inputs: Path, sale, ret, parts, notes: list[str], alerts: list[
 def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -> None:
     """The downloaded reports into Drive AGENT WORK/PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/, one
     calendar month each (1st to last day), the business reporting reads them from there:
-    * sale = the first file of each portal (asked for exactly the month);
-    * returns: Myntra's first returns report is the month itself (the second, this month's 1st to
+    * sale = the first file of each portal (asked for exactly the month), only when the 2nd's run
+      (portal-sales) did not save it already;
+    * returns (the 10th, then the 15th's fresh reports replace them): Myntra's first returns report is the month itself (the second, this month's 1st to
       14th, is next month's and is not kept); AJIO's RTV downloads and Flipkart's Returns report
       run to this month's 14th, so only the month's rows are kept (Return Created Date /
       return_approval_date).
@@ -95,7 +96,7 @@ def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -
     for name, files in got.items():
         portal, _, account = name.partition(" ")
         try:
-            pr.save(portal, month, "sale", files[:1], account)
+            pr.save(portal, month, "sale", files[:1], account, keep_existing=True)   # the 2nd's report stays
             if portal == "MYNTRA":
                 returns = files[1:2]
             elif portal == "AJIO":
@@ -107,7 +108,7 @@ def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -
                                      tmp / f"FLIPKART RETURNS {tag}.xlsx", sheet="Returns",
                                      key=["return_id", "order_item_id"])
                 returns = [cut[0]] if cut else []
-            pr.save(portal, month, "return", returns, account)
+            pr.save(portal, month, "return", returns, account, replace_old=True)   # the 15th replaces the 10th's
         except Exception as exc:  # noqa: BLE001
             log.exception("%s reports not saved to PORTAL REPORTS", name)
             notes.append(f"{name} reports not saved to PORTAL REPORTS: {_short_error(exc)}")
@@ -204,14 +205,16 @@ def publish_year(year: int, results: list[dict], notes: list[str]) -> None:
 # ------------------------------------------------------------------ runs
 
 def run_request(args, sale, ret, parts) -> int:
-    """9:00 AM on the 15th: ask Myntra (orders + first returns report per account) and Flipkart
-    for the reports, so the 2 PM run only collects them. Telegram hears only about trouble."""
+    """7:00 AM on the 10th and the 15th: ask Myntra (orders + first returns report per account) and
+    Flipkart for the reports, so the 2 PM run only collects them. --fresh (the 15th): new reports
+    even where the 10th's exist for the same dates, so the second try reads the latest data (the
+    2 PM run then takes the newest). Telegram hears only about trouble."""
     from ..portals import myntra as mp
     from ..sale.pipeline import session_alert
     problems, alerts = [], []
     for account in MYNTRA_ACCOUNTS:
         try:
-            for line in sources.request_myntra(account, sale, parts):
+            for line in sources.request_myntra(account, sale, parts, fresh=args.fresh):
                 log.info(line)
         except mp.SessionExpired as exc:
             alerts.append(f"Myntra {account} session expired ({exc})")
@@ -219,7 +222,7 @@ def run_request(args, sale, ret, parts) -> int:
             log.exception("Myntra %s request failed", account)
             problems.append(f"Myntra {account}: {_short_error(exc)}")
     try:
-        for line in sources.request_flipkart(sale, ret):
+        for line in sources.request_flipkart(sale, ret, fresh=args.fresh):
             log.info(line)
     except Exception as exc:  # noqa: BLE001
         log.exception("Flipkart request failed")
@@ -328,6 +331,8 @@ def main(argv=None) -> int:
     p.add_argument("--month", default="", metavar="YYYY-MM", help="report month (default: last month)")
     p.add_argument("--request", action="store_true",
                    help="only ask the portals for the slow reports (morning of the 15th)")
+    p.add_argument("--fresh", action="store_true",
+                   help="with --request: new reports even where ones for the same dates exist (the 15th's second try)")
     p.add_argument("--drive-input", action="store_true",
                    help="use the files in the Drive folder's Input/ instead of fetching them")
     p.add_argument("--backfill-year", metavar="YYYY",

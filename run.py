@@ -24,6 +24,7 @@
   myntra-tat 6:30 PM Myntra courier pickups   python run.py myntra-tat --help
   mis        monthly MIS and plan           python run.py mis --help
   myntra-reports 10 AM Myntra orders / returns / listings  python run.py myntra-reports --help
+  portal-sales 2nd: last month's sale reports into PORTAL REPORTS  python run.py portal-sales --help
   myntra-zero-td every 2 h 7 AM-7 PM + 10 AM daily, styles live at MRP  python run.py myntra-zero-td --help
 """
 import importlib
@@ -41,6 +42,7 @@ BOTS = {"sale": "ultron.workings.sale.pipeline", "vms": "ultron.workings.vms.pip
         "mis": "ultron.workings.mis.pipeline", "myntra-otp": "ultron.workings.myntra_otp.pipeline",
         "myntra-reports": "ultron.workings.myntra_reports.pipeline",
         "myntra-zero-td": "ultron.workings.myntra_zero_td.pipeline",
+        "portal-sales": "ultron.workings.portal_sales.pipeline",
         "work-schedule": "ultron.workings.work_schedule.pipeline",
         "myntra-history": "ultron.workings.myntra_history.pipeline"}
 

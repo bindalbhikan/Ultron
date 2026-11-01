@@ -66,7 +66,8 @@ MON_SAT = (0, 1, 2, 3, 4, 5)
 TASKS = [
     Task("SJIT report request", "sale.yml", _at(7), "DAILY"),
     Task("Myntra SPF report request", "myntra-spf.yml", _at(7), "DAILY"),
-    Task("Return analysis report request", "returns.yml", _at(7), "MONTHLY (15th)", day=15),
+    Task("Return analysis report request", "returns.yml", _at(7), "MONTHLY (10th)", day=10),
+    Task("Return analysis fresh report request", "returns.yml", _at(7), "MONTHLY (15th)", day=15),
     Task("Myntra SPF master", "myntra-spf.yml", _at(9), "DAILY"),
     Task("AJIO SPF (tickets + replies)", "ajio-spf.yml", _at(9), "WEEKLY (WED, SAT)", weekdays=(2, 5)),
     Task("AJIO SPF master + disputes due", "ajio-spf.yml", _at(9), "DAILY (not WED, SAT)", weekdays=(0, 1, 3, 4, 6)),
@@ -84,9 +85,11 @@ TASKS = [
     Task("Myntra courier OTP retry", "myntra-otp.yml", _at(11, 45), "DAILY"),
     Task("Dead stock report", "deadstock.yml", _at(11), "MONTHLY (1st)", day=1),
     Task("Monthly MIS", "mis.yml", _at(11), "MONTHLY (2nd)", day=2),
+    Task("Portal sale reports", "portal-sales.yml", _at(11), "MONTHLY (2nd)", day=2),
     Task("Listing health", "listings.yml", _at(11, 30), "DAILY"),
     Task("SLA warning", "sla.yml", _at(12), "DAILY"),
-    Task("Return analysis", "returns.yml", _at(14), "MONTHLY (15th)", day=15),
+    Task("Return analysis", "returns.yml", _at(14), "MONTHLY (10th)", day=10),
+    Task("Return analysis second try", "returns.yml", _at(14), "MONTHLY (15th)", day=15),
     Task("SLA warning", "sla.yml", _at(15), "DAILY"),
     Task("Daily sale report", "sale.yml", _at(15, 30), "DAILY"),
     Task("Myntra VMS report", "vms.yml", _at(17, 30), "DAILY"),
@@ -106,7 +109,7 @@ PORTAL_OF_WORKFLOW = {
     "ajio-spf.yml": "AJIO", "ajio-ads.yml": "AJIO", "ajio-tat.yml": "AJIO", "flipkart-tat.yml": "FLIPKART",
     "myntra-spf.yml": "MYNTRA", "myntra-otp.yml": "MYNTRA", "myntra-reports.yml": "MYNTRA",
     "myntra-zero-td.yml": "MYNTRA", "myntra-tat.yml": "MYNTRA", "vms.yml": "MYNTRA", "inv-push.yml": "OMSGURU"}
-PORTAL_OF_TASK = {"SJIT report request": "MYNTRA"}
+PORTAL_OF_TASK = {"SJIT report request": "MYNTRA"}   # portal-sales.yml / returns.yml: ALL CHANNELS
 
 
 def portal(t: Task) -> str:
@@ -130,6 +133,7 @@ WORK = {
     "Evening summary": "Today's sale so far vs last week, orders still not ready to ship, today's bot runs (Telegram)",
     "Label check": "ERP label prints checked vs OMSGuru: labels printed for cancelled orders, missing prints (Telegram)",
     "Listing health": "Stock not reaching a channel, or listed more than in stock (Telegram)",
+    "Portal sale reports": "Last month's sale reports (Myntra x3, AJIO, Flipkart), 1st to last day, saved in AGENT WORK/PORTAL REPORTS",
     "Monthly MIS": "Last month vs the month before per channel: order value, units, cancel % (Telegram)",
     "Morning report": "Yesterday's sale in units per channel vs the same day last week, cancels (Telegram)",
     "Myntra SPF master": "Myntra SPF master (MAIN / DBCC / FMCC returns, claims) updated from the portal reports",
@@ -144,6 +148,8 @@ WORK = {
     "OMSGuru inventory push": "Pushes the inventory to every channel with inventory sync on in OMSGuru",
     "Return analysis": "Monthly + yearly return analysis report of all channels",
     "Return analysis report request": "Asks Myntra and Flipkart for the reports the 2 PM return analysis needs",
+    "Return analysis fresh report request": "Asks Myntra and Flipkart for new reports (not the 10th's) for the 2 PM second try",
+    "Return analysis second try": "The return analysis again with the fresh reports (returns to the 14th); its return reports replace the 10th's in PORTAL REPORTS",
     "SJIT report request": "Asks Myntra for the SJIT orders report used by the 3:30 PM daily sale",
     "SLA warning": "Orders due today or past their SLA and still not ready to ship, per channel (Telegram)",
     "Stock-out alert": "SKUs out of stock or running out within 3 days at the last 14 days' sale (Telegram)",

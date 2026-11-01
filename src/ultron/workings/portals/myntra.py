@@ -374,10 +374,11 @@ class MyntraPortal:
         log.info("Myntra report %s downloaded (%d bytes)", name, len(r.content))
         return name, r.content
 
-    def ensure(self, report_id: int, start: date, end: date) -> dict:
+    def ensure(self, report_id: int, start: date, end: date, fresh: bool = False) -> dict:
         """A job of that report for exactly start..end: an existing one (done or running), else a
-        new request (a cooldown refusal is waited out)."""
-        job = exact_job(self.jobs(100), report_id, start, end)
+        new request (a cooldown refusal is waited out). fresh: always a new request (a later
+        exact_job / ensure then finds this newest job)."""
+        job = None if fresh else exact_job(self.jobs(100), report_id, start, end)
         if job:
             log.info("Report %s for %s..%s already on the portal (job %s, %s)",
                      report_id, start, end, job.get("id"), job.get("status"))

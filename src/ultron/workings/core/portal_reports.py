@@ -40,11 +40,18 @@ def month_folder(portal: str, month: date, kind: str, create: bool = False) -> D
     return folder
 
 
-def save(portal: str, month: date, kind: str, files: list[Path], prefix: str = "") -> list[str]:
-    """Upload files into the month's folder (names prefixed, e.g. the Myntra account); names saved."""
+def save(portal: str, month: date, kind: str, files: list[Path], prefix: str = "",
+         keep_existing: bool = False, replace_old: bool = False) -> list[str]:
+    """Upload files into the month's folder (names prefixed, e.g. the Myntra account); names saved.
+    keep_existing: nothing is uploaded when the folder already holds a file (of that prefix).
+    replace_old: the folder's other files of that prefix go to the Drive trash (a newer report of
+    the month replaces an older one under another name)."""
     if not files:
         return []
     folder = month_folder(portal, month, kind, create=True)
+    if keep_existing and any(n.startswith(prefix) for n in folder.children() if n != "desktop.ini"):
+        log.info("PORTAL REPORTS/%s %s %s %s: already there, kept", portal.upper(), label(month), KINDS[kind], prefix)
+        return []
     saved = []
     with tempfile.TemporaryDirectory() as tmp:
         for f in files:
@@ -52,6 +59,14 @@ def save(portal: str, month: date, kind: str, files: list[Path], prefix: str = "
             src = f if name == f.name else Path(shutil.copy2(f, Path(tmp) / name))
             folder.put(src, "application/octet-stream")
             saved.append(name)
+    if replace_old:
+        from .drive import API
+        for n, meta in folder.children().items():
+            if n.startswith(prefix) and n not in saved and n != "desktop.ini":
+                r = folder.http.patch(f"{API}/{meta['id']}", params={"supportsAllDrives": "true"},
+                                      json={"trashed": True}, timeout=60)
+                folder._check(r, f"trash of {n}")
+                log.info("PORTAL REPORTS: older %s moved to the trash", n)
     log.info("PORTAL REPORTS/%s %s %s: %d file(s)", portal.upper(), label(month), KINDS[kind], len(saved))
     return saved
 
