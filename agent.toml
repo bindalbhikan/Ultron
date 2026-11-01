@@ -55,7 +55,7 @@ tools = ["knowledge", "ultron.workings.agent_tools"]     # portal knowledge; the
 retry = ["sale.yml", "vms.yml", "ajio-tat.yml", "flipkart-tat.yml", "myntra-spf.yml", "returns.yml",
          "ajio-ads.yml", "morning.yml", "sla.yml", "labels.yml", "stock.yml", "evening.yml",
          "weekly.yml", "deadstock.yml", "listings.yml", "myntra-tat.yml", "mis.yml",
-         "myntra-reports.yml", "myntra-zero-td.yml", "portal-reports.yml"]
+         "myntra-reports.yml", "myntra-zero-td.yml", "portal-reports.yml", "business-report.yml"]
 retry_when = ['Read timed out', 'ReadTimeout', 'ConnectTimeout', 'ConnectionError', 'Connection reset',
               'Connection aborted', 'RemoteDisconnected', 'Max retries exceeded',
               '\b(502|503|504) (Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out)',

@@ -1,6 +1,6 @@
 name: AI fix on failure
 
-# When AJIO SPF or Myntra SPF fails, an AI coding agent reads the failed run's log (decrypted from
+# When AJIO SPF, Myntra SPF or Business reporting fails, an AI coding agent reads the failed run's log (decrypted from
 # its artifact with ARTIFACT_KEY) and, when the cause is in the code, proposes a fix as a pull
 # request - never merged by itself. A failure the code cannot fix (session expired, portal down,
 # password) gets no PR. Telegram hears either way.
@@ -15,7 +15,7 @@ name: AI fix on failure
 # pull request from outside), and the workflow runs from main.
 on:
   workflow_run:
-    workflows: ["AJIO SPF run", "Myntra SPF master"]
+    workflows: ["AJIO SPF run", "Myntra SPF master", "Business reporting"]
     types: [completed]
 
 concurrency:

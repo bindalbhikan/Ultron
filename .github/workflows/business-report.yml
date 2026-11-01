@@ -1,0 +1,67 @@
+name: Business reporting
+
+on:
+  # After the reports it reads have changed: every Portal reports run (the 2nd's order + payment
+  # reports, back-fills) and every Return analysis run (the 10th / 15th's return reports). Or by hand.
+  # Each portal's workbook (Myntra, Flipkart, AJIO) goes to Drive AGENT WORK/BUSINESS REPORTING.
+  # A failed run is looked at by "AI fix on failure" (ci-fix.yml).
+  workflow_run:
+    workflows: ["Portal reports", "Return analysis"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      portals:
+        description: "MYNTRA,FLIPKART,AJIO (empty = all)"
+        default: ""
+      from:
+        description: "First order month YYYY-MM (empty = 2025-01)"
+        default: ""
+      to:
+        description: "Last order month YYYY-MM (empty = last month)"
+        default: ""
+      no_upload:
+        description: "1 = test run: workbooks only as the run's artifact, Drive not changed"
+        default: ""
+
+concurrency:
+  group: business-report
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TZ: Asia/Kolkata
+      RUN_MODE: github-actions
+      # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+      ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # inputs reach the shell only as variables, never pasted into the script
+      IN_PORTALS: ${{ inputs.portals }}
+      IN_FROM: ${{ inputs.from }}
+      IN_TO: ${{ inputs.to }}
+      IN_NO_UPLOAD: ${{ inputs.no_upload }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Build the workbooks
+        run: |
+          set -- ${IN_PORTALS:+--portals "$IN_PORTALS"} ${IN_FROM:+--from "$IN_FROM"} ${IN_TO:+--to "$IN_TO"}
+          if [ -n "$IN_NO_UPLOAD" ]; then set -- "$@" --no-upload; fi
+          bash scripts/github/ci_run.sh business-report "$@"
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: business-report-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 14
