@@ -145,6 +145,7 @@ def phone_records(style_ids: list[str]) -> dict:
 
 def run(args) -> int:
     from . import engine as e
+    from . import submit as sb
     work = Path(tempfile.mkdtemp(prefix="myntra_grouping_"))
     for sub in ("input", "sale", "output"):
         (work / sub).mkdir()
@@ -193,8 +194,22 @@ def run(args) -> int:
     e.apply_cross_account_done(account_rows)
     stamp = f"{datetime.now():%Y-%m-%d}"
     report = work / "output" / f"GROUPING_ACCOUNT_WISE_{stamp}.xlsx"
+    for rows in account_rows.values():
+        e.pending_group_styles(rows)          # names on the rows the styles an upload cannot move
     e.write_report(str(report), account_rows)
     e.write_portal_templates(account_rows, stamp)
+
+    # the portal's upload jobs, the pending groups submitted (only --submit), the record into the report
+    record = sb.read_record(lg.download(sb.RECORD, work / "old_record.xlsx"))
+    record, problems = sb.sync_jobs(record)
+    submitted = skipped = 0
+    if args.submit and not args.no_upload:
+        record, bad, submitted, skipped = sb.submit(Path(e.TEMPLATE_DIR) / stamp, record, args.submit_limit)
+        problems += bad
+        record, more = sb.sync_jobs(record)
+        problems += more
+    record = sb.failure_reasons(record)
+    sb.apply(report, record)
 
     lines = [f"🎨 <b>Myntra colour grouping</b> {stamp}", ""]
     for a, rows in account_rows.items():
@@ -204,6 +219,11 @@ def run(args) -> int:
         lines.append(f"<b>{ACCOUNT_OF.get(a, a)}</b>: {df['Unique ID'].nunique() if len(df) else 0} groups · DONE {int(rem.get(e.REMARK_DONE, 0))} · "
                      f"NOT DONE {int(rem.get(e.REMARK_NOT_DONE, 0))} · "
                      f"extra in portal {int(rem.get(e.REMARK_EXTRA, 0))} · {len(pending)} groups to submit")
+    open_jobs = record[~record["JOB STATUS"].astype(str).isin(sb.FINISHED)]
+    open_jobs = open_jobs[open_jobs["JOB ID"].astype(str).str.fullmatch(r"\d+")]
+    lines.append(f"\nSubmitted now: <b>{submitted}</b> groups" + (f", {skipped} skipped (waiting on the portal, or the same upload failed before)" if skipped else "")
+                 + f" · {len(open_jobs)} jobs waiting on Myntra")
+    lines += [f"❌ {telegram.esc(x)}" for x in problems[:15]]
     if inventory is None:
         lines.append("\n<i>INV left blank: OMSGuru's inventory could not be read</i>")
     if missing:
@@ -217,6 +237,7 @@ def run(args) -> int:
     shutil.copy2(report, master_file)
     lg.put(master_file, XLSX)
     lg.subfolder("HISTORY", create=True).put(report, XLSX)
+    lg.put(sb.write_record(record, work / sb.RECORD), XLSX)
     tdir = Path(e.TEMPLATE_DIR) / stamp
     day = lg.subfolder("TEMPLATES", create=True).subfolder(stamp, create=True)
     n = 0
@@ -234,4 +255,6 @@ def run(args) -> int:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="run.py myntra-grouping", description=__doc__.splitlines()[0])
     p.add_argument("--no-upload", action="store_true", help="build only (output/myntra_grouping), Drive not changed")
+    p.add_argument("--submit", action="store_true", help="submit the pending groups on the Myntra partner portal")
+    p.add_argument("--submit-limit", type=int, default=0, help="with --submit: at most that many groups (a test)")
     return run_bot("Myntra colour grouping", p, run, argv)

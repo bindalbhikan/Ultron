@@ -631,6 +631,19 @@ def pending_group_styles(rows):
             if r["SKU"] not in best or score > best[r["SKU"]][0]:
                 best[r["SKU"]] = (score, r["Style ID"])
         style_ids = [sid for _, sid in best.values()]
+        # Myntra refuses a whole upload holding more than one style that already has a colour group
+        # (job report, 2 Nov 2026). So: the style of the biggest existing group, plus the ungrouped
+        # ones. Styles of that same group are together already; a style in another group cannot be
+        # moved by an upload and is named in REMARK.
+        by_sid = {r["Style ID"]: r for r in group_rows}
+        ids_of = lambda sid: {x for x in str(by_sid[sid]["PORTAL GROUP"]).split(", ") if x}  # noqa: E731
+        grouped = [sid for sid in style_ids if len(ids_of(sid)) > 1]
+        if len(grouped) > 1:
+            anchor = max(grouped, key=lambda sid: len(ids_of(sid)))
+            for sid in grouped:
+                if sid != anchor and str(sid) not in ids_of(anchor):
+                    by_sid[sid]["REMARK"] = "IN ANOTHER GROUP: UNGROUP FIRST"
+            style_ids = [sid for sid in style_ids if sid == anchor or sid not in grouped]
         if len(style_ids) >= 2:
             first = group_rows[0]
             result[uid] = {"brand": first["Brand"], "article": first["Article Type"], "style_ids": style_ids}

@@ -18,6 +18,8 @@ agent without the owner's approval, and only through a working built for it.
 | `GET /api/partners/report/summary/payment-history` | Read | `myntra-spf`: payments (`payments[]: paymentMethod, utrNumber, paymentDate, amount, adviceId`) |
 | `GET /api/spf/v2/fetchClaimByTicketId`, `GET /api/file-manager/getUploadToken/spfJob`, `POST /api/spf/createRnrBulkTickets` | Read / Changes | `myntra-spf`: claims read, bulk SPF tickets (file uploaded to the signed link, then the job) |
 
+| `GET /api/file-manager/getUploadToken/cms`, `POST /api/diy-cataloguing/style-grouping/bulk-upload/submit`, `.../find/entries`, `.../export/report` | Read / Changes | `myntra-grouping`: colour group uploads, their jobs and result reports |
+
 ## Not used yet — what each could give us
 
 ### Notices and seller rating (plan item W8)
