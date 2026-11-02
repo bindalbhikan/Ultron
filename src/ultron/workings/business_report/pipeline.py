@@ -137,6 +137,11 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict) -> tuple
     if not len(o):
         o = pd.DataFrame(columns=["order_item_id"])
     raw = flipkart.raw_data(o, r, master, s, cats, tax)
+    # a month with no order or sales report is left out and named: stray items of it in other months'
+    # files (a return or settlement event) are not that month's sale
+    have = {pd.Timestamp(f["month"]) for f in files if f["kind"] in ("ORDER", "SALES")}
+    lacking = raw[~raw["ORDER MONTH"].isin(have)]
+    raw = raw[raw["ORDER MONTH"].isin(have)].reset_index(drop=True)
     frames = {}
     for df, kind in ((o, "ORDER"), (r, "RETURN"), (s, "PAYMENT"), (tax, "SALES")):
         if len(df):
@@ -148,6 +153,9 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict) -> tuple
     lg.append(["Orders used", "-", "one row per order item", len(raw), "Order date", raw["ORDER DATE"].min(), raw["ORDER DATE"].max(),
                f"sale value = the Sales Report's invoice value, else Settled Transactions' Sale Amount; {unsettled:,} delivered items have none; "
                f"{int((raw['SOURCE'] == 'Sales report').sum()):,} items from the Sales Report only (months without an Orders report)"])
+    if len(lacking):
+        names = ", ".join(sorted({f"{m:%b-%y}" for m in lacking["ORDER MONTH"].dropna()}))
+        lg.append(["Months left out", "-", names, len(lacking), "Order date", pd.NaT, pd.NaT, "no order or sales report for these months yet"])
     lg.append(["SKU master", "-", "MasterSheet.xlsx (channel FLIPKART); category = Myntra's article type of the design",
                len(master), "-", pd.NaT, pd.NaT, ""])
     return flipkart.report(raw, s, pd.DataFrame(lg, columns=LOG_COLS))
@@ -243,6 +251,8 @@ def run(args) -> int:
 
 
 def finish(rep, out_dir: Path, args) -> Path:
+    # a report of the first month also carries a few older orders (their events fell in it): not a month of the report
+    rep.raw = rep.raw[rep.raw["ORDER MONTH"] >= pd.Timestamp(month_of(args.from_month))].reset_index(drop=True)
     m0, m1 = rep.raw["ORDER MONTH"].min(), rep.raw["ORDER MONTH"].max()
     out = out_dir / f"{rep.portal} SALE RETURN ANALYSIS {m0:%b-%y} TO {m1:%b-%y}".upper()
     out = out.with_name(out.name + ".xlsx")

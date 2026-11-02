@@ -216,15 +216,21 @@ class Writer:
                 ws.write_formula(r, col["asp"], f'=IF({c["nq"]}=0,"-",{c["nv"]}/{c["nq"]})', num, v["nv"] / v["nq"] if v["nq"] else "-")
             net = self.net
             if "mom" in col:
-                if n == 0 or last or not isinstance(label, pd.Timestamp):
+                # the month before must be the row above: a month with no data is never skipped over
+                before = rows[n - 1][0] if n else None
+                if (n == 0 or last or not isinstance(label, pd.Timestamp)
+                        or before != label - pd.DateOffset(months=1)):
                     ws.write_string(r, col["mom"], "-", self.tdash if last else self.dash)
                 else:
                     prev, pv = self.cell(r - 1, col[net]), vals[-1][net]
                     ws.write_formula(r, col["mom"], f'=IF({prev}=0,"-",{c[net]}/{prev}-1)', self.pct, v[net] / pv - 1 if pv else "-")
             if "ly" in col:
-                if n >= 12 and not last:
-                    ly = vals[n - 12][net]
-                    ws.write_formula(r, col["ly"], f"={self.cell(r - 12, col[net])}", self.int, ly)
+                # the same month last year, found by its date: a month with no data must not shift the rest
+                year_ago = next((i for i in range(n) if isinstance(label, pd.Timestamp)
+                                 and rows[i][0] == label - pd.DateOffset(years=1)), None)
+                if year_ago is not None and not last:
+                    ly = vals[year_ago][net]
+                    ws.write_formula(r, col["ly"], f"={self.cell(top + year_ago, col[net])}", self.int, ly)
                     ws.write_formula(r, col["yoy"], f'=IF({c["ly"]}=0,"-",{c[net]}/{c["ly"]}-1)', self.pct, v[net] / ly - 1 if ly else "-")
                 else:
                     ws.write_string(r, col["ly"], "-", self.tdash if last else self.dash)
