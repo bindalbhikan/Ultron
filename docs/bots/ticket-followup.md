@@ -14,5 +14,5 @@
 |---|---|---|
 | AJIO SPF | `ajio-spf` | only Wed + Sat (hard rule) |
 | AJIO pickup not done | `ajio-tat` | every 24 h |
-| AJIO other GENERAL | this run | one fixed comment when our last word is `TICKET_FOLLOWUP_HOURS` (24) old, open tickets only (a comment re-opens a resolved ticket), at most `TICKET_OTHER_CAP` (10) a run |
+| AJIO other GENERAL | this run | one fixed comment when our last word is `TICKET_FOLLOWUP_HOURS` (24) old, open tickets only (a comment re-opens a resolved ticket), raised in the last `TICKET_OTHER_MAX_DAYS` (90) days (an older one is only listed), at most `TICKET_OTHER_CAP` (10) a run |
 | Myntra | nobody yet | listed for a reply by hand: no call to reply on a Myntra ticket is known, and raising a general Seller Support ticket is not known either (needs a browser capture of one done by hand) |

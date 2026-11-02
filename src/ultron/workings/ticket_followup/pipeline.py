@@ -93,6 +93,8 @@ def follow_up(client, master: pd.DataFrame, today: date, dry: bool) -> tuple[lis
     """The fixed comment on this run's open AJIO tickets whose last word from us is 24 h old; (done ids, problems)."""
     from ..ajio_tat.pipeline import due_followup
     todo = master[(master["PORTAL"] == "AJIO") & (master["OPEN"] == "YES") & (master["FOLLOWED UP BY"] == BY_THIS)]
+    # a ticket left open for longer is for the owner to look at, not for a comment every day (2 Nov 2026: two from Nov 2024)
+    todo = todo[pd.to_numeric(todo["AGE DAYS"], errors="coerce") <= num("TICKET_OTHER_MAX_DAYS", 90)]
     done, problems = [], []
     now = pd.Timestamp(datetime.now())
     for tid in todo["TICKET ID"].astype(str).head(int(num("TICKET_OTHER_CAP", 10))):
