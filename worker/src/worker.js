@@ -106,6 +106,8 @@ const COMMANDS = {
              } },
   weekly: { workflow: "weekly.yml", icon: "📅", name: "Weekly review", portal: "reports", minutes: 5,
             examples: ["/weekly"], inputs: none("/weekly") },
+  ticketfollowup: { workflow: "ticket-followup.yml", icon: "🎫", name: "Ticket follow-up", portal: "reports", minutes: 5,
+                    examples: ["/ticketfollowup"], inputs: none("/ticketfollowup") },
   grouping: { workflow: "myntra-grouping.yml", icon: "🎨", name: "Myntra colour grouping", portal: "myntra", minutes: 20, office: true,
               examples: ["/grouping", "/grouping status"], inputs: (args) => {
                 if (args.length === 0) return {};
@@ -212,6 +214,7 @@ const SCHEDULE = [
     { ist: `${ist} daily`, cron: `30 ${h} * * *`, cmd: "smscatchup" })),
   { ist: "6:30 PM daily", cron: "0 13 * * *", cmd: "myntratat" },
   { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "evening" },
+  { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "ticketfollowup" },
   ...INV_PUSH_HOURS.map((h) => ({ ist: "every 3 hours from 6 AM", cron: `30 ${h} * * *`, cmd: "invpush" })),
 ];
 
@@ -321,6 +324,7 @@ const SCREENS = {
       [["📅 Weekly review", "r:weekly"], ["📆 Monthly MIS", "r:mis"]],
       [["↩️ Return analysis", "m:returns"], ["🪦 Dead stock", "r:deadstock"]],
       [["📑 Business report", "m:business"], ["🗂 Portal reports", "c:portalreports"]],
+      [["🎫 Ticket follow-up", "r:ticketfollowup"]],
       [["📣 AJIO Ads gap", "r:ajioads"]],
       back(),
     ],

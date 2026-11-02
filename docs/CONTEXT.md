@@ -44,6 +44,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 | sale | `python run.py sale` | Daily sale | `sale.yml` Daily sale report | 7:00 AM daily; 3:30 PM daily | `docs/bots/sale.md` |
 | sla | `python run.py sla` | SLA warning | `sla.yml` SLA warning | 12:00 PM daily; 3:00 PM daily | `docs/bots/sla.md` |
 | stock | `python run.py stock` | Stock-out alert | `stock.yml` Stock-out alert | 10:00 AM daily | `docs/bots/stock.md` |
+| ticket-followup | `python run.py ticket-followup` | Ticket follow-up | `ticket-followup.yml` Ticket follow-up | 8:00 PM daily | `docs/bots/ticket-followup.md` |
 | vms | `python run.py vms` | Myntra VMS | `vms.yml` Myntra VMS report | 5:30 PM daily | `docs/bots/vms.md` |
 | weekly | `python run.py weekly` | Weekly review | `weekly.yml` Weekly review | 10:15 AM weekly (mon) | `docs/bots/weekly.md` |
 | work-schedule | `python run.py work-schedule` | Agent work schedule | `agent-watch.yml` Agent watch | after every bot run | `docs/bots/work-schedule.md` |

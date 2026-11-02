@@ -103,6 +103,7 @@ TASKS = [
     Task("AJIO Seller Pickup Issue form", "ajio-tat.yml", _at(17, 30), "DAILY"),
     Task("Label check", "labels.yml", _at(18), "DAILY"),
     Task("Myntra courier scorecard", "myntra-tat.yml", _at(18, 30), "DAILY"),
+    Task("Ticket follow-up", "ticket-followup.yml", _at(20), "DAILY"),
     Task("Evening summary", "evening.yml", _at(20), "DAILY"),
     Task("OMSGuru inventory push", "inv-push.yml", tuple(h * 60 for h in range(6, 28, 3)), "DAILY (8 times)"),
 ]
@@ -136,6 +137,7 @@ WORK = {
     "Evening summary": "Today's sale so far vs last week, orders still not ready to ship, today's bot runs (Telegram)",
     "Label check": "ERP label prints checked vs OMSGuru: labels printed for cancelled orders, missing prints (Telegram)",
     "Listing health": "Stock not reaching a channel, or listed more than in stock (Telegram)",
+    "Ticket follow-up": "Every portal ticket in TICKET MASTER.xlsx, the open ones in TICKET FOLLOWUP SHEET.xlsx; AJIO tickets no other bot follows get a comment every 24 h",
     "Portal reports": "Last month's order reports (Myntra x3, AJIO, Flipkart) and payment reports (Myntra x3, AJIO), 1st to last day, saved in AGENT WORK/PORTAL REPORTS",
     "Monthly MIS": "Last month vs the month before per channel: order value, units, cancel % (Telegram)",
     "Morning report": "Yesterday's sale in units per channel vs the same day last week, cancels (Telegram)",
