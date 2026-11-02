@@ -1,8 +1,8 @@
 # Business reporting — `python run.py business-report`
 
 **When**: after every `portal-reports` run (the 2nd, back-fills) and every return analysis run (the
-10th / 15th), as `workflow_run` of `business-report.yml`; by hand with inputs `portals`, `from`, `to`,
-`no_upload`. A failed run goes to "AI fix on failure" (`ci-fix.yml`: Claude Code, else Gemini).
+10th / 15th), as `workflow_run` of `business-report.yml`. By hand: Menu > Reports & MIS > Business report,
+`/businessreport [PORTALS] [FROM [TO]]`, or the workflow (inputs `portals`, `from`, `to`, `no_upload`). A failed run goes to "AI fix on failure" (`ci-fix.yml`: Claude Code, else Gemini).
 
 * The owner's sale / return / payment analysis (Drive `AGENT WORK/BUSINESS REPORTING`, the rules in
   `docs/bots/business-report-context.md`, taken over from the hand-run scripts on 1 Nov 2026; the old
@@ -23,6 +23,9 @@
   Values that differ only in letter case become one spelling (Excel's SUMIFS ignores case).
 * Per portal: `myntra.py` (the owner's FINAL STATUS and payment rules), `flipkart.py` (Orders +
   Returns + Settled Transactions; Return Type Pending when the return line is missing),
-  `ajio.py` (order report + RTV + SRM ledger G4 / IC). Category of Flipkart and AJIO = the article
+  `ajio.py` (order report + RTV + SRM ledger: G4 = received, by REFERENCE = Seller Invoice No, shared
+  over the invoice's lines by invoice value; IC = reversed, by INVOICE REFERENCE NUMBER = the DOCNO of
+  that invoice's G4, shared by the credit note value of its returned lines; Net Payout = G4 + IC, other
+  ledger types shown apart; money not reaching an order line is named in the INPUT LOG). Category of Flipkart and AJIO = the article
   type Myntra lists the same design under.
 * Telegram: one line per portal (months, qty, net %, return %, RTO %).

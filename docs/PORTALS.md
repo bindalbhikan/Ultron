@@ -43,6 +43,7 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 
 * Login: JSON POST `/login` (`FLIPKART_EMAIL/PASSWORD`); CSRF from `/getFeaturesForSeller`.
 * FBF units: `/napi/metrics/search` filtered on Flipkart's own warehouses (sale bot).
+* Report centre (`/napi/metrics/bizReport/`): at most 20 new report requests a day; over it `submitReport` answers HTTP 500 around a 429 ("daily quota of 20 reports"). Downloading finished requests does not count.
 * **Report centre**: `POST /napi/metrics/bizReport/submitReport?reportName=<name>` with
   `{"from_date","to_date","file_format":"EXCEL","type":"ONETIME","filters":[{"values":[from,to],
   "operator":"RANGE","name":"date"}]}` → poll `report/getReportsV2` (paged, 50 per page) until

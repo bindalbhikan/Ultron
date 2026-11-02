@@ -5,14 +5,16 @@ reports kept in PORTAL REPORTS.
                   Selling Price (what the customer paid), Invoice Value (what AJIO pays us)
   RETURN REPORT   Dropship RTV report: one row per return line; Return Type RVP / REPL / SELF_SHIP =
                   customer return (REPL = exchange, counted as a return as on Myntra), RTO = RTO
-  PAYMENT REPORT  SRM statement of accounts (the AJIO ledger): G4 = the invoice paid (REFERENCE = the
-                  Seller Invoice No; negative = owed to us), IC = credit notes of returns, the rest
-                  (TOT, ads, holds) are not order lines
+  PAYMENT REPORT  SRM statement of accounts (the AJIO ledger; owner's rule, 2 Nov 2026): G4 = payment
+                  received for an invoice (REFERENCE = the Seller Invoice No), IC = a payment reversed for a
+                  return (INVOICE REFERENCE NUMBER = the DOCNO of that invoice's G4), the rest (bank
+                  clearing, TOT, ads, holds) are neither received nor reversed money of an order line
 
 FINAL STATUS: Customer Return / RTO from the RTV line (return qty > 0), Cancelled (status Cancelled),
 Delivered (status Delivered, no return), In Transit (Shipped and the rest).
-SALE VALUE = Selling Price x qty; NET SETTLEMENT = what the ledger paid for the invoice less the
-credit note of its return (G4 + IC, sign turned so money to us is positive).
+SALE VALUE = Selling Price x qty; NET SETTLEMENT = G4 received less IC reversed (sign turned so money
+to us is positive), both matched by invoice number. An invoice can hold several order lines: G4 is shared
+by invoice value, IC by the credit note value of the invoice's returned lines, so no rupee counts twice.
 BRAND from the order report; CATEGORY = the article type Myntra lists the same design under (MasterSheet
 channel AJIO for the design), else the order's Description.
 """
@@ -45,11 +47,29 @@ def read(files: list[Path]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+def ledger_lines(ledger: pd.DataFrame) -> pd.DataFrame:
+    """The ledger's lines once each; amt: money to us is positive; paid: the clearing date."""
+    lg = ledger.copy()
+    lg["amt"] = -num(lg["AMOUNT"]).fillna(0)
+    lg["paid"] = pd.to_datetime(lg["CLEARINGDOCUMENTDATE"], format="%d.%m.%Y", errors="coerce")
+    return lg.drop_duplicates(["DT", "REFERENCE", "DOCNO", "AMOUNT"])
+
+
+def credit_notes(rtv: pd.DataFrame) -> pd.Series:
+    """Order line key -> credit note value of its return lines (which line of an invoice an IC is for)."""
+    if not len(rtv):
+        return pd.Series(dtype=float)
+    lines = rtv.drop_duplicates(["RETURN ORDER NUMBER", "SELLER SKU"], keep="last")
+    keys = lines["Cust Order No"].str.strip() + "|" + lines["SELLER SKU"].str.strip()
+    return num(lines["Credit Note Value"]).fillna(0).clip(lower=0).groupby(keys).sum()
+
+
 def raw_data(orders: pd.DataFrame, rtv: pd.DataFrame, ledger: pd.DataFrame, master: pd.DataFrame,
              category_of_design: dict[str, str] | None = None) -> pd.DataFrame:
     o = orders.copy()
     o["key"] = o["Cust Order No"].str.strip() + "|" + o["Seller SKU"].str.strip()
     o = o.drop_duplicates("key", keep="last")
+    all_returns = rtv
     if len(rtv):
         r = rtv.copy()
         r["key"] = r["Cust Order No"].str.strip() + "|" + r["SELLER SKU"].str.strip()
@@ -102,18 +122,25 @@ def raw_data(orders: pd.DataFrame, rtv: pd.DataFrame, ledger: pd.DataFrame, mast
     d["COURIER"] = o["FWD Carrier"].values
     d["SHIPMENT DATE"] = adate(o["FWD Shipment Date"]).dt.normalize().values
     d["SLA STATUS"] = o["SLA Status"].values
-    # payments: G4 by invoice, IC by credit note (ledger amounts negative = owed to us)
+    # payments by invoice number: G4 received (REFERENCE), IC reversed (through the DOCNO of the G4)
     if len(ledger):
-        lg = ledger.copy()
-        lg["amt"] = -num(lg["AMOUNT"]).fillna(0)
-        lg["paid"] = pd.to_datetime(lg["CLEARINGDOCUMENTDATE"], format="%d.%m.%Y", errors="coerce")
-        lg = lg.drop_duplicates(["DT", "REFERENCE", "DOCNO", "AMOUNT"])
-        g4 = lg[lg["DT"] == "G4"].groupby("REFERENCE").agg(amt=("amt", "sum"), paid=("paid", "max"))
-        ic = lg[lg["DT"] == "IC"].groupby("REFERENCE")["amt"].sum()
-        inv = pd.Series(d["SELLER INVOICE NO"])
-        d["INVOICE PAID"] = inv.map(g4["amt"]).values
+        lg = ledger_lines(ledger)
+        for c in ("REFERENCE", "DOCNO", "INVOICE REFERENCE NUMBER"):
+            lg[c] = lg[c].astype(str).str.strip()
+        received, ic = lg[lg["DT"] == "G4"], lg[lg["DT"] == "IC"]
+        g4 = received.groupby("REFERENCE").agg(amt=("amt", "sum"), paid=("paid", "max"))
+        invoice_of = received.drop_duplicates("DOCNO").set_index("DOCNO")["REFERENCE"]
+        reversed_ = ic.groupby(ic["INVOICE REFERENCE NUMBER"].map(invoice_of))["amt"].sum()
+        inv = pd.Series(d["SELLER INVOICE NO"]).astype(str).str.strip()
+        value = pd.Series(d["INVOICE VALUE"]).fillna(0).clip(lower=0)
+        total = value.groupby(inv).transform("sum")
+        share = (value / total).where(total > 0, 1 / inv.map(inv.value_counts()))
+        d["INVOICE PAID"] = (inv.map(g4["amt"]) * share).values
         d["PAYMENT DATE"] = inv.map(g4["paid"]).values
-        d["CREDIT NOTE DEBIT"] = pd.Series(d["CREDIT NOTE NUMBER"]).map(ic).values
+        note = key.map(credit_notes(all_returns)).fillna(0)
+        noted = note.groupby(inv).transform("sum")
+        debit = inv.map(reversed_) * (note / noted).where(noted > 0, share)     # no credit note: as G4
+        d["CREDIT NOTE DEBIT"] = debit.where(debit != 0).values
         d["NET SETTLEMENT"] = (pd.Series(d["INVOICE PAID"]).fillna(0) + pd.Series(d["CREDIT NOTE DEBIT"]).fillna(0)) \
             .where(pd.Series(d["INVOICE PAID"]).notna() | pd.Series(d["CREDIT NOTE DEBIT"]).notna()).values
     else:
@@ -137,14 +164,13 @@ def report(raw: pd.DataFrame, ledger: pd.DataFrame, input_log: pd.DataFrame) -> 
     have_pay = raw["NET SETTLEMENT"].notna().any()
     pay_months = None
     if len(ledger):
-        lg = ledger.copy()
-        lg["amt"] = -num(lg["AMOUNT"]).fillna(0)
-        lg["m"] = pd.to_datetime(lg["CLEARINGDOCUMENTDATE"], format="%d.%m.%Y", errors="coerce").dt.to_period("M").dt.to_timestamp()
-        lg = lg.drop_duplicates(["DT", "REFERENCE", "DOCNO", "AMOUNT"]).dropna(subset=["m"])
+        lg = ledger_lines(ledger)
+        lg["m"] = lg["paid"].dt.to_period("M").dt.to_timestamp()
+        lg = lg.dropna(subset=["m"])
         t = lg.pivot_table(index="m", columns="DT", values="amt", aggfunc="sum", fill_value=0)
         t = t.reindex(columns=["G4", "IC"] + sorted(c for c in t.columns if c not in ("G4", "IC")), fill_value=0)
-        t.columns = ["Invoices Paid (G4)", "Credit Notes (IC)"] + [f"Other ({c})" for c in t.columns[2:]]
-        t["Net Payout"] = t.sum(axis=1)
+        t.columns = ["Received (G4)", "Reversed (IC)"] + [f"Other ({c})" for c in t.columns[2:]]
+        t["Net Payout"] = t["Received (G4)"] + t["Reversed (IC)"]      # the others are not order money
         pay_months = t
     return Report(
         portal="AJIO", raw=raw, raw_cols=RAW_COLS, value="SALE VALUE",

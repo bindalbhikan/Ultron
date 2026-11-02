@@ -7,8 +7,8 @@ return analysis, when the month's returns have come in.
   * Myntra MAIN / DBCC / FMCC: Seller_Orders_Report (report 4) for exactly the month (a job already
     on the portal for those dates is reused, else one is asked for: owner's rule, 1 Nov 2026), and
     the payments of the month (every payout and its line rows, myntra_spf/payments.py).
-  * AJIO: the Dropship order report of the month, and the SRM statement of accounts (the AJIO
-    ledger: G4 payments, reversals) of the month.
+  * AJIO: the Dropship order report of the month, its RTV report (the returns), and the SRM statement
+    of accounts (the AJIO ledger: G4 payments, IC reversals) of the month.
   * Flipkart: the report centre's "Orders" report (Fulfilment Reports) and "Settled Transactions"
     (Payment Reports) of the month.
 
@@ -99,7 +99,9 @@ def flipkart_report(report: str, first: date, last: date, dest: Path) -> Path:
     transaction settled in the range - orders, SPF, TDS, storage, recall)."""
     from ..return_analysis.sources import flipkart_client
     fk = flipkart_client()
-    name, data = fk.report(report, first, last, int(num("RETURNS_WAIT_MINUTES", 45)))
+    # A closed month's request from before its last day had settled is not reused: the one made at
+    # 10:31 PM on 1 Nov 2026 still had no order of 31 Oct.
+    name, data = fk.report(report, first, last, int(num("RETURNS_WAIT_MINUTES", 45)), made_from=last + timedelta(days=2))
     path = dest / f"flipkart_{report.lower().replace(' ', '_')}{Path(name).suffix or '.xlsx'}"
     path.write_bytes(data)
     return path
@@ -120,8 +122,8 @@ def myntra_returns(account: str, first: date, last: date, dest: Path) -> Path:
 
 
 def ajio_returns(first: date, last: date, dest: Path) -> Path:
-    """The Dropship RTV report of the month (by return created date) - for a back-fill; the monthly
-    return report is the return analysis's (the 10th / 15th)."""
+    """The Dropship RTV report of the month (by return created date), AJIO's return report: on the 2nd
+    and in a back-fill; the return analysis replaces it on the 10th / 15th with a newer one."""
     from ..portals.ajio import AjioClient
     ajio = AjioClient(env("AJIO_USERNAME"), env("AJIO_PASSWORD"))
     ajio.login()
@@ -146,6 +148,16 @@ def data_rows(path: Path) -> int:
     return n
 
 
+def flipkart_orders_end(path: Path) -> date | None:
+    """The last order date in Flipkart's Orders report; None when it cannot be told."""
+    import pandas as pd
+    try:
+        d = pd.to_datetime(pd.read_excel(path, sheet_name="Orders", usecols=["order_date"], dtype=str)["order_date"], errors="coerce")
+    except ValueError:
+        return None
+    return d.max().date() if d.notna().any() else None
+
+
 def months_of(args, today: date) -> list[date]:
     if args.from_month:
         start, end = report_month(args.from_month, today), report_month(args.to_month or args.from_month, today)
@@ -167,8 +179,7 @@ def tasks_of(first: date, last: date, kinds: set[str], back_fill: bool) -> dict:
             tasks[("MYNTRA", a, "return")] = (myntra_returns, (a, first, last))
     tasks[("AJIO", "", "sale")] = (ajio_orders, (first, last))
     tasks[("AJIO", "", "payment")] = (ajio_payments, (first, last))
-    if back_fill:
-        tasks[("AJIO", "", "return")] = (ajio_returns, (first, last))
+    tasks[("AJIO", "", "return")] = (ajio_returns, (first, last))
     tasks[("FLIPKART", "", "sale")] = (flipkart_report, ("Orders", first, last))
     tasks[("FLIPKART", "", "payment")] = (flipkart_report, ("Settled Transactions", first, last))
     tasks[("FLIPKART", "", "sales")] = (flipkart_sales, (first, last))
@@ -216,8 +227,11 @@ def run(args) -> int:
                 if not data_rows(path):
                     empty.append(what)       # the portal no longer keeps that month, or there was none
                     continue
-                name = path.name if args.no_upload else pr.save(portal, month, kind, path, account)
-                saved.append(name or what)
+                # a whole day without one order does not happen here: the report stopped short
+                end = flipkart_orders_end(path) if (portal, kind) == ("FLIPKART", "sale") else None
+                partial = bool(end and end < last)
+                name = path.name if args.no_upload else pr.save(portal, month, kind, path, account, partial=partial)
+                saved.append((name or what) + (f": stops at {end:%d %b}, marked PARTIAL, run it again later" if partial else ""))
             except Exception as exc:  # noqa: BLE001 - one part never stops the others
                 log.exception("%s %s failed", what, pr.label(month))
                 failed.append((what, (str(exc).splitlines() or [type(exc).__name__])[0][:150]))

@@ -176,7 +176,13 @@ def build_ajio(files: list[dict], master: pd.DataFrame, cats: dict) -> tuple:
     lg = log_rows(files, frames, {"ORDER": ("Cust Order Date", ajio.adate), "RETURN": ("Return Created Date", ajio.adate),
                                   "PAYMENT": ("DOCDATE", ledger_date)})
     lg.append(["Orders used", "-", "one row per order line (Cust Order No + Seller SKU)", len(raw), "Order date",
-               raw["ORDER DATE"].min(), raw["ORDER DATE"].max(), "sale value = Selling Price x qty; payment = SRM ledger G4 + IC"])
+               raw["ORDER DATE"].min(), raw["ORDER DATE"].max(), "sale value = Selling Price x qty; net settlement = SRM ledger G4 received + IC reversed"])
+    if len(p):
+        led = ajio.ledger_lines(p)
+        left = {dt: led.loc[led["DT"] == dt, "amt"].sum() - raw[col].sum() for dt, col in (("G4", "INVOICE PAID"), ("IC", "CREDIT NOTE DEBIT"))}
+        if any(abs(v) >= 1 for v in left.values()):
+            lg.append(["Ledger not on these orders", "-", f"G4 {left['G4']:,.0f}, IC {left['IC']:,.0f}", len(led), "-", pd.NaT, pd.NaT,
+                       "in the ledger, but its order or return line is not in these reports: left out of NET SETTLEMENT"])
     return ajio.report(raw, p, pd.DataFrame(lg, columns=LOG_COLS))
 
 

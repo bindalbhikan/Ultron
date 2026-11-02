@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 
 import requests
 
@@ -23,6 +23,10 @@ DEFAULT_FBF_LOCATIONS = ["bhi_vas_wh_nl_01nl", "frk_bts", "gur_san_wh_nl_01nl", 
 
 class FlipkartError(RuntimeError):
     pass
+
+
+class FlipkartQuota(FlipkartError):
+    """The report centre takes 20 new requests a day; asking again today cannot work."""
 
 
 class FlipkartClient:
@@ -110,6 +114,8 @@ class FlipkartClient:
         r = self.s.request(method, f"{BASE}/napi/metrics/bizReport/{path}", timeout=self.timeout,
                            headers={"fk-csrf-token": self.csrf, "Content-Type": "application/json",
                                     "Origin": BASE, "Referer": f"{BASE}/index.html"}, **kw)
+        if "daily quota" in r.text:     # the answer is HTTP 500 around a 429
+            raise FlipkartQuota("Flipkart's daily quota of 20 reports is used up: run it again tomorrow")
         if r.status_code != 200:
             raise FlipkartError(f"Flipkart report centre {path.split('?')[0]}: HTTP {r.status_code} {r.text[:200]}")
         return r
@@ -141,13 +147,16 @@ class FlipkartClient:
     def _dates(req: dict) -> list[str]:
         return next((f.get("value") for f in req.get("filters") or [] if f.get("name") == "date"), [])
 
-    def request_report(self, name: str, start: date, end: date, fresh: bool = False) -> str:
+    def request_report(self, name: str, start: date, end: date, fresh: bool = False,
+                       made_from: date | None = None) -> str:
         """Request id of a report centre report (e.g. "Sales Report", "Returns") for exactly
-        start..end: a finished or running request for the same dates is reused (unless fresh),
-        else one is submitted."""
+        start..end: a finished or running request for the same dates is reused (unless fresh; with
+        made_from only one asked for on or after that day), else one is submitted."""
         want = [f"{start}", f"{end}"]
+        since = datetime.combine(made_from, datetime.min.time()).timestamp() * 1000 if made_from else 0
         req = None if fresh else next((q for q in self.report_requests(name=name) if q.get("report_name") == name
-                                       and self._dates(q) == want and q.get("status") not in ("FAILED", "ERROR")),
+                                       and self._dates(q) == want and q.get("status") not in ("FAILED", "ERROR")
+                                       and (q.get("created_at") or 0) >= since),
                                       None)
         if req:
             log.info("Flipkart %s %s..%s already requested (%s)", name, start, end, req.get("status"))
@@ -160,12 +169,15 @@ class FlipkartClient:
         return rid
 
     def report(self, name: str, start: date, end: date, wait_minutes: int = 45,
-               poll_seconds: int = 30) -> tuple[str, bytes]:
+               poll_seconds: int = 30, made_from: date | None = None) -> tuple[str, bytes]:
         """(file name, xlsx bytes) of a report centre report for exactly start..end, waited for
         until it is stored (Flipkart says up to 30 minutes). When an existing (old) request will
         not download, a new one is submitted and waited for."""
         try:
-            return self._report(name, start, end, self.request_report(name, start, end), wait_minutes, poll_seconds)
+            return self._report(name, start, end, self.request_report(name, start, end, made_from=made_from),
+                                wait_minutes, poll_seconds)
+        except FlipkartQuota:
+            raise
         except (FlipkartError, requests.RequestException) as exc:
             log.warning("Flipkart %s %s..%s not downloaded (%s): asking for it again", name, start, end, exc)
             rid = self.request_report(name, start, end, fresh=True)
