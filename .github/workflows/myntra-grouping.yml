@@ -11,6 +11,9 @@ on:
       no_upload:
         description: "1 = test run: Drive not changed"
         default: ""
+      status_only:
+        description: "1 = only read the portal's upload jobs again, myntra.com not asked; changes = the same, quiet unless a job changed"
+        default: ""
 
 concurrency:
   group: myntra-grouping
@@ -43,6 +46,7 @@ jobs:
       DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
       MYNTRA_GROUPING_VIA: ${{ inputs.runner == 'cloud' && 'phone' || '' }}
       IN_NO_UPLOAD: ${{ inputs.no_upload }}
+      IN_STATUS: ${{ inputs.status_only }}
     steps:
       - uses: actions/checkout@v4
       - if: inputs.runner == 'cloud'
@@ -58,6 +62,8 @@ jobs:
         run: |
           set --
           if [ -n "$IN_NO_UPLOAD" ]; then set -- --no-upload; fi
+          if [ -n "$IN_STATUS" ]; then set -- "$@" --status; fi
+          if [ "$IN_STATUS" = "changes" ]; then set -- "$@" --only-changes; fi
           bash scripts/github/ci_run.sh myntra-grouping "$@"
       - name: Upload run output (encrypted)
         if: always()

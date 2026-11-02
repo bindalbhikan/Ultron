@@ -6,7 +6,8 @@ docs/CONTEXT.md and AGENTS.md from the code itself:
   workings   every bot of run.py (BOTS + its docstring), its workflow (name), when it runs (TASKS of
              the work schedule, else the **When** line of its docs/bots page) and its page
   gaps       what is missing: a bot without a docs/bots page, a workflow no bot or doc names,
-             a bot workflow the watcher (agent-watch.yml) does not watch
+             a bot workflow the watcher (agent-watch.yml) does not watch, a workflow with no Telegram
+             command, a command with no menu button
 and keeps CLAUDE.md importing AGENTS.md. The "Last synced" line changes only when a block did.
 
 Run by: the "Docs sync" workflow on every push to main (commits the result), and by every agent
@@ -28,6 +29,8 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # bots whose workflow is not <bot>.yml, or that run on an event rather than a schedule
 WORKFLOW = {"work-schedule": "agent-watch.yml"}
+# plumbing, not a working: no Telegram command needed
+NO_COMMAND = {"agent-chat.yml", "agent-watch.yml", "android-app.yml", "ci-fix.yml", "docs-sync.yml"}
 NOT_WATCHED = {"agent-watch.yml", "agent-chat.yml", "ci-fix.yml", "android-app.yml", "docs-sync.yml",
                "tests.yml", "myntra-history.yml", "sms-catchup.yml"}
 
@@ -122,6 +125,21 @@ def workings_block() -> tuple[str, list[str]]:
     return head + "\n" + "\n".join(rows), gaps
 
 
+def command_gaps() -> list[str]:
+    """Anything that can need a manual run must be reachable from the Telegram menu: every workflow of a
+    working has a /command, and every /command a button."""
+    worker = (ROOT / "worker" / "src" / "worker.js").read_text(encoding="utf-8")
+    commands = dict(re.findall(r'^  (\w+): \{ workflow: "([\w.-]+)"', worker, re.M))
+    screens = worker[worker.index("const SCREENS = {"):worker.index("const CONFIRM = {")]
+    buttons = set(re.findall(r'"[rc]:(\w+)', screens))
+    gaps = [f"`/{c}` has no button in the Telegram menu (`SCREENS` in `worker/src/worker.js`)"
+            for c in commands if c not in buttons]
+    gaps += [f"the menu button `{b}` has no command in `COMMANDS`" for b in sorted(buttons - set(commands))]
+    gaps += [f"`{wf}` ({name}) has no Telegram command (`COMMANDS` in `worker/src/worker.js`)"
+             for wf, name in workflow_names().items() if wf not in NO_COMMAND and wf not in commands.values()]
+    return gaps
+
+
 def gaps_block(gaps: list[str]) -> str:
     return "\n".join(f"- {g}" for g in gaps) if gaps else "- none: every bot has its page and its workflow is watched"
 
@@ -142,6 +160,7 @@ def synced(text: str, today: str) -> str:
 
 def build() -> dict[Path, str]:
     table, gaps = workings_block()
+    gaps += command_gaps()
     today = datetime.now(IST).strftime("%Y-%m-%d")
     out = {}
     for rel, blocks in (("docs/CONTEXT.md", {"workings": table, "gaps": gaps_block(gaps)}),

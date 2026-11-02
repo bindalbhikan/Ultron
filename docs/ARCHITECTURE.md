@@ -108,7 +108,8 @@ docs/                       this file, PORTALS.md, bots/<bot>.md
 4. `.github/workflows/<name>.yml`: copy a recent one (`ajio-ads.yml`); `bash scripts/github/ci_run.sh
    <name> …`, upload only `secure/`, pass every secret it needs, sensible `timeout-minutes`.
 5. Worker (`worker/src/worker.js`): a `COMMANDS` entry (`/command`, inputs, usual minutes), a
-   menu button if useful, `SCHEDULE` entries on the **existing** cron triggers (add the UTC hour to a
+   menu button in `SCREENS` (every working can need a manual run; `sync_docs.py` names a workflow with no
+   command and a command with no button), `SCHEDULE` entries on the **existing** cron triggers (add the UTC hour to a
    trigger's list; use `day` / `weekdays`), the same task in `TASKS`, the dashboard keys in `DASH_KEYS`; then `cd worker && npx wrangler deploy`
    (an undeployed change does not run).
 6. Dashboard: a section in `dashboard/src/page.html` for its pushed numbers; deploy `dashboard/`.

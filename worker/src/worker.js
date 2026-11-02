@@ -107,7 +107,25 @@ const COMMANDS = {
   weekly: { workflow: "weekly.yml", icon: "📅", name: "Weekly review", portal: "reports", minutes: 5,
             examples: ["/weekly"], inputs: none("/weekly") },
   grouping: { workflow: "myntra-grouping.yml", icon: "🎨", name: "Myntra colour grouping", portal: "myntra", minutes: 20, office: true,
-              examples: ["/grouping"], inputs: none("/grouping") },
+              examples: ["/grouping", "/grouping status"], inputs: (args) => {
+                if (args.length === 0) return {};
+                return args.length === 1 && args[0].toLowerCase() === "status" ? { status_only: "1" } : "Use /grouping or /grouping status";
+              } },
+  myntrahistory: { workflow: "myntra-history.yml", icon: "🗄", name: "Myntra order + return history", portal: "myntra", minutes: 60,
+                   examples: ["/myntrahistory", "/myntrahistory 2025-04 2026-09"], inputs: (args) => {
+                     if (args.length === 0) return {};
+                     return args.length === 2 && args.every((a) => /^\d{4}-\d{2}$/.test(a)) ? { from: args[0], to: args[1] }
+                       : "Use /myntrahistory or /myntrahistory YYYY-MM YYYY-MM";
+                   } },
+  businessreport: { workflow: "business-report.yml", icon: "📑", name: "Business reporting", portal: "reports", minutes: 17,
+                    examples: ["/businessreport", "/businessreport AJIO", "/businessreport AJIO,MYNTRA 2026-01 2026-10"], inputs: (args) => {
+                      const usage = "Use /businessreport [MYNTRA,FLIPKART,AJIO] [YYYY-MM [YYYY-MM]]";
+                      const months = args.filter((a) => /^\d{4}-\d{2}$/.test(a));
+                      const portals = args.filter((a) => /^(MYNTRA|FLIPKART|AJIO)(,(MYNTRA|FLIPKART|AJIO))*$/i.test(a));
+                      if (months.length > 2 || portals.length > 1 || months.length + portals.length !== args.length) return usage;
+                      return { ...(portals[0] && { portals: portals[0].toUpperCase() }),
+                               ...(months[0] && { from: months[0] }), ...(months[1] && { to: months[1] }) };
+                    } },
   portalreports: { workflow: "portal-reports.yml", icon: "🗂", name: "Portal reports", portal: "reports", minutes: 30,
                  examples: ["/portalreports", "/portalreports 2026-10"], inputs: (args) => {
                    if (args.length === 0) return {};
@@ -119,7 +137,7 @@ const COMMANDS = {
                examples: ["/deadstock"], inputs: none("/deadstock") },
 };
 
-const PORTALS = [["myntra", "🛍 Myntra"], ["ajio", "🟠 AJIO"], ["all", "📦 All channels (OMSGuru)"], ["reports", "📊 Reports & MIS"]];
+const PORTALS = [["myntra", "🛍 Myntra"], ["ajio", "🟠 AJIO"], ["flipkart", "🛒 Flipkart"], ["all", "📦 All channels (OMSGuru)"], ["reports", "📊 Reports & MIS"]];
 
 function monthArg(args) {
   if (args.length === 0) return { snapshot: "current" };
@@ -184,6 +202,8 @@ const SCHEDULE = [
   // Myntra colour grouping, every 3 days (office PC: myntra.com refuses GitHub's runners)
   ...[1, 4, 7, 10, 13, 16, 19, 22, 25, 28].map((day) => (
     { ist: `12:00 PM on the ${day}`, cron: "30 6 * * *", day, cmd: "grouping", label: "Myntra colour grouping" })),
+  // the upload jobs read again (Myntra approves during the day); says something only when a job changed
+  { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "grouping", label: "Myntra grouping status", inputs: { status_only: "changes", runner: "cloud" } },
   { ist: "3:00 PM daily", cron: "30 9 * * *", cmd: "sla" },
   { ist: "6:00 PM daily", cron: "30 12 * * *", cmd: "labels" },
   { ist: "6:00 PM daily", cron: "30 12 * * *", cmd: "fktat" },
@@ -221,6 +241,8 @@ const SCREENS = {
       [["🔐 Courier OTP", "r:myntraotp"], ["📊 Daily reports", "r:myntrareports"]],
       [["🚚 Courier scorecard", "r:myntratat"], ["🔑 Login check", "a:mlogin"]],
       [["📈 Orders yesterday", "a:myn_orders"], ["🏷 Zero TD", "r:myntrazerotd"]],
+      [["🎨 Colour grouping", "r:grouping"], ["🔄 Grouping status", "r:grouping status"]],
+      [["🗄 Order + return history", "c:myntrahistory"]],
       back(),
     ],
   },
@@ -298,13 +320,22 @@ const SCREENS = {
     rows: [
       [["📅 Weekly review", "r:weekly"], ["📆 Monthly MIS", "r:mis"]],
       [["↩️ Return analysis", "m:returns"], ["🪦 Dead stock", "r:deadstock"]],
+      [["📑 Business report", "m:business"], ["🗂 Portal reports", "c:portalreports"]],
       [["📣 AJIO Ads gap", "r:ajioads"]],
       back(),
     ],
   },
+  business: {
+    title: "📑 <b>Business reporting</b>\n<i>Sale / return / payment workbook per portal, from PORTAL REPORTS</i>\n\nRuns by itself after Portal reports and Return analysis. Which portal?",
+    rows: [
+      [["All portals", "r:businessreport"], ["🛍 Myntra", "r:businessreport MYNTRA"]],
+      [["🟠 AJIO", "r:businessreport AJIO"], ["🛒 Flipkart", "r:businessreport FLIPKART"]],
+      back("reports"),
+    ],
+  },
   returns: {
     title: "↩️ <b>Return Analysis</b>\n<i>Myntra x3 + Ajio + Flipkart, Drive + Telegram</i>\n\n" +
-      "Last month: sale 1st-last day, returns up to the 14th. Runs by itself on the 15th, 2 PM.",
+      "Last month: sale 1st-last day, returns up to the 14th. Runs by itself on the 10th, 2 PM, with a second try on the 15th.",
     rows: [
       [["Last month", "r:returns"]],
       back("reports"),
@@ -315,6 +346,8 @@ const SCREENS = {
 const CONFIRM = {
   ajiospf: { text: "⚠️ <b>AJIO SPF · LIVE</b>\n\nRaises tickets and posts replies on AJIO.\nStart it?", back: "spf" },
   invpush: { text: "⚠️ <b>Inventory push · now</b>\n\nPushes inventory to every channel on OMSGuru.\nStart it?", back: "inv" },
+  portalreports: { text: "🗂 <b>Portal reports · last month</b>\n\nFetches every portal's order, return and payment reports again and replaces last month's files in PORTAL REPORTS; the Business report follows.\nOther month: /portalreports YYYY-MM\nStart it?", back: "reports" },
+  myntrahistory: { text: "🗄 <b>Myntra order + return history</b>\n\nA long back-fill (hours). This button takes the workflow's default months; months already saved are skipped.\nOther months: /myntrahistory YYYY-MM YYYY-MM\nStart it?", back: "myntra" },
 };
 // "a:" buttons: a question for Ultron, sent as if typed
 const ASK = {

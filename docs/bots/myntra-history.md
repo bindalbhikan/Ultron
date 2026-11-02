@@ -1,6 +1,7 @@
 # Myntra order + return history — `python run.py myntra-history`
 
-**When**: by hand only (`myntra-history.yml`, inputs `from` / `to` YYYY-MM). The workflow runs
+**When**: by hand only: Menu > Myntra > Order + return history (asks first), `/myntrahistory [FROM TO]`, or
+`myntra-history.yml` (inputs `from` / `to` YYYY-MM). The workflow runs
 `--step prepare` (Drive folders), then one `--step fetch` job per account x report (matrix, each
 its own 6 h), then `--step merge` (merged files + Telegram summary). Locally `--step all` does all three.
 

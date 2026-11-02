@@ -20,6 +20,10 @@ Output (Drive AGENT WORK/MYNTRA/LISTING GROUPING):
   TEMPLATES/<date>/ACC-<seller id>/<unique id>_<brand>_<article>.xlsx   one upload file per pending
                                     group (Unique ID, Group Type, Style ID), ready to submit on Myntra
 Telegram: per account the groups, done and pending, and the template files made.
+
+--status: only the portal's upload jobs are read again (8 PM daily, Myntra approves during the day): GROUPING
+SUBMISSIONS.xlsx and the job columns of the master. myntra.com is not asked, so GROUPING REMARK stays as of the
+last full run. --only-changes: nothing written or sent unless a job changed.
 """
 from __future__ import annotations
 
@@ -143,7 +147,44 @@ def phone_records(style_ids: list[str]) -> dict:
     return out
 
 
+def run_status(args) -> int:
+    """The upload jobs read again, without the check on myntra.com."""
+    from . import submit as sb
+    work = Path(tempfile.mkdtemp(prefix="myntra_grouping_"))
+    lg = subfolder(agent_work(), FOLDER, create=True)
+    old = sb.read_record(lg.download(sb.RECORD, work / "old_record.xlsx"))
+    record, problems = sb.sync_jobs(old)
+    record = sb.failure_reasons(record)
+    changed = sb.changed_jobs(old, record)
+    if args.only_changes and not changed and not problems:
+        log.info("No grouping job changed")
+        return 0
+    master = lg.download("MYNTRA GROUPING MASTER.xlsx", work / "MYNTRA GROUPING MASTER.xlsx")
+    if not master:
+        raise RuntimeError("MYNTRA GROUPING MASTER.xlsx not found in AGENT WORK/MYNTRA/LISTING GROUPING")
+    states = sb.apply(master, record)
+    lines = [f"🎨 <b>Myntra grouping status</b> {datetime.now():%Y-%m-%d %H:%M}",
+             "<i>the portal's jobs read again; DONE / NOT DONE are as of the last full check</i>", ""]
+    lines.append("Changed: " + (" · ".join(f"{s} {n}" for s, n in changed.most_common()) if changed else "no job"))
+    lines += [f"<b>{ACCOUNT_OF.get(a, a)}</b> pending groups: {sb.state_line(t)}" for a, t in states.items()]
+    lines += [f"❌ {telegram.esc(x)}" for x in problems[:15]]
+    if args.no_upload:
+        lines.append("\n<i>test run: Drive not changed</i>")
+        print("\n".join(lines))
+        Path("output/myntra_grouping").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(master, Path("output/myntra_grouping") / master.name)
+        sb.write_record(record, Path("output/myntra_grouping") / sb.RECORD)
+        return 0
+    lg.put(master, XLSX)
+    lg.put(sb.write_record(record, work / sb.RECORD), XLSX)
+    text = "\n".join(lines)
+    print(text) if args.no_telegram else telegram.send(text)
+    return 0
+
+
 def run(args) -> int:
+    if args.status:
+        return run_status(args)
     from . import engine as e
     from . import submit as sb
     work = Path(tempfile.mkdtemp(prefix="myntra_grouping_"))
@@ -202,14 +243,14 @@ def run(args) -> int:
     # the portal's upload jobs, the pending groups submitted (only --submit), the record into the report
     record = sb.read_record(lg.download(sb.RECORD, work / "old_record.xlsx"))
     record, problems = sb.sync_jobs(record)
-    submitted = skipped = 0
+    submitted, skipped = 0, {}
     if args.submit and not args.no_upload:
         record, bad, submitted, skipped = sb.submit(Path(e.TEMPLATE_DIR) / stamp, record, args.submit_limit)
         problems += bad
         record, more = sb.sync_jobs(record)
         problems += more
     record = sb.failure_reasons(record)
-    sb.apply(report, record)
+    states = sb.apply(report, record)
 
     lines = [f"🎨 <b>Myntra colour grouping</b> {stamp}", ""]
     for a, rows in account_rows.items():
@@ -219,9 +260,10 @@ def run(args) -> int:
         lines.append(f"<b>{ACCOUNT_OF.get(a, a)}</b>: {df['Unique ID'].nunique() if len(df) else 0} groups · DONE {int(rem.get(e.REMARK_DONE, 0))} · "
                      f"NOT DONE {int(rem.get(e.REMARK_NOT_DONE, 0))} · "
                      f"extra in portal {int(rem.get(e.REMARK_EXTRA, 0))} · {len(pending)} groups to submit")
+        lines.append(f"   pending groups: {sb.state_line(states.get(a) or sb.Counter())}")
     open_jobs = record[~record["JOB STATUS"].astype(str).isin(sb.FINISHED)]
     open_jobs = open_jobs[open_jobs["JOB ID"].astype(str).str.fullmatch(r"\d+")]
-    lines.append(f"\nSubmitted now: <b>{submitted}</b> groups" + (f", {skipped} skipped (waiting on the portal, or the same upload failed before)" if skipped else "")
+    lines.append(f"\nSubmitted now: <b>{submitted}</b> groups" + "".join(f", {n} skipped ({why})" for why, n in skipped.items())
                  + f" · {len(open_jobs)} jobs waiting on Myntra")
     lines += [f"❌ {telegram.esc(x)}" for x in problems[:15]]
     if inventory is None:
@@ -257,4 +299,6 @@ def main(argv=None) -> int:
     p.add_argument("--no-upload", action="store_true", help="build only (output/myntra_grouping), Drive not changed")
     p.add_argument("--submit", action="store_true", help="submit the pending groups on the Myntra partner portal")
     p.add_argument("--submit-limit", type=int, default=0, help="with --submit: at most that many groups (a test)")
+    p.add_argument("--status", action="store_true", help="only read the portal's upload jobs again, myntra.com not asked")
+    p.add_argument("--only-changes", action="store_true", help="with --status: nothing written or sent unless a job changed")
     return run_bot("Myntra colour grouping", p, run, argv)
