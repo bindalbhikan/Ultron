@@ -15,14 +15,16 @@ Inputs:
 
 Output (Drive AGENT WORK/MYNTRA/LISTING GROUPING):
   MYNTRA GROUPING MASTER.xlsx       one sheet per account (every group, style and remark: DONE, NOT DONE,
-                                    DONE - EXTRA IN PORTAL, ...; a style in no group is NOT DONE too) + Summary; replaced each run
-  HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx   the same, kept per day
+                                    DONE - EXTRA IN PORTAL, ...; a style in no group is NOT DONE too), on a NOT DONE
+                                    style its newest job and reason + Summary; replaced each run
+  GROUPING REASONS.xlsx             every row of every job's result report, what the portal said per style
+  HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx   the day's check with all its columns (MISSING IN PORTAL, PORTAL GROUP ...)
   TEMPLATES/<date>/ACC-<seller id>/<unique id>_<brand>_<article>.xlsx   one upload file per pending
                                     group (Unique ID, Group Type, Style ID), ready to submit on Myntra
 Telegram: per account the groups, done and pending, and the template files made.
 
 --status: only the portal's upload jobs are read again (8 PM daily, Myntra approves during the day): GROUPING
-SUBMISSIONS.xlsx and the job columns of the master. myntra.com is not asked, so GROUPING REMARK stays as of the
+SUBMISSIONS.xlsx, GROUPING REASONS.xlsx and the job columns of the master. myntra.com is not asked, so GROUPING REMARK stays as of the
 last full run. --only-changes: nothing written or sent unless a job changed.
 """
 from __future__ import annotations
@@ -154,7 +156,9 @@ def run_status(args) -> int:
     lg = subfolder(agent_work(), FOLDER, create=True)
     old = sb.read_record(lg.download(sb.RECORD, work / "old_record.xlsx"))
     record, problems = sb.sync_jobs(old)
-    record = sb.failure_reasons(record)
+    reasons = sb.read_reasons(lg.download(sb.REASONS, work / "old_reasons.xlsx"))
+    record, reasons, more = sb.update_reasons(record, reasons)
+    problems += more
     changed = sb.changed_jobs(old, record)
     if args.only_changes and not changed and not problems:
         log.info("No grouping job changed")
@@ -162,7 +166,7 @@ def run_status(args) -> int:
     master = lg.download("MYNTRA GROUPING MASTER.xlsx", work / "MYNTRA GROUPING MASTER.xlsx")
     if not master:
         raise RuntimeError("MYNTRA GROUPING MASTER.xlsx not found in AGENT WORK/MYNTRA/LISTING GROUPING")
-    states = sb.apply(master, record)
+    states = sb.apply(master, record, reasons)
     lines = [f"🎨 <b>Myntra grouping status</b> {datetime.now():%Y-%m-%d %H:%M}",
              "<i>the portal's jobs read again; DONE / NOT DONE are as of the last full check</i>", ""]
     lines.append("Changed: " + (" · ".join(f"{s} {n}" for s, n in changed.most_common()) if changed else "no job"))
@@ -174,9 +178,11 @@ def run_status(args) -> int:
         Path("output/myntra_grouping").mkdir(parents=True, exist_ok=True)
         shutil.copy2(master, Path("output/myntra_grouping") / master.name)
         sb.write_record(record, Path("output/myntra_grouping") / sb.RECORD)
+        sb.write_reasons(reasons, Path("output/myntra_grouping") / sb.REASONS)
         return 0
     lg.put(master, XLSX)
     lg.put(sb.write_record(record, work / sb.RECORD), XLSX)
+    lg.put(sb.write_reasons(reasons, work / sb.REASONS), XLSX)
     text = "\n".join(lines)
     print(text) if args.no_telegram else telegram.send(text)
     return 0
@@ -249,8 +255,12 @@ def run(args) -> int:
         problems += bad
         record, more = sb.sync_jobs(record)
         problems += more
-    record = sb.failure_reasons(record)
-    states = sb.apply(report, record)
+    reasons = sb.read_reasons(lg.download(sb.REASONS, work / "old_reasons.xlsx"))
+    record, reasons, more = sb.update_reasons(record, reasons)
+    problems += more
+    master_file = report.with_name("MYNTRA GROUPING MASTER.xlsx")      # HISTORY keeps the check's columns
+    shutil.copy2(report, master_file)
+    states = sb.apply(master_file, record, reasons)
 
     lines = [f"🎨 <b>Myntra colour grouping</b> {stamp}", ""]
     for a, rows in account_rows.items():
@@ -273,13 +283,13 @@ def run(args) -> int:
     if args.no_upload:
         lines.append("\n<i>test run: Drive not changed</i>")
         print("\n".join(lines))
+        sb.write_reasons(reasons, work / "output" / sb.REASONS)
         shutil.copytree(work / "output", Path("output") / "myntra_grouping", dirs_exist_ok=True)
         return 0
-    master_file = report.with_name("MYNTRA GROUPING MASTER.xlsx")
-    shutil.copy2(report, master_file)
     lg.put(master_file, XLSX)
     lg.subfolder("HISTORY", create=True).put(report, XLSX)
     lg.put(sb.write_record(record, work / sb.RECORD), XLSX)
+    lg.put(sb.write_reasons(reasons, work / sb.REASONS), XLSX)
     tdir = Path(e.TEMPLATE_DIR) / stamp
     day = lg.subfolder("TEMPLATES", create=True).subfolder(stamp, create=True)
     n = 0

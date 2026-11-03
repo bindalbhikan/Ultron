@@ -5,16 +5,17 @@
                 counts of every job are read again (WAITING, APPROVAL_PENDING, COMPLETED,
                 IN_PROGRESS, PARTIAL_COMPLETE, FAILED, REJECTED). Myntra approves an upload before it goes
                 live.
-  group state   the newest job of a group decides, never an older one: a failed upload followed by a
-                completed one is approved. The live check on myntra.com has the last word: a group with
-                nothing pending is DONE, whatever its old jobs say.
+  group state   for Telegram: the newest job of a group decides, never an older one; a group with nothing
+                pending on myntra.com is DONE, whatever its old jobs say.
   submit        the upload files of TEMPLATES/<day>/ACC-<seller id>/ are uploaded on their account
                 (only with --submit, the owner's call). skip_reason says what is not sent.
   The record    Drive AGENT WORK/MYNTRA/LISTING GROUPING/GROUPING SUBMISSIONS.xlsx, one row per upload,
                 kept for good, newest first.
-  apply         the report (MYNTRA GROUPING MASTER.xlsx) gets a SUBMISSIONS sheet and, on the account
-                sheets, the group's newest job, its SUBMIT STATE, TRIES (every upload of the group) and
-                the portal's reason. It can run again on a finished report (--status).
+  reasons       Drive .../GROUPING REASONS.xlsx: every row of every finished job's result report (style, what
+                the portal said), kept for good; a finished job's report is read once.
+  apply         the master gets a SUBMISSIONS sheet and account sheets in the owner's layout (2 Nov 2026):
+                on a style not grouped yet (NOT DONE), its own newest job and reason. It can run again on a
+                finished master (--status).
 """
 from __future__ import annotations
 
@@ -40,7 +41,12 @@ FINISHED = {"COMPLETED", "PARTIAL_COMPLETE", "FAILED", "REJECTED"}
 # An approved job can take days to show on myntra.com (2 Nov 2026: 35 of 143 jobs approved that day were
 # fully there hours later), so it is not sent again for this long; a failed upload is free to try again after it.
 WAIT_DAYS = 7
-GROUP_COLS = ["SUBMITTED ON", "JOB ID", "JOB STATUS", "SUBMIT STATE", "TRIES", "PORTAL REMARK"]
+REASONS = "GROUPING REASONS.xlsx"
+REASON_COLS = ["JOB ID", "SUBMITTED ON", "ACCOUNT", "SELLER ID", "JOB STATUS", "UNIQUE ID", "STYLE ID", "GROUPING TYPE", "REMARK", "GROUP ID"]
+EMPTY_REPORT = "the portal's report has no rows"
+# The account sheets of the master, the owner's layout (2 Nov 2026); HISTORY keeps every column of the check.
+LAYOUT = ["Unique ID", "Group Type", "Article Type", "Brand", "Style ID", "SKU", "FINAL SKU", "GROUPING REMARK", "STATUS", "INV", "SALE",
+          "ACTION", "PORTAL COLOR", "JOB ID", "JOB STATUS", "JOB SUBMITED DATE", "PORTAL REMARK"]
 DONE, FRESH, WAITING, APPROVED, CHECK = "DONE", "FRESH", "WAITING ON MYNTRA", "APPROVED, SITE NOT UPDATED", "APPROVED, NOT ON SITE: CHECK"
 PARTIAL, FAILED, REJECTED = "PARTIAL", "FAILED", "REJECTED"
 
@@ -123,29 +129,65 @@ def sync_jobs(record: pd.DataFrame, accounts: list[str] | None = None) -> tuple[
     return record, problems
 
 
-def failure_reasons(record: pd.DataFrame) -> pd.DataFrame:
-    """PORTAL REMARK of every job Myntra did not fully take, uploaded by the bot or by hand: the reason in
-    the job's result report (Remarks; rejectReason on a job the approver rejected)."""
+def read_reasons(path: Path | None) -> pd.DataFrame:
+    if path and path.exists():
+        return pd.read_excel(path, sheet_name="REASONS", dtype=str).reindex(columns=REASON_COLS)
+    return pd.DataFrame(columns=REASON_COLS, dtype=object)
+
+
+def _report_rows(link: str) -> list[dict]:
+    """The rows of one job's result report. Its columns differ: Unique ID, Style ID, Grouping Type, Remarks,
+    GroupId; a rejected job's uniqueId, styleId, groupingType, rejectReason. A long report repeats its header.
+    When the portal could not read the upload at all, its error stands alone in the first column."""
     import zipfile
+    z = zipfile.ZipFile(io.BytesIO(requests.get(link, timeout=60).content))
+    df = pd.read_csv(z.open(z.namelist()[0]), dtype=str)
+    df.columns = [re.sub(r"[^a-z]", "", str(c).lower()) for c in df.columns]
+    out = []
+    for r in df.fillna("").to_dict("records"):
+        style = str(r.get("styleid", "")).replace(".0", "").strip()
+        remark = str(r.get("remarks", r.get("rejectreason", ""))).strip()
+        unique = str(r.get("uniqueid", "")).strip()
+        if style.lower().replace(" ", "") == "styleid":
+            continue
+        if not style and not remark and "exception" in unique.lower():
+            remark, unique = unique.rsplit("Exception:", 1)[-1].strip(), ""
+        if not (style or remark):
+            continue
+        out.append({"UNIQUE ID": unique, "STYLE ID": style, "GROUPING TYPE": str(r.get("groupingtype", "")).strip(),
+                    "REMARK": remark, "GROUP ID": str(r.get("groupid", "")).replace(".0", "").strip()})
+    return out
+
+
+def update_reasons(record: pd.DataFrame, reasons: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+    """Every finished job's report not read yet into the reasons, JOB STATUS brought up to date, and PORTAL REMARK
+    of each job from them; (record, reasons, problems). A report that cannot be read is tried again next run."""
     from ..return_analysis.sources import myntra_portal
-    record, portals = record.copy(), {}
-    todo = record[record["JOB STATUS"].isin(["FAILED", "PARTIAL_COMPLETE", "REJECTED"])
-                  & record["JOB ID"].astype(str).str.fullmatch(r"\d+")
-                  & (record["PORTAL REMARK"].isna() | (record["PORTAL REMARK"].astype(str) == ""))]
-    for i, r in todo.iterrows():
+    record, portals, new, unread = record.copy(), {}, [], 0
+    have = set(reasons["JOB ID"].astype(str))
+    numbered = record["JOB ID"].astype(str).str.fullmatch(r"\d+")
+    for _, r in record[numbered & record["JOB STATUS"].isin(FINISHED)].iterrows():
+        jid = str(r["JOB ID"])
+        if jid in have:
+            continue
         try:
             if r["ACCOUNT"] not in portals:
                 portals[r["ACCOUNT"]] = myntra_portal(r["ACCOUNT"])
-            link = portals[r["ACCOUNT"]].style_grouping_report(int(r["JOB ID"]))
-            z = zipfile.ZipFile(io.BytesIO(requests.get(link, timeout=60).content))
-            df = pd.read_csv(z.open(z.namelist()[0]), dtype=str)
-            df.columns = [str(c).strip() for c in df.columns]
-            said = df[next(c for c in ("rejectReason", "Remarks") if c in df)].dropna().astype(str).str.strip()
-            bad = said[(said != "") & (said.str.upper() != "SUCCESS")].unique()
-            record.loc[i, "PORTAL REMARK"] = " | ".join(bad)[:300] or "no reason in the report"
-        except Exception as exc:  # noqa: BLE001 - the reason is only a help
-            log.info("Report of job %s not read: %s", r["JOB ID"], str(exc)[:100])
-    return record
+            rows = _report_rows(portals[r["ACCOUNT"]].style_grouping_report(int(jid)))
+        except Exception as exc:  # noqa: BLE001 - the others still count
+            unread += 1
+            log.info("Report of job %s not read: %s", jid, str(exc)[:100])
+            continue
+        common = {"JOB ID": jid, "SUBMITTED ON": r["SUBMITTED ON"], "ACCOUNT": r["ACCOUNT"], "SELLER ID": r["SELLER ID"]}
+        new += [{**common, **row} for row in rows or [{"REMARK": EMPTY_REPORT}]]
+    if new:
+        reasons = pd.concat([reasons, pd.DataFrame(new, columns=REASON_COLS)], ignore_index=True)
+    status = dict(zip(record["JOB ID"].astype(str), record["JOB STATUS"]))
+    reasons["JOB STATUS"] = reasons["JOB ID"].astype(str).map(status)
+    said = reasons[~reasons["REMARK"].astype(str).str.upper().isin(["SUCCESS", "", "NAN"])]
+    joined = said.groupby(said["JOB ID"].astype(str))["REMARK"].agg(lambda x: " | ".join(dict.fromkeys(x.astype(str)))[:300])
+    record["PORTAL REMARK"] = record["JOB ID"].astype(str).map(joined).fillna("")
+    return record, reasons, [f"{unread} job reports not read: tried again next run"] if unread else []
 
 
 def jobs_of(record: pd.DataFrame) -> list[dict]:
@@ -260,47 +302,56 @@ def write_record(record: pd.DataFrame, path: Path) -> Path:
     return path
 
 
-def apply(report: Path, record: pd.DataFrame, today: date | None = None) -> dict[str, Counter]:
-    """On the account sheets each group's newest job, SUBMIT STATE, TRIES and the portal's reason, and the
-    SUBMISSIONS sheet. Safe to run on a report that has them already. Returns seller -> pending groups per state."""
+def write_reasons(reasons: pd.DataFrame, path: Path) -> Path:
+    from .engine import format_workbook
+    rows = reasons.assign(_job=pd.to_numeric(reasons["JOB ID"], errors="coerce")).sort_values("_job", ascending=False, kind="stable").drop(columns="_job")
+    with pd.ExcelWriter(path, engine="openpyxl") as xw:
+        rows.to_excel(xw, sheet_name="REASONS", index=False)
+        format_workbook(xw.book)
+    return path
+
+
+def apply(report: Path, record: pd.DataFrame, reasons: pd.DataFrame, today: date | None = None) -> dict[str, Counter]:
+    """The account sheets in the owner's LAYOUT, a style not grouped yet with its own newest job and reason (every
+    other row blank, and a style never uploaded), and the SUBMISSIONS sheet. Safe to run on a master that has them already. Returns seller ->
+    pending groups per state."""
     from openpyxl import load_workbook
     from .engine import PENDING_REMARKS, REMARK_EXTRA, format_workbook
     today, states = today or date.today(), {}
     jobs = jobs_of(record)
+    latest = {(j["seller"], s): j for j in jobs for s in j["styles"]}    # oldest first: the newest stays
+    said = {(str(r["JOB ID"]), str(r["STYLE ID"])): str(r["REMARK"]) for _, r in reasons.iterrows()}
     wb = load_workbook(report)
-    for ws in wb.worksheets:
-        if not ws.title.startswith("ACC-"):
-            continue
-        seller = ws.title[4:]
-        head = [c.value for c in ws[1]]
-        at = {}
-        for name in GROUP_COLS:
-            if name not in head:
-                head.append(name)
-                ws.cell(1, len(head), name)
-            at[name] = head.index(name) + 1
-        iuid, isid, irem = head.index("Unique ID") + 1, head.index("Style ID") + 1, head.index("GROUPING REMARK") + 1
+    for old in [s for s in wb.worksheets if s.title.startswith("ACC-")]:
+        seller = old.title[4:]
+        rows = list(old.iter_rows(values_only=True))
+        head = list(rows[0])
         groups: dict[str, dict] = {}
-        for r in range(2, ws.max_row + 1):
-            g = groups.setdefault(str(ws.cell(r, iuid).value), {"rows": [], "styles": set(), "pending": False})
-            g["rows"].append(r)
-            remark = ws.cell(r, irem).value
+        out = []
+        for values in rows[1:]:
+            row = dict(zip(head, values))
+            sid = str(row.get("Style ID") or "").replace(".0", "").strip()
+            job = latest.get((seller, sid))
+            remark = row.get("GROUPING REMARK")
+            g = groups.setdefault(str(row.get("Unique ID")), {"styles": set(), "pending": False})
             g["pending"] |= remark in PENDING_REMARKS
             if remark != REMARK_EXTRA:      # a style to take out belongs to another group
-                g["styles"].add(str(ws.cell(r, isid).value or "").replace(".0", "").strip())
+                g["styles"].add(sid)
+            row.update({"JOB ID": job["id"], "JOB STATUS": job["status"], "JOB SUBMITED DATE": job["day"],
+                        "PORTAL REMARK": said.get((str(job["id"]), sid)) or job["remark"]} if job and remark in PENDING_REMARKS else
+                       {"JOB ID": None, "JOB STATUS": None, "JOB SUBMITED DATE": None, "PORTAL REMARK": None})
+            out.append([row.get(c) for c in LAYOUT])
+        at, title = wb.index(old), old.title
+        wb.remove(old)
+        ws = wb.create_sheet(title, at)
+        ws.append(LAYOUT)
+        for values in out:
+            ws.append(values)
         tally = Counter()
         for g in groups.values():
-            mine = [j for j in reversed(jobs) if j["seller"] == seller and j["styles"] & g["styles"]]
-            state = group_state(mine, g["pending"], today)
             if g["pending"]:
-                tally[state] += 1
-            tries = " | ".join(f"{j['day']} {j['status']}" for j in mine[:4]) + (f" | {len(mine) - 4} older" if len(mine) > 4 else "")
-            new = mine[0] if mine else {}
-            values = {"SUBMITTED ON": new.get("day", ""), "JOB ID": new.get("id", ""), "JOB STATUS": new.get("status", ""),
-                      "SUBMIT STATE": state, "TRIES": tries, "PORTAL REMARK": new.get("remark", "")}
-            for r in g["rows"]:
-                for name, v in values.items():
-                    ws.cell(r, at[name], v)
+                mine = [j for j in reversed(jobs) if j["seller"] == seller and j["styles"] & g["styles"]]
+                tally[group_state(mine, True, today)] += 1
         states[seller] = tally
     if "SUBMISSIONS" in wb.sheetnames:
         del wb["SUBMISSIONS"]

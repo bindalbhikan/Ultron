@@ -21,7 +21,7 @@ starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the 
   myntra.com, then DONE / NOT DONE / DONE - EXTRA IN PORTAL (remove) / NOT LIVE / NOT LISTED /
   DUPLICATE - NOT IN GROUP / ONLY 1 LISTED / DONE IN OTHER ACCOUNT, with PORTAL GROUP and MISSING IN PORTAL.
 * Output in `LISTING GROUPING`: `MYNTRA GROUPING MASTER.xlsx` (one sheet per account + Summary, replaced
-  each run), `HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx`, and `TEMPLATES/<date>/ACC-<seller id>/` one
+  each run), `GROUPING REASONS.xlsx`, `HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx`, and `TEMPLATES/<date>/ACC-<seller id>/` one
   upload file per pending group (Unique ID, Group Type, Style ID; one style per SKU: the one already
   grouped, else Active, else the best seller).
 * When myntra.com (and the phone) answer for less than 80% of the styles the report is not written
@@ -36,13 +36,6 @@ starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the 
 * `GROUPING SUBMISSIONS.xlsx` (and the SUBMISSIONS sheet of the master): every job of the portal, by hand
   too, date-wise: date, time, account, unique id, styles, JOB ID, status, counts; each run reads the
   statuses again.
-* The account sheets show, per group, its **newest** job (any style of the group): SUBMITTED ON, JOB ID, JOB STATUS, PORTAL REMARK (`Remarks` of the job's report, `rejectReason` of a rejected one, by hand uploads too), TRIES (every upload, newest first) and **SUBMIT STATE**:
-
-  | SUBMIT STATE | Means |
-  |---|---|
-  | DONE | nothing pending on myntra.com, whatever older jobs say |
-  | FRESH | pending, never uploaded |
-  | WAITING ON MYNTRA | newest job not finished |
-  | APPROVED, SITE NOT UPDATED | newest job COMPLETED within 7 days, the site does not show it yet |
-  | APPROVED, NOT ON SITE: CHECK | COMPLETED over 7 days ago, the site still does not show it: look at it by hand |
-  | PARTIAL / FAILED / REJECTED | the newest job's result; the reason is in PORTAL REMARK |
+* The master's account sheets are in the owner's layout (2 Nov 2026): Unique ID, Group Type, Article Type, Brand, Style ID, SKU, FINAL SKU, GROUPING REMARK, STATUS, INV, SALE, ACTION, PORTAL COLOR, JOB ID, JOB STATUS, JOB SUBMITED DATE, PORTAL REMARK. The job columns are filled only on a style **not grouped yet** (GROUPING REMARK NOT DONE, owner's rule): **that style's own newest job** and that style's line of its report; blank there = never uploaded. Every other row's job columns are blank; all jobs stay in the SUBMISSIONS sheet and `GROUPING REASONS.xlsx`. `HISTORY/` keeps every column of the check (MISSING IN PORTAL, PORTAL GROUP, REMARK with `IN ANOTHER GROUP: UNGROUP FIRST` ...).
+* `GROUPING REASONS.xlsx`: every row of every finished job's result report, by hand uploads too (job, date, account, status, unique id, style, REMARK = `SUCCESS` or the reason, group id), newest first. A finished job's report is read once. When the portal could not read the upload's file at all (Aug and Oct 2026: wrong header or cell type), the report holds only its error, kept as one row with no style.
+* Telegram counts the pending groups by state, from the group's newest job: FRESH (never uploaded), WAITING ON MYNTRA, APPROVED, SITE NOT UPDATED (completed within 7 days), APPROVED, NOT ON SITE: CHECK (over 7 days ago), PARTIAL, FAILED, REJECTED.
