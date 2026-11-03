@@ -26,7 +26,9 @@ log = logging.getLogger("bindal.portal_reports")
 AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 ROOT = "PORTAL REPORTS"
 KINDS = {"sale": "ORDER REPORT", "return": "RETURN REPORT", "payment": "PAYMENT REPORT",
-         "sales": "SALES REPORT"}   # SALES REPORT: Flipkart's tax Sales Report (every sale / return / cancel event, invoice value)
+         "sales": "SALES REPORT",   # SALES REPORT: Flipkart's tax Sales Report (every sale / return / cancel event, invoice value)
+         "omsguru": "OMSGURU REPORT",   # OMSGURU REPORT: OMSGuru's order lines of the portal's channels (status of each line)
+         "monthly": "MONTHLY REPORT"}   # MONTHLY REPORT: the owner's monthly file (order lines + settlement), months the portal no longer gives
 
 
 def label(month: date) -> str:

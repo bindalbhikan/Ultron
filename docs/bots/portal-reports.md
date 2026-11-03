@@ -18,6 +18,7 @@ that month) is not saved and is listed as "no data".
 | AJIO | Dropship order report | SRM statement of accounts (the AJIO ledger: G4 payments, IC reversals) | Dropship RTV of the month in this run (owner's rule, 2 Nov 2026), replaced by the return analysis's newer one (RTV cut to the month) on the 10th / 15th |
 | Flipkart | report centre `Orders` (Fulfilment Reports; the owner's monthly order file), and the SALES REPORT: the tax `Sales Report` (every sale / return / cancel event with its invoice value; `Sales Report Archived` for the months moved out of it, 2025) | report centre `Settled Transactions` (Payment Reports: every transaction settled in the month: orders, SPF, TDS, storage, recall) | the return analysis (Returns cut to the month) |
 
+* `<PORTAL> OMSGURU REPORT <MON-YY>.xlsx` (AJIO, Flipkart): OMSGuru's order lines of the portal's channels (AJIO: Ajio and Ajio Api), read only; the status of each line for the business reporting.
 * The parts run side by side; one that fails is named on Telegram (❌) and the others are saved.
   A run again replaces the files. A month that is not over is refused.
 * The return analysis keeps this run's order reports (it saves its own only when one is missing; never

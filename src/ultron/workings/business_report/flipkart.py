@@ -23,6 +23,13 @@ FINAL STATUS of an order item:
 
 SALE VALUE = the invoice value of the sale in the tax Sales Report, else the item's Sale Amount in
 Settled Transactions; NET SETTLEMENT = the sum of its Bank Settlement Values.
+  MONTHLY REPORT  the owner's monthly file (sheet "Order Wise", Oct-25 to Apr-26): one row per order item
+                  settled in that month, its Bank Settlement Value the same as Settled Transactions (checked
+                  May-26 to Sep-26, item by item). It is the payment of months with no Settled Transactions
+                  file, and the source of items no other report has (Nov-25, Dec-25: SOURCE = Monthly file).
+                  Net Qty > 0 = delivered, else returned (checked against the Orders report, Mar-26 to
+                  Aug-26). An item with no settlement (cancelled, most RTO) is not in it.
+
 BRAND / design from MasterSheet (channel FLIPKART); CATEGORY = the article type Myntra lists the
 same design under (else the SKU's category word).
 """
@@ -35,7 +42,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .workbook import Report
+from .workbook import Report, any_date
 
 log = logging.getLogger("bindal.business_report")
 
@@ -92,6 +99,91 @@ def read_sales(files: list[Path]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+def read_monthly(files: list[tuple[Path, pd.Timestamp]]) -> pd.DataFrame:
+    """The "Order Wise" sheet of the owner's monthly files; one row per order item settled that month."""
+    frames = []
+    for f, month in files:
+        df = pd.read_excel(f, sheet_name="Order Wise", dtype=str)
+        df.columns = [re.sub(r"\s+", " ", str(c)).strip().lower() for c in df.columns]
+        df = df.rename(columns={"bank settlement value": "payout", "order item id": "oi"})
+        df = df[df["oi"].astype(str).str.match(r"^(OI:)?\d+")].copy()     # order lines only, no totals or non-order rows
+        df["oi"] = oi(df["oi"])
+        day = any_date(df["order date"])
+        df["order_date"] = day.where(day < month + pd.offsets.MonthBegin(1)).dt.strftime("%Y-%m-%d")   # a mistyped later date: no date
+        frames.append(df.assign(_file=f.name, _month=month))
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _rupees(text) -> float:
+    """A transfer as the owner's monthly files list it: Rs 1.25 L, Rs 99.95 K."""
+    m = re.search(r"([\d,.]+)\s*(K|L|Cr)?", str(text).replace("\u20b9", ""))
+    return float(m[1].replace(",", "")) * {"K": 1e3, "L": 1e5, "Cr": 1e7, None: 1}[m[2]] if m else 0.0
+
+
+def bank_paid(settled_files: list[tuple[Path, pd.Timestamp]], monthly_files: list[tuple[Path, pd.Timestamp]]) -> pd.DataFrame:
+    """Per payment month what reached the bank: Settled Transactions' Net Bank Settlement, else the total row of the owner's
+    monthly file (order money + non-order SPF + ads + storage), with the transfers that file lists (rounded by Flipkart)."""
+    rows = {}
+    for f, month in settled_files:
+        s = pd.read_excel(f, sheet_name="Summary of report", header=None, dtype=str).dropna(how="all").dropna(axis=1, how="all")
+        first = s.columns[0]
+        head = s.index[s[first].astype(str).str.strip() == "Line Item"][0]
+        amount = s.columns[list(s.loc[head]).index("Amount Settled (Rs.)")]
+        line = s.loc[head + 1:]
+        net = line[line[first].astype(str).str.startswith("Net Bank Settlement")]
+        if len(net):
+            rows[month] = {"Net Bank Paid": float(net[amount].iloc[0]), "Transfers Listed": np.nan}
+    for f, month in monthly_files:
+        if month in rows:
+            continue
+        d = pd.read_excel(f, sheet_name="Order Wise", dtype=str)
+        d.columns = [re.sub(r"\s+", " ", str(c)).strip().lower() for c in d.columns]
+        d = d.rename(columns={"bank settlement value": "payout"})
+        kind = d["type"].astype(str).str.strip().str.lower()
+        total = pd.to_numeric(d.loc[kind.isin(["total", "grand total", "net total"]), "payout"], errors="coerce").dropna()
+        if not len(total):
+            continue
+        listed = np.nan
+        start = d.index[kind == "payment"]
+        if len(start):
+            amounts = d.loc[start[0] + 2:, "order item id"].dropna().astype(str)
+            listed = sum(_rupees(x) for x in amounts if "\u20b9" in x or re.match(r"^[\d,.]+\s*(K|L)?$", x.strip())) or np.nan
+        rows[month] = {"Net Bank Paid": float(total.iloc[-1]), "Transfers Listed": listed}
+    return pd.DataFrame.from_dict(rows, orient="index").sort_index() if rows else pd.DataFrame()
+
+
+def monthly_items(monthly: pd.DataFrame) -> pd.DataFrame:
+    """Per order item, in the shape of the Orders report: delivered when its Net Qty over all months is above 0."""
+    m = monthly.copy()
+    m["net"] = pd.to_numeric(m["net qty"], errors="coerce").fillna(0)
+    m["sold"] = pd.to_numeric(m["sale qty"], errors="coerce").fillna(0)
+    m = m.sort_values("_month")
+    g = m.groupby("oi")
+    out = pd.DataFrame({"order_id": g["order id"].first(), "order_date": g["order_date"].first(), "sku": g["sku"].first(),
+                        "quantity": g["sold"].max().clip(lower=1), "net": g["net"].sum()}).reset_index(names="order_item_id")
+    out["order_item_status"] = np.where(out.pop("net") > 0, "DELIVERED", "RETURNED")
+    out["_file"] = "Monthly file"
+    for c in ["fsn", "product_title", "fulfilment_type", "return_reason", "return_sub_reason", "return_id", "order_cancellation_date",
+              "dispatched_date", "order_delivery_date", "dispatch_sla_breached", "pickup_logistics_partner", "delivery_logistics_partner"]:
+        out[c] = None
+    return out
+
+
+def monthly_settled(monthly: pd.DataFrame, have: set) -> pd.DataFrame:
+    """Rows in the shape of Settled Transactions, for the months in no Settled Transactions file (have).
+    The file gives no payment date or NEFT id: the month is known, the id names the file."""
+    m = monthly[~monthly["_month"].isin(have)] if len(monthly) else monthly
+    if not len(m):
+        return pd.DataFrame()
+    out = pd.DataFrame({"Order item ID": m["oi"].values, "NEFT ID": m["_month"].dt.strftime("Monthly file %b-%y").values,
+                        "Payment Date": None, "_month": m["_month"].values, "_file": m["_file"].values})
+    for src, name in (("Sale Amount (Rs.)", "sale amount"), ("Bank Settlement Value (Rs.)", "payout"), ("Marketplace Fee (Rs.)", "marketplace fee"),
+                      ("Commission (Rs.)", "commission"), ("Shipping Fee (Rs.)", "shipping fee"), ("Reverse Shipping Fee (Rs.)", "reverse shipping fee"),
+                      ("Refund (Rs.)", "refund"), ("TCS (Rs.)", "tcs"), ("TDS (Rs.)", "tds")):
+        out[src] = m[name].values if name in m.columns else None
+    return out
+
+
 def sales_items(sales: pd.DataFrame) -> pd.DataFrame:
     """Per order item from the tax Sales Report events: order date, SKU, qty, invoice value of the
     sale, and its status (Cancellation = cancelled; more Returns than Return Cancellations =
@@ -117,7 +209,7 @@ def sales_items(sales: pd.DataFrame) -> pd.DataFrame:
         "order_item_id": items, "order_id": sale["Order ID"].values, "order_date": sale["Order Date"].values,
         "sku": sale["SKU"].values, "fsn": sale["FSN"].values, "product_title": sale["Product Title/Description"].values,
         "quantity": sale["Item Quantity"].values, "fulfilment_type": sale["Fulfilment Type"].values,
-        "order_item_status": st.reindex(items).values, "_value": s[s["sub"] == "Sale"].groupby("oi")["val"].sum().reindex(items).values,
+        "order_item_status": st.reindex(items).values, "_value": s[s["sub"] == "Sale"].groupby("oi")["val"].max().reindex(items).values,
         "_file": "Sales Report"})
     for c in ["return_reason", "return_sub_reason", "return_id", "order_cancellation_date", "dispatched_date",
               "order_delivery_date", "dispatch_sla_breached", "pickup_logistics_partner", "delivery_logistics_partner"]:
@@ -151,7 +243,8 @@ def settlement(st: pd.DataFrame) -> pd.DataFrame:
 
 
 def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, settled: pd.DataFrame,
-             category_of_design: dict[str, str] | None = None, sales: pd.DataFrame | None = None) -> pd.DataFrame:
+             category_of_design: dict[str, str] | None = None, sales: pd.DataFrame | None = None,
+             monthly: pd.DataFrame | None = None) -> pd.DataFrame:
     o = orders.copy()
     o["oi"] = oi(o["order_item_id"])
     o["_source"] = "Orders report"
@@ -163,6 +256,12 @@ def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, 
         extra["oi"] = extra["order_item_id"]
         extra["_source"] = "Sales report"
         o = pd.concat([o, extra.drop(columns=["_value"])], ignore_index=True)
+    if monthly is not None and len(monthly):                         # items only the owner's monthly files have
+        items = monthly_items(monthly)
+        extra = items[~items["order_item_id"].isin(o["oi"])].copy()
+        extra["oi"] = extra["order_item_id"]
+        extra["_source"] = "Monthly file"
+        o = pd.concat([o, extra], ignore_index=True)
     if len(returns):
         r = returns.copy()
         r["oi"] = oi(r["order_item_id"])
@@ -231,7 +330,7 @@ def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, 
     return d.sort_values(["ORDER DATE", "ORDER ITEM ID"]).reset_index(drop=True)
 
 
-RAW_COLS = ["ORDER DATE", "ORDER MONTH", "ORDER ID", "ORDER ITEM ID", "SOURCE", "SKU", "FSN", "PRODUCT TITLE", "MY SKU",
+RAW_COLS = ["ORDER DATE", "ORDER MONTH", "ORDER ID", "ORDER ITEM ID", "SOURCE", "OMS STATUS", "SKU", "FSN", "PRODUCT TITLE", "MY SKU",
             "FINAL SKU", "FINAL MY SKU", "DESIGN-NO", "BRAND", "CATEGORY", "QTY", "SALE VALUE", "FULFILMENT TYPE",
             "PORTAL ORDER STATUS", "FINAL STATUS", "RETURN TYPE SOURCE", "REASON", "SUB REASON", "RETURN ID",
             "RETURN STATUS", "RETURN RESULT", "RETURN DATE", "RETURN MONTH", "CANCELLED DATE", "DISPATCHED DATE",
@@ -242,21 +341,27 @@ MONEY = {"SALE VALUE", "MARKETPLACE FEE", "COMMISSION", "SHIPPING FEE", "REVERSE
          "PROTECTION FUND", "TCS", "TDS", "NET SETTLEMENT"}
 
 
-def report(raw: pd.DataFrame, settled: pd.DataFrame, input_log: pd.DataFrame) -> Report:
+def report(raw: pd.DataFrame, settled: pd.DataFrame, input_log: pd.DataFrame, bank: pd.DataFrame | None = None) -> Report:
     have_pay = raw["NET SETTLEMENT"].notna().any()
     have_value = raw["SALE VALUE"].notna().any()
     pay_months = None
     if len(settled):
         s = settled.copy()
         s["m"] = pd.to_datetime(s["Payment Date"], errors="coerce").dt.to_period("M").dt.to_timestamp()
+        if "_month" in s.columns:                                    # a monthly file: its month
+            s["m"] = s["m"].fillna(s["_month"])
         for src, dst in SETTLE_COLS.items():
             s[dst] = pd.to_numeric(s.get(src), errors="coerce").fillna(0)
         pay_months = s.groupby("m")[["SALE AMOUNT", "MARKETPLACE FEE", "REFUND", "TCS", "TDS", "NET SETTLEMENT"]].sum()
-        pay_months.columns = ["Sale Amount", "Marketplace Fee", "Refund", "TCS", "TDS", "Bank Settlement"]
+        pay_months.columns = ["Sale Amount", "Marketplace Fee", "Refund", "TCS", "TDS", "Order Settlement"]
+        if bank is not None and len(bank):
+            pay_months = pay_months.join(bank)
+            pay_months.insert(6, "SPF, Ads, Storage", pay_months["Net Bank Paid"] - pay_months["Order Settlement"])
+            pay_months["Difference"] = (pay_months["Net Bank Paid"] - pay_months["Transfers Listed"]).round(0)
     return Report(
         portal="FLIPKART", raw=raw, raw_cols=RAW_COLS,
         value="SALE VALUE" if have_value else None, settle="NET SETTLEMENT" if have_pay else None, money_cols=MONEY,
         reasons=[("Customer Return Reason", "Customer Return"), ("RTO Reason", "RTO")],
         pay_table=[("Marketplace Fee", "MARKETPLACE FEE"), ("Commission", "COMMISSION"), ("Refund", "REFUND"),
                    ("TCS", "TCS"), ("TDS", "TDS"), ("Net Settlement", "NET SETTLEMENT")],
-        pay_months=pay_months, input_log=input_log, min_orders=300)
+        pay_months=pay_months, input_log=input_log, min_orders=300, recv_all=True)

@@ -45,6 +45,9 @@ jobs:
       # the AJIO ledger (SRM statement of accounts) for the AJIO payment report
       SRM_USERNAME: ${{ secrets.SRM_USERNAME }}
       SRM_PASSWORD: ${{ secrets.SRM_PASSWORD }}
+      OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
+      OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
+      OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
       FLIPKART_EMAIL: ${{ secrets.FLIPKART_EMAIL }}
       FLIPKART_PASSWORD: ${{ secrets.FLIPKART_PASSWORD }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}

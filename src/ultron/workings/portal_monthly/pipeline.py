@@ -20,6 +20,7 @@ import argparse
 import calendar
 import logging
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
@@ -93,6 +94,9 @@ def ajio_payments(first: date, last: date, dest: Path) -> Path:
     return path
 
 
+OMS_CHANNELS = {"AJIO": {"ajio", "ajio api"}, "FLIPKART": {"flipkart"}}
+
+
 def flipkart_report(report: str, first: date, last: date, dest: Path) -> Path:
     """A report centre report for exactly the month: "Orders" (Fulfilment Reports, the order
     report the owner downloads by hand) or "Settled Transactions" (Payment Reports: every
@@ -129,6 +133,28 @@ def ajio_returns(first: date, last: date, dest: Path) -> Path:
     ajio.login()
     path = dest / "ajio_rtv.xlsx"
     path.write_bytes(ajio.rtv_report(first, last))
+    return path
+
+
+OMS_LOCK = threading.Lock()        # one OMSGuru session at a time
+
+
+def oms_lines(portal: str, first: date, last: date, dest: Path) -> Path:
+    """OMSGuru's order lines of the portal's channels ordered in the month (AJIO: both Ajio and Ajio Api), read only."""
+    from ultron.portals.omsguru import OmsGuruClient
+    from ultron.portals.omsguru_orders import channel_names, order_lines_range
+    from ..business_report.oms import rows_of
+    with OMS_LOCK:
+        client = OmsGuruClient.from_env()
+        client.login()
+        client.set_warehouse(next(iter(client.warehouses())))
+        names = channel_names(client)
+        wanted = [k for k, v in names.items() if v.rsplit(" - ", 1)[-1].lower() in OMS_CHANNELS[portal]]
+        if not wanted:
+            raise RuntimeError(f"no OMSGuru channel for {portal}")
+        lines = order_lines_range(client, first, last, wanted)
+    path = dest / f"{portal.lower()}_omsguru.xlsx"
+    rows_of(lines, names).to_excel(path, index=False)
     return path
 
 
@@ -183,6 +209,8 @@ def tasks_of(first: date, last: date, kinds: set[str], back_fill: bool) -> dict:
     tasks[("FLIPKART", "", "sale")] = (flipkart_report, ("Orders", first, last))
     tasks[("FLIPKART", "", "payment")] = (flipkart_report, ("Settled Transactions", first, last))
     tasks[("FLIPKART", "", "sales")] = (flipkart_sales, (first, last))
+    tasks[("AJIO", "", "omsguru")] = (oms_lines, ("AJIO", first, last))
+    tasks[("FLIPKART", "", "omsguru")] = (oms_lines, ("FLIPKART", first, last))
     return {k: v for k, v in tasks.items() if not kinds or k[2] in kinds}
 
 

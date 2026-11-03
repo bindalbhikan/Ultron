@@ -11,10 +11,43 @@
   to the Drive trash.
 * Inputs: every month of Drive `AGENT WORK/PORTAL REPORTS` from `--from` (default 2025-01; a portal
   starts where its reports do) to last month, and `BUSINESS REPORTING/MasterSheet.xlsx`.
-  Months kept on 2 Nov 2026: Myntra orders Apr-25 on (older refused; payments Jan-25), Flipkart orders
-  Feb-26 on + the tax Sales Report from Jan-25 (items before Feb-26 come from its events, SOURCE = Sales
-  report; payments May-26 on), AJIO orders from 13 Dec 2025 (Dec-25 PARTIAL, from the Ads Gap
-  working's old download; the portal answers "No records found" before Jan-26; payments Feb-26).
+  Months kept on 3 Nov 2026: Myntra orders Apr-25 on (older refused; payments Jan-25), Flipkart orders
+  Feb-26 on + the tax Sales Report (items before Feb-26 come from its events, SOURCE = Sales
+  report; none for Nov-25, Dec-25; payments May-26 on), AJIO orders from 13 Dec 2025 (Dec-25 PARTIAL, from the Ads Gap
+  working's old download; the portal answers "No records found" before Jan-26; ledger from 28 Feb 2026).
+* **Flipkart and AJIO start at Apr-25** (`START` in `pipeline.py`; owner's rule, 3 Nov 2026). AJIO's order reports of Apr-25 to Aug-25
+  and Dec-25 come from the Tuesday Working folders (weekly 30-day downloads, the newest line wins); days none reaches (Aug 30 to
+  Sep-25) from OMSGuru, SOURCE = OMSGuru, their values `-`. Flipkart before Feb-26 is the Sales Report + OMSGuru's status. Flipkart has no
+  payment before Oct-25: `-`. Later months before the portal's
+  reports come from the owner's monthly files, kept as `<PORTAL> MONTHLY REPORT <MON-YY>.xlsx` in the same month folders:
+  Flipkart Oct-25 to Apr-26 (settled order items: the payment of months with no Settled Transactions file, and the items
+  of Nov-25 and Dec-25; SOURCE = Monthly file), AJIO Oct-25 to Jan-26 (order lines the order report does not have).
+  Checked against the portal's reports: Flipkart's settlement is the same item by item (May-26 to Sep-26), AJIO's price is
+  the same on every line both have.
+* **OMSGuru's status** (`business_report/oms.py`, owner's rule, 3 Nov 2026): `<PORTAL> OMSGURU REPORT <MON-YY>.xlsx` in the
+  same month folders, from `portal-reports` (kinds `omsguru`): channels Flipkart, Ajio and Ajio Api (Ajio up to Feb-26, Ajio
+  Api after). Lines match on order id + FINAL SKU; the workbook shows OMS STATUS. Delivered, Cancelled and Cancelled Before
+  Shipping mean the same in the portals' reports (checked on 43,000 one-line orders); Return Init / Return Received =
+  customer return; Cancelled Return Received and Cancel Init = RTO. A return, RTO or cancellation it shows replaces
+  Delivered, In Transit or Return Type Pending; a line a return report settled is not changed. It is not whole (no Flipkart
+  FBF, most orders cancelled before shipping are missing), so it adds lines only to Flipkart months with no Orders
+  report (Oct-25 to Jan-26, SOURCE = OMSGuru: mostly RTO).
+* **AJIO payment before the ledger** (Oct-25 to Feb-26, the SRM ledger starts on 28 Feb 2026): as the owner's monthly files
+  work it out, Invoice Value less FWD B2B Invoice Amt of returns, PAYMENT STATUS = As per monthly file. Against the files'
+  own TOTAL PAYOUT: within about 1 %. Against the ledger, Mar-26 to Oct-26, order-month totals: the ledger runs 0-6 % above it,
+  Jul-26 33 % (not explained). What is due, not the bank; their EXP sheets are not taken off.
+* **Payment match, Flipkart and AJIO** (PAYMENT sheet, by payment month). Flipkart: Order Settlement, SPF / Ads / Storage, Net Bank Paid
+  (Settled Transactions' `Summary of report`, Net Bank Settlement (A); before May-26 the total row of the monthly file), the
+  transfers that file lists (rounded by Flipkart) and the difference. AJIO: G4, IC and the other ledger lines give Net Due, KP is the bank
+  payment itself, and the Difference is 0 in every month from Mar-26 (the last month: cleared, payment still to come); before
+  the ledger the months are as per the monthly files, with their EXP sheet, and no bank figure. A PAYMENT MATCH block goes from the
+  bank to NET SETTLEMENT in RAW DATA step by step. Net Received in MONTH WISE = NET SETTLEMENT of every line of the order month
+  (for these two portals; Myntra keeps Delivered + Customer Return), so it is by order month and never equals one payment month.
+* **A number that is not known shows `-`, never 0, and is named in the INPUT LOG** (`Report.unknown`). Cancelled: Flipkart
+  Oct-25 to Jan-26, AJIO Oct-25 to Dec-25 (those sources leave out most lines cancelled before shipping, so Gross is low in
+  those months). Payment: a Flipkart order month with no payment on any sold line, PAYMENT STATUS = No Payment Report.
+* AJIO: a status is as old as its file, so a line Shipped over 60 days ago with no return since counts as Delivered (named
+  in the INPUT LOG).
 * The same layout for every portal (`business_report/workbook.py`): RAW DATA, MONTH WISE (SALE,
   CANCELLED, RTO, CUSTOMER RETURN, NET SALE with value, ASP, MoM; LAST YEAR once 13 months are in;
   PAYMENT), BRAND WISE, CATEGORY WISE, BRAND CATEGORY WISE (all together, then one block per group,

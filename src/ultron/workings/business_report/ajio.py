@@ -10,8 +10,16 @@ reports kept in PORTAL REPORTS.
                   return (INVOICE REFERENCE NUMBER = the DOCNO of that invoice's G4), the rest (bank
                   clearing, TOT, ads, holds) are neither received nor reversed money of an order line
 
+  MONTHLY REPORT  the owner's monthly file (sheet SALE, Oct-25 to Jan-26): the order report's lines less the cancelled
+                  ones and without Description, carrier or SLA (price and invoice value the same as the order report
+                  on all 626 + 838 lines both have, Dec-25 and Jan-26). It adds the lines the order report does not
+                  have (SOURCE = Monthly file).
+  OMSGURU REPORT  business_report/oms.py: the status of each line, and the lines of days no order report or monthly file reaches
+                  (SOURCE = OMSGuru: order id, SKU, qty, status, its value as INVOICE VALUE, no selling price)
+
 FINAL STATUS: Customer Return / RTO from the RTV line (return qty > 0), Cancelled (status Cancelled),
-Delivered (status Delivered, no return), In Transit (Shipped and the rest).
+Delivered (status Delivered, no return; or Shipped over SHIPPED_DAYS ago with no return: a report's status is as
+old as its file), In Transit (Shipped lately and the rest).
 SALE VALUE = Selling Price x qty; NET SETTLEMENT = G4 received less IC reversed (sign turned so money
 to us is positive), both matched by invoice number. An invoice can hold several order lines: G4 is shared
 by invoice value, IC by the credit note value of the invoice's returned lines, so no rupee counts twice.
@@ -26,11 +34,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .workbook import Report
+from .workbook import Report, any_date
 
 log = logging.getLogger("bindal.business_report")
 AJIO_FMT = "%a %b %d %H:%M:%S %Y"
 CUSTOMER = {"RVP", "REPL", "SELF_SHIP"}
+SHIPPED_DAYS = 60
 
 
 def adate(s: pd.Series) -> pd.Series:
@@ -47,12 +56,115 @@ def read(files: list[Path]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+MONTHLY_COLUMNS = {"cust order no": "Cust Order No", "fwd seller order no": "FWD Seller Order NO", "seller invoice no": "Seller Invoice No",
+                   "status": "Status", "jiocode": "JioCode", "seller style code": "Seller Style Code", "seller sku": "Seller SKU",
+                   "shipped qty": "Order Qty", "listing mrp": "Listing MRP", "selling price": "Selling Price",
+                   "invoice value": "Invoice Value", "brand": "Brand", "fulfillment type": "Fulfillment Type"}
+
+
+def read_monthly(files: list[Path]) -> pd.DataFrame:
+    """The SALE sheet of the owner's monthly files in the order report's columns; a later file's line wins."""
+    frames = []
+    for f in files:                                                  # in month order
+        xl = pd.ExcelFile(f)
+        df = xl.parse(next(s for s in xl.sheet_names if s.strip().lower() == "sale"), dtype=str)
+        df.columns = [" ".join(str(c).split()).lower() for c in df.columns]
+        day = any_date(df["cust order date"])
+        df, day = df[df["cust order no"].notna() & day.notna()], day[df["cust order no"].notna() & day.notna()]   # no total row
+        out = df.reindex(columns=list(MONTHLY_COLUMNS)).rename(columns=MONTHLY_COLUMNS)
+        out["Cust Order Date"] = day.dt.strftime(AJIO_FMT)
+        frames.append(out.assign(_file=f.name))
+    if not frames:
+        return pd.DataFrame()
+    m = pd.concat(frames, ignore_index=True)
+    m["key"] = m["Cust Order No"].str.strip() + "|" + m["Seller SKU"].str.strip()
+    return m.drop_duplicates("key", keep="last").drop(columns="key")
+
+
 def ledger_lines(ledger: pd.DataFrame) -> pd.DataFrame:
     """The ledger's lines once each; amt: money to us is positive; paid: the clearing date."""
     lg = ledger.copy()
     lg["amt"] = -num(lg["AMOUNT"]).fillna(0)
     lg["paid"] = pd.to_datetime(lg["CLEARINGDOCUMENTDATE"], format="%d.%m.%Y", errors="coerce")
     return lg.drop_duplicates(["DT", "REFERENCE", "DOCNO", "AMOUNT"])
+
+
+def forward_values(rtv: pd.DataFrame) -> pd.DataFrame:
+    """The return lines with qty, once each: key = order line, fwd = FWD B2B Invoice Amt (what a return takes back in the
+    owner's monthly files), created = Return Created Date."""
+    if not len(rtv):
+        return pd.DataFrame(columns=["key", "fwd", "created"])
+    r = rtv[num(rtv["Return QTY"]).fillna(0) > 0].drop_duplicates(["RETURN ORDER NUMBER", "SELLER SKU"], keep="last")
+    return pd.DataFrame({"key": r["Cust Order No"].str.strip() + "|" + r["SELLER SKU"].str.strip(),
+                         "fwd": num(r["FWD B2B Invoice Amt"]).fillna(0).values, "created": adate(r["Return Created Date"]).values})
+
+
+def file_payment(raw: pd.DataFrame, rtv: pd.DataFrame, months: set) -> pd.DataFrame:
+    """The payment of order months the SRM ledger does not reach, worked out as the owner's monthly files do: the line's
+    Invoice Value received, less FWD B2B Invoice Amt of its returns. A statement of what is due, not of the bank."""
+    fwd = forward_values(rtv)
+    by_line = fwd.groupby("key")["fwd"].sum()
+    key = raw["CUST ORDER NO"].astype(str).str.strip() + "|" + raw["SELLER SKU"].astype(str).str.strip()
+    hit = raw["ORDER MONTH"].isin(months) & raw["FINAL STATUS"].ne("Cancelled")
+    raw.loc[raw["ORDER MONTH"].isin(months), ["INVOICE PAID", "CREDIT NOTE DEBIT", "NET SETTLEMENT", "PAYMENT DATE"]] = np.nan
+    raw.loc[hit, "INVOICE PAID"] = raw.loc[hit, "INVOICE VALUE"]
+    debit = -key[hit].map(by_line).fillna(0)
+    raw.loc[hit, "CREDIT NOTE DEBIT"] = debit.where(debit != 0)
+    raw.loc[hit, "NET SETTLEMENT"] = raw.loc[hit, "INVOICE VALUE"].fillna(0) + debit
+    raw.loc[hit, "PAYMENT STATUS"] = "As per monthly file"
+    raw.loc[raw["ORDER MONTH"].isin(months) & ~hit, "PAYMENT STATUS"] = "Not Applicable"
+    oms_line = hit & raw["SOURCE"].eq("OMSGuru")                     # no order report: OMSGuru's value, nothing kept on a return
+    raw.loc[oms_line, "NET SETTLEMENT"] = raw.loc[oms_line, "INVOICE VALUE"].where(raw.loc[oms_line, "FINAL STATUS"].eq("Delivered"), 0.0)
+    raw.loc[oms_line, "PAYMENT STATUS"] = "As per OMSGuru"
+    return raw
+
+
+def monthly_expenses(files: list[tuple[Path, pd.Timestamp]]) -> pd.Series:
+    """Month -> the charges on the EXP sheet of the owner's monthly file (money off, so negative)."""
+    out = {}
+    for f, month in files:
+        xl = pd.ExcelFile(f)
+        sheet = next((s for s in xl.sheet_names if s.strip().lower().startswith("exp")), None)
+        if not sheet:
+            continue
+        e = xl.parse(sheet, dtype=str)
+        e.columns = [str(c).strip().upper() for c in e.columns]
+        if "AMOUNT" in e.columns:
+            out[month] = -abs(num(e["AMOUNT"]).sum())
+    return pd.Series(out, dtype=float)
+
+
+def file_payment_months(raw: pd.DataFrame, rtv: pd.DataFrame, months: set, charges: pd.Series | None = None) -> pd.DataFrame:
+    """Those months in the cash table: Invoice Value of the month's orders, FWD B2B Invoice Amt of the month's returns, the
+    charges of the file's EXP sheet."""
+    keep = raw[raw["ORDER MONTH"].isin(months)]
+    t = pd.DataFrame({"Received (G4)": keep.groupby("ORDER MONTH")["INVOICE PAID"].sum()})
+    fwd = forward_values(rtv)
+    fwd["m"] = pd.to_datetime(fwd["created"]).dt.to_period("M").dt.to_timestamp()
+    t["Reversed (IC)"] = -fwd[fwd["m"].isin(months)].groupby("m")["fwd"].sum().reindex(t.index).fillna(0)
+    t["Other (EXP sheet)"] = (charges if charges is not None else pd.Series(dtype=float)).reindex(t.index).fillna(0)
+    return t
+
+
+def payment_match(raw: pd.DataFrame, ledger: pd.DataFrame, table: pd.DataFrame) -> list[tuple[str, float]]:
+    """From the bank (KP) to NET SETTLEMENT in RAW DATA, step by step: every rupee named."""
+    lg = ledger_lines(ledger)
+    both = lg["DT"].isin(["G4", "IC"])
+    paid = float(table["Bank Paid (KP)"].sum())
+    cleared_unpaid = float(table["Difference"].sum())
+    charges = float(lg.loc[lg["paid"].notna() & ~both & lg["DT"].ne("KP"), "amt"].sum())
+    open_lines = float(lg.loc[lg["paid"].isna() & both, "amt"].sum())
+    whole = float(lg.loc[both, "amt"].sum())
+    file_lines = float(raw.loc[raw["PAYMENT STATUS"].eq("As per monthly file"), "NET SETTLEMENT"].sum())
+    on_lines = float(raw["NET SETTLEMENT"].sum())
+    return [("Bank paid (KP), all months", paid),
+            ("Cleared in the ledger, bank payment still to come", cleared_unpaid),
+            ("Add back: charges in the ledger, no order line (TOT, GST retention, other)", -charges),
+            ("Not cleared yet in the ledger (G4 + IC)", open_lines),
+            ("= G4 + IC, the whole ledger", whole),
+            ("Order months before the ledger: as per the monthly files", file_lines),
+            ("G4 + IC of those months' invoices, already in the line above", on_lines - file_lines - whole),
+            ("= NET SETTLEMENT in RAW DATA = Net Received in MONTH WISE", on_lines)]
 
 
 def credit_notes(rtv: pd.DataFrame) -> pd.Series:
@@ -65,10 +177,20 @@ def credit_notes(rtv: pd.DataFrame) -> pd.Series:
 
 
 def raw_data(orders: pd.DataFrame, rtv: pd.DataFrame, ledger: pd.DataFrame, master: pd.DataFrame,
-             category_of_design: dict[str, str] | None = None) -> pd.DataFrame:
+             category_of_design: dict[str, str] | None = None, monthly: pd.DataFrame | None = None) -> pd.DataFrame:
     o = orders.copy()
     o["key"] = o["Cust Order No"].str.strip() + "|" + o["Seller SKU"].str.strip()
     o = o.drop_duplicates("key", keep="last")
+    o["_source"] = "Order report"
+    if monthly is not None and len(monthly):                         # lines only the owner's monthly files have
+        extra = monthly.copy()
+        extra["key"] = extra["Cust Order No"].str.strip() + "|" + extra["Seller SKU"].str.strip()
+        extra = extra[~extra["key"].isin(o["key"])]
+        # the same design's Description from the order report
+        names = o.dropna(subset=["Seller Style Code", "Description"]).drop_duplicates("Seller Style Code").set_index("Seller Style Code")["Description"]
+        extra["Description"] = extra["Seller Style Code"].map(names)
+        extra["_source"] = "Monthly file"
+        o = pd.concat([o, extra], ignore_index=True)
     all_returns = rtv
     if len(rtv):
         r = rtv.copy()
@@ -105,9 +227,14 @@ def raw_data(orders: pd.DataFrame, rtv: pd.DataFrame, ledger: pd.DataFrame, mast
     d["INVOICE VALUE"] = num(o["Invoice Value"]).values
     d["FULFILLMENT TYPE"] = o["Fulfillment Type"].values
     d["PORTAL ORDER STATUS"] = o["Status"].values
+    d["SOURCE"] = o["_source"].values
     key = pd.Series(o["key"].values)
     rtype, rqty = key.map(r["Return Type"]), key.map(r["qty"]).fillna(0)
     st = o["Status"].str.strip().str.lower().values
+    # a status is as old as its file (the order report of a month is saved once): Shipped long ago with no RTV line since was delivered
+    stale = (pd.Timestamp.today().normalize() - d["ORDER DATE"]).dt.days.values > SHIPPED_DAYS
+    d["STALE SHIPPED"] = stale & (st == "shipped")
+    st = np.where(d["STALE SHIPPED"].values, "delivered", st)
     final = np.select([rtype.eq("RTO").values, (rtype.isin(CUSTOMER) & (rqty > 0)).values,
                        st == "cancelled", st == "delivered"],
                       ["RTO", "Customer Return", "Cancelled", "Delivered"], default="In Transit")
@@ -151,7 +278,7 @@ def raw_data(orders: pd.DataFrame, rtv: pd.DataFrame, ledger: pd.DataFrame, mast
     return d.sort_values(["ORDER DATE", "CUST ORDER NO"]).reset_index(drop=True)
 
 
-RAW_COLS = ["ORDER DATE", "ORDER MONTH", "CUST ORDER NO", "SELLER ORDER NO", "SELLER INVOICE NO", "JIOCODE",
+RAW_COLS = ["ORDER DATE", "ORDER MONTH", "SOURCE", "OMS STATUS", "CUST ORDER NO", "SELLER ORDER NO", "SELLER INVOICE NO", "JIOCODE",
             "SELLER STYLE CODE", "SELLER SKU", "MY SKU", "FINAL SKU", "FINAL MY SKU", "DESIGN-NO", "BRAND", "CATEGORY",
             "DESCRIPTION", "QTY", "MRP", "SELLING PRICE", "SALE VALUE", "INVOICE VALUE", "FULFILLMENT TYPE",
             "PORTAL ORDER STATUS", "FINAL STATUS", "RETURN TYPE", "REASON", "RETURN ORDER NUMBER", "RETURN STATUS",
@@ -160,7 +287,7 @@ RAW_COLS = ["ORDER DATE", "ORDER MONTH", "CUST ORDER NO", "SELLER ORDER NO", "SE
 MONEY = {"MRP", "SELLING PRICE", "SALE VALUE", "INVOICE VALUE", "INVOICE PAID", "CREDIT NOTE DEBIT", "NET SETTLEMENT"}
 
 
-def report(raw: pd.DataFrame, ledger: pd.DataFrame, input_log: pd.DataFrame) -> Report:
+def report(raw: pd.DataFrame, ledger: pd.DataFrame, input_log: pd.DataFrame, file_months: pd.DataFrame | None = None) -> Report:
     have_pay = raw["NET SETTLEMENT"].notna().any()
     pay_months = None
     if len(ledger):
@@ -170,7 +297,12 @@ def report(raw: pd.DataFrame, ledger: pd.DataFrame, input_log: pd.DataFrame) -> 
         t = lg.pivot_table(index="m", columns="DT", values="amt", aggfunc="sum", fill_value=0)
         t = t.reindex(columns=["G4", "IC"] + sorted(c for c in t.columns if c not in ("G4", "IC")), fill_value=0)
         t.columns = ["Received (G4)", "Reversed (IC)"] + [f"Other ({c})" for c in t.columns[2:]]
-        t["Net Payout"] = t["Received (G4)"] + t["Reversed (IC)"]      # the others are not order money
+        bank = -t.pop("Other (KP)") if "Other (KP)" in t.columns else pd.Series(0.0, index=t.index)   # KP = the bank payment itself
+        if file_months is not None and len(file_months):          # before the ledger: as the owner's monthly files
+            t = pd.concat([file_months, t[~t.index.isin(file_months.index)]]).fillna(0).sort_index()
+        t["Net Due"] = t.sum(axis=1)
+        t["Bank Paid (KP)"] = bank.reindex(t.index)                    # none before the ledger: a monthly file shows what is due
+        t["Difference"] = (t["Net Due"] - t["Bank Paid (KP)"]).round(0)
         pay_months = t
     return Report(
         portal="AJIO", raw=raw, raw_cols=RAW_COLS, value="SALE VALUE",
@@ -178,4 +310,4 @@ def report(raw: pd.DataFrame, ledger: pd.DataFrame, input_log: pd.DataFrame) -> 
         reasons=[("Customer Return Reason", "Customer Return"), ("RTO Reason", "RTO")],
         pay_table=[("Invoice Value", "INVOICE VALUE"), ("Invoices Paid", "INVOICE PAID"),
                    ("Credit Notes", "CREDIT NOTE DEBIT"), ("Net Settlement", "NET SETTLEMENT")],
-        pay_months=pay_months, input_log=input_log, min_orders=200)
+        pay_months=pay_months, input_log=input_log, min_orders=200, recv_all=True)

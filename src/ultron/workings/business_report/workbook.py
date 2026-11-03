@@ -50,6 +50,18 @@ class Report:
     pay_months: pd.DataFrame | None = None    # PAYMENT (2): cash by payment month (values)
     input_log: pd.DataFrame | None = None
     min_orders: int = 500
+    unknown: dict[str, set] = field(default_factory=dict)   # BASE key -> months its number is not known: "-", never 0
+    recv_all: bool = False                    # Net Received = the settlement of every line (a charge on an RTO is money too)
+    pay_match: list[tuple[str, float]] = field(default_factory=list)   # PAYMENT: from the bank to the order lines, step by step
+
+
+def any_date(s: pd.Series) -> pd.Series:
+    """Dates of a hand-made file: Excel day numbers or text (the portals' or ISO)."""
+    n = pd.to_numeric(s, errors="coerce")
+    out = pd.to_datetime(n, unit="D", origin="1899-12-30", errors="coerce")
+    txt = s.astype(str).str.replace(" IST", "", regex=False).where(n.isna())
+    return out.fillna(pd.to_datetime(txt, format="%a %b %d %H:%M:%S %Y", errors="coerce")) \
+        .fillna(pd.to_datetime(txt.str[:19], errors="coerce", format="mixed"))
 
 
 def one_spelling(s: pd.Series) -> np.ndarray:
@@ -135,6 +147,8 @@ class Writer:
 
     def base_cell(self, key: str, crit: list) -> tuple[str, float]:
         st, kind = self.BASE[key]
+        if key == "recv" and self.r.recv_all:
+            st = None
         col = {"QTY": "QTY", "VALUE": self.r.value, "SETTLE": self.r.settle}[kind]
         return self.sumifs(col, crit + self.crit_status(st))
 
@@ -193,6 +207,10 @@ class Writer:
             for key in col:
                 if key not in self.BASE:
                     continue
+                if isinstance(label, pd.Timestamp) and label in self.r.unknown.get(key, ()):
+                    ws.write_string(r, col[key], "-", self.dash)      # not known: never a 0
+                    v[key] = 0.0
+                    continue
                 if how is None:
                     fm, v[key] = f"=SUM({self.cell(top, col[key])}:{self.cell(r - 1, col[key])})", sum(x[key] for x in vals)
                 elif isinstance(how, tuple) and how[0] == "rest":
@@ -208,18 +226,22 @@ class Writer:
             pct, num = (self.tpct, self.tint) if last else (self.pct, self.int)
             if "rp" in col:
                 d = v["gq"] - v["cq"]
-                ws.write_formula(r, col["rp"], f'=IF({c["gq"]}-{c["cq"]}=0,"-",{c["rq"]}/({c["gq"]}-{c["cq"]}))', pct, v["rq"] / d if d else "-")
+                if isinstance(label, pd.Timestamp) and label in self.r.unknown.get("rq", ()):
+                    ws.write_string(r, col["rp"], "-", self.dash)
+                else:
+                    ws.write_formula(r, col["rp"], f'=IF({c["gq"]}-N({c["cq"]})=0,"-",N({c["rq"]})/({c["gq"]}-N({c["cq"]})))', pct, v["rq"] / d if d else "-")
             if "tp" in col:
                 d = v["nq"] + v["tq"]
                 ws.write_formula(r, col["tp"], f'=IF({c["nq"]}+{c["tq"]}=0,"-",{c["tq"]}/({c["nq"]}+{c["tq"]}))', pct, v["tq"] / d if d else "-")
             if "asp" in col:
-                ws.write_formula(r, col["asp"], f'=IF({c["nq"]}=0,"-",{c["nv"]}/{c["nq"]})', num, v["nv"] / v["nq"] if v["nq"] else "-")
+                ws.write_formula(r, col["asp"], f'=IF(OR({c["nq"]}=0,N({c["nv"]})=0),"-",{c["nv"]}/{c["nq"]})', num, v["nv"] / v["nq"] if v["nq"] and v["nv"] else "-")
             net = self.net
             if "mom" in col:
                 # the month before must be the row above: a month with no data is never skipped over
                 before = rows[n - 1][0] if n else None
+                none = self.r.unknown.get(net, ())
                 if (n == 0 or last or not isinstance(label, pd.Timestamp)
-                        or before != label - pd.DateOffset(months=1)):
+                        or before != label - pd.DateOffset(months=1) or label in none or before in none):
                     ws.write_string(r, col["mom"], "-", self.tdash if last else self.dash)
                 else:
                     prev, pv = self.cell(r - 1, col[net]), vals[-1][net]
@@ -228,7 +250,7 @@ class Writer:
                 # the same month last year, found by its date: a month with no data must not shift the rest
                 year_ago = next((i for i in range(n) if isinstance(label, pd.Timestamp)
                                  and rows[i][0] == label - pd.DateOffset(years=1)), None)
-                if year_ago is not None and not last:
+                if year_ago is not None and not last and label not in self.r.unknown.get(net, ()) and rows[year_ago][0] not in self.r.unknown.get(net, ()):
                     ly = vals[year_ago][net]
                     ws.write_formula(r, col["ly"], f"={self.cell(top + year_ago, col[net])}", self.int, ly)
                     ws.write_formula(r, col["yoy"], f'=IF({c["ly"]}=0,"-",{c[net]}/{c["ly"]}-1)', self.pct, v[net] / ly - 1 if ly else "-")
@@ -389,8 +411,8 @@ class Writer:
             for i, (m, row) in enumerate(pm.iterrows(), start=r + 2):
                 ws.write_datetime(i, 0, pd.Timestamp(m).to_pydatetime(), self.mon)
                 for j, x in enumerate(row.values, start=1):
-                    if pct_cols[j - 1] and (x is None or pd.isna(x)):
-                        ws.write_blank(i, j, None, self.pct)
+                    if x is None or pd.isna(x):
+                        ws.write_blank(i, j, None, self.pct if pct_cols[j - 1] else self.int)
                     else:
                         ws.write_number(i, j, float(x), self.pct if pct_cols[j - 1] else self.int)
             end = r + 2 + len(pm)
@@ -400,6 +422,14 @@ class Writer:
                     ws.write_blank(end, j, None, self.tpct)
                 else:
                     ws.write_formula(end, j, f"=SUM({self.cell(r + 2, j)}:{self.cell(end - 1, j)})", self.tint, float(pm.iloc[:, j - 1].sum()))
+            if self.r.pay_match:
+                r = end + 3
+                ws.merge_range(r, 0, r, 4, "PAYMENT MATCH: FROM THE BANK TO THE ORDER LINES", self.title)
+                for i, (label, value) in enumerate(self.r.pay_match, start=r + 1):
+                    total = label.startswith("=")
+                    ws.merge_range(i, 0, i, 3, "", self.ttxt if total else self.txt)
+                    ws.write_string(i, 0, label, self.ttxt if total else self.txt)   # a label may start with =
+                    ws.write_number(i, 4, float(value), self.tint if total else self.int)
         ws.freeze_panes(0, 1)
 
     def input_log(self) -> None:
