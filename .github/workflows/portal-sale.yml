@@ -40,6 +40,7 @@ jobs:
       AJIO_PASSWORD: ${{ secrets.AJIO_PASSWORD }}
       FLIPKART_EMAIL: ${{ secrets.FLIPKART_EMAIL }}
       FLIPKART_PASSWORD: ${{ secrets.FLIPKART_PASSWORD }}
+      FBF_LOCATIONS: ${{ vars.FBF_LOCATIONS }}
       # PORTAL SALE REPORT.xlsx sits next to SALE REPORT.xlsx, whose layout and targets it uses
       SALE_DRIVE_FILE_ID: ${{ secrets.SALE_DRIVE_FILE_ID }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}

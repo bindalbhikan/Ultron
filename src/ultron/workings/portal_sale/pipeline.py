@@ -4,7 +4,9 @@ whenever that happened. NET is what really stayed sold. The paper register plays
 
 It reuses what is already fetched: the PORTAL REPORTS month files, the Myntra order jobs the SPF working
 asks for every morning. AJIO downloads and the OMSGuru order list answer at once. Only Flipkart has no
-daily fetch to reuse: its Orders report is asked for once a day, with a short wait.
+daily fetch to reuse: its Orders report is asked for once a day, with a short wait. That report runs about
+two days behind, so its newest days come from OMSGuru (FLIPKART) and Seller Hub metrics (FBF) until it
+reaches them.
 
 A day's returns keep coming for weeks, so the daily run rewrites the last 60 days; the newest are not
 final. A source that fails or stops short is left out and named: its cells stay as they are, never 0.
@@ -29,7 +31,7 @@ from openpyxl.utils import get_column_letter
 from ..core import portal_reports as pr
 from ..core import telegram
 from ..core.app import run_bot
-from ..core.config import env, num, output_dir
+from ..core.config import csv_list, env, num, output_dir
 from ..core.drive import API, DriveFile, DriveFolder
 from ..core.files import replace_atomically
 from ..sale.oms_sales import block_for
@@ -61,6 +63,7 @@ class Numbers:
     values: dict[str, Counter] = field(default_factory=lambda: {m: Counter() for m in METRICS})
     covered: dict[str, set[date]] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    blank: set[tuple[date, str, str]] = field(default_factory=set)      # (day, block, metric) the source cannot know
 
     def add(self, counted: dict[str, Counter]) -> None:
         for metric, counter in counted.items():
@@ -179,7 +182,7 @@ def flipkart_source(chunks, work: Path, live: bool) -> Numbers:
     """Back-fill: only saved files, PARTIAL up to its last day. Daily (live): no other working fetches
     Orders, so it is asked for once with a short wait; a failure is named, not waited out."""
     from ..return_analysis.sources import flipkart_client
-    wait = int(num("PORTAL_SALE_FLIPKART_WAIT", 20))
+    wait = int(num("PORTAL_SALE_FLIPKART_WAIT", 30))
     out = Numbers()
     dest = work / "flipkart"
     dest.mkdir(parents=True, exist_ok=True)
@@ -202,12 +205,50 @@ def flipkart_source(chunks, work: Path, live: bool) -> Numbers:
             continue
         through = min(seen, last)
         if through < last:
-            out.notes.append(f"Flipkart Orders {first:%b-%y} stops at {through:%d %b}: later days left out")
+            out.notes.append(f"Flipkart Orders {first:%d %b} to {last:%d %b} stops at {through:%d %b}")
         out.cover(("FLIPKART", "FBF"), span(first, through))
     return out
 
 
-def oms_source(days: list[date]) -> Numbers:
+def day_range(days: list[date]) -> str:
+    return f"{days[0]:%d %b}" if len(days) == 1 else f"{days[0]:%d %b} to {days[-1]:%d %b}"
+
+
+def flipkart_latest(src: Numbers, write_days: list[date], notes: list[str]) -> None:
+    """The days after the Orders report's last one: FLIPKART from OMSGuru, FBF from Seller Hub metrics, which
+    has no returns (those cells stay empty). A day with no units is left out, not shown as 0. The next run
+    overwrites these once the Orders report reaches them. Run after the other sources: OMSGuru gets one login at a time."""
+    covered = src.covered.get("FLIPKART")
+    days = [d for d in write_days if covered and d > max(covered)]
+    if not days:
+        return
+    try:
+        oms = oms_source(days, {"FLIPKART"})
+        got = [d for d in days if oms.values["GROSS"][(d, "FLIPKART")] > 0]
+        for metric in METRICS:
+            src.values[metric].update({(d, "FLIPKART"): oms.values[metric][(d, "FLIPKART")] for d in got})
+        src.cover(("FLIPKART",), got)
+        if got:
+            notes.append(f"FLIPKART {day_range(got)}: from OMSGuru until the Orders report reaches it")
+    except Exception as exc:  # noqa: BLE001 - these days stay left out and named
+        log.exception("Flipkart's latest days from OMSGuru failed")
+        notes.append(f"FLIPKART latest days from OMSGuru failed: {str(exc)[:120]}")
+    try:
+        from ..return_analysis.sources import flipkart_client
+        gross, cancel = flipkart_client().fbf_units(days, csv_list("FBF_LOCATIONS") or None)
+        got = [d for d in days if gross[d] > 0]
+        src.values["GROSS"].update({(d, "FBF"): gross[d] for d in got})
+        src.values["CANCEL"].update({(d, "FBF"): cancel[d] for d in got})
+        src.blank.update((d, "FBF", "RETURN") for d in got)
+        src.cover(("FBF",), got)
+        if got:
+            notes.append(f"FBF {day_range(got)}: gross and cancel from Seller Hub, return empty until the Orders report reaches it")
+    except Exception as exc:  # noqa: BLE001 - these days stay left out and named
+        log.exception("FBF's latest days from Seller Hub failed")
+        notes.append(f"FBF latest days from Seller Hub failed: {str(exc)[:120]}")
+
+
+def oms_source(days: list[date], blocks: set[str] = OMS_BLOCKS) -> Numbers:
     from ultron.portals.omsguru import OmsGuruClient
     from ultron.portals.omsguru_orders import channel_names, order_lines_range
     out = Numbers()
@@ -215,20 +256,20 @@ def oms_source(days: list[date]) -> Numbers:
     client.login()
     client.set_warehouse(next(iter(client.warehouses())))       # the channel list needs a warehouse chosen
     names = channel_names(client)
-    wanted = [cid for cid, name in names.items() if block_for(name) in OMS_BLOCKS]
+    wanted = [cid for cid, name in names.items() if block_for(name) in blocks]
     keep = set(days)
     for first, last in month_chunks(min(days), max(days)):
         for line in order_lines_range(client, first, last, wanted):
             if line["day"] not in keep:
                 continue
             block = block_for(names.get(line["channel"], ""))
-            if block not in OMS_BLOCKS:
+            if block not in blocks:
                 continue
             out.values["GROSS"][(line["day"], block)] += line["qty"]
             metric = n.oms_metric(line["status"])
             if metric:
                 out.values[metric][(line["day"], block)] += line["qty"]
-    out.cover(OMS_BLOCKS, days)
+    out.cover(blocks, days)
     return out
 
 
@@ -293,7 +334,8 @@ def write_source(book: SaleWorkbook, src: Numbers, days: list[date], notes: list
         for day in days:
             if day in covered:
                 for metric in METRICS:
-                    book.write(day, block, metric, src.values[metric][(day, block)])
+                    if (day, block, metric) not in src.blank:
+                        book.write(day, block, metric, src.values[metric][(day, block)])
             else:
                 left.append(day)
         if left:
@@ -361,6 +403,7 @@ def write_info_sheets(book: SaleWorkbook, sale: SaleWorkbook) -> None:
     ws.append([])
     ws.append(["Dates", "Every row is an order date: the orders of that day and what later happened to those same orders."])
     ws.append(["Not final", "Returns keep coming for weeks, so recent days rise until they settle. The daily run rewrites the last 60 days."])
+    ws.append(["Latest days", "Flipkart's Orders report runs about two days behind: until it reaches a day, FLIPKART is from OMSGuru and FBF from Seller Hub metrics (gross and cancel, return empty)."])
     ws.append(["Empty cell", "The source failed or stopped short for that day: left out on purpose, not 0."])
     ws.append(["SALE REPORT", "Its RETURN and CANCEL are by the day a parcel came back, so PAPER CHECK differs by design; compare GROSS."])
     for cell in ws[1]:
@@ -471,6 +514,8 @@ def run(args) -> int:
             notes.append(f"{name} left out: {str(exc)[:160]}")
             continue
         notes += src.notes
+        if name == "Flipkart" and live:
+            flipkart_latest(src, write_days, notes)
         write_source(book, src, write_days, notes)
         done += 1
     if not done:
