@@ -30,6 +30,9 @@ class Result:
     status: str = ""
     return_awb: str = ""
     note: bool = False
+    order_no: str = ""
+    order_date: str = ""
+    channel: str = ""
     detail: str = ""
     skus: dict = field(default_factory=dict)
 
@@ -44,6 +47,20 @@ def read_order(client: OmsGuruClient, order_id: str) -> tuple[str, list[str], st
     html = client.get(f"{BASE_URL}/orders/view/{order_id}").text
     tracker = RETURN_TRACKER.search(html)
     return html, [s.strip() for s in STATUS.findall(html)], (tracker.group(1) if tracker else "")
+
+
+def details(res: Result, html: str) -> None:
+    """The order's number, date and channel, as its page shows them."""
+    box = BeautifulSoup(html, "html.parser")
+    for dt in box.find_all("dt"):
+        label, dd = dt.get_text(" ", strip=True).rstrip(":").strip().lower(), dt.find_next_sibling("dd")
+        value = dd.get_text(" ", strip=True) if dd else ""
+        if label == "order" and not res.order_no:
+            res.order_no = value[:60]
+        elif label == "order date" and not res.order_date:
+            res.order_date = value[:30]
+        elif label == "channel" and not res.channel:
+            res.channel = value.rsplit(" - ", 1)[-1][:40]
 
 
 def add_note(client: OmsGuruClient, order_id: str, html: str, note: str) -> bool:
@@ -114,6 +131,7 @@ def accept(client: OmsGuruClient, awb: str, wanted: dict[str, int], note: str, w
         return res
     res.order = ids[0]
     html, statuses, res.return_awb = read_order(client, res.order)
+    details(res, html)
     res.status = statuses[0] if statuses else ""
     if statuses and all(s in ACCEPTED for s in statuses):
         res.note = add_note(client, res.order, html, note) if not dry_run else False

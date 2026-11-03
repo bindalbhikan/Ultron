@@ -1,0 +1,53 @@
+name: ERP to OMSGuru returns
+
+on:
+  # Started by the Telegram worker's cron (SCHEDULE in worker/src/worker.js) at 8 PM IST daily, or by hand / /erpomsreturn.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "1 = nothing accepted, Drive not changed"
+        default: ""
+
+concurrency:
+  group: erp-oms-return
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TZ: Asia/Kolkata
+      RUN_MODE: github-actions
+      # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+      ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+      ERP_USERNAME: ${{ secrets.ERP_USERNAME }}
+      ERP_PASSWORD: ${{ secrets.ERP_PASSWORD }}
+      ERP_USER_TOKEN: ${{ secrets.ERP_USER_TOKEN }}
+      OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
+      OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
+      OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      IN_DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Run report
+        run: |
+          set --
+          if [ -n "$IN_DRY_RUN" ]; then set -- "$@" --dry-run; fi
+          bash scripts/github/ci_run.sh erp-oms-return "$@"
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp-oms-return-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -27,6 +27,7 @@
   business-report sale / return / payment analysis per portal  python run.py business-report --help
   myntra-grouping Myntra colour grouping master + upload templates  python run.py myntra-grouping --help
   ticket-followup 8 PM: ticket master + daily follow-up  python run.py ticket-followup --help
+  erp-oms-return  8 PM: a return booked in the ERP accepted in OMSGuru, as Good  python run.py erp-oms-return --help
   portal-reports 2nd: last month's order + payment reports into PORTAL REPORTS  python run.py portal-reports --help
   portal-sale 5:30 PM daily, real sale per order date with its returns + cancels  python run.py portal-sale --help
   myntra-zero-td every 2 h 7 AM-7 PM + 10 AM daily, styles live at MRP  python run.py myntra-zero-td --help
@@ -51,6 +52,7 @@ BOTS = {"sale": "ultron.workings.sale.pipeline", "vms": "ultron.workings.vms.pip
         "business-report": "ultron.workings.business_report.pipeline",
         "myntra-grouping": "ultron.workings.myntra_grouping.pipeline",
         "ticket-followup": "ultron.workings.ticket_followup.pipeline",
+        "erp-oms-return": "ultron.workings.erp_oms_return.pipeline",
         "work-schedule": "ultron.workings.work_schedule.pipeline",
         "myntra-history": "ultron.workings.myntra_history.pipeline"}
 

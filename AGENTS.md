@@ -5,7 +5,7 @@ for BINDAL EXPORTS on GitHub Actions, a Cloudflare Telegram worker + dashboard, 
 (`src/ultron/`, seller-neutral, sellable). Any coding agent (Claude Code, Gemini CLI, the "AI fix on failure"
 workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 
-<!-- AUTO:synced -->Last synced with the code: 2026-11-01.<!-- /AUTO:synced -->
+<!-- AUTO:synced -->Last synced with the code: 2026-11-03.<!-- /AUTO:synced -->
 
 ## Read next
 
