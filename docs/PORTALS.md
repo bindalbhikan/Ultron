@@ -63,6 +63,17 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   `payment_rows()` gives the columns of the hand-downloaded `StatementOfAccount*.xlsx`
   (DT, VENDORCODE, DOCDATE `dd.mm.yyyy`, AMOUNT, TEXT, …). Used by AJIO SPF and AJIO ads gap.
 
+## OMSGuru returns - `workings/erp_oms_return/accept.py`
+
+* Accept a return: Orders > Quick Returns (`/orders/quickReturns`, manual mode, searching by AWB accepts nothing) opens a form; `POST /orders/processOrderReturn` with `data[SkuQty][n][good]` and the return warehouse. It answers JSON (`"result":"OK"` or `"Fail"`).
+* An order with no return yet (Ready to ship, Delivered ...) also needs `data[Invoice][confirm_return_type]` (`courier` / `customer`), else it answers "Invalid Invoice Status". One AWB can open several forms.
+* Stock: accepting moves the unit from Return Transit to Putaway; In Stock does not change until someone does the Putaway (`/sku_transaction_logs/export_form` shows each move). Undo: `/orders/revertReturnReceived/<id>`.
+* Order note: `POST /orders/addInvoiceNote/<id>` with `data[note]` and `oms_token` (the page's `csrf-token` meta).
+
+## Flipkart NXT Insights
+
+* `POST /napi/metrics/search` with `x-view-name: sell_more_aggregated_groupby_view`: gross, cancellation (it holds RTO too) and return units and amounts by order date, pivoted by state. Through this view no data before May-26; the Earn More screen shows rounded figures from Nov-25. Its rupees run above every price column of the tax Sales Report (not explained).
+
 ## DigiBizz ERP — `portals/erp.py`
 
 * Report preview API (`ERP_USERNAME`, `ERP_PASSWORD`, `ERP_USER_TOKEN`; password AES-encrypted
@@ -76,6 +87,14 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   search box (AWB / order id). `omsguru_returns.ReturnLookup`: an item counts as received only
   when its order page shows "Return Log RT… (date)". Myntra masters have no SKU, so Myntra
   lookups match the order on its AWBs / store order id.
+* An order list line's status carries what became of it (Return Init, Return Received, Cancel Init,
+  Cancelled ...), also for channels with no portal client: `portal-sale` reads it by order date
+  (`order_lines_range`, some channels, one window per month). The channel filter on the orders page needs a
+  warehouse chosen first (`set_warehouse`), or `channel_names` finds no list.
+* Reports > **Returns Received** (`/reports/returns_received`): units booked in per channel, at once; its
+  Channel Breakup is the range's total whatever "group by" says. Not used: from mid Sep 2026 far fewer units
+  are booked in than the paper register shows. Courier / Customer Returns are **queued** (2-10 minutes,
+  then a notification): a POST starts a job, not used.
 
 ## VMS — `src/ultron/workings/vms/vms.py`
 

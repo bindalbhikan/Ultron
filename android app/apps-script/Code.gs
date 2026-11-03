@@ -150,7 +150,8 @@ function parseSms(from, body) {
     return m ? { courier: 'Ekart', status: m[3].toUpperCase(), otp: m[1], count: '', seller: m[2].toUpperCase(), pod: false } : null;
   }
   if (/XPBEES/.test(code)) {
-    if (/return attempted/i.test(body)) return { courier: 'Xpressbees', status: 'RETURN', otp: '', count: num(/Acc:\s*(\d+)/i), pod: true };
+    // "13 return attempted. Acc: 13 ... Share OTP 123456 to confirm": the code, when the SMS has one (since Oct 2026)
+    if (/return attempted/i.test(body)) return { courier: 'Xpressbees', status: 'RETURN', otp: num(/OTP:?\s*(\d+)/i), count: num(/Acc:\s*(\d+)/i), pod: true };
     // "we have fulfilled your pickup request": the pickup's final sheet, no code
     if (/fulfilled your pickup request/i.test(body)) return { courier: 'Xpressbees', status: 'PICKUP', otp: '', count: '', pod: true };
     const otp = num(/OTP:?\s*(\d+)/i);
