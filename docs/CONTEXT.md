@@ -1,6 +1,6 @@
 # Project context — BINDAL EXPORTS report bots
 
-<!-- AUTO:synced -->Last synced with the code: 2026-11-02.<!-- /AUTO:synced -->
+<!-- AUTO:synced -->Last synced with the code: 2026-11-03.<!-- /AUTO:synced -->
 Owner: Bhikan (GitHub `bindalbhikan`, commit author
 `bhikan.serein@gmail.com`). Every bot reports to Telegram **@bindal_exports_bot**.
 
@@ -40,6 +40,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 | myntra-tat | `python run.py myntra-tat` | Myntra courier scorecard | `myntra-tat.yml` Myntra courier scorecard | 6:30 PM daily | `docs/bots/myntra-tat.md` |
 | myntra-zero-td | `python run.py myntra-zero-td` | Myntra zero TD | `myntra-zero-td.yml` Myntra zero TD | 7:00 AM mon-sat; 9:00 AM mon-sat; 10:00 AM daily; 11:00 AM mon-sat; 1:00 PM mon-sat; 3:00 PM mon-sat; 5:00 PM mon-sat; 7:00 PM mon-sat | `docs/bots/myntra-zero-td.md` |
 | portal-reports | `python run.py portal-reports` | Portal reports | `portal-reports.yml` Portal reports | 11:00 AM monthly (2nd) | `docs/bots/portal-reports.md` |
+| portal-sale | `python run.py portal-sale` | Portal sale report (real sale) | `portal-sale.yml` Portal sale report | 5:30 PM daily | `docs/bots/portal-sale.md` |
 | returns | `python run.py returns` | Return analysis (monthly + yearly) | `returns.yml` Return analysis | 7:00 AM monthly (15th); 7:00 AM monthly (10th); 2:00 PM monthly (10th); 2:00 PM monthly (15th) | `docs/bots/returns.md` |
 | sale | `python run.py sale` | Daily sale | `sale.yml` Daily sale report | 7:00 AM daily; 3:30 PM daily | `docs/bots/sale.md` |
 | sla | `python run.py sla` | SLA warning | `sla.yml` SLA warning | 12:00 PM daily; 3:00 PM daily | `docs/bots/sla.md` |
@@ -68,7 +69,7 @@ AGENT WORK/
   MYNTRA/   MYNTRA DAILY REPORTS/, MYNTRA DAILY RETURN DELIVERY REPORT.xlsx, MYNTRA ZERO TD UPDATE SHEET.xlsx,
             MYNTRA ZERO TD SHEETS/, MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../
   AJIO/     Ajio Daily Order Tat Check Working/ (TAT master), Ajio Ads Gap Working/
-  DAILY REPORTING/   DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx), VMS/ (the daily reports in one place)
+  DAILY REPORTING/   DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx, PORTAL SALE REPORT.xlsx), VMS/ (the daily reports in one place)
   PORTAL REPORTS/    <MYNTRA|AJIO|FLIPKART>/<YYYY>/<Mon-YY>/<PORTAL> [<ACCOUNT>] ORDER|RETURN|PAYMENT REPORT <MON-YY>
                      every portal's monthly reports, one calendar month each, no sub folders (the name says
                      what it is; PARTIAL = days missing): order + payment reports on the 2nd (portal-reports),

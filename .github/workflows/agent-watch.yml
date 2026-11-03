@@ -15,7 +15,7 @@ on:
                 "Morning report", "SLA warning", "Label check", "Stock-out alert",
                 "Evening summary", "Weekly review", "Dead stock report", "Listing health",
                 "Myntra courier scorecard", "Monthly MIS", "Myntra courier OTP", "Myntra daily reports",
-                "Myntra zero TD", "Portal reports", "Business reporting", "Myntra colour grouping", "Ticket follow-up"]
+                "Myntra zero TD", "Portal reports", "Portal sale report", "Business reporting", "Myntra colour grouping", "Ticket follow-up"]
     types: [completed]
   # A new task, a changed run time or a new working: the sheet is rebuilt as soon as it reaches main
   # (TASKS / WORK in the work schedule, the worker's SCHEDULE, run.py, a workflow).

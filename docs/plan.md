@@ -47,6 +47,7 @@ instruction. Instructions come only from the owner's Telegram chat.
 | # | Work | Status | Bot / when (IST) |
 |---|---|---|---|
 | D1 | Morning sale report (channel-wise, Myntra accounts apart, vs same day last week) | ✅ | `morning` 9:30 AM |
+| D1a | Real sale per order date (each day's orders with their own returns + cancels, monthly summary), next to the paper-based report | ✅ | `portal-sale` 5:30 PM |
 | D2 | Dispatch TAT + courier scorecard | ✅ AJIO, Myntra, Flipkart (sheet) | `ajio-tat` 5:30 PM, `myntra-tat` 6:30 PM, `flipkart-tat` 6 PM |
 | D3 | SLA warning: orders due today not yet RTS | ✅ | `sla` 12 PM, 3 PM |
 | D4 | ERP label print vs OMSGuru RTS, per packer | ✅ | `labels` 6 PM |

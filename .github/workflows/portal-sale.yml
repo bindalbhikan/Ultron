@@ -1,0 +1,74 @@
+name: Portal sale report
+
+on:
+  # Started by the Telegram worker's cron (SCHEDULE in worker/src/worker.js) at 5:30 PM IST: the real
+  # sale per order date into PORTAL SALE REPORT.xlsx.
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "Back-fill from saved files: first day (YYYY-MM-DD), empty = normal daily run"
+        default: ""
+      to:
+        description: "Back-fill: last day (YYYY-MM-DD), empty = yesterday"
+        default: ""
+      no_upload:
+        description: "1 = test run: Drive not changed"
+        default: ""
+      chat_id:
+        description: "Telegram chat for this run's report (empty = default chat)"
+        default: ""
+
+concurrency:
+  group: portal-sale
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90   # Flipkart's Orders report can take a while; Myntra jobs are normally ready
+    env:
+      TZ: Asia/Kolkata
+      RUN_MODE: github-actions
+      # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+      ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      # hyper log (core/hyperlog.py) and PORTAL REPORTS: Drive AGENT WORK
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+      OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
+      OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
+      OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
+      AJIO_USERNAME: ${{ secrets.AJIO_USERNAME }}
+      AJIO_PASSWORD: ${{ secrets.AJIO_PASSWORD }}
+      FLIPKART_EMAIL: ${{ secrets.FLIPKART_EMAIL }}
+      FLIPKART_PASSWORD: ${{ secrets.FLIPKART_PASSWORD }}
+      # PORTAL SALE REPORT.xlsx sits next to SALE REPORT.xlsx, whose layout and targets it uses
+      SALE_DRIVE_FILE_ID: ${{ secrets.SALE_DRIVE_FILE_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+      # the Myntra sessions are read from the worker with the dashboard token
+      DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+      DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+      RETURNS_WAIT_MINUTES: ${{ vars.RETURNS_WAIT_MINUTES }}
+      # inputs reach the shell only as variables, never pasted into the script
+      IN_FROM: ${{ inputs.from }}
+      IN_TO: ${{ inputs.to }}
+      IN_NO_UPLOAD: ${{ inputs.no_upload }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Run report
+        run: |
+          set -- ${IN_FROM:+--from "$IN_FROM"} ${IN_TO:+--to "$IN_TO"}
+          if [ -n "$IN_NO_UPLOAD" ]; then set -- "$@" --no-upload; fi
+          bash scripts/github/ci_run.sh portal-sale "$@"
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portal-sale-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 14

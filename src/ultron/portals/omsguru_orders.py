@@ -60,9 +60,10 @@ def _row(tr) -> dict | None:
             "sla": datetime.strptime(sla.group(1), "%B %d, %Y %I:%M:%S %p") if sla else None}
 
 
-def _read_window(client: OmsGuruClient, start: datetime, end: datetime, max_pages: int) -> tuple[list[dict], int]:
-    """(order lines with an order date, lines read) of one window, every channel."""
-    flt = client.order_filter(start, end)
+def _read_window(client: OmsGuruClient, start: datetime, end: datetime, max_pages: int,
+                 channel_ids: list[str] | None = None) -> tuple[list[dict], int]:
+    """(order lines with an order date, lines read) of one window; every channel unless named."""
+    flt = client.order_filter(start, end, channel_ids)
     out, rows = [], 0
     for page in range(1, max_pages + 1):
         url = client.list_page_url(flt, page)
@@ -112,6 +113,27 @@ def order_lines(client: OmsGuruClient, days: list[date], max_pages: int = 80) ->
             rows += n
         log.info("OMSGuru warehouse %s: %d order lines read", wh or "current", rows)
     return lines, names
+
+
+def order_lines_range(client: OmsGuruClient, first: date, last: date, channel_ids: list[str],
+                      max_pages: int = 80) -> list[dict]:
+    """The order lines of some channels ordered first..last, every warehouse, in one window: far fewer
+    requests than a day at a time when those channels are small. Near the list's limit it is halved."""
+    lines: list[dict] = []
+    for wh in list(client.warehouses()) or [None]:
+        if wh:
+            client.set_warehouse(wh)
+        todo = [(datetime.combine(first, datetime.min.time()),
+                 datetime.combine(last + timedelta(days=1), datetime.min.time()))]
+        while todo:
+            a, b = todo.pop(0)
+            got, n = _read_window(client, a, b, max_pages, channel_ids)
+            if n >= LIST_CAP and b - a > timedelta(hours=1):
+                mid = a + (b - a) / 2
+                todo[:0] = [(a, mid), (mid, b)]
+                continue
+            lines += [r for r in got if first <= r["day"] <= last]
+    return lines
 
 
 def units_by_channel(client: OmsGuruClient, days: list[date], max_pages: int = 80):

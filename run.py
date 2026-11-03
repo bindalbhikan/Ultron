@@ -28,6 +28,7 @@
   myntra-grouping Myntra colour grouping master + upload templates  python run.py myntra-grouping --help
   ticket-followup 8 PM: ticket master + daily follow-up  python run.py ticket-followup --help
   portal-reports 2nd: last month's order + payment reports into PORTAL REPORTS  python run.py portal-reports --help
+  portal-sale 5:30 PM daily, real sale per order date with its returns + cancels  python run.py portal-sale --help
   myntra-zero-td every 2 h 7 AM-7 PM + 10 AM daily, styles live at MRP  python run.py myntra-zero-td --help
 """
 import importlib
@@ -46,6 +47,7 @@ BOTS = {"sale": "ultron.workings.sale.pipeline", "vms": "ultron.workings.vms.pip
         "myntra-reports": "ultron.workings.myntra_reports.pipeline",
         "myntra-zero-td": "ultron.workings.myntra_zero_td.pipeline",
         "portal-reports": "ultron.workings.portal_monthly.pipeline",
+        "portal-sale": "ultron.workings.portal_sale.pipeline",
         "business-report": "ultron.workings.business_report.pipeline",
         "myntra-grouping": "ultron.workings.myntra_grouping.pipeline",
         "ticket-followup": "ultron.workings.ticket_followup.pipeline",

@@ -133,6 +133,14 @@ const COMMANDS = {
                    if (args.length === 0) return {};
                    return /^\d{4}-\d{2}$/.test(args[0]) ? { month: args[0] } : "Use /portalreports or /portalreports YYYY-MM";
                  } },
+  portalsale: { workflow: "portal-sale.yml", icon: "🧾", name: "Portal sale", portal: "reports", minutes: 30,
+                examples: ["/portalsale", "/portalsale 2026-10-01 2026-10-31"], inputs: (args) => {
+                  if (args.length === 0) return {};
+                  if (args.every((a) => /^\d{4}-\d{2}-\d{2}$/.test(a)) && args.length <= 2) {
+                    return args.length === 2 ? { from: args[0], to: args[1] } : { from: args[0] };
+                  }
+                  return "Use /portalsale or /portalsale YYYY-MM-DD YYYY-MM-DD";
+                } },
   mis: { workflow: "mis.yml", icon: "📆", name: "Monthly MIS", portal: "reports", minutes: 6,
          examples: ["/mis", "/mis 2026-10-02"], inputs: oneDate("day", "/mis or /mis YYYY-MM-DD") },
   deadstock: { workflow: "deadstock.yml", icon: "🪦", name: "Dead stock", portal: "reports", minutes: 6,
@@ -167,6 +175,8 @@ const SCHEDULE = [
   // 9 AM: the SPF masters. AJIO tickets and replies on Wed + Sat; the other days the master and the
   // delivery disputes due (day 6: AJIO takes a dispute only within 7 days of the delivery).
   { ist: "9:00 AM daily", cron: "30 3 * * *", cmd: "myntraspf" },
+  // the real sale report: reuses the Myntra order jobs the SPF working asked for this morning
+  { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "portalsale" },
   { ist: "9:00 AM Wed, Sat", cron: "30 3 * * *", weekdays: [3, 6], cmd: "ajiospf" },
   { ist: "9:00 AM other days", cron: "30 3 * * *", weekdays: [0, 1, 2, 4, 5], cmd: "ajiospf",
     label: "AJIO SPF master + disputes due", inputs: { disputes: "1" } },
@@ -325,7 +335,7 @@ const SCREENS = {
       [["↩️ Return analysis", "m:returns"], ["🪦 Dead stock", "r:deadstock"]],
       [["📑 Business report", "m:business"], ["🗂 Portal reports", "c:portalreports"]],
       [["🎫 Ticket follow-up", "r:ticketfollowup"]],
-      [["📣 AJIO Ads gap", "r:ajioads"]],
+      [["📣 AJIO Ads gap", "r:ajioads"], ["🧾 Real sale (portal)", "r:portalsale"]],
       back(),
     ],
   },
