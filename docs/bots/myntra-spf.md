@@ -38,8 +38,8 @@ On demand: `/myntraspf`.
   Dispute box: `api/spf/createFwTicket`, reason Others; the claim turns AWAITING_AGENT_RESPONSE. Every
   one due is opened (owner's rule, no cap), none when a source was not read. Live only with the
   repo variable `MYNTRA_SPF_DISPUTE=1`; otherwise the notes count them. The bot never closes a ticket.
-  Delayed Returns claims (mostly rejected as under 120 days) wait: only with `MYNTRA_SPF_DISPUTE_DELAYED=1`
-  and a return at least 120 days old.
+  Delayed Returns claims are disputed at any age with `MYNTRA_SPF_DISPUTE_DELAYED=1` (owner's rule, 4 Nov 2026),
+  also those rejected as under 120 days, which Myntra may reject again.
 * **Auto claims** (`tickets.py`), after the first engine run, on the SPF POLICY v5 timelines:
   * *Return Not Received* (`RTS_ORDER_WAS_NEVER_DELIVERED`): delivered to us per Myntra, not
     received; raised 4 to 7 days after the delivery date (`MYNTRA_SPF_RNR_AFTER_DAYS` /

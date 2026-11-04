@@ -50,9 +50,9 @@ class Delayed(unittest.TestCase):
              mock.patch.dict("os.environ", {"MYNTRA_SPF_DISPUTE_DELAYED": flag}):
             return tickets.dispute_due({**ROW, **self.ROW}, {"RETURN POD": "", "return_created_date": created}, TODAY)
 
-    def test_held_until_switched_on_and_120_days_old(self):
+    def test_any_age_once_switched_on(self):
         self.assertFalse(self.due(date(2026, 5, 1), ""))
-        self.assertFalse(self.due(date(2026, 10, 1), "1"))
+        self.assertTrue(self.due(date(2026, 10, 1), "1"))
         self.assertTrue(self.due(date(2026, 5, 1), "1"))
 
 

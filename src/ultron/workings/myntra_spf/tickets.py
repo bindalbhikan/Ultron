@@ -247,11 +247,8 @@ def dispute_due(row: dict, master: dict | None, today: date) -> bool:
         return False
     if not_worked(master) or final_status(master) or str(master.get("RETURN POD") or "").strip().upper() == "YES":
         return False
-    if row.get("CATEGORY") == CATEGORY_NAME[DELAYED]:
-        # rejected as "tat less than 120 days": another dispute before that would only be rejected again
-        created = _day(master.get("return_created_date"))
-        if env("MYNTRA_SPF_DISPUTE_DELAYED") != "1" or not created or (today - created).days < 120:
-            return False
+    if row.get("CATEGORY") == CATEGORY_NAME[DELAYED] and env("MYNTRA_SPF_DISPUTE_DELAYED") != "1":
+        return False
     try:
         updated = datetime.strptime(str(row.get("LAST UPDATED"))[:11], "%d-%b-%Y").date()
     except ValueError:
