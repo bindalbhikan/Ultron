@@ -42,6 +42,8 @@ jobs:
       SJIT_WAIT_MINUTES: "5"
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
+      CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
       TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
       # Myntra sessions and the agent's free model (/api/ai) are reached through the worker
       DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}

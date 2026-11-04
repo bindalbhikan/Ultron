@@ -16,4 +16,5 @@ against the same weekday a week before, with the change in %, the total and yest
   left out when the model is not available.
 * **Sudden drops** (plan E5): a channel that sold `DROP_MIN_UNITS` (20)+ units on last week's
   same day and sold nothing yesterday (🔴, check the listing / account) or fell `DROP_PCT` (40) %+ (⚠️).
+* WhatsApp (when `CALLMEBOT_PHONE` / `CALLMEBOT_APIKEY` are set): the table and drops also go to the owner's own number as text, without the model's lines.
 * Returns are not in it: the sale report's RETURN is typed by hand.

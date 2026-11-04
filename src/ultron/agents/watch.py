@@ -21,7 +21,7 @@ from statistics import median
 
 from ..core import config, llm, memory, runtime
 from ..core.style import tidy
-from ..integrations import github, telegram
+from ..integrations import github, telegram, whatsapp
 from ..tools import memory as memory_tools
 from ..tools import runs
 from ..tools.runs import run_log
@@ -247,6 +247,8 @@ def run(args) -> int:
         text = (f"🤖 <b>Ultron: {telegram.esc(info['workflow'] or '')}</b>\n\n{telegram.md(tidy(msg))}\n\n"
                 f"<a href=\"{info['url']}\">run {args.run_id}</a>")
         print(text) if args.no_telegram else telegram.send(text)
+        if not args.no_telegram:
+            whatsapp.send(f"⚠️ Ultron: {info['workflow'] or 'a bot'} needs a look. Details on Telegram.")
     else:
         log.info("Checked, nothing for the owner: nothing sent")
     return 0

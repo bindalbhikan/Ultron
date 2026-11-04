@@ -12,6 +12,7 @@ from datetime import date, timedelta
 
 from ultron.core.config import channel_line  # noqa: F401 - other bots import it from here
 from ultron.core.style import MOBILE, tidy
+from ultron.integrations import whatsapp
 
 from ..core import telegram
 from ..core.app import run_bot
@@ -135,6 +136,8 @@ def run(args) -> int:
                       *(["", "⚠️ " + "\n⚠️ ".join(telegram.esc(n) for n in notes)] if notes else [])])
     log.info("Morning report: %s", {n: v.get(day, 0) for n, v in gross.items()})
     print(text) if args.no_telegram else telegram.send(text)
+    if not args.no_telegram:
+        whatsapp.send(f"☀️ Morning report, {day:%a %d %b} (units, vs last {before:%a})\n\n{plain}")
     return 0
 
 

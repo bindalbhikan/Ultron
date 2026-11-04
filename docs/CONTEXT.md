@@ -125,6 +125,7 @@ detailed **hyper log** is kept on Drive in `AGENT WORK/AGENT LOGS/<month>/<date>
   Variables with no default, also in the local `.env` (the code holds no Drive id, `tests/test_no_ids_in_repo.py`
   checks it; a run without one stops and names it): `AGENT_WORK_FOLDER_ID`, `MYNTRA_OTP_SHEET_ID`, `POD_MASTER_SHEET_ID`, `SMS_SHEET_ID`.
   Their old values remain in the git history.
+- WhatsApp alerts: secrets `CALLMEBOT_PHONE`, `CALLMEBOT_APIKEY` (`integrations/whatsapp.py`, CallMeBot, free for personal use: the owner's own number, text only, no replies). They pass through an outside service, so no customer data or log lines. Telegram stays the main channel. Today: the morning report and the watcher's alerts.
 - Cloudflare worker secrets: see `docs/bots/worker-and-dashboard.md`.
 - New Drive files need the owner's OAuth token (the service account cannot create files): `docs/PORTALS.md`.
 
