@@ -165,11 +165,17 @@ def ajio_source(chunks, returns_to: date, work: Path) -> Numbers:
 
     start = min(first for first, _ in chunks)
     whole = month_chunks(start, returns_to) if start.day == 1 else pieces(start, returns_to)
-    rtv = pd.concat([n.read_report(report("return", "rtv_report", a, b), "return created date") for a, b in whole])
+    def read(kind, fetch, a, b, column):
+        """The report as a table; None for a window with nothing in it (an empty file is no failure)."""
+        path = report(kind, fetch, a, b)
+        return n.read_report(path, column) if path.stat().st_size else None
+
+    rtv = pd.concat([read("return", "rtv_report", a, b, "return created date") for a, b in whole])
     days = []
     for first, last in chunks:
-        orders = n.read_report(report("sale", "order_report", first, last), "cancelled qty")
-        out.add(n.ajio_orders(orders, rtv))
+        orders = read("sale", "order_report_or_empty", first, last, "cancelled qty")
+        if orders is not None:
+            out.add(n.ajio_orders(orders, rtv))
         days += span(first, last)
     out.cover(("AJIO B2C",), days)
     return out

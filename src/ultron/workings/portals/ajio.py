@@ -153,12 +153,21 @@ class AjioClient:
         return r.content
 
     def order_report(self, start: date, end: date) -> bytes:
-        """The Dropship order report (xlsx, "DropShipOrderReports") for both POBs (max 31 days)."""
+        """The Dropship order report (xlsx, "DropShipOrderReports") for both POBs (max 31 days). A window with no orders raises."""
+        data = self.order_report_or_empty(start, end)
+        if not data:
+            raise AjioError(f"Order report {start} to {end}: no orders in it")
+        return data
+
+    def order_report_or_empty(self, start: date, end: date) -> bytes:
+        """The same, b"" for a window with no orders (AJIO answers 404 "No records found")."""
         r = self._req("POST", f"/malekith/vision/v1/dropship/order/report/download?from={start}&to={end}",
                       data="pobIds=" + "%2C".join(POB_IDS),
                       headers={"Accept": "application/json, text/plain, */*", "X-Tenant": "AJIO",
                                "x-pob-id": POB_IDS[0], "businessModel": "B2C",
                                "Content-Type": "application/x-www-form-urlencoded"})
+        if r.status_code == 404 and "No records found" in r.text:
+            return b""
         if r.status_code != 200 or "spreadsheet" not in r.headers.get("content-type", ""):
             raise AjioError(f"Order report download failed: HTTP {r.status_code} {r.text[:200]}")
         return r.content

@@ -45,7 +45,7 @@ def ajio_order_report(first, last) -> pd.DataFrame:
     frames, a = [], first
     while a <= last:
         b = min(a + timedelta(days=29), last)
-        data = client.order_report(a, b)
+        data = client.order_report_or_empty(a, b)
         if data:
             frames.append(pd.read_excel(io.BytesIO(data), dtype=str))
         a = b + timedelta(days=1)
@@ -445,11 +445,15 @@ def pickup_ticket_ids(client, tickets: list[dict]) -> tuple[dict[str, list[str]]
     """Order ID -> its AJIO pickup ticket ids, from the tickets listed: a one-per-order ticket (before
     27 Oct 2026, subject "PICKUP NOT DONE | Order ...") by its order id, a courier ticket by the
     orders in its description. Also the courier tickets' details (for the follow-ups)."""
-    from ..portals.ajio import PICKUP_NOT_DONE
+    from ..portals.ajio import PICKUP_NOT_DONE, AjioError
     pickup = [t for t in tickets if str(t.get("subCategory") or "").upper() == PICKUP_NOT_DONE]
     courier_ids = [str(t["ticketId"]) for t in pickup if not str(t.get("subject") or "").startswith(
         "PICKUP NOT DONE | Order ")]
     details = {str(t["ticketId"]): t for t in client.ticket_details(courier_ids)}
+    # a courier ticket's orders are only in its details: without them its orders look ticket-free and would get a second ticket
+    unread = [t for t in courier_ids if t not in details]
+    if unread:
+        raise AjioError(f"{len(unread)} of {len(courier_ids)} pickup tickets' details not read; no ticket raised this run")
     ids: dict[str, list[str]] = {}
     for t in sorted(pickup, key=lambda t: str(t.get("createdDate"))):
         tid = str(t["ticketId"])
@@ -516,7 +520,7 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
         return [], ids
     courier = courier_pickup_check(cands)
     pob, cap, batch, done = env("POB_ID", "DV00348890"), num("TICKET_CAP", 200), num("TICKET_BATCH", 50), []
-    follow_cap, follow_hours = num("TICKET_FOLLOWUP_CAP", 40), num("TICKET_FOLLOWUP_HOURS", 24)
+    follow_cap, follow_hours = num("TICKET_FOLLOWUP_CAP", 40), num("TICKET_FOLLOWUP_HOURS", 22)
     gap = num("TICKET_DELAY_MS", 30) / 1000     # pause between two AJIO ticket / comment calls
     to_raise: dict[str, list[dict]] = {}
     to_follow: dict[str, list[dict]] = {}
@@ -867,6 +871,8 @@ def run(args) -> int:
                          since=datetime.now() - timedelta(days=num("AJIO_PICKUP_DAYS", 30)))
     df = apply_status(merged, as_of)
     df, tickets = pickup_tickets(df, args, errors)
+    if tickets:     # at once: what was posted on the portal must be told even if the master's upload then fails (3 Nov 2026)
+        telegram.send_report(tickets, "AJIO_pickup_tickets", dry=args.no_telegram)
     s = summarize(df)
     note = (f"OMSGuru {start:%d-%b} to {end - timedelta(days=1):%d-%b} ({len(o)} lines read) "
             f"+ courier tracking ({n_awbs} open AWBs)")
@@ -896,8 +902,6 @@ def run(args) -> int:
                    f"\u2022 {len(errors)} order page / tracking lookups failed; those orders keep their "
                    "last known status (list in the run's errors.log)")
     score = courier_scorecard(df)
-    if tickets:
-        telegram.send_report(tickets, "AJIO_pickup_tickets", dry=args.no_telegram)
     if args.no_telegram:
         print(report)
         print(score)

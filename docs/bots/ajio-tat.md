@@ -52,7 +52,7 @@
   orders back from the description) or a ticket id in the master is not raised again. (27 Oct, the
   first courier run, put 58 orders that had a one-per-order ticket into a courier ticket too; fixed
   the same day.) While some orders of a ticket are still not picked up, the order's latest ticket
-  gets one follow-up comment listing them every 24 h. `TICKET_DELAY_MS` (30) between two ticket calls. The master's Pickup Ticket holds every
+  gets one follow-up comment listing them about once a day (22 h apart, `TICKET_FOLLOWUP_HOURS`, as the run's time moves a little). A ticket whose details cannot be read stops all new tickets that run, as its orders would look ticket-free. The ticket report goes to Telegram right after posting, before the master's upload. `TICKET_DELAY_MS` (30) between two ticket calls. The master's Pickup Ticket holds every
   pickup ticket id of the order (old one-per-order and courier tickets, comma separated), filled
   from all pickup tickets of the last 30 days on every run.
 * **Pickup form** (after the tickets, `pickup_form.py`): AJIO's Microsoft Form "Seller Pickup Issue",
