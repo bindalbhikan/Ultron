@@ -226,6 +226,12 @@ class SaleWorkbook:
         v = ws.cell(rows[day], layout[block][metric]).value if day in rows and block in layout else None
         return int(v) if isinstance(v, (int, float)) else 0
 
+    def known(self, day: date, block: str, metric: str) -> bool:
+        """The cell holds a number: blank means no report covered that day."""
+        ws = self.month_sheet(day.year, day.month)
+        layout, rows, _ = self.layout(ws)
+        return day in rows and block in layout and isinstance(ws.cell(rows[day], layout[block][metric]).value, (int, float))
+
     def month_gross(self, day: date) -> dict[str, int]:
         """Month-to-date GROSS per block from the values in the sheet."""
         ws = self.month_sheet(day.year, day.month)

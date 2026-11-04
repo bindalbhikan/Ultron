@@ -1,8 +1,8 @@
 name: Myntra zero TD
 
 on:
-  # 10 AM, 2 PM and 5 PM IST, Monday to Saturday, started by the Telegram bot's Cloudflare cron
-  # (SCHEDULE in worker/src/worker.js), or by hand / /myntrazerotd. Not GitHub's own schedule:
+  # Started by the Telegram bot's Cloudflare cron; its times are in SCHEDULE of worker/src/worker.js
+  # and docs/bots/myntra-zero-td.md, or by hand / /myntrazerotd. Not GitHub's own schedule:
   # it ran hours late or not at all.
   workflow_dispatch:
     inputs:

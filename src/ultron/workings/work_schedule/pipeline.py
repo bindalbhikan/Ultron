@@ -46,6 +46,7 @@ class Task:
     weekdays: tuple[int, ...] = ()    # Python weekday(): 0 = Monday
     day: int = 0                      # day of the month
     days: tuple[int, ...] = ()        # days of the month (every few days)
+    when: str = ""                    # the TIME column of a task with several slots
 
     def due(self, d: date) -> bool:
         return ((not self.weekdays or d.weekday() in self.weekdays) and (not self.day or d.day == self.day)
@@ -54,7 +55,7 @@ class Task:
     @property
     def time(self) -> str:
         if len(self.slots) > 1:
-            return "every 3 hours, 6 AM - 3 AM"
+            return self.when or "every 3 hours, 6 AM - 3 AM"
         return datetime.combine(date.today(), time(self.slots[0] // 60, self.slots[0] % 60)).strftime(
             "%I:%M %p").lstrip("0")
 
@@ -106,7 +107,9 @@ TASKS = [
     Task("Myntra courier scorecard", "myntra-tat.yml", _at(18, 30), "DAILY"),
     Task("Ticket follow-up", "ticket-followup.yml", _at(20), "DAILY"),
     Task("ERP to OMSGuru returns", "erp-oms-return.yml", _at(20), "DAILY"),
+    Task("Myntra grouping status", "myntra-grouping.yml", _at(20), "DAILY"),
     Task("Evening summary", "evening.yml", _at(20), "DAILY"),
+    Task("Returns SMS catch-up", "sms-catchup.yml", tuple(h * 60 for h in (9, 12, 15, 18, 21)), "DAILY (5 times)", when="every 3 hours, 9 AM - 9 PM"),
     Task("OMSGuru inventory push", "inv-push.yml", tuple(h * 60 for h in range(6, 28, 3)), "DAILY (8 times)"),
 ]
 # the PORTAL column: the portal a task works on (by its workflow; a task of another portal than its
@@ -149,6 +152,8 @@ WORK = {
     "Myntra SPF report request": "Asks the Myntra portal for the SPF reports (returns, return delivery) for the 9 AM master",
     "Myntra VMS report": "Myntra orders vs VMS packing scans per SLA date, ERP vs VMS sheets in the VMS workbook",
     "Myntra colour grouping": "Colour groups of the GROUPING SHEET checked on myntra.com in every account; MYNTRA GROUPING MASTER.xlsx and the pending groups' upload files in AGENT WORK/MYNTRA/LISTING GROUPING",
+    "Myntra grouping status": "Status of the grouping jobs uploaded by hand, on the sheets of the MYNTRA GROUPING MASTER",
+    "Returns SMS catch-up": "Courier SMS of the last 2 days the sheet's script missed or failed on, worked again; Telegram hears only of any still failing",
     "Myntra courier OTP": "Today's Myntra courier pickup / return OTPs of the warehouses (Telegram)",
     "Myntra courier OTP retry": "OTPs again for couriers that had no trip at 11 AM (sent only when a new code came)",
     "Myntra courier scorecard": "Myntra pickups on time per account and courier, last 7 days (Telegram)",

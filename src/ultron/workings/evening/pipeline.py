@@ -27,7 +27,12 @@ BOTS = {"morning.yml": "Morning report", "stock.yml": "Stock-out alert", "sla.ym
         "sale.yml": "Sale report", "vms.yml": "Myntra VMS", "ajio-tat.yml": "AJIO TAT",
         "labels.yml": "Label check", "ajio-spf.yml": "AJIO SPF", "myntra-spf.yml": "Myntra SPF",
         "returns.yml": "Return analysis", "ajio-ads.yml": "AJIO ads", "inv-push.yml": "Inventory push",
-        "myntra-reports.yml": "Myntra reports", "agent-watch.yml": "Agent checks"}
+        "myntra-reports.yml": "Myntra reports", "flipkart-tat.yml": "Flipkart TAT", "myntra-tat.yml": "Myntra courier scorecard",
+        "myntra-otp.yml": "Myntra OTP", "myntra-zero-td.yml": "Myntra zero TD", "myntra-grouping.yml": "Myntra grouping",
+        "ticket-followup.yml": "Ticket follow-up", "erp-oms-return.yml": "ERP to OMSGuru returns", "portal-sale.yml": "Portal sale",
+        "portal-reports.yml": "Portal reports", "business-report.yml": "Business reporting", "listings.yml": "Listing health",
+        "deadstock.yml": "Dead stock", "weekly.yml": "Weekly review", "mis.yml": "Monthly MIS", "sms-catchup.yml": "Returns SMS catch-up",
+        "agent-watch.yml": "Agent checks"}
 
 COMMENT = """You are the e-commerce manager of Bindal Exports (women's apparel on Myntra, AJIO,
 Flipkart, Amazon, Meesho, Nykaa). Below is today's evening summary: how the automated reports ran,

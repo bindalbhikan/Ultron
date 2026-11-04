@@ -1014,7 +1014,7 @@ def write_combined(built, out_root, design_map, launch, tag=None):
         # use the most common spelling
         key = df['BRAND'].str.strip().str.lower().replace(BRAND_ALIASES)
         df['BRAND'] = key.map(df.groupby(key)['BRAND'].agg(lambda s: s.mode()[0]))
-        month_tag = tag or pd.to_datetime(max(df['MONTH'].dropna()), format='%m-%Y').strftime('%b-%y').upper()
+        month_tag = tag or pd.to_datetime(df['MONTH'].dropna(), format='%m-%Y').max().strftime('%b-%y').upper()   # by date: "01-2027" sorts before "12-2026"
         launch_map = launch_dates(launch, [p for p, _, _ in parts])
         report = write_report(df, name, month_tag, out_root, design_map, launch_map)
         sold = int(df['QTY'].sum())
@@ -1103,7 +1103,7 @@ def build_all(input_dir, supporting_dir, out_root):
         months = df['MONTH'].dropna().unique()
         if len(months) != 1:
             print(f'WARNING: {portal} has orders from several months: {sorted(months)}')
-        month_tag = pd.to_datetime(sorted(months)[-1], format='%m-%Y').strftime('%b-%y').upper()
+        month_tag = pd.to_datetime(months, format='%m-%Y').max().strftime('%b-%y').upper()   # by date: "01-2027" sorts before "12-2026"
         check(df, portal)
         final = write_template(df, portal, month_tag, out_root)
         launch_map = launch_dates(launch, portal)

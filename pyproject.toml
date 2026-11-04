@@ -18,10 +18,10 @@ dependencies = [
 [project.optional-dependencies]
 # xlsx summaries of run files (pandas, openpyxl) and reading encrypted GitHub run artifacts
 # (cryptography); on Termux these come from pkg instead (deploy/termux/setup.sh)
-full = ["pandas>=2.2", "openpyxl>=3.1", "cryptography>=42"]
+full = ["pandas>=2.2,<4", "openpyxl>=3.1", "cryptography>=42"]
 # the report workings (ultron.workings: sale, VMS, AJIO TAT / SPF, Myntra SPF, returns ...)
 workings = [
-    "pandas>=2.2", "openpyxl>=3.1", "cryptography>=42",
+    "pandas>=2.2,<4", "openpyxl>=3.1", "cryptography>=42",
     "google-auth>=2.23", "gspread>=6.0",
     "curl_cffi>=0.7", "selectolax>=0.3.21",
     # pypdfium2 renders shipping labels to PIL images: without Pillow every Shadowfax / Delhivery

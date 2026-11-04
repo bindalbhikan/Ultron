@@ -5,7 +5,7 @@ What is written for each report day:
   FBF : GROSS and Cancel from Flipkart Seller Hub (Flipkart warehouses only)
   SJIT: GROSS and Cancel from the Myntra Seller_Orders_Report, fetched from the partner portal
         with a saved login session and/or dropped by hand into the SJIT Drive folder;
-        when no report covers the day, SJIT is skipped (0 written only into empty cells)
+        when no report covers the day, its cells stay blank and the report names the day (never a 0)
 RETURN is entered by hand and never touched. A source that fails is skipped and
 reported on Telegram; the rest of the report is still written.
 """
@@ -187,12 +187,13 @@ def _sale_table(rows: list[tuple[str, int, int | None]]) -> str:
     """Channel | Gross | Cancel, 22 characters wide (fits a phone)."""
     lines = [f"{'Channel':<10}{'Gross':>6}{'Cncl':>6}"]
     lines += [f"{name[:10]:<10}{g:>6}{(c if c else '-'):>6}" for name, g, c in rows]
-    lines.append(f"{'Total':<10}{sum(g for _, g, _ in rows):>6}")
+    lines.append(f"{'Total':<10}{sum(g for _, g, _ in rows if isinstance(g, int)):>6}")
     return "<pre>" + telegram.esc("\n".join(lines)) + "</pre>"
 
 
 def telegram_report(book: SaleWorkbook, day: date, notes: list[str]) -> str:
-    rows = [(SHORT.get(b, b.title()), book.read(day, b, "GROSS"), book.read(day, b, "CANCEL")) for b in REPORT_ORDER]
+    rows = [(SHORT.get(b, b.title()), book.read(day, b, "GROSS") if b != "SJIT" or book.known(day, b, "GROSS") else "-",
+             book.read(day, b, "CANCEL")) for b in REPORT_ORDER]
     month = book.month_gross(day)
     mrows = [(SHORT.get(b, b.title()), month.get(b, 0), None) for b in REPORT_ORDER]
     return "\n".join([
@@ -335,7 +336,7 @@ def run(args) -> int:
         log.warning("FBF skipped: %s", exc)
         notes.append(f"FBF skipped ({str(exc)[:80]})")
 
-    # Myntra SJIT: optional, 0 into empty cells when the report is missing
+    # Myntra SJIT: optional, its cells stay blank and the day is named when the report is missing
     alerts: list[str] = []
     try:
         sg, sc, covered = sjit_source(days, notes, alerts)
@@ -348,14 +349,11 @@ def run(args) -> int:
         if d in covered:
             book.write(d, "SJIT", "GROSS", sg[d])
             book.write(d, "SJIT", "CANCEL", sc[d])
-        else:
-            book.write(d, "SJIT", "GROSS", 0, only_if_empty=True)
-            book.write(d, "SJIT", "CANCEL", 0, only_if_empty=True)
     if alerts:
         notes += alerts
         print(session_alert(alerts)) if args.no_telegram else telegram.send(session_alert(alerts))
     if missing:
-        notes.append("SJIT report not ready for " + ", ".join(f"{d:%d %b}" for d in missing) + " (taken as 0)")
+        notes.append("SJIT report not ready for " + ", ".join(f"{d:%d %b}" for d in missing) + " (left blank, not in the totals)")
 
     for ws in {book.month_sheet(d.year, d.month) for d in days}:
         book.repair_formulas(ws)

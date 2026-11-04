@@ -224,7 +224,7 @@ def run(args) -> int:
         raise RuntimeError("www.myntra.com answered no style: " + "; ".join(f"{e} x{n}" for e, n in errors.items()))
 
     checked = {a: pd.concat([df.reset_index(drop=True),
-                             pd.DataFrame([found[int(i)] for i in df["STYLE ID"]])], axis=1)
+                             pd.DataFrame([found[int(i)] for i in df["STYLE ID"]]).reindex(columns=[*CHECK_COLUMNS, "ERROR"])], axis=1)
                for a, df in sheets.items()}
     when = datetime.now()
     path = write_workbook(output_dir("myntra-zero-td") / file_name(when), checked, when)

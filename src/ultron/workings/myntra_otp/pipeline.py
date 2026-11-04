@@ -123,7 +123,7 @@ def write_sheet(rows, now: datetime, notes: list[str] | None = None) -> tuple[in
     had_today = any(r and str(r[0]).strip() == f"{now:%d-%m-%Y}" for r in existing)
     new, replace = sheet_rows(rows, now, existing, notes)
     for row, otc in replace.items():
-        ws.update_cell(row, 4, otc)                         # the OTP cell only
+        ws.update([[otc]], f"D{row}", value_input_option="RAW")   # the OTP cell only; RAW: its leading zeros stay
     if new:
         ws.append_rows(new, value_input_option="RAW")       # RAW: an OTP keeps its leading zeros
     return len(new) + len(replace), had_today

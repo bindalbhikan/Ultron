@@ -13,7 +13,7 @@
 * Myntra SJIT: `Seller_Orders_Report` of MAIN from the partner portal (saved session); reports
   already on the portal are reused, only uncovered days get a new job. po_type SJIT / FBM only;
   GROSS by created on, Cancel = status F by cancelled on. A CSV dropped into the `sjit` Drive
-  folder still counts. Days no report covers are 0 only in empty cells.
+  folder still counts. A day no report covers stays blank, shows `-` on Telegram, is left out of the totals and is named in the notes; never a 0.
 * RETURN is typed by hand and never touched.
 
 **Notes**: Since Oct 2026 a COCOBLU block follows AZ/FX/FBA and there is no SNAPDEAL block; older

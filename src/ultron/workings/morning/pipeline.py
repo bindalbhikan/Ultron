@@ -113,11 +113,11 @@ def run(args) -> int:
     try:
         alerts: list[str] = []
         sg, sc, covered = sjit_source([before, day], notes, alerts)
-        if day in covered:
+        if day in covered and before in covered:    # a day not covered is not a 0: it would show as a false drop
             gross["SJIT"] = {before: sg[before], day: sg[day]}
             canc["SJIT"] = {before: sc[before], day: sc[day]}
         else:
-            notes.append("SJIT report for yesterday not ready yet")
+            notes.append(f"SJIT report for {day if day not in covered else before:%d %b} not ready yet")
         notes += alerts
     except Exception as exc:  # noqa: BLE001
         log.warning("SJIT skipped: %s", exc)

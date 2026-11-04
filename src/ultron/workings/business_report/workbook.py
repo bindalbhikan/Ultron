@@ -259,7 +259,10 @@ class Writer:
                     ws.write_string(r, col["yoy"], "-", self.tdash if last else self.dash)
             if "share" in col and share:
                 sc, sv = share[n] if isinstance(share, list) else share
-                ws.write_formula(r, col["share"], f'=IF({sc}=0,"-",{c[net]}/{sc})', pct, v[net] / sv if sv else "-")
+                if label in self.r.unknown.get(net, ()):     # the month's net is "-": a formula on it would show #VALUE!
+                    ws.write_string(r, col["share"], "-", self.tdash if last else self.dash)
+                else:
+                    ws.write_formula(r, col["share"], f'=IF({sc}=0,"-",{c[net]}/{sc})', pct, v[net] / sv if sv else "-")
             vals.append(v)
             r += 1
         self._last_vals = vals
