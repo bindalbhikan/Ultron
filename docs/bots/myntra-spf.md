@@ -31,6 +31,13 @@ On demand: `/myntraspf`.
   (label / proof / delivered / working-on-it rules, else a status request); not when we replied
   last. Sent (portal `updateClaim`, as its Edit screen) only with the repo variable
   `MYNTRA_SPF_REPLY=1`; otherwise the Telegram notes list what would be sent.
+* **Disputes on rejected claims** (owner's rule, 4 Nov 2026: a claim stays alive until the return is
+  received or the SPF is paid): a REJECT ticket is disputed when its master row has no FINAL RETURN
+  STATUS (OMSGuru results of this run included), no courier RETURN POD, is a worked order, was not
+  replaced by a newer ticket and is untouched for `MYNTRA_SPF_DISPUTE_DAYS` (7). As the portal's Open
+  Dispute box: `api/spf/createFwTicket`, reason Others; the claim turns AWAITING_AGENT_RESPONSE. At most
+  `MYNTRA_SPF_DISPUTE_MAX` (20) per account per run, none when a source was not read. Live only with the
+  repo variable `MYNTRA_SPF_DISPUTE=1`; otherwise the notes count them. The bot never closes a ticket.
 * **Auto claims** (`tickets.py`), after the first engine run, on the SPF POLICY v5 timelines:
   * *Return Not Received* (`RTS_ORDER_WAS_NEVER_DELIVERED`): delivered to us per Myntra, not
     received; raised 4 to 7 days after the delivery date (`MYNTRA_SPF_RNR_AFTER_DAYS` /

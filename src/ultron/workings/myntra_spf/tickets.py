@@ -231,6 +231,64 @@ def reply_waiting(portal, account: str, rows: list[dict], live: bool) -> list[st
     return lines
 
 
+# ------------------------------------------------------------------ disputes on rejected claims
+
+# Owner's rule (4 Nov 2026): a claim stays alive until the return is received or the SPF is paid.
+DISPUTE_TEXT = ("Hi Team, this return has not been physically received at our warehouse and we have no proof of "
+                "delivery for it. Kindly re-check and approve the claim.")
+SUPERSEDED = re.compile(r"new .*ticket", re.I)     # rejected because a newer ticket took its place
+
+
+def dispute_due(row: dict, master: dict | None, today: date) -> bool:
+    """A rejected claim to dispute today: on the master, not received or settled, no courier POD, a
+    worked order, not replaced by a newer ticket, and untouched for MYNTRA_SPF_DISPUTE_DAYS (7)."""
+    from .pipeline import final_status, not_worked
+    if row.get("STATUS") != "REJECT" or master is None or SUPERSEDED.search(str(row.get("REASON") or "")):
+        return False
+    if not_worked(master) or final_status(master) or str(master.get("RETURN POD") or "").strip().upper() == "YES":
+        return False
+    try:
+        updated = datetime.strptime(str(row.get("LAST UPDATED"))[:11], "%d-%b-%Y").date()
+    except ValueError:
+        return False
+    return (today - updated).days >= num("MYNTRA_SPF_DISPUTE_DAYS", 7)
+
+
+def disputes(path: Path, today: date, details: dict[str, list[dict]], skip: set[tuple] = frozenset()) -> dict[str, list[str]]:
+    """account -> ticket ids to dispute. skip: (order_line_id, return_id) keys known to be received."""
+    from openpyxl import load_workbook
+    from .engine import SHEETS, master_rows, norm
+    wb = load_workbook(path, read_only=True)
+    out: dict[str, list[str]] = {}
+    for name in SHEETS:
+        rows = {norm(r.get("order_line_id")): r for r in master_rows(wb, name)
+                if (norm(r.get("order_line_id")), norm(r.get("return_id"))) not in skip}
+        due = [d["TICKET ID"] for d in details.get(name, []) if dispute_due(d, rows.get(norm(d.get("ORDER LINE ID"))), today)]
+        if due:
+            out[name] = due
+    wb.close()
+    return out
+
+
+def open_disputes(portal, account: str, ids: list[str], live: bool) -> list[str]:
+    """Dispute up to MYNTRA_SPF_DISPUTE_MAX (20) of them (live), or count them. Lines for the report."""
+    cap = int(num("MYNTRA_SPF_DISPUTE_MAX", 20))
+    if not live:
+        return [f"{account} SPF disputes: {len(ids)} due, none opened (MYNTRA_SPF_DISPUTE is off)"]
+    done, failed = 0, 0
+    for tid in ids[:cap]:
+        try:
+            claim = portal.spf_claim(tid)
+            if claim.get("status") == "REJECT":
+                portal.spf_dispute(claim, DISPUTE_TEXT)
+                done += 1
+                time.sleep(1.2)
+        except Exception as exc:  # noqa: BLE001 - the next ticket still goes
+            log.warning("%s SPF %s dispute failed: %s", account, tid, exc)
+            failed += 1
+    return [f"{account} SPF disputes: {done} opened of {len(ids)} due" + (f", {failed} failed" if failed else "")]
+
+
 # ------------------------------------------------------------------ ticket details
 
 def _utc(v) -> datetime | None:

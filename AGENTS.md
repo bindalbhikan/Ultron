@@ -34,6 +34,8 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 - **Myntra buyer site (`www.myntra.com`)**: bots read it with Scrapy spiders only (`myntra_zero_td/spider.py`,
   `myntra_grouping/engine.py`), never a browser or another HTTP client. The one exception is the
   existing Ultron Phone route, for when GitHub's runner gets 403.
+- **Myntra SPF tickets**: never close one; a claim stays alive until the return is received or the SPF
+  is paid (`docs/bots/myntra-spf.md`, disputes).
 - Never merge to main by yourself from CI; propose a PR (`ci-fix.yml`).
 - `netcap/` (raw browser captures) is local only: it holds cookies and customer data. Only names
   (paths, field names, meanings) go into `docs/knowledge/`, never values.

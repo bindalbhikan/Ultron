@@ -532,6 +532,16 @@ class MyntraPortal:
         if st and st.get("statusType") not in (None, "SUCCESS"):
             raise RuntimeError(f"Myntra refused the reply: {st.get('statusMessage')}")
 
+    def spf_dispute(self, claim: dict, comment: str, reason: str = "Others") -> None:
+        """Open a dispute on a rejected claim, as the portal's Open Dispute box does (captured
+        4 Nov 2026): POST createFwTicket; the claim then turns AWAITING_AGENT_RESPONSE. The box's
+        reasons include "Others" and "Claim shouldn't have rejected"."""
+        body = {k: claim.get(k) for k in ("ticketId", "orderId", "returnId", "trackingId", "skuId", "styleId", "issueCategory")}
+        body.update({"description": f"{claim.get('description') or ''},{comment}", "returnReason": reason, "attachments": []})
+        st = self._call("POST", f"{SPF_API}/createFwTicket", json=body).get("status") or {}
+        if st and st.get("statusType") not in (None, "SUCCESS"):
+            raise RuntimeError(f"Myntra refused the dispute: {st.get('statusMessage')}")
+
     def spf_bulk_claim(self, order_line_ids: list, category: str, description: str,
                        model: str = "PPMP", seller: int | None = None) -> int:
         """One bulk claim, as the portal's "Delayed / Return Not Received" upload does it: an xlsx

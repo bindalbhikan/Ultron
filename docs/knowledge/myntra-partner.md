@@ -66,6 +66,7 @@ agent without the owner's approval, and only through a working built for it.
 | `GET /api/partners/leftnav/fbm-status` | Read | `isFbm`: whether the account is fulfilled by Myntra. |
 | `GET /api/spf/v2/getTickets?status&modelType&page&pageSize` | Read | the SPF ticket list (status, compensation amount, UTR). |
 | `GET /api/spf/fetchNewClaim?id` | Read | the returns that can be claimed on a new SPF ticket. |
+| `POST /api/spf/createFwTicket` | **Changes** | opens a dispute on a rejected claim (`ticketId, description, orderId, returnId, trackingId, skuId, styleId, issueCategory, returnReason, attachments`), used by `myntra-spf`. The box's terms speak of notice within 7 days of RTS delivery and at least 5 images for used products; a dispute with no images was accepted on 4 Nov 2026. |
 
 Left out as noise: `seller-activation/seller-achievements`, `actions-cards/card-event` (click
 tracking), `delighted/people` (survey, 403).

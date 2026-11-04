@@ -500,6 +500,33 @@ def raise_due_claims(work: Path, today: date, ticketed: dict[str, set[str]], oms
     return [line for line in lines if " raised (" in line]
 
 
+def dispute_rejected(work: Path, today: date, oms: dict, notes: list[str], details: dict,
+                     paused: list[str] | None = None, unread: set[tuple] = frozenset()) -> None:
+    """Disputes on rejected claims of returns still not received (tickets.disputes), opened when
+    MYNTRA_SPF_DISPUTE=1, else counted. Never when a source was not read: a received return could look lost."""
+    if paused:
+        return
+    from ..return_analysis.sources import myntra_portal
+    from ..portals import myntra as mp
+    received = {k for k, v in oms.items() if "RECEIVED" in str(v).upper()}
+    live = env("MYNTRA_SPF_DISPUTE") == "1"
+    try:
+        due = tickets.disputes(work / MASTER_NAME, today, details, received | set(unread))
+    except Exception as exc:  # noqa: BLE001 - the master still goes out
+        log.exception("SPF disputes not worked out")
+        notes.append(f"SPF disputes not worked out: {str(exc)[:100]}")
+        return
+    for account, ids in due.items():
+        try:
+            portal = myntra_portal(account) if live else None
+            notes[:0] = tickets.open_disputes(portal, account, ids, live)
+            if portal:
+                mp.save_to_worker(env, portal.cookies(), account)
+        except Exception as exc:  # noqa: BLE001 - the other accounts still go
+            log.exception("%s SPF disputes failed", account)
+            notes.append(f"{account} SPF disputes failed: {str(exc)[:80]}")
+
+
 def run_engine(work: Path, oms: dict | None = None, details: dict | None = None) -> None:
     """The engine's main() inside the work folder, with OMSGuru results when given and the
     TICKETS sheet's rows (account -> rows, one per ticket id)."""
@@ -635,6 +662,7 @@ def run(args) -> int:
         paused.append("OMSGuru")
     # 3) SPF claims due today (policy timelines), raised on the portal; shown in the master at once
     claims = raise_due_claims(work, today, ticketed, oms, notes, details, paused, unread)
+    dispute_rejected(work, today, oms, notes, details, paused, unread)
     for p in _files(inp) - after_engine:          # ticket files of these claims, for a rebuild
         (work / "claim_files" / p).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(inp / p, work / "claim_files" / p)
