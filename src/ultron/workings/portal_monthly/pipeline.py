@@ -108,7 +108,50 @@ def flipkart_report(report: str, first: date, last: date, dest: Path) -> Path:
     name, data = fk.report(report, first, last, int(num("RETURNS_WAIT_MINUTES", 45)), made_from=last + timedelta(days=2))
     path = dest / f"flipkart_{report.lower().replace(' ', '_')}{Path(name).suffix or '.xlsx'}"
     path.write_bytes(data)
+    if report == "Orders":
+        end = flipkart_orders_end(path)
+        if end and end < last:
+            flipkart_orders_in_parts(fk, first, last, dest, path)
     return path
+
+
+def month_parts(first: date, last: date, days: int = 11) -> list[tuple[date, date]]:
+    """The month as date ranges of at most `days` days."""
+    parts, start = [], first
+    while start <= last:
+        parts.append((start, min(start + timedelta(days=days - 1), last)))
+        start = parts[-1][1] + timedelta(days=1)
+    return parts
+
+
+def merge_order_parts(month: "pd.DataFrame", parts: list["pd.DataFrame"], first: date, last: date) -> "pd.DataFrame":
+    """The parts' order lines of this month, each line once; the month's own file when the parts hold fewer."""
+    import pandas as pd
+    merged = pd.concat(parts, ignore_index=True).drop_duplicates()
+    day = pd.to_datetime(merged["order_date"], errors="coerce", format="mixed").dt.date
+    merged = merged[day.between(first, last)]
+    return merged.reset_index(drop=True) if len(merged) >= len(month) else month
+
+
+def flipkart_orders_in_parts(fk, first: date, last: date, dest: Path, path: Path) -> None:
+    """A month's Orders file can stop short while the same days come whole in a smaller range, and Flipkart
+    refuses the same range again while its link is active (4 Nov 2026: Oct-26 had no 31 Oct, a 10-day
+    range had 300 orders of it). Ask for the month in parts and replace the file when that holds more."""
+    import pandas as pd
+    wait = int(num("RETURNS_WAIT_MINUTES", 45))
+    frames = []
+    for i, (a, b) in enumerate(month_parts(first, last)):
+        _, data = fk.report("Orders", a, b, wait, made_from=last + timedelta(days=2))
+        part = dest / f"flipkart_orders_part{i}.xlsx"
+        part.write_bytes(data)
+        frames.append(pd.read_excel(part, sheet_name="Orders", dtype=str, engine="calamine"))
+    book = pd.read_excel(path, sheet_name=None, dtype=str, engine="calamine")
+    merged = merge_order_parts(book["Orders"], frames, first, last)
+    log.info("Flipkart Orders %s..%s: month file %d lines, in parts %d", first, last, len(book["Orders"]), len(merged))
+    book["Orders"] = merged
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        for sheet, df in book.items():
+            df.to_excel(writer, sheet_name=sheet, index=False)
 
 
 def myntra_returns(account: str, first: date, last: date, dest: Path) -> Path:

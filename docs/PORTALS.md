@@ -54,6 +54,7 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 ## Flipkart Seller Hub — `portals/flipkart.py`
 
 * Login: JSON POST `/login` (`FLIPKART_EMAIL/PASSWORD`); CSRF from `/getFeaturesForSeller`.
+* Report centre, 4 Nov 2026: the same report and dates are refused while the link is active (HTTP 500 around a 400, "has already been requested"). The Oct-26 Orders file had no 31 Oct and fewer lines on some days (27 Oct: 377) than a 10-day range asked the same day (31 Oct: 300; 27 Oct: 414). Cause not known.
 * FBF units: `/napi/metrics/search` filtered on Flipkart's own warehouses (sale bot).
 * Report centre (`/napi/metrics/bizReport/`): at most 20 new report requests a day; over it `submitReport` answers HTTP 500 around a 429 ("daily quota of 20 reports"). Downloading finished requests does not count.
 * **Report centre**: `POST /napi/metrics/bizReport/submitReport?reportName=<name>` with
