@@ -38,9 +38,6 @@ jobs:
       # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
       ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
       AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
-      # the EARN MORE sheet of the Flipkart workbook is read from Seller Hub
-      FLIPKART_EMAIL: ${{ secrets.FLIPKART_EMAIL }}
-      FLIPKART_PASSWORD: ${{ secrets.FLIPKART_PASSWORD }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
       GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
