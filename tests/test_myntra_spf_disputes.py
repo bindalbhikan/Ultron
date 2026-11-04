@@ -41,6 +41,21 @@ class Due(unittest.TestCase):
         self.assertFalse(self.due({"LAST UPDATED": ""}))
 
 
+class Delayed(unittest.TestCase):
+    ROW = {"CATEGORY": tickets.CATEGORY_NAME[tickets.DELAYED]}
+
+    def due(self, created, flag):
+        with mock.patch.object(pipeline, "final_status", return_value=""), \
+             mock.patch.object(pipeline, "not_worked", return_value=False), \
+             mock.patch.dict("os.environ", {"MYNTRA_SPF_DISPUTE_DELAYED": flag}):
+            return tickets.dispute_due({**ROW, **self.ROW}, {"RETURN POD": "", "return_created_date": created}, TODAY)
+
+    def test_held_until_switched_on_and_120_days_old(self):
+        self.assertFalse(self.due(date(2026, 5, 1), ""))
+        self.assertFalse(self.due(date(2026, 10, 1), "1"))
+        self.assertTrue(self.due(date(2026, 5, 1), "1"))
+
+
 class Open(unittest.TestCase):
     def test_off_only_counts(self):
         portal = mock.Mock()
@@ -48,14 +63,14 @@ class Open(unittest.TestCase):
         self.assertIn("2 due", lines[0])
         portal.spf_dispute.assert_not_called()
 
-    def test_live_keeps_the_cap_and_rechecks_the_status(self):
+    def test_live_works_every_one_and_rechecks_the_status(self):
         portal = mock.Mock()
         portal.spf_claim.side_effect = [{"status": "REJECT"}, {"status": "OPEN"}, {"status": "REJECT"}]
-        with mock.patch.object(tickets, "num", return_value=2), mock.patch.object(tickets.time, "sleep"):
+        with mock.patch.object(tickets.time, "sleep"):
             lines = tickets.open_disputes(portal, "MAIN", ["1", "2", "3"], live=True)
-        self.assertEqual(portal.spf_dispute.call_count, 1)
-        self.assertEqual(portal.spf_claim.call_count, 2)
-        self.assertIn("1 opened of 3 due", lines[0])
+        self.assertEqual(portal.spf_dispute.call_count, 2)
+        self.assertEqual(portal.spf_claim.call_count, 3)
+        self.assertIn("2 opened of 3 due", lines[0])
 
     def test_one_failure_does_not_stop_the_rest(self):
         portal = mock.Mock()

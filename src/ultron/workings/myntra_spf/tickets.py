@@ -247,6 +247,11 @@ def dispute_due(row: dict, master: dict | None, today: date) -> bool:
         return False
     if not_worked(master) or final_status(master) or str(master.get("RETURN POD") or "").strip().upper() == "YES":
         return False
+    if row.get("CATEGORY") == CATEGORY_NAME[DELAYED]:
+        # rejected as "tat less than 120 days": another dispute before that would only be rejected again
+        created = _day(master.get("return_created_date"))
+        if env("MYNTRA_SPF_DISPUTE_DELAYED") != "1" or not created or (today - created).days < 120:
+            return False
     try:
         updated = datetime.strptime(str(row.get("LAST UPDATED"))[:11], "%d-%b-%Y").date()
     except ValueError:
@@ -271,12 +276,11 @@ def disputes(path: Path, today: date, details: dict[str, list[dict]], skip: set[
 
 
 def open_disputes(portal, account: str, ids: list[str], live: bool) -> list[str]:
-    """Dispute up to MYNTRA_SPF_DISPUTE_MAX (20) of them (live), or count them. Lines for the report."""
-    cap = int(num("MYNTRA_SPF_DISPUTE_MAX", 20))
+    """Dispute every one of them (live; owner's rule, no cap), or count them. Lines for the report."""
     if not live:
         return [f"{account} SPF disputes: {len(ids)} due, none opened (MYNTRA_SPF_DISPUTE is off)"]
     done, failed = 0, 0
-    for tid in ids[:cap]:
+    for tid in ids:
         try:
             claim = portal.spf_claim(tid)
             if claim.get("status") == "REJECT":

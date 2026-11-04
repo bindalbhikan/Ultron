@@ -53,6 +53,7 @@ jobs:
       # claims waiting on our reply (they close by themselves in 4 days): answered when 1, else only listed
       MYNTRA_SPF_REPLY: ${{ vars.MYNTRA_SPF_REPLY }}
       MYNTRA_SPF_DISPUTE: ${{ vars.MYNTRA_SPF_DISPUTE }}
+      MYNTRA_SPF_DISPUTE_DELAYED: ${{ vars.MYNTRA_SPF_DISPUTE_DELAYED }}
       IN_NO_UPLOAD: ${{ inputs.no_upload }}
       IN_REQUEST: ${{ inputs.request }}
     steps:
