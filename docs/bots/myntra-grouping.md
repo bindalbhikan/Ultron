@@ -20,6 +20,9 @@ starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the 
 * For every group x brand x article type of every account: each style's live colour group on
   myntra.com, then DONE / NOT DONE / DONE - EXTRA IN PORTAL (remove) / NOT LIVE / NOT LISTED /
   DUPLICATE - NOT IN GROUP / ONLY 1 LISTED / DONE IN OTHER ACCOUNT, with PORTAL GROUP and MISSING IN PORTAL.
+  A style myntra.com did not answer for (up to 20% of a run) is NO ANSWER FROM MYNTRA, action CHECK, left out of the
+  upload files and counted on Telegram, never NOT LIVE. SALE that is low because an account has no order report for a
+  month (on the 1st, last month's arrives only on the 2nd) is named on Telegram too.
   The main live group's members are DONE even when their individual colour lists differ (fixed
   4 Nov 2026): an inactive style can list the full group while the other pages omit it. Membership
   is checked against the main group's style IDs, rather than requiring identical SKU coverage on

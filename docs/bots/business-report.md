@@ -57,6 +57,8 @@
   the ledger the months are as per the monthly files, with their EXP sheet, and no bank figure. A PAYMENT MATCH block goes from the
   bank to NET SETTLEMENT in RAW DATA step by step. Net Received in MONTH WISE = NET SETTLEMENT of every line of the order month
   (for these two portals; Myntra keeps Delivered + Customer Return), so it is by order month and never equals one payment month.
+* **Myntra: a missing order or return report is named** (`missing_myntra_reports`): per account, from its first report of that kind
+  to the last month, in the INPUT LOG (Report missing) and on Telegram, because those months' figures are low.
 * **A number that is not known shows `-`, never 0, and is named in the INPUT LOG** (`Report.unknown`). Cancelled: AJIO Oct-25 to
   Dec-25 (those sources leave out most lines cancelled before shipping, so Gross is low in those months). Payment: a Flipkart order month with no payment on any sold line, PAYMENT STATUS = No Payment Report.
 * AJIO: a status is as old as its file, so a line Shipped over 60 days ago with no return since counts as Delivered (named

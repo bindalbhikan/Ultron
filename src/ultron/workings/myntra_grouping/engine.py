@@ -88,6 +88,7 @@ REMARK_DONE = "DONE"
 REMARK_NOT_DONE = "NOT DONE"
 REMARK_EXTRA = "DONE - EXTRA IN PORTAL"
 REMARK_NOT_LIVE = "NOT LIVE ON PORTAL"
+REMARK_NO_ANSWER = "NO ANSWER FROM MYNTRA"   # not checked: never counted as not live
 REMARK_NOT_LISTED = "NOT LISTED"
 # Owner's rule (2 Nov 2026): a style in no colour group is as pending as one in an incomplete group -
 # one remark, NOT DONE, for both (its own fill and Summary column dropped).
@@ -578,8 +579,12 @@ def build_account_rows(account, groups, styles, master, sales, inventory, cache)
                 sid = r.style_id
                 p = portal(sid)
                 if not p.get("live"):
-                    remark = REMARK_DONE if sid in portal_union else REMARK_NOT_LIVE
-                    rows.append(make_row(sid, sku, remark, "ADD"))
+                    if sid in portal_union:
+                        rows.append(make_row(sid, sku, REMARK_DONE, "ADD"))
+                    elif sid in cache:
+                        rows.append(make_row(sid, sku, REMARK_NOT_LIVE, "ADD"))
+                    else:
+                        rows.append(make_row(sid, sku, REMARK_NO_ANSWER, "CHECK"))
                     continue
                 if len(live_skus) < 2:
                     rows.append(make_row(sid, sku, REMARK_SINGLE, ""))
@@ -633,7 +638,7 @@ def apply_cross_account_done(account_rows):
                 row["COMPLETE IN"] = ", ".join(f"ACC-{a}" for a in done_in)
 
 
-TEMPLATE_SKIP_REMARKS = {REMARK_NOT_LISTED, REMARK_EXTRA, REMARK_NOT_LIVE}
+TEMPLATE_SKIP_REMARKS = {REMARK_NOT_LISTED, REMARK_EXTRA, REMARK_NOT_LIVE, REMARK_NO_ANSWER}
 
 
 def pending_group_styles(rows):
@@ -715,6 +720,7 @@ FILLS = {
     REMARK_NOT_DONE: "FFC7CE",
     REMARK_EXTRA: "FFEB9C",
     REMARK_NOT_LIVE: "D9D9D9",
+    REMARK_NO_ANSWER: "F8CBAD",
     REMARK_NOT_LISTED: "EDEDED",
     REMARK_DONE_OTHER: "E2EFDA",
     REMARK_DUPLICATE: "BDD7EE",

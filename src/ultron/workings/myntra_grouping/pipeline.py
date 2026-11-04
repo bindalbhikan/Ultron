@@ -88,20 +88,27 @@ def latest_listings(dest: Path) -> dict[str, Path]:
     return found
 
 
-def sales_counts(sku_to_style: dict, dest: Path, months: int) -> dict[tuple[str, str], int]:
-    """{(seller id, style id): order lines delivered or on the way} over the last months' order
-    reports in PORTAL REPORTS (in place of the hand-run tool's sales export)."""
+def sales_counts(sku_to_style: dict, dest: Path, months: int, accounts: list[str]) -> tuple[dict[tuple[str, str], int], list[str]]:
+    """({(seller id, style id): order lines delivered or on the way}, what is missing) over the last
+    months' order reports in PORTAL REPORTS (in place of the hand-run tool's sales export). Missing
+    names each month an account has no order lines for, since its SALE is low then."""
     counts: dict[tuple[str, str], int] = {}
+    missing = []
     month = date.today().replace(day=1)
     for _ in range(months):
         month = (month - timedelta(days=1)).replace(day=1)
+        seen = set()
         for f in pr.load("MYNTRA", month, "sale", dest / f"orders_{month:%Y%m}"):
             df = pd.read_csv(f, dtype=str, usecols=lambda c: c in ("seller id", "style id", "order status", "order line id"))
+            seen.update(str(s).replace(".0", "") for s in df["seller id"].dropna().unique())
             df = df[df["order status"].isin(["C", "SH"])].drop_duplicates("order line id")
             for (seller, style), n in df.groupby(["seller id", "style id"]).size().items():
                 key = (str(seller).replace(".0", ""), str(style).replace(".0", ""))
                 counts[key] = counts.get(key, 0) + int(n)
-    return counts
+        lacking = [ACCOUNT_OF.get(a, a) for a in accounts if a not in seen]
+        if lacking:
+            missing.append(f"{month:%b-%y} ({', '.join(lacking)})")
+    return counts, missing
 
 
 def omsguru_inventory(dest: Path) -> Path | None:
@@ -218,7 +225,7 @@ def run(args) -> int:
     wanted = {b.strip().lower() for b in e.BRANDS}
     styles = styles[styles["brand"].str.strip().str.lower().isin(wanted)].reset_index(drop=True)
     accounts = sorted(styles["account"].unique())
-    sales = sales_counts(sku_to_style, work / "sale", int(num("GROUPING_SALE_MONTHS", 3)))
+    sales, sales_missing = sales_counts(sku_to_style, work / "sale", int(num("GROUPING_SALE_MONTHS", 3)), accounts)
     inv_file = omsguru_inventory(work / "input")
     inventory = e.load_inventory(master) if inv_file else None
     group_skus = {sku for _, skus in groups for sku in skus}
@@ -279,7 +286,9 @@ def run(args) -> int:
     if inventory is None:
         lines.append("\n<i>INV left blank: OMSGuru's inventory could not be read</i>")
     if missing:
-        lines.append(f"\n<i>{len(missing)} styles had no answer from myntra.com (left as not live)</i>")
+        lines.append(f"\n<i>{len(missing)} styles had no answer from myntra.com: marked {e.REMARK_NO_ANSWER}, not checked</i>")
+    if sales_missing:
+        lines.append(f"\n<i>SALE is low: no order report for {telegram.esc(', '.join(sales_missing))}</i>")
     if args.no_upload:
         lines.append("\n<i>test run: Drive not changed</i>")
         print("\n".join(lines))

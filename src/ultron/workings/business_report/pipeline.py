@@ -103,7 +103,24 @@ def read_any(path: Path, **kw) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------ portals
-def build_myntra(files: list[dict], master: pd.DataFrame) -> tuple:
+def missing_myntra_reports(files: list[dict], last: date) -> list[str]:
+    """Order and return reports an account lacks: from its first report of that kind to the last
+    month, or the whole kind when the account has none. Those months' figures are low."""
+    out = []
+    for kind in ("ORDER", "RETURN"):
+        mine = [f for f in files if f["kind"] == kind]
+        for account in myntra.ACCOUNT_OF.values():
+            have = {f["month"] for f in mine if f["account"] == account}
+            if not have:
+                out.append(f"{account} {kind}: none")
+                continue
+            months = [m.date() for m in pd.date_range(min(have), last, freq="MS") if m.date() not in have]
+            if months:
+                out.append(f"{account} {kind}: {month_names(months)}")
+    return out
+
+
+def build_myntra(files: list[dict], master: pd.DataFrame, missing: list[str] = ()) -> tuple:
     frames = {f["name"]: read_any(f["path"]).assign(ACCOUNT=f["account"]) for f in files}
     get = lambda k: [frames[f["name"]].assign(_order=i) for i, f in enumerate(files) if f["kind"] == k]  # noqa: E731
     o, r, p = (pd.concat(get(k), ignore_index=True) if get(k) else pd.DataFrame() for k in ("ORDER", "RETURN", "PAYMENT"))
@@ -115,6 +132,8 @@ def build_myntra(files: list[dict], master: pd.DataFrame) -> tuple:
                                   "PAYMENT": ("Payment_Date", myntra.dt)})
     lg.append(["Orders used", "ALL", "one row per order line", len(raw), "Order date", raw["ORDER DATE"].min(), raw["ORDER DATE"].max(), ""])
     lg.append(["SKU master", "ALL", "BUSINESS REPORTING/MasterSheet.xlsx (sheet Master)", len(master), "-", pd.NaT, pd.NaT, ""])
+    for gap in missing:
+        lg.append(["Report missing", "-", gap, "-", "-", pd.NaT, pd.NaT, "not in PORTAL REPORTS: the figures of these months are low"])
     return myntra.report(raw, p, pd.DataFrame(lg, columns=LOG_COLS)), o
 
 
@@ -468,9 +487,12 @@ def run(args) -> int:
         try:
             files = portal_files("MYNTRA", first, last, work)
             if "MYNTRA" in portals:
-                rep, orders = build_myntra(files, master)
+                missing = missing_myntra_reports(files, last)
+                rep, orders = build_myntra(files, master, missing)
                 done = finish(rep, out_dir, args)
                 lines.append(summary(rep, done))
+                if missing:
+                    lines.append(f"⚠️ Figures low, reports missing: {telegram.esc('; '.join(missing))}")
             else:
                 orders = myntra_orders_only(files)
             cats = category_map(orders, master)
