@@ -39,7 +39,7 @@ COLS = ["PORTAL", "ACCOUNT", "TYPE", "TICKET ID", "PARTICULAR", "ORDER ID", "RAI
 SHEET_COLS = ["DATE", "PORTAL", "PARTICULAR", "TICKET ID", "STATUS"]
 ACCOUNTS = ("MAIN", "DBCC", "FMCC")
 AJIO_CLOSED = {"RESOLVED", "CLOSED", "COMPLETED", "CANCELLED", "CANCELED", "REJECTED", "AUTO_CLOSED", "WITHDRAWN"}
-MYNTRA_CLOSED = {"REJECT", "PAYMENT_COMPLETED"}
+MYNTRA_CLOSED = {"REJECT", "PAYMENT_COMPLETED", "CLOSED"}
 HAND_CLOSED = AJIO_CLOSED | MYNTRA_CLOSED | {"DONE", "SOLVED"}
 AJIO_YEARS_BACK = 2
 BY_SPF, BY_PICKUP, BY_THIS, BY_HAND = "ajio-spf (Wed, Sat)", "ajio-tat (every 24 h)", "this run (every 24 h)", "by hand (no reply call known)"
@@ -50,6 +50,13 @@ FOLLOWUP_TEXT = ("Any update on this ticket? Kindly check and share the current 
 def _day(value) -> str:
     """YYYY-MM-DD of a portal's time, as it gives it."""
     return str(value or "")[:10]
+
+
+def _myntra_day(value) -> str:
+    """YYYY-MM-DD in IST: Myntra gives UTC, so a ticket raised before 5:30 AM belongs to the day after the one it shows."""
+    from ..myntra_spf.tickets import _utc
+    when = _utc(value)
+    return f"{when:%Y-%m-%d}" if when else _day(value)
 
 
 def _age(raised: str, today: date) -> int | str:
@@ -67,10 +74,10 @@ def myntra_rows(account: str, today: date) -> list[dict]:
     mp.save_to_worker(env, portal.cookies(), account)
     out = []
     for t in tickets:
-        status, raised = str(t.get("status") or ""), _day(t.get("createdOn"))
+        status, raised = str(t.get("status") or ""), _myntra_day(t.get("createdOn"))
         out.append({"PORTAL": "MYNTRA", "ACCOUNT": account, "TYPE": "SPF", "TICKET ID": str(t.get("ticketId")),
                     "PARTICULAR": str(t.get("issueCategory") or ""), "ORDER ID": str(t.get("orderId") or ""), "RAISED ON": raised,
-                    "LAST UPDATE": _day(t.get("lastModifiedOn")), "AGE DAYS": _age(raised, today), "STATUS": status,
+                    "LAST UPDATE": _myntra_day(t.get("lastModifiedOn")), "AGE DAYS": _age(raised, today), "STATUS": status,
                     "OPEN": "NO" if status in MYNTRA_CLOSED else "YES", "FOLLOWED UP BY": BY_HAND, "CHECKED ON": f"{today}"})
     return out
 
@@ -90,19 +97,27 @@ def ajio_rows(client, today: date) -> list[dict]:
 
 
 def follow_up(client, master: pd.DataFrame, today: date, dry: bool) -> tuple[list[str], list[str]]:
-    """The fixed comment on this run's open AJIO tickets whose last word from us is 24 h old; (done ids, problems)."""
+    """The fixed comment on the AJIO tickets read open today whose last word from us is old enough; (done ids, problems).
+    A ticket not read today (kept from an earlier run) may have closed since: a comment would re-open it. Its detail is read
+    first for the same reason; TICKET_OTHER_CAP counts comments, not tickets read."""
     from ..ajio_tat.pipeline import due_followup
-    todo = master[(master["PORTAL"] == "AJIO") & (master["OPEN"] == "YES") & (master["FOLLOWED UP BY"] == BY_THIS)]
+    todo = master[(master["PORTAL"] == "AJIO") & (master["OPEN"] == "YES") & (master["FOLLOWED UP BY"] == BY_THIS)
+                  & (master["CHECKED ON"] == f"{today}")]
     # a ticket left open for longer is for the owner to look at, not for a comment every day (2 Nov 2026: two from Nov 2024)
     todo = todo[pd.to_numeric(todo["AGE DAYS"], errors="coerce") <= num("TICKET_OTHER_MAX_DAYS", 90)]
     done, problems = [], []
     now = pd.Timestamp(datetime.now())
-    for tid in todo["TICKET ID"].astype(str).head(int(num("TICKET_OTHER_CAP", 10))):
+    cap = int(num("TICKET_OTHER_CAP", 10))
+    for tid in todo["TICKET ID"].astype(str):
+        if len(done) >= cap:
+            break
         try:
             ticket = client.ticket_detail(tid)
             if not ticket:
                 problems.append(f"AJIO {tid}: not read")
-            elif due_followup(ticket, client.seller_id, now, int(num("TICKET_FOLLOWUP_HOURS", 24))):
+            elif str(ticket.get("status") or "").upper() in AJIO_CLOSED:
+                continue
+            elif due_followup(ticket, client.seller_id, now, int(num("TICKET_FOLLOWUP_HOURS", 22))):
                 if not dry:
                     client.comment(tid, FOLLOWUP_TEXT)
                 done.append(tid)
@@ -138,7 +153,7 @@ def sheet_rows(hand: pd.DataFrame, master: pd.DataFrame) -> tuple[pd.DataFrame, 
     for _, r in own.iterrows():
         is_open = str(r["STATUS"]).strip().upper() not in HAND_CLOSED
         still += is_open
-        rows.append({**{c: (None if pd.isna(r[c]) else r[c]) for c in SHEET_COLS}, "TICKET ID": str(r["TICKET ID"]), "_open": is_open})
+        rows.append({**{c: (None if pd.isna(r[c]) else r[c]) for c in SHEET_COLS}, "_open": is_open})
     out = pd.DataFrame(rows, columns=[*SHEET_COLS, "_open"])
     out = out.assign(_d=out["DATE"].astype(str)).sort_values(["_open", "_d"], ascending=[False, True], kind="stable")
     return out[SHEET_COLS], still
@@ -176,8 +191,6 @@ def run(args) -> int:
     root = DriveFolder(env("AGENT_WORK_FOLDER_ID", pr.AGENT_WORK))
     got = root.download(MASTER, work / "old_master.xlsx")
     old = pd.read_excel(got, sheet_name="ALL", dtype=str).reindex(columns=COLS) if got else pd.DataFrame(columns=COLS, dtype=object)
-    got = root.download(SHEET, work / "old_sheet.xlsx")
-    hand = pd.read_excel(got, dtype=str).reindex(columns=SHEET_COLS).dropna(subset=["TICKET ID"]) if got else pd.DataFrame(columns=SHEET_COLS, dtype=object)
 
     fresh, problems, client = [], [], None
     for account in ACCOUNTS:
@@ -202,6 +215,9 @@ def run(args) -> int:
     if not (args.dry_run or args.no_upload):
         master.loc[master["TICKET ID"].astype(str).isin(done) & (master["PORTAL"] == "AJIO"), "LAST FOLLOW-UP"] = f"{today}"
 
+    # read last, as the portals take minutes: a row the owner adds meanwhile is kept. A row with no ticket id is the owner's too.
+    got = root.download(SHEET, work / "old_sheet.xlsx")
+    hand = pd.read_excel(got, dtype=str).reindex(columns=SHEET_COLS).dropna(how="all") if got else pd.DataFrame(columns=SHEET_COLS, dtype=object)
     sheet, hand_open = sheet_rows(hand, master)
     master_file, sheet_file = work / MASTER, work / SHEET
     summary = write_master(master, master_file)
