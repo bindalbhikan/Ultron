@@ -418,10 +418,11 @@ def open_returns(path: Path, since: date) -> dict[tuple, dict]:
     return out
 
 
-def oms_statuses(wanted: dict[tuple, dict], notes: list[str]) -> dict[tuple, str]:
+def oms_statuses(wanted: dict[tuple, dict], notes: list[str], unread: set[tuple]) -> dict[tuple, str]:
     """OMSGuru status of each open return: "Return Received OMSGuru" when the warehouse logged
     it in OMSGuru, else its current return status. The Myntra master has no SKU, so an order is
-    matched on its AWBs / store order id and any returned item of it counts."""
+    matched on its AWBs / store order id and any returned item of it counts. unread gets the keys
+    of the returns whose lookup failed."""
     from ..portals.omsguru_returns import ReturnLookup
 
     class MyntraLookup(ReturnLookup):
@@ -447,20 +448,28 @@ def oms_statuses(wanted: dict[tuple, dict], notes: list[str]) -> dict[tuple, str
     keys = list(wanted)
     found, failed = client.lookup_many([dict(wanted[k], key=k) for k in keys])
     if failed:
-        notes.append(f"OMSGuru: {failed} of {len(keys)} lookups failed")
+        unread.update(ret["key"] for ret in failed)
+        notes.append(f"OMSGuru: {len(failed)} of {len(keys)} lookups failed: no SPF claim on those returns today")
     return {ret["key"]: res["status"] for ret, res in found if res.get("status")}
 
 
 def raise_due_claims(work: Path, today: date, ticketed: dict[str, set[str]], oms: dict,
-                     notes: list[str], details: dict | None = None) -> list[str]:
+                     notes: list[str], details: dict | None = None, paused: list[str] | None = None,
+                     unread: set[tuple] = frozenset()) -> list[str]:
     """SPF claims due today per account (tickets.candidates), raised when MYNTRA_SPF_TICKETS=1,
-    else only counted. Accounts whose portal tickets could not be read are skipped. The lines
-    for the report; they also go to notes."""
+    else only counted. Accounts whose portal reports or tickets could not be read are skipped. paused:
+    sources not read, so a received return could look lost: no claim at all, as in AJIO SPF. unread:
+    returns whose OMSGuru lookup failed, not claimed. The lines for the report; they also go to notes."""
+    if paused:
+        line = f"SPF claims not raised today: {', '.join(paused)} not read"
+        log.warning(line)
+        notes.insert(0, line)
+        return []
     from ..return_analysis.sources import myntra_portal
     from ..portals import myntra as mp
     received = {k for k, v in oms.items() if "RECEIVED" in str(v).upper()}
     try:
-        due = tickets.candidates(work / MASTER_NAME, today, ticketed, received)
+        due = tickets.candidates(work / MASTER_NAME, today, ticketed, received | set(unread))
     except Exception as exc:  # noqa: BLE001 - the master still goes out
         log.exception("SPF claims not worked out")
         notes.append(f"SPF claims not worked out: {str(exc)[:100]}")
@@ -593,12 +602,15 @@ def run(args) -> int:
             fut.result()
         except Exception as exc:  # noqa: BLE001 - the master is still rebuilt from the rest
             log.exception("Myntra %s reports failed", name)
-            notes.append(f"Myntra {name} reports not fetched: {str(exc)[:100]}")
+            notes.append(f"Myntra {name} reports not fetched, no SPF claim for it today: {str(exc)[:100]}")
+            ticketed.pop(name, None)
+    paused: list[str] = []
     try:
         log.info("ERP: %s", erp.result())
     except Exception as exc:  # noqa: BLE001
         log.exception("ERP reports failed")
         notes.append(f"ERP GRN / dispatch not read: {str(exc)[:100]}")
+        paused.append("ERP")
 
     # the engine deletes the inputs it has used: kept as fetched, for a rebuild on a newer master
     inp.mkdir(parents=True, exist_ok=True)
@@ -607,11 +619,12 @@ def run(args) -> int:
     run_engine(work, details=details)
     after_engine = _files(inp)
     # 2) OMSGuru for the rows still without a final status, then the engine again with them
+    unread: set[tuple] = set()
     try:
         since = today - timedelta(days=num("MYNTRA_SPF_OMS_DAYS", 180))
         wanted = open_returns(work / MASTER_NAME, since)
         log.info("OMSGuru: %d returns with a blank final status since %s", len(wanted), since)
-        oms = oms_statuses(wanted, notes)
+        oms = oms_statuses(wanted, notes, unread)
         received = sum(1 for v in oms.values() if "RECEIVED" in v.upper())
         log.info("OMSGuru: %d statuses, %d received", len(oms), received)
         notes.insert(0, f"OMSGuru checked {len(wanted)} open returns: {received} received")
@@ -619,8 +632,9 @@ def run(args) -> int:
         log.exception("OMSGuru check failed")
         notes.append(f"OMSGuru not checked: {str(exc)[:100]}")
         oms = {}
+        paused.append("OMSGuru")
     # 3) SPF claims due today (policy timelines), raised on the portal; shown in the master at once
-    claims = raise_due_claims(work, today, ticketed, oms, notes, details)
+    claims = raise_due_claims(work, today, ticketed, oms, notes, details, paused, unread)
     for p in _files(inp) - after_engine:          # ticket files of these claims, for a rebuild
         (work / "claim_files" / p).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(inp / p, work / "claim_files" / p)

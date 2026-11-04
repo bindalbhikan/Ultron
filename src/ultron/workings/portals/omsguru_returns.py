@@ -152,9 +152,9 @@ class ReturnLookup:
             best = {"status": "", "forward_awb": order["forward_awb"], "carrier": order["carrier"], "received_row": None}
         return best
 
-    def lookup_many(self, returns: list[dict]) -> tuple[list[tuple[dict, dict]], int]:
-        """([(return, lookup result)] for every return OMSGuru knows, lookups that failed)."""
-        found, failed = [], 0
+    def lookup_many(self, returns: list[dict]) -> tuple[list[tuple[dict, dict]], list[dict]]:
+        """([(return, lookup result)] for every return OMSGuru knows, the returns whose lookup failed: nothing is known of those)."""
+        found, failed = [], []
 
         def one(ret):
             try:
@@ -165,7 +165,7 @@ class ReturnLookup:
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             for n, (ret, res, err) in enumerate(pool.map(one, returns), 1):
                 if err is not None:
-                    failed += 1
+                    failed.append(ret)
                     log.warning("OMSGuru lookup failed: %s", err)
                 elif res:
                     found.append((ret, res))
@@ -173,5 +173,5 @@ class ReturnLookup:
                     log.info("OMSGuru lookups: %d/%d", n, len(returns))
         received = sum(1 for _, r in found if r["received_row"])
         log.info("OMSGuru: %d returns looked up, %d found, %d received, %d failed",
-                 len(returns), len(found), received, failed)
+                 len(returns), len(found), received, len(failed))
         return found, failed

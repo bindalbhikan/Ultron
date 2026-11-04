@@ -264,8 +264,10 @@ def oms_lookup(today: date, ctx: dict) -> int:
                        "order_id": claims.txt(r.get("FWD Seller Order ID"))})
     client = ReturnLookup.from_env()
     found, failed = client.lookup_many(wanted)
-    if failed > max(5, len(wanted) // 10):
-        raise RuntimeError(f"{failed} of {len(wanted)} OMSGuru lookups failed")
+    if len(failed) > max(5, len(wanted) // 10):
+        raise RuntimeError(f"{len(failed)} of {len(wanted)} OMSGuru lookups failed")
+    # a few failed: the run goes on, but no ticket on a return OMSGuru may show as received
+    ctx["lookup_failed"] = {ret["return_order"] for ret in failed}
 
     received = [res["received_row"] for _, res in found if res["received_row"]]
     if received:
@@ -332,6 +334,10 @@ def raise_tickets(cands: list[claims.Candidate], ctx: dict, dry: bool) -> list[d
                "reason": cand.reason, "awb": f["return_awb"], "invoice": f["invoice"],
                "amount": f["invoice_amount"], "sku": ", ".join(claims.txt(r.get("SELLER SKU")) for r in cand.rows),
                "ticket": "", "result": ""}
+        if cand.return_order in ctx.get("lookup_failed", ()):
+            rec["result"] = "skipped (OMSGuru lookup failed)"
+            done.append(rec)
+            continue
         if len([d for d in done if d["result"] in ("created", "dry-run")]) >= cap:
             rec["result"] = "over daily cap"
             done.append(rec)
@@ -624,9 +630,11 @@ def run(args) -> int:
         try:
             from . import pickup
             ctx["pickup"] = pickup.check(WORK / MASTER_NAME)
-        except Exception as exc:  # noqa: BLE001 - informational columns only
+        except Exception as exc:  # noqa: BLE001 - the master still goes out
+            # not only information: claims.not_picked stops a claim on a parcel the courier never picked up
             log.error("Courier pickup check failed: %s", exc)
             ctx["pickup_error"] = str(exc)
+            ctx["errors"].append(f"Courier pickup check: {exc}")
         rows = claims.read_sheet(WORK / MASTER_NAME)
         rules = claims.Rules(num("DISPUTE_AFTER_DAYS", claims.DISPUTE_AFTER), num("DISPUTE_MAX_DAYS", 365),
                              num("TRANSIT_AFTER_DAYS", 60), num("TRANSIT_MAX_DAYS", 90))

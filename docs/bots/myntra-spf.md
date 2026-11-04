@@ -75,3 +75,5 @@ On demand: `/myntraspf`.
 
 **Later**: raising SPF claims on Myntra (needs captures of the claim form, the ticket export and the
 payment download); only no-video claim types, existing-ticket check, caps, dry run first.
+
+**No claim on a guess**: when the ERP or OMSGuru could not be read, no SPF claim is raised that run and the report names the source (a received return could look lost). An account whose portal reports failed gets no claim that run, and neither does a return whose OMSGuru lookup failed.

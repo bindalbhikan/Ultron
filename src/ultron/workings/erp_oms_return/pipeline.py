@@ -28,7 +28,7 @@ from ..core.app import run_bot
 from ..core.config import env, num, output_dir
 from ..core.drive import DriveFolder
 from ..portals.erp import Erp
-from .accept import ACCEPTED, accept
+from .accept import accept
 
 log = logging.getLogger("bindal.erp_oms_return")
 

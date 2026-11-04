@@ -17,3 +17,5 @@
 `SPF_DRY_RUN=1` (default) lists instead of posting; only an explicit 0 posts. Any failed source turns
 the run into a dry run; per-run caps (`MAX_RAISE_PER_RUN`, `MAX_REPLIES_PER_RUN`); a failed "ticket
 already exists?" check skips that ticket.
+
+**No ticket on a guess**: nothing is posted to AJIO on a run where a source failed, and that includes the courier pickup check. A few failed OMSGuru lookups do not stop the run: those return orders get no ticket that run (result `skipped (OMSGuru lookup failed)` in the actions file).
