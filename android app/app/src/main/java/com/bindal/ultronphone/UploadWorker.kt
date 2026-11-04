@@ -79,13 +79,14 @@ class UploadWorker(context: Context, params: WorkerParameters) :
                     Prefs.addLog(ctx, "RETRY $from: script $text")
                     Result.retry()
                 }
-                code in 200..399 -> {
+                // only the script's own answers: Google's error page also comes with HTTP 200, and the SMS would be lost
+                code in 200..399 && text in listOf("ok", "duplicate", "empty") -> {
                     val label = if (text.startsWith("duplicate")) "DUPLICATE" else "SENT"
                     Prefs.addLog(ctx, "SMS $label $from")
                     Result.success()
                 }
                 else -> {
-                    Prefs.addLog(ctx, "RETRY $from: HTTP $code")
+                    Prefs.addLog(ctx, "RETRY $from: HTTP $code ${text.take(30)}")
                     Result.retry()
                 }
             }

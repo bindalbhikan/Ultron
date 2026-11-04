@@ -88,7 +88,7 @@ class AgentService : Service() {
             parts.forEachIndexed { i, chunk ->
                 val body = JSONObject()
                 chunk.forEach { k -> body.put(k, answers[k]) }
-                call("result", "job=$id&part=$i" + if (i == parts.size - 1) "&last=1" else "", body.toString())
+                send("result", "job=$id&part=$i" + if (i == parts.size - 1) "&last=1" else "", body.toString())
             }
             val minutes = (System.currentTimeMillis() - started) / 60000.0
             val found = answers.values.count { it is JSONObject }
@@ -100,6 +100,20 @@ class AgentService : Service() {
         } finally {
             if (wake.isHeld) wake.release()
             startForegroundNow("Waiting for work")
+        }
+    }
+
+    /** call() with a few tries: one dropped connection must not lose the answers of a job that took hours. */
+    private fun send(action: String, query: String, body: String) {
+        for (attempt in 1..SEND_TRIES) {
+            try {
+                call(action, query, body)
+                return
+            } catch (e: Exception) {
+                if (attempt == SEND_TRIES) throw e
+                Prefs.addLog(this, "Agent: sending answers failed (${e.javaClass.simpleName}), try $attempt")
+                Thread.sleep(30_000L * attempt)
+            }
         }
     }
 
@@ -157,6 +171,7 @@ class AgentService : Service() {
         private const val NOTE_ID = 7
         private const val POLL_MS = 60_000L
         private const val PART = 300
+        private const val SEND_TRIES = 5
         const val ACTION_STOP = "stop"
 
         fun start(context: Context) {

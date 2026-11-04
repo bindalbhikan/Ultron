@@ -22,6 +22,7 @@ class MyntraLookup(private val threads: Int = 6, private val onProgress: (Int, I
 
     private val cookies = CookieManager(null, CookiePolicy.ACCEPT_ALL)
     @Volatile private var warmedAt = 0L
+    private val refused = AtomicInteger()     // 403s in a row: Myntra is refusing this line for now
 
     fun run(ids: List<Long>): Map<String, Any> {
         CookieHandler.setDefault(cookies)
@@ -51,6 +52,7 @@ class MyntraLookup(private val threads: Int = 6, private val onProgress: (Int, I
 
     private fun style(id: Long): Any {
         var again = false
+        var last = "no answer"
         for (attempt in 1..4) {
             val c = open(API + id).apply {
                 setRequestProperty("x-meta-app", "channel=web")
@@ -61,19 +63,25 @@ class MyntraLookup(private val threads: Int = 6, private val onProgress: (Int, I
                 val code = c.responseCode
                 when {
                     code == 200 -> {
+                        refused.set(0)
                         val text = c.inputStream.bufferedReader().use { it.readText() }
                         return trim(JSONObject(text).getJSONObject("style"))
                     }
                     code == 404 -> return "NOT FOUND"
                     code == 401 && !again -> { again = true; warmedAt = 0; home() }
-                    code == 429 || code >= 500 -> Thread.sleep(1500L * attempt)
+                    code == 403 -> {
+                        last = "HTTP 403"
+                        if (refused.incrementAndGet() > REFUSED_LIMIT) return last     // no pause for every style left
+                        Thread.sleep(3000L * attempt)
+                    }
+                    code == 429 || code >= 500 -> { last = "HTTP $code"; Thread.sleep(1500L * attempt) }
                     else -> return "HTTP $code"
                 }
             } finally {
                 c.disconnect()
             }
         }
-        return "no answer"
+        return last
     }
 
     /** Only what the bot reads: id, mrp, sellers' names, sizes with their sellers' stock and prices
@@ -124,6 +132,7 @@ class MyntraLookup(private val threads: Int = 6, private val onProgress: (Int, I
 
     companion object {
         const val HOME = "https://www.myntra.com/"
+        const val REFUSED_LIMIT = 50
         const val API = "https://www.myntra.com/gateway/v2/product/"
         const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/141.0.0.0 Mobile Safari/537.36"

@@ -35,7 +35,8 @@ const TZ = 'Asia/Kolkata';
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  // waitLock would throw here, outside the try: Apps Script then answers an error page with HTTP 200 and the SMS is lost
+  if (!lock.tryLock(30000)) return respond('error: busy');
   try {
     const p = (e && e.parameter) || {};
     const secret = PropertiesService.getScriptProperties().getProperty('SECRET');
