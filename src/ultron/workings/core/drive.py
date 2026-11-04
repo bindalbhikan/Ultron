@@ -11,7 +11,9 @@ someone changed it on Drive in the meantime.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import time
 from pathlib import Path
 
 from google.auth.transport.requests import AuthorizedSession
@@ -25,6 +27,7 @@ API = "https://www.googleapis.com/drive/v3/files"
 UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 FIELDS = "id,name,mimeType,modifiedTime,md5Checksum,size,webViewLink,capabilities/canEdit"
+RETRY_PAUSES = (10, 30, 0)   # seconds after each of the three tries
 
 
 class DriveError(RuntimeError):
@@ -33,6 +36,24 @@ class DriveError(RuntimeError):
 
 class DriveConflict(DriveError):
     """The file was changed on Drive since this run downloaded it."""
+
+
+def _with_retries(send, what: str):
+    """send() again on a 5xx answer, a timeout or a dropped connection (three tries, 3 Nov 2026: a
+    502 from Drive ended a whole run). The last answer is returned, or its error raised."""
+    for attempt, pause in enumerate(RETRY_PAUSES, 1):
+        try:
+            r = send()
+            if r.status_code < 500 or not pause:
+                return r
+            problem = f"HTTP {r.status_code}"
+        except (OSError, ConnectionError) as exc:   # requests' timeouts and dropped connections
+            if not pause:
+                raise
+            problem = f"{type(exc).__name__}: {str(exc)[:120]}"
+        log.warning("Drive %s: %s (try %d of %d); trying again", what, problem, attempt, len(RETRY_PAUSES))
+        time.sleep(pause)
+    raise AssertionError("unreachable")
 
 
 class DriveFile:
@@ -49,8 +70,8 @@ class DriveFile:
         return r
 
     def metadata(self) -> dict:
-        r = self.http.get(f"{API}/{self.file_id}", timeout=60,
-                          params={"fields": FIELDS, "supportsAllDrives": "true"})
+        r = _with_retries(lambda: self.http.get(f"{API}/{self.file_id}", timeout=60,
+                                                params={"fields": FIELDS, "supportsAllDrives": "true"}), "metadata")
         return self._check(r, "metadata").json()
 
     @property
@@ -67,8 +88,8 @@ class DriveFile:
             raise DriveError(f"{self.name} is {self.meta.get('mimeType')}, expected an .xlsx file")
         if need_edit and not self.meta.get("capabilities", {}).get("canEdit"):
             raise DriveError(f"Service account can read but not edit {self.name} - share it as Editor")
-        r = self.http.get(f"{API}/{self.file_id}", timeout=300,
-                          params={"alt": "media", "supportsAllDrives": "true"})
+        r = _with_retries(lambda: self.http.get(f"{API}/{self.file_id}", timeout=300,
+                                                params={"alt": "media", "supportsAllDrives": "true"}), "download")
         self._check(r, "download")
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(r.content)
@@ -81,14 +102,20 @@ class DriveFile:
         if not self.meta:
             raise DriveError(f"{self.name}: download() it before upload(), so a change made on Drive "
                              "during the run is never overwritten")
-        now = self.metadata()
-        if now.get("md5Checksum") != self.meta.get("md5Checksum"):
-            raise DriveConflict(f"{now.get('name')} was changed on Drive during the run "
-                             f"(modified {now.get('modifiedTime')}); not overwriting it. Run again.")
-        r = self.http.patch(f"{UPLOAD}/{self.file_id}", data=src.read_bytes(), timeout=300,
-                            params={"uploadType": "media", "supportsAllDrives": "true", "fields": FIELDS},
-                            headers={"Content-Type": XLSX})
-        self.meta = self._check(r, "upload").json()
+        body = src.read_bytes()
+        mine = hashlib.md5(body).hexdigest()  # noqa: S324 - Drive's own change check, not security
+
+        def send():
+            # checked before every try; a 5xx can still have saved the file, so our own content is no conflict
+            now = self.metadata()
+            if now.get("md5Checksum") not in (self.meta.get("md5Checksum"), mine):
+                raise DriveConflict(f"{now.get('name')} was changed on Drive during the run "
+                                    f"(modified {now.get('modifiedTime')}); not overwriting it. Run again.")
+            return self.http.patch(f"{UPLOAD}/{self.file_id}", data=body, timeout=300,
+                                   params={"uploadType": "media", "supportsAllDrives": "true", "fields": FIELDS},
+                                   headers={"Content-Type": XLSX})
+
+        self.meta = self._check(_with_retries(send, f"upload of {self.name}"), "upload").json()
         log.info("Uploaded %s to Drive (modified %s)", self.name, self.meta.get("modifiedTime"))
 
 
@@ -163,8 +190,7 @@ class DriveFolder:
     def _upload(self, src: Path, mime: str, file_id: str | None) -> str:
         """A resumable upload: replaces file_id's content, or creates src.name in this folder.
         A timeout or a 5xx answer is tried again (three tries)."""
-        import time
-        meta = {} if file_id else {"name": src.name, "parents": [self.folder_id]}
+        meta ={} if file_id else {"name": src.name, "parents": [self.folder_id]}
         params = {"uploadType": "resumable", "supportsAllDrives": "true", "fields": "id"}
         for attempt, pause in enumerate((10, 30, 0), 1):
             try:

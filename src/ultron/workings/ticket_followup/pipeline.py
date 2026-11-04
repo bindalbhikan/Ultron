@@ -119,7 +119,10 @@ def merge(old: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
         new = new.assign(**{"LAST FOLLOW-UP": key(new).map(last)})
     kept = old[~key(old).isin(set(key(new)))] if len(old) and len(new) else old
     both = [d for d in (new, kept) if len(d)]
-    return pd.concat(both, ignore_index=True).reindex(columns=COLS) if both else pd.DataFrame(columns=COLS, dtype=object)
+    if not both:
+        return pd.DataFrame(columns=COLS, dtype=object)
+    # object: with no follow-up recorded yet the column is all empty (float), which refuses a date (2 Nov 2026)
+    return pd.concat(both, ignore_index=True).reindex(columns=COLS).astype({"LAST FOLLOW-UP": object})
 
 
 def sheet_rows(hand: pd.DataFrame, master: pd.DataFrame) -> tuple[pd.DataFrame, int]:

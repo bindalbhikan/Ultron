@@ -24,7 +24,8 @@ only when it did not succeed. By hand: run the workflow with a run id. The same 
   the queue, or it was stopped by hand).
 * **Auto-retry** (1 Nov 2026): a failed **first** attempt of a workflow in `[watch] retry`
   (`agent.toml`) whose ERROR lines match `[watch] retry_when` (read / connect timeout, connection
-  reset or aborted, 502 / 503 / 504, DNS failure, Google rate limit) is run again once (failed
+  reset or aborted, 502 / 503 / 504 including `HTTP 502` as the Drive errors write it, DNS
+  failure, Google rate limit) is run again once (failed
   jobs only, `rerun-failed-jobs`; `agent-watch.yml` has `actions: write` for it). Telegram gets a
   short 🔁 message; the second attempt is watched as usual and never retried. Not retried:
   `ajio-spf` (raises tickets), `inv-push` (runs again in 3 hours), `myntra-otp` (time-bound), any

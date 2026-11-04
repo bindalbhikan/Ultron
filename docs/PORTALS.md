@@ -63,17 +63,17 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   `payment_rows()` gives the columns of the hand-downloaded `StatementOfAccount*.xlsx`
   (DT, VENDORCODE, DOCDATE `dd.mm.yyyy`, AMOUNT, TEXT, …). Used by AJIO SPF and AJIO ads gap.
 
-## OMSGuru returns - `workings/erp_oms_return/accept.py`
-
-* Accept a return: Orders > Quick Returns (`/orders/quickReturns`, manual mode, searching by AWB accepts nothing) opens a form; `POST /orders/processOrderReturn` with `data[SkuQty][n][good]` and the return warehouse. It answers JSON (`"result":"OK"` or `"Fail"`).
-* An order with no return yet (Ready to ship, Delivered ...) also needs `data[Invoice][confirm_return_type]` (`courier` / `customer`), else it answers "Invalid Invoice Status". One AWB can open several forms.
-* Stock: accepting moves the unit from Return Transit to Putaway; In Stock does not change until someone does the Putaway (`/sku_transaction_logs/export_form` shows each move). Undo: `/orders/revertReturnReceived/<id>`.
-* Order note: `POST /orders/addInvoiceNote/<id>` with `data[note]` and `oms_token` (the page's `csrf-token` meta).
-
-## Flipkart NXT Insights
-
-* `POST /napi/metrics/search` with `x-view-name: sell_more_aggregated_groupby_view`: gross, cancellation (it holds RTO too) and return units and amounts by order date, pivoted by state. Through this view no data before May-26; the Earn More screen shows rounded figures from Nov-25. Its rupees run above every price column of the tax Sales Report (not explained).
-
+## OMSGuru returns - `workings/erp_oms_return/accept.py`
+
+* Accept a return: Orders > Quick Returns (`/orders/quickReturns`, manual mode, searching by AWB accepts nothing) opens a form; `POST /orders/processOrderReturn` with `data[SkuQty][n][good]` and the return warehouse. It answers JSON (`"result":"OK"` or `"Fail"`).
+* An order with no return yet (Ready to ship, Delivered ...) also needs `data[Invoice][confirm_return_type]` (`courier` / `customer`), else it answers "Invalid Invoice Status". One AWB can open several forms.
+* Stock: accepting moves the unit from Return Transit to Putaway; In Stock does not change until someone does the Putaway (`/sku_transaction_logs/export_form` shows each move). Undo: `/orders/revertReturnReceived/<id>`.
+* Order note: `POST /orders/addInvoiceNote/<id>` with `data[note]` and `oms_token` (the page's `csrf-token` meta).
+
+## Flipkart NXT Insights
+
+* `POST /napi/metrics/search` with `x-view-name: sell_more_aggregated_groupby_view`: gross, cancellation (it holds RTO too) and return units and amounts by order date, pivoted by state. Through this view no data before May-26; the Earn More screen shows rounded figures from Nov-25. Its rupees run above every price column of the tax Sales Report (not explained).
+
 ## DigiBizz ERP — `portals/erp.py`
 
 * Report preview API (`ERP_USERNAME`, `ERP_PASSWORD`, `ERP_USER_TOKEN`; password AES-encrypted
@@ -112,5 +112,8 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   Accounts do not have storage quota"): with the Drive owner's OAuth refresh token (`GOOGLE_OAUTH_*`,
   `scripts/google/oauth_token.py`) Drive is used as the owner, who can create files. Uploads are
   resumable; a timeout or 5xx is tried three times.
-* `DriveFile.upload()` refuses when the file changed on Drive since it was downloaded.
+* `DriveFile.upload()` refuses when the file changed on Drive since it was downloaded. Drive can
+  answer a 502 on a master's upload (3 Nov 2026): `DriveFile` tries a 5xx, timeout or dropped
+  connection three times (10 s, 30 s apart), repeating the change check before each try; a 502 can
+  still have saved the file, so finding this run's own content on Drive is not a conflict.
 * The bot cannot delete files you own: to drop data it overwrites the file (e.g. header-only CSV).

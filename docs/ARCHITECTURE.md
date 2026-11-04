@@ -51,7 +51,7 @@ src/ultron/workings/
   core/                     shared by every bot
     config.py                 env() / flag() / num(); one .env locally, secrets on GitHub
     app.py                    run_bot(): args, logging, Telegram on failure, dashboard run status
-    drive.py                  DriveFile (one workbook, change-checked upload), DriveFolder
+    drive.py                  DriveFile (one workbook, change-checked upload, 3 tries), DriveFolder
                               (list / download / put by name; resumable upload, 3 tries)
     telegram.py, dashboard.py, snapshot.py (sheet pictures), files.py, gauth.py
   portals/                  one client per outside system (docs/PORTALS.md)
