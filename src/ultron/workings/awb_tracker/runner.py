@@ -74,10 +74,17 @@ def track_all(
     def run_unit(courier_name: str, indexes: list[int]) -> list[tuple[int, TrackResult]]:
         courier = registry.get(courier_name)
         awbs = [jobs[i].awb for i in indexes]
-        if len(awbs) > 1 and courier.batch_size > 1:
-            fetched = courier.fetch_many(awbs)
-        else:
-            fetched = [courier.fetch(a) for a in awbs]
+        try:
+            if len(awbs) > 1 and courier.batch_size > 1:
+                fetched = courier.fetch_many(awbs)
+            else:
+                fetched = [courier.fetch(a) for a in awbs]
+        except Exception as exc:  # noqa: BLE001 - one odd page never ends the tracking of every other AWB
+            fetched = []
+            for awb in awbs:
+                res = TrackResult(awb=awb, partner=courier_name, status=UNKNOWN)
+                res.error = f"{type(exc).__name__}: {str(exc)[:120]}"
+                fetched.append(res.finalize())
         return list(zip(indexes, fetched))
 
     # Build work units: batchable couriers get chunks, others get one AWB each.

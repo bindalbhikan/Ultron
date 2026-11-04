@@ -57,7 +57,11 @@ def run_job(kind: str, items: list, wait_minutes: float = 40, poll_seconds: int 
     taken_logged = False
     while time.time() < deadline:
         time.sleep(poll_seconds)
-        got = _call("collect", {"job": job})
+        try:
+            got = _call("collect", {"job": job})
+        except (requests.RequestException, ValueError) as exc:   # the phone's work is not lost on one failed look
+            log.warning("Phone job %s: collect failed (%s), trying again", job, type(exc).__name__)
+            continue
         if got.get("missing"):
             raise PhoneUnavailable(f"phone job {job} is gone from the worker")
         if got.get("taken") and not taken_logged:

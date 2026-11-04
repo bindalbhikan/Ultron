@@ -70,7 +70,7 @@ export function makeAgent({
   async function ask(env, chatId, messageId, text) {
     try {
       const res = await dispatch(env, chatWorkflow, { text: text.slice(0, 1500), chat_id: String(chatId),
-                                                      reply_to: String(messageId) });
+                                                      reply_to: messageId ? String(messageId) : "" });
       if (res.status !== 204) throw new Error(`GitHub said ${res.status}: ${(await res.text()).slice(0, 200)}`);
       await send(env, chatId, "🤖 On it… (about 1-2 minutes)", messageId);
     } catch (e) {

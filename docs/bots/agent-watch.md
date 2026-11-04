@@ -36,3 +36,5 @@ only when it did not succeed. By hand: run the workflow with a run id. The same 
 * Memory (`ultron.core.memory`, in the dashboard worker's KV): before judging a run it reads the
   notes about that bot (known harmless issues the owner taught the agent, earlier incidents), and it
   notes every alert it sends, so a recurring problem is called recurring.
+
+A grep of a run's log keeps its **end** when it is too long for the model: the fatal lines are the last ones, and the retry check and the plain alert read that text too. `curl: (n)` counts as a passing cause.

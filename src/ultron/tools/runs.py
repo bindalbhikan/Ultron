@@ -19,6 +19,13 @@ def _cut(text: str) -> str:
     return text if len(text) <= MAX_CHARS else text[:MAX_CHARS] + f"\n... ({len(text) - MAX_CHARS} more characters cut)"
 
 
+def _cut_start(head: str, body: str) -> str:
+    """head and the end of body: the last lines of a log are the ones that say why it ended."""
+    if len(body) <= MAX_CHARS:
+        return f"{head}\n{body}"
+    return f"{head}\n({len(body) - MAX_CHARS} earlier characters cut) ...\n{body[-MAX_CHARS:]}"
+
+
 def _out(run_id: int) -> Path:
     path = github.output(run_id)
     if path is None:
@@ -57,7 +64,7 @@ def run_log(run_id: int, grep: str = "", tail: int = 120) -> str:
         keep = sorted({j for i, ln in enumerate(lines) if rx.search(ln) for j in (i - 1, i, i + 1)
                        if 0 <= j < len(lines)})
         body = "\n".join(lines[j] for j in keep) or f"no line matches {grep!r}"
-        return _cut(f"{len(lines)} lines in the log, {len(keep)} shown\n{body}")
+        return _cut_start(f"{len(lines)} lines in the log, {len(keep)} shown", body)
     n = min(max(tail, 1), 400)
     return _cut(f"{len(lines)} lines in the log, last {min(n, len(lines))}:\n" + "\n".join(lines[-n:]))
 

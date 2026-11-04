@@ -813,7 +813,12 @@ async function phoneApi(request, env, action) {
     if (!job || job.id !== id) return json({ done: 0, missing: true });
     if (!job.done) return json({ done: 0, taken: job.taken || 0 });
     const results = {};
-    for (let i = 0; i < job.done; i++) Object.assign(results, JSON.parse((await env.DASH.get(`phone_result:${id}:${i}`)) || "{}"));
+    for (let i = 0; i < job.done; i++) {
+      // KV is eventually consistent: a part saved a moment ago may not be visible yet, so not done until every part is
+      const part = await env.DASH.get(`phone_result:${id}:${i}`);
+      if (part === null) return json({ done: 0, taken: job.taken || 0 });
+      Object.assign(results, JSON.parse(part));
+    }
     return json({ done: job.done, taken: job.taken, results });
   }
   if (action === "status") return json(JSON.parse((await env.DASH.get(PHONE_SEEN)) || "{}"));
