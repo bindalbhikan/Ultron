@@ -2967,6 +2967,9 @@ def main():
             oli = norm(rec.get('order_line_id'))
             per_oli[oli] = per_oli.get(oli, 0) + 1
 
+        # an order with a line paid under its own id: the fallback by seller order id would paint its other lines paid too
+        paid_directly = {norm(rec.get('seller_order_id')) for rec in out.values()
+                         if norm(rec.get('order_line_id')) in pay_oli}
         rows = []
         for k, rec in out.items():
             # fill the columns the Return Delivery Report does not have
@@ -3027,7 +3030,8 @@ def main():
             # only a fallback - a handful of paid lines are not in the returns reports
             # under their order_line_id.
             pay = (pay_oli.get(norm(rec.get('order_line_id')))
-                   or pay_soi.get(norm(rec.get('seller_order_id'))))
+                   or (None if norm(rec.get('seller_order_id')) in paid_directly
+                       else pay_soi.get(norm(rec.get('seller_order_id')))))
             if pay:
                 rec['SPF PAID'], rec['UTR NO'] = pay
                 totals['payment_hit'] += 1

@@ -49,6 +49,8 @@ ITEM_STATUSES = sorted([
     "Cancelled Return Received - RTO", "Cancelled Before Shipping", "Removed Before Shipping",
     "Cancelled", "Processing", "Return Rejected", "Partial Return Received",
     "Partial Cancelled Return Received",
+    # how the order list writes them (seen 4 Nov 2026): without these, "Cancelled Return Received" read as Cancelled and the rest as blank
+    "Return Received", "Return Init", "Cancel Init", "Cancelled Return Received",
 ], key=len, reverse=True)
 
 ORDER_COLS = ["Input Identifier", "Internal Order ID", "Channel Order ID", "Sub-Order Internal ID",

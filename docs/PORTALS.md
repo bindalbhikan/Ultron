@@ -87,6 +87,7 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 
 ## OMSGuru — `portals/omsguru.py`, `portals/omsguru_returns.py`
 
+* An item's status on the order list has no suffix: `Return Received`, `Return Init`, `Cancel Init`, `Cancelled Return Received` (the status filter's names add ` - RTV` / ` - RTO`). `item_status` knows both.
 * The order list stops near 3,000 orders: `vms.list_rows` reads a day at a time, `order_lines` halves a window near the limit (the halves share a minute, so a line read in an earlier window is not counted twice; two equal lines inside one window are real).
 * One session (`OMSGURU_EMAIL/PASSWORD/OTP`), warehouse by warehouse; list pages, order pages,
   search box (AWB / order id). The search box answers an **empty body** for no match; an HTML page is the login or an error page and raises, never "not found". `omsguru_returns.ReturnLookup`: an item counts as received only
