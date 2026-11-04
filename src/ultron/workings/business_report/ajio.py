@@ -278,6 +278,29 @@ def raw_data(orders: pd.DataFrame, rtv: pd.DataFrame, ledger: pd.DataFrame, mast
     return d.sort_values(["ORDER DATE", "CUST ORDER NO"]).reset_index(drop=True)
 
 
+def _line_key(raw: pd.DataFrame) -> pd.Series:
+    return raw["CUST ORDER NO"].astype(str).str.strip() + "|" + raw["SELLER SKU"].astype(str).str.strip()
+
+
+def returned_units(raw: pd.DataFrame, rtv: pd.DataFrame) -> pd.Series:
+    """Units returned per row of raw: the Return QTY of the line's return orders, each once; no more than the row holds
+    (a replacement can come back again)."""
+    if not len(rtv):
+        return pd.Series(0.0, index=raw.index)
+    r = rtv[num(rtv["Return QTY"]).fillna(0) > 0].drop_duplicates(["RETURN ORDER NUMBER", "SELLER SKU"], keep="last")
+    units = num(r["Return QTY"]).groupby(r["Cust Order No"].str.strip() + "|" + r["SELLER SKU"].str.strip()).sum()
+    return _line_key(raw).map(units).fillna(0).clip(upper=raw["QTY"])
+
+
+def cancelled_units(raw: pd.DataFrame, orders: pd.DataFrame) -> pd.Series:
+    """Units cancelled per row of raw: Cancelled Qty of the order report (the newest file's line)."""
+    if not len(orders) or "Cancelled Qty" not in orders.columns:
+        return pd.Series(0.0, index=raw.index)
+    o = orders.assign(key=orders["Cust Order No"].str.strip() + "|" + orders["Seller SKU"].str.strip()).drop_duplicates("key", keep="last")
+    return _line_key(raw).map(num(o["Cancelled Qty"]).fillna(0).set_axis(o["key"])).fillna(0)
+
+
+RETURN_COLS = ["REASON", "RETURN TYPE", "RETURN ORDER NUMBER", "RETURN STATUS", "RETURN CREATED DATE", "RETURN MONTH", "CREDIT NOTE NUMBER"]
 RAW_COLS = ["ORDER DATE", "ORDER MONTH", "SOURCE", "OMS STATUS", "CUST ORDER NO", "SELLER ORDER NO", "SELLER INVOICE NO", "JIOCODE",
             "SELLER STYLE CODE", "SELLER SKU", "MY SKU", "FINAL SKU", "FINAL MY SKU", "DESIGN-NO", "BRAND", "CATEGORY",
             "DESCRIPTION", "QTY", "MRP", "SELLING PRICE", "SALE VALUE", "INVOICE VALUE", "FULFILLMENT TYPE",

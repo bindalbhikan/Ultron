@@ -21,8 +21,8 @@ FINAL STATUS of an order item:
                   Orders report Flipkart no longer gives, come from it (SOURCE = Sales report: status
                   from the events, the return type from the Returns report when it has the item)
 
-SALE VALUE = the invoice value of the sale in the tax Sales Report, else the item's Sale Amount in
-Settled Transactions; NET SETTLEMENT = the sum of its Bank Settlement Values.
+SALE VALUE = Price before discount of the sale in the tax Sales Report (owner's rule, 4 Nov 2026), else the
+item's Sale Amount in Settled Transactions; NET SETTLEMENT = the sum of its Bank Settlement Values.
   MONTHLY REPORT  the owner's monthly file (sheet "Order Wise", Oct-25 to Apr-26): one row per order item
                   settled in that month, its Bank Settlement Value the same as Settled Transactions (checked
                   May-26 to Sep-26, item by item). It is the payment of months with no Settled Transactions
@@ -185,23 +185,25 @@ def monthly_settled(monthly: pd.DataFrame, have: set) -> pd.DataFrame:
 
 
 def sales_items(sales: pd.DataFrame) -> pd.DataFrame:
-    """Per order item from the tax Sales Report events: order date, SKU, qty, invoice value of the
-    sale, and its status (Cancellation = cancelled; more Returns than Return Cancellations =
-    returned; else delivered). Rows in the shape of the Orders report, for the months whose
-    Orders report Flipkart no longer gives (before Feb 2026)."""
+    """Per order item from every month's tax Sales Report events merged (a month's file also holds
+    earlier months' orders), by the order's own date: SKU, qty, Price before discount of the sale, and its
+    status. Cancelled = as many Cancellation rows as Sale rows: an item with a Sale, a Cancellation and
+    a second Sale was only invoiced again and stayed sold (3,422 of 9,331 such items were later returned).
+    More Returns than Return Cancellations = returned; else delivered. Rows in the shape of the Orders
+    report, for the months whose Orders report Flipkart no longer gives (before Feb 2026)."""
     if not len(sales):
         return pd.DataFrame()
     s = sales.copy()
     s["oi"] = oi(s["Order Item ID"])
     s["sub"] = s["Event Sub Type"].astype(str).str.strip()
-    s["val"] = pd.to_numeric(s["Final Invoice Amount (Price after discount+Shipping Charges)"], errors="coerce")
+    s["val"] = pd.to_numeric(s["Price before discount"], errors="coerce")
     s = s.drop_duplicates(["oi", "sub", "Event Type", "val", "Order Date", "Buyer Invoice ID"])
     sale = s[s["sub"] == "Sale"].sort_values("Order Date").drop_duplicates("oi", keep="first").set_index("oi")
     n = s.groupby(["oi", "sub"]).size().unstack(fill_value=0)
-    for c in ["Cancellation", "Return", "Return Cancellation"]:
+    for c in ["Sale", "Cancellation", "Return", "Return Cancellation"]:
         if c not in n.columns:
             n[c] = 0
-    status = np.where(n["Cancellation"] > 0, "CANCELLED",
+    status = np.where((n["Cancellation"] > 0) & (n["Cancellation"] >= n["Sale"]), "CANCELLED",
                       np.where(n["Return"] > n["Return Cancellation"], "RETURNED", "DELIVERED"))
     st = pd.Series(status, index=n.index)
     items = sale.index
@@ -321,7 +323,7 @@ def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, 
     s = settlement(settled)
     for c in ["SALE VALUE", "PAYMENT DATE", "NEFT ID"] + [c for c in SETTLE_COLS.values() if c != "SALE AMOUNT"]:
         d[c] = key.map(s[c]).values if len(s) else np.nan
-    # sale value: the tax Sales Report's invoice value of the sale, else Settled Transactions' Sale Amount
+    # sale value: the tax Sales Report's Price before discount, else Settled Transactions' Sale Amount
     if len(tax_value):
         d["SALE VALUE"] = key.map(tax_value).fillna(pd.Series(d["SALE VALUE"])).values
     d["SOURCE"] = o["_source"].values
@@ -330,6 +332,29 @@ def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, 
     return d.sort_values(["ORDER DATE", "ORDER ITEM ID"]).reset_index(drop=True)
 
 
+def returned_units(raw: pd.DataFrame, returns: pd.DataFrame, sales: pd.DataFrame) -> pd.Series:
+    """Units returned per row of raw: the larger of the Sales Report's Return less Return Cancellation quantity and the
+    Returns report's quantity (a line's returns are not always in both); a line can return no more than it holds."""
+    found = []
+    if len(sales):
+        s = sales.copy()
+        s["oi"] = oi(s["Order Item ID"])
+        s["sub"] = s["Event Sub Type"].astype(str).str.strip()
+        s["q"] = pd.to_numeric(s["Item Quantity"], errors="coerce").fillna(0)
+        s = s[s["sub"].isin(["Return", "Return Cancellation"])].drop_duplicates(["oi", "sub", "Order Date", "Buyer Invoice ID", "q"])
+        found.append((s["q"] * s["sub"].map({"Return": 1, "Return Cancellation": -1})).groupby(s["oi"]).sum().clip(lower=0))
+    if len(returns):
+        r = returns[returns["return_status"].str.lower() != "cancelled"].copy()
+        r["oi"] = oi(r["order_item_id"])
+        r = r.drop_duplicates(["oi", "return_id"])
+        found.append(pd.to_numeric(r["quantity"], errors="coerce").fillna(1).groupby(r["oi"]).sum())
+    if not found:
+        return pd.Series(0.0, index=raw.index)
+    units = pd.concat(found, axis=1).max(axis=1)
+    return raw["ORDER ITEM ID"].map(units).fillna(0).clip(upper=raw["QTY"])
+
+
+RETURN_COLS = ["REASON", "SUB REASON", "RETURN ID", "RETURN STATUS", "RETURN RESULT", "RETURN DATE", "RETURN MONTH", "RETURN TYPE SOURCE"]
 RAW_COLS = ["ORDER DATE", "ORDER MONTH", "ORDER ID", "ORDER ITEM ID", "SOURCE", "OMS STATUS", "SKU", "FSN", "PRODUCT TITLE", "MY SKU",
             "FINAL SKU", "FINAL MY SKU", "DESIGN-NO", "BRAND", "CATEGORY", "QTY", "SALE VALUE", "FULFILMENT TYPE",
             "PORTAL ORDER STATUS", "FINAL STATUS", "RETURN TYPE SOURCE", "REASON", "SUB REASON", "RETURN ID",

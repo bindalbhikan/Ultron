@@ -13,7 +13,7 @@
   starts where its reports do) to last month, and `BUSINESS REPORTING/MasterSheet.xlsx`.
   Months kept on 3 Nov 2026: Myntra orders Apr-25 on (older refused; payments Jan-25), Flipkart orders
   Feb-26 on + the tax Sales Report (items before Feb-26 come from its events, SOURCE = Sales
-  report; none for Nov-25, Dec-25; payments May-26 on), AJIO orders from 13 Dec 2025 (Dec-25 PARTIAL, from the Ads Gap
+  report; Sales Report Archived for Nov-25, Dec-25; payments May-26 on), AJIO orders from 13 Dec 2025 (Dec-25 PARTIAL, from the Ads Gap
   working's old download; the portal answers "No records found" before Jan-26; ledger from 28 Feb 2026).
 * **Flipkart and AJIO start at Apr-25** (`START` in `pipeline.py`; owner's rule, 3 Nov 2026). AJIO's order reports of Apr-25 to Aug-25
   and Dec-25 come from the Tuesday Working folders (weekly 30-day downloads, the newest line wins); days none reaches (Aug 30 to
@@ -24,6 +24,17 @@
   of Nov-25 and Dec-25; SOURCE = Monthly file), AJIO Oct-25 to Jan-26 (order lines the order report does not have).
   Checked against the portal's reports: Flipkart's settlement is the same item by item (May-26 to Sep-26), AJIO's price is
   the same on every line both have.
+* **Flipkart's numbers, by order date** (owner's rule, 4 Nov 2026): every month's tax Sales Report is merged (a month's file also
+  holds earlier months' orders) and each order item counted once, in the month of its own order date, with FBF and non-FBF together.
+  SALE VALUE = **Price before discount**, in every month. Cancelled = as many Cancellation rows as Sale rows: a Sale, a
+  Cancellation and a second Sale is one item invoiced again, still sold (9,331 items, 3,422 of them returned later). Cancelled is now
+  counted, not `-`, in the months with no Orders report; an item never invoiced is in no report there, so Gross and Cancelled stay low
+  (Nov-25: 5,963 against Earn More's 6.3k). From Feb-26 such items come from the Orders report, without a value.
+  Earn More's rupees run above every price column (Nov-25: 25.21 L against 30.57 L; Dec-25: 29.11 L against 36.13 L; not explained).
+  `G:\My Drive\FLIPKART` holds the same Sales Reports from Jan-25 on, with no row PORTAL REPORTS lacks (checked 4 Nov 2026).
+* **Flipkart and AJIO count by quantity, not by order** (owner's rule, 4 Nov 2026): every count sums QTY. A line of which only some
+  units came back or were cancelled is two rows of the same id (`split_part`): those units with their status, the rest as they
+  were, money shared by quantity, the totals unchanged. Counted in the INPUT LOG. Myntra's report is one unit per line.
 * **OMSGuru's status** (`business_report/oms.py`, owner's rule, 3 Nov 2026): `<PORTAL> OMSGURU REPORT <MON-YY>.xlsx` in the
   same month folders, from `portal-reports` (kinds `omsguru`): channels Flipkart, Ajio and Ajio Api (Ajio up to Feb-26, Ajio
   Api after). Lines match on order id + FINAL SKU; the workbook shows OMS STATUS. Delivered, Cancelled and Cancelled Before
@@ -43,9 +54,8 @@
   the ledger the months are as per the monthly files, with their EXP sheet, and no bank figure. A PAYMENT MATCH block goes from the
   bank to NET SETTLEMENT in RAW DATA step by step. Net Received in MONTH WISE = NET SETTLEMENT of every line of the order month
   (for these two portals; Myntra keeps Delivered + Customer Return), so it is by order month and never equals one payment month.
-* **A number that is not known shows `-`, never 0, and is named in the INPUT LOG** (`Report.unknown`). Cancelled: Flipkart
-  Oct-25 to Jan-26, AJIO Oct-25 to Dec-25 (those sources leave out most lines cancelled before shipping, so Gross is low in
-  those months). Payment: a Flipkart order month with no payment on any sold line, PAYMENT STATUS = No Payment Report.
+* **A number that is not known shows `-`, never 0, and is named in the INPUT LOG** (`Report.unknown`). Cancelled: AJIO Oct-25 to
+  Dec-25 (those sources leave out most lines cancelled before shipping, so Gross is low in those months). Payment: a Flipkart order month with no payment on any sold line, PAYMENT STATUS = No Payment Report.
 * AJIO: a status is as old as its file, so a line Shipped over 60 days ago with no return since counts as Delivered (named
   in the INPUT LOG).
 * The same layout for every portal (`business_report/workbook.py`): RAW DATA, MONTH WISE (SALE,

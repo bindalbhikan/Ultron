@@ -146,6 +146,36 @@ def mark_no_payment(raw: pd.DataFrame, months: set) -> None:
     raw.loc[hit, "PAYMENT STATUS"] = "No Payment Report"
 
 
+def split_part(raw: pd.DataFrame, part: pd.Series, status: pd.Series, money: set, return_cols: list[str]) -> tuple[pd.DataFrame, int]:
+    """Count by quantity: a line of which only some units were returned or cancelled becomes two rows of the same id, those
+    units with `status` and the rest with the line's own. A rest whose status said returned is Delivered, without the return's
+    details. Money is shared by quantity; the totals of QTY and money stay as they were (raises otherwise). (raw, lines split)"""
+    part = pd.Series(part.values, index=raw.index).fillna(0)
+    hit = (part > 0) & (part < raw["QTY"])
+    if not hit.any():
+        return raw, 0
+    share = part[hit] / raw.loc[hit, "QTY"]
+    cols = [c for c in money if c in raw.columns]
+    done, rest = raw[hit].copy(), raw[hit].copy()
+    done["QTY"], rest["QTY"] = part[hit], raw.loc[hit, "QTY"] - part[hit]
+    for c in cols:
+        amount = pd.to_numeric(raw.loc[hit, c], errors="coerce")
+        done[c], rest[c] = amount * share, amount * (1 - share)
+    done["FINAL STATUS"] = pd.Series(status.values, index=raw.index)[hit]
+    gone = rest["FINAL STATUS"].isin(["Customer Return", "RTO", "Return Type Pending"])
+    rest.loc[gone, "FINAL STATUS"] = "Delivered"
+    for c in return_cols:
+        if c in rest.columns:
+            rest[c] = rest[c].astype(object)
+            rest.loc[gone, c] = "" if c in ("REASON", "SUB REASON", "RETURN TYPE SOURCE") else None
+    out = pd.concat([raw[~hit], done, rest], ignore_index=True).sort_values("ORDER DATE", kind="stable").reset_index(drop=True)
+    for c in ["QTY", *cols]:
+        before, after = pd.to_numeric(raw[c], errors="coerce").sum(), pd.to_numeric(out[c], errors="coerce").sum()
+        if abs(before - after) > 0.01:
+            raise RuntimeError(f"split by quantity changed the total of {c}: {before} to {after}")
+    return out, int(hit.sum())
+
+
 def flipkart_with_oms(raw: pd.DataFrame, lines: pd.DataFrame, master: pd.DataFrame, cats: dict, no_orders: set) -> tuple[pd.DataFrame, int]:
     """OMSGuru's status on Flipkart's lines, and its lines the reports do not have in months with no Orders report (most
     RTO and some cancelled items never reach the Sales Report or a monthly file). (raw, lines added)"""
@@ -237,6 +267,10 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: d
     have = {pd.Timestamp(f["month"]) for f in files if f["kind"] in ("ORDER", "SALES", "MONTHLY")}
     lacking = raw[~raw["ORDER MONTH"].isin(have) & (raw["ORDER MONTH"] >= pd.Timestamp(first))]
     raw = raw[raw["ORDER MONTH"].isin(have) & (raw["ORDER MONTH"] >= pd.Timestamp(first))].reset_index(drop=True)
+    raw["QTY"] = pd.to_numeric(raw["QTY"], errors="coerce").fillna(1)
+    part = flipkart.returned_units(raw, r, tax).where(raw["FINAL STATUS"].ne("Cancelled"), 0)
+    part_status = raw["FINAL STATUS"].where(raw["FINAL STATUS"].ne("Delivered"), "Return Type Pending")
+    raw, split = split_part(raw, part, part_status, flipkart.MONEY, flipkart.RETURN_COLS)
     frames = {}
     for df, kind in ((o, "ORDER"), (r, "RETURN"), (s, "PAYMENT"), (tax, "SALES"), (monthly, "MONTHLY"), (lines, "OMSGURU")):
         if len(df):
@@ -249,19 +283,24 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: d
                "a return, RTO or cancellation it shows replaces Delivered, In Transit or Return Type Pending; a line the Returns report settled is not changed. FBF orders are not in OMSGuru"])
     unsettled = int(((raw["FINAL STATUS"] == "Delivered") & raw["SALE VALUE"].isna()).sum())
     lg.append(["Orders used", "-", "one row per order item", len(raw), "Order date", raw["ORDER DATE"].min(), raw["ORDER DATE"].max(),
-               f"sale value = the Sales Report's invoice value, else Settled Transactions' Sale Amount; {unsettled:,} delivered items have none; "
+               f"sale value = the Sales Report's Price before discount, else Settled Transactions' Sale Amount; {unsettled:,} delivered items have none; "
                f"{int((raw['SOURCE'] == 'Sales report').sum()):,} items from the Sales Report only (months without an Orders report), "
                f"{int((raw['SOURCE'] == 'Monthly file').sum()):,} from the owner's monthly files only"])
+    lg.append(["Counted by quantity", "-", f"{split:,} lines returned in part", split, "-", pd.NaT, pd.NaT,
+               "every count sums QTY; a line of which only some units came back is two rows of the same ORDER ITEM ID, money shared by quantity"])
     months = set(raw["ORDER MONTH"].dropna())
     with_orders = {pd.Timestamp(f["month"]) for f in files if f["kind"] == "ORDER"}
     with_sales = {pd.Timestamp(f["month"]) for f in files if f["kind"] == "SALES"}
-    unknown = {"cq": months - with_orders, "rq": set() if len(lines) else months - with_orders - with_sales,
+    unknown = {"cq": months - with_orders - with_sales, "rq": set() if len(lines) else months - with_orders - with_sales,
                "recv": no_payment_months(raw, "NET SETTLEMENT", 0.10)}     # a few stray settlements are not a month's payment
     partly = no_payment_months(raw, "NET SETTLEMENT", 0.90) - unknown["recv"]
     mark_no_payment(raw, unknown["recv"])
     if unknown["cq"]:
         lg.append(["Not known: Cancelled", "-", month_names(unknown["cq"]), "-", "-", pd.NaT, pd.NaT,
-                   "shown as -: the Orders report starts in Feb-26; the Sales Report, the monthly files and OMSGuru leave out most items cancelled before shipping, so Gross Qty and Gross Value are low in these months"])
+                   "shown as -: no Orders report and no Sales Report for these months"])
+    if months & with_sales - with_orders:
+        lg.append(["Cancelled from the Sales Report", "-", month_names(months & with_sales - with_orders), "-", "-", pd.NaT, pd.NaT,
+                   "no Orders report: every month's Sales Report merged, by order date. An item never invoiced (cancelled before dispatch) is in no report, so Gross and Cancelled are low in these months; an item cancelled and invoiced again counts as sold"])
     if unknown["rq"]:
         lg.append(["Not known: RTO", "-", month_names(unknown["rq"]), "-", "-", pd.NaT, pd.NaT,
                    "shown as -: no Sales Report for these months and the monthly files hold only items with a settlement, so most RTO items are not in them. Net Sale and Customer Return are whole"])
@@ -322,6 +361,15 @@ def build_ajio(files: list[dict], master: pd.DataFrame, cats: dict, first: date)
     from_file = raw[raw["SOURCE"] == "Monthly file"]
     before_ledger = no_payment_months(raw, "INVOICE PAID")
     raw = ajio.file_payment(raw, r, before_ledger)
+    # by quantity, after the payment (it maps a line's money by its key): cancelled units first, then returned ones
+    raw["QTY"] = pd.to_numeric(raw["QTY"], errors="coerce").fillna(1)
+    money = ajio.MONEY - {"MRP", "SELLING PRICE"}
+    raw, cancel_split = split_part(raw, ajio.cancelled_units(raw, o).where(raw["FINAL STATUS"].ne("Cancelled"), 0),
+                                   pd.Series("Cancelled", index=raw.index), money, ajio.RETURN_COLS)
+    returned = ajio.returned_units(raw, r).where(raw["FINAL STATUS"].isin(["Customer Return", "RTO"]), 0)
+    raw, return_split = split_part(raw, returned, raw["FINAL STATUS"], money, ajio.RETURN_COLS)
+    lg.append(["Counted by quantity", "-", f"{return_split:,} lines returned in part, {cancel_split:,} cancelled in part", return_split + cancel_split, "-", pd.NaT, pd.NaT,
+               "every count sums QTY; a line of which only some units came back or were cancelled is two rows of the same order line, money shared by quantity"])
     from_oms = raw[raw["SOURCE"] == "OMSGuru"]
     value_seen = raw["SALE VALUE"].notna().groupby(raw["ORDER MONTH"]).any()
     no_value = set(value_seen[~value_seen].index)
