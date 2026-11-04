@@ -30,7 +30,10 @@
   Cancellation and a second Sale is one item invoiced again, still sold (9,331 items, 3,422 of them returned later). Cancelled is now
   counted, not `-`, in the months with no Orders report; an item never invoiced is in no report there, so Gross and Cancelled stay low
   (Nov-25: 5,963 against Earn More's 6.3k). From Feb-26 such items come from the Orders report, without a value.
-  Earn More's rupees run above every price column (Nov-25: 25.21 L against 30.57 L; Dec-25: 29.11 L against 36.13 L; not explained).
+  Earn More's rupees run above every price column of the Sales Report (Nov-25: 25.21 L against 30.57 L; not explained), so its
+  figures are read from the portal itself: sheet **EARN MORE**, first to open (`FlipkartClient.earn_more`, order months with data, Nov-25 on;
+  older months `-`). Checked against the screen: Aug-26 9,040 / 42.87 L, cancellations 2,506 / 12.05 L, returns 1,799 / 8.51 L,
+  net 4,735 / 22.31 L. Its Cancellations hold RTO. MONTH WISE and the other sheets stay on RAW DATA, the lines of the reports.
   `G:\My Drive\FLIPKART` holds the same Sales Reports from Jan-25 on, with no row PORTAL REPORTS lacks (checked 4 Nov 2026).
 * **Flipkart and AJIO count by quantity, not by order** (owner's rule, 4 Nov 2026): every count sums QTY. A line of which only some
   units came back or were cancelled is two rows of the same id (`split_part`): those units with their status, the rest as they

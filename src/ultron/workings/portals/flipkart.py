@@ -75,6 +75,27 @@ class FlipkartClient:
             raise FlipkartError(f"Flipkart metrics API failed: HTTP {r.status_code} {r.text[:200]}")
         return r.json()
 
+    def earn_more(self, first: date, last: date) -> dict[str, float]:
+        """Seller Hub > NXT Insights > Earn More for first..last, every warehouse: gross, cancellation and return units and
+        amounts by order date. Interval MONTHLY is what the screen uses and reaches back further (Nov-25) than DAILY
+        (May-26), and only it gives the screen's exact figures. Cancellation holds RTO too. All 0 = no data for the range."""
+        metrics = ["gross_units", "gross_amount", "cancellation_units", "cancellation_amount", "return_units", "return_amount"]
+        total = dict.fromkeys(metrics, 0.0)
+        page, pages = 0, 1
+        while page < pages:
+            data = self._metrics({
+                "filters": [{"field_name": "date", "filter_type": "RANGE_MATCH", "range_from": f"{first:%Y-%m-%d}",
+                             "range_to": f"{last:%Y-%m-%d}"}],
+                "sort": [], "metrics": [{"metric_name": m, "metric_field": m, "metric_type": "longSum"} for m in metrics],
+                "derived_metrics": [], "aggregate_by": "all", "interval": "MONTHLY", "pivot": ["address_state_code"],
+                "page_number": page, "page_size": 500}, "sell_more_aggregated_groupby_view")
+            for row in data.get("data") or []:
+                for m in metrics:
+                    total[m] += float(row.get(m) or 0)
+            pages = int(data.get("total_pages") or 1)
+            page += 1
+        return total
+
     def fbf_units(self, days: list[date], locations: list[str] | None = None) -> tuple[Counter, Counter]:
         """(gross units per day, cancelled units per day) for the FBF warehouses.
         The API sums the whole requested range into one row, so each day is queried on its own."""

@@ -53,6 +53,7 @@ class Report:
     unknown: dict[str, set] = field(default_factory=dict)   # BASE key -> months its number is not known: "-", never 0
     recv_all: bool = False                    # Net Received = the settlement of every line (a charge on an RTO is money too)
     pay_match: list[tuple[str, float]] = field(default_factory=list)   # PAYMENT: from the bank to the order lines, step by step
+    earn_more: pd.DataFrame | None = None     # EARN MORE: the portal's month figures, index = order month
 
 
 def any_date(s: pd.Series) -> pd.Series:
@@ -494,8 +495,64 @@ class Writer:
         ws.freeze_panes(1, 4)
         ws.autofilter(0, 0, len(raw), len(self.r.raw_cols) - 1)
 
+    def earn_sheet(self) -> None:
+        """EARN MORE: the portal's own month figures, as its screen shows them, beside the units of RAW DATA. A month it has
+        no data for shows -, never 0."""
+        data = self.r.earn_more
+        ws = self.wb.add_worksheet("EARN MORE")
+        groups = [("Gross Units & Sales", 2), ("Cancellations (RTO included)", 2), ("Returns", 2), ("Net Units & Sales", 2), ("Gross ASP", 1), ("RAW DATA", 2)]
+        subs = ["Units", "Sales", "Units", "Amount", "Units", "Amount", "Units", "Sales", "Rs", "Gross Qty", "Earn More less RAW DATA"]
+        ws.merge_range(0, 0, 0, len(subs), f"{self.r.portal} EARN MORE, BY ORDER MONTH (figures of the portal's Earn More screen)", self.title)
+        ws.merge_range(1, 0, 2, 0, "Month", self.hdr)
+        col = 1
+        for name, width in groups:
+            if width > 1:
+                ws.merge_range(1, col, 1, col + width - 1, name, self.hdr)
+            else:
+                ws.write(1, col, name, self.hdr)
+            col += width
+        for j, name in enumerate(subs, start=1):
+            ws.write(2, j, name, self.sub)
+        keys = ["gross_units", "gross_amount", "cancellation_units", "cancellation_amount", "return_units", "return_amount"]
+        total = dict.fromkeys(keys, 0.0)
+        total_qty = 0.0
+        for i, month in enumerate(self.months, start=3):
+            ws.write_datetime(i, 0, month.to_pydatetime(), self.mon)
+            qty = float(self.raw.loc[self.raw["ORDER MONTH"] == month, "QTY"].sum())
+            ws.write_number(i, 10, qty, self.int)
+            if month not in data.index:
+                for j in [*range(1, 10), 11]:
+                    ws.write_string(i, j, "-", self.dash)
+                continue
+            row = data.loc[month]
+            total_qty += qty
+            for j, k in enumerate(keys, start=1):
+                ws.write_number(i, j, float(row[k]), self.int)
+                total[k] += float(row[k])
+            b, c, e, g = (self.cell(i, n) for n in (1, 3, 5, 2))
+            ws.write_formula(i, 7, f"={b}-{c}-{e}", self.int, float(row["gross_units"] - row["cancellation_units"] - row["return_units"]))
+            ws.write_formula(i, 8, f"={g}-{self.cell(i, 4)}-{self.cell(i, 6)}", self.int, float(row["gross_amount"] - row["cancellation_amount"] - row["return_amount"]))
+            ws.write_formula(i, 9, f"=IFERROR({g}/{b},0)", self.int, float(row["gross_amount"] / row["gross_units"]) if row["gross_units"] else 0.0)
+            ws.write_formula(i, 11, f"={b}-{self.cell(i, 10)}", self.int, float(row["gross_units"]) - qty)
+        r = 3 + len(self.months)
+        ws.write_string(r, 0, "Total of the months with figures", self.ttxt)
+        for j, k in enumerate(keys, start=1):
+            ws.write_number(r, j, total[k], self.tint)
+        ws.write_number(r, 7, total["gross_units"] - total["cancellation_units"] - total["return_units"], self.tint)
+        ws.write_number(r, 8, total["gross_amount"] - total["cancellation_amount"] - total["return_amount"], self.tint)
+        ws.write_number(r, 9, total["gross_amount"] / total["gross_units"] if total["gross_units"] else 0, self.tint)
+        ws.write_number(r, 10, total_qty, self.tint)
+        ws.write_number(r, 11, total["gross_units"] - total_qty, self.tint)
+        ws.set_column(0, 0, 30)
+        ws.set_column(1, 11, 12)
+        ws.set_column(11, 11, 22)
+        ws.freeze_panes(3, 1)
+        ws.activate()
+
     def write(self) -> None:
         ws_raw = self.wb.add_worksheet("RAW DATA")          # first in the tab order, written last
+        if self.r.earn_more is not None and len(self.r.earn_more):
+            self.earn_sheet()
         self.month_sheet()
         self.group_sheet("BRAND WISE", ["BRAND"])
         self.group_sheet("CATEGORY WISE", ["CATEGORY"])

@@ -146,6 +146,23 @@ def mark_no_payment(raw: pd.DataFrame, months: set) -> None:
     raw.loc[hit, "PAYMENT STATUS"] = "No Payment Report"
 
 
+def earn_more_months(months: list) -> tuple[pd.DataFrame | None, str]:
+    """(Flipkart's Earn More figures per order month, why not). A month the portal has no data for is not in the table."""
+    from ..return_analysis.sources import flipkart_client
+    try:
+        client = flipkart_client()
+        rows = {}
+        for month in months:
+            first = pd.Timestamp(month)
+            got = client.earn_more(first.date(), (first + pd.offsets.MonthEnd(0)).date())
+            if got["gross_units"] > 0:
+                rows[first] = got
+        return pd.DataFrame.from_dict(rows, orient="index").sort_index(), ""
+    except Exception as exc:  # noqa: BLE001 - the workbook does not depend on it; it is named in the INPUT LOG
+        log.warning("Flipkart Earn More not read: %s", exc)
+        return None, str(exc)[:120]
+
+
 def split_part(raw: pd.DataFrame, part: pd.Series, status: pd.Series, money: set, return_cols: list[str]) -> tuple[pd.DataFrame, int]:
     """Count by quantity: a line of which only some units were returned or cancelled becomes two rows of the same id, those
     units with `status` and the rest with the line's own. A rest whose status said returned is Delivered, without the return's
@@ -315,7 +332,16 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: d
                len(master), "-", pd.NaT, pd.NaT, ""])
     bank = flipkart.bank_paid([(f["path"], pd.Timestamp(f["month"])) for f in files if f["kind"] == "PAYMENT"],
                               [(f["path"], pd.Timestamp(f["month"])) for f in files if f["kind"] == "MONTHLY"])
+    earn, why = earn_more_months(sorted(months))
+    if why:
+        lg.append(["Earn More not read", "-", why, "-", "-", pd.NaT, pd.NaT, "the EARN MORE sheet is left out; the other sheets are whole"])
+    else:
+        empty = months - set(earn.index)
+        lg.append(["Earn More", "-", f"{len(earn)} months from Seller Hub", len(earn), "Order date", pd.NaT, pd.NaT,
+                   "its Gross counts items never invoiced and its rupees run above the Sales Report's prices, so it is above RAW DATA; "
+                   "its Cancellations hold RTO" + (f"; shown as -: {month_names(empty)} (the portal has no data)" if empty else "")])
     rep = flipkart.report(raw, s, pd.DataFrame(lg, columns=LOG_COLS), bank)
+    rep.earn_more = earn
     rep.unknown = unknown
     if rep.pay_months is not None and "Net Bank Paid" in rep.pay_months.columns:
         paid, orders, lines = (float(rep.pay_months["Net Bank Paid"].sum()), float(rep.pay_months["Order Settlement"].sum()),

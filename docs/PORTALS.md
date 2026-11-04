@@ -72,7 +72,7 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 
 ## Flipkart NXT Insights
 
-* `POST /napi/metrics/search` with `x-view-name: sell_more_aggregated_groupby_view`: gross, cancellation (it holds RTO too) and return units and amounts by order date, pivoted by state. Through this view no data before May-26; the Earn More screen shows rounded figures from Nov-25. Its rupees run above every price column of the tax Sales Report (not explained).
+* `POST /napi/metrics/search` with `x-view-name: sell_more_aggregated_groupby_view`: gross, cancellation (it holds RTO too) and return units and amounts by order date, pivoted by state; this is the NXT Insights > Earn More screen (`FlipkartClient.earn_more`). `gross_units`, `gross_amount`, `cancellation_units`, `cancellation_amount`, `return_units`, `return_amount`; net = gross less both. Interval `MONTHLY` for a whole month gives the screen's exact figures from Nov-25 on (Aug-26 checked); `DAILY` has no data before May-26 and differs a little. Its rupees run above every price column of the tax Sales Report (not explained).
 
 ## DigiBizz ERP — `portals/erp.py`
 
