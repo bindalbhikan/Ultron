@@ -19,6 +19,8 @@ log = logging.getLogger("bindal.erp_oms_return")
 ACCEPTED = {"Return Received", "Partial Return Received", "Cancelled Return Received", "Partial Cancelled Return Received"}
 CANCELLED = {"Cancelled", "Cancelled Before Shipping"}
 STATUS = re.compile(r'class="label label-\w+ status">\s*([^<]+?)\s*</span>')
+SKU_ROW = re.compile(r"data\[SkuQty\]\[(\d+)\]\[sku_code\]")
+REASON = re.compile(r'"(?:message|msg|error|reason)"\s*:\s*"([^"]+)"')
 RETURN_TRACKER = re.compile(r"<dt>Return Tracking Id</dt>\s*<dd>\s*([^&<\s]*)")
 
 
@@ -35,6 +37,7 @@ class Result:
     channel: str = ""
     detail: str = ""
     skus: dict = field(default_factory=dict)
+    done: set = field(default_factory=set)      # when only some forms went through: the SKUs fully on those forms
 
 
 def _token(html: str) -> str:
@@ -85,8 +88,20 @@ def open_form(client: OmsGuruClient, awb: str):
     return [f for f in s.find_all("form") if (f.get("id") or "").startswith("ReturnForm")]
 
 
+def rows_of(form) -> dict[str, list[tuple[str, int | None]]]:
+    """{SKU in capitals: [(its row on the form, the qty that row takes; None = the form sets no limit)]}"""
+    rows: dict[str, list[tuple[str, int | None]]] = {}
+    for i in form.find_all("input"):
+        m = SKU_ROW.fullmatch(i.get("name") or "")
+        if m:
+            good = form.find("input", attrs={"name": f"data[SkuQty][{m.group(1)}][good]"})
+            top = str((good.get("max") if good else "") or "").strip()
+            rows.setdefault((i.get("value") or "").strip().upper(), []).append((m.group(1), int(top) if top.isdigit() else None))
+    return rows
+
+
 def fill(form, wanted: dict[str, int], warehouses: dict[str, str], erp_type: str = "") -> tuple[dict | None, str]:
-    """The fields to post for these SKU quantities, or (None, why)."""
+    """The fields to post for these SKU quantities, spread over the SKU's rows, or (None, why)."""
     body = {}
     for i in form.find_all("input"):
         n = i.get("name")
@@ -96,17 +111,18 @@ def fill(form, wanted: dict[str, int], warehouses: dict[str, str], erp_type: str
         if sel.get("name"):
             chosen = sel.find("option", selected=True)
             body[sel["name"]] = chosen.get("value") if chosen else ""
-    rows = {}
-    for k, v in body.items():
-        m = re.fullmatch(r"data\[SkuQty\]\[(\d+)\]\[sku_code\]", k)
-        if m:
-            rows[v.strip().upper()] = m.group(1)
-    missing = [s for s in wanted if s not in rows]
-    if missing:
+    rows = rows_of(form)
+    if [s for s in wanted if s not in rows]:
         return None, "SKU not on the form"
-    for sku, n in rows.items():
-        body[f"data[SkuQty][{n}][good]"] = str(wanted.get(sku, 0))
-        body[f"data[SkuQty][{n}][bad]"] = "0"
+    for sku, on_form in rows.items():
+        left = wanted.get(sku, 0)
+        for n, room in on_form:
+            take = left if room is None else min(left, room)
+            body[f"data[SkuQty][{n}][good]"] = str(take)
+            body[f"data[SkuQty][{n}][bad]"] = "0"
+            left -= take
+        if left:
+            return None, "Qty above sent"
     text = re.sub(r"\s+", " ", form.get_text(" ", strip=True))
     dispatch = re.search(r"Dispatch Warehouse\s+(Warehouse \d+)", text)
     warehouse = next((k for k, v in warehouses.items() if dispatch and v == dispatch.group(1)), "")
@@ -121,20 +137,55 @@ def fill(form, wanted: dict[str, int], warehouses: dict[str, str], erp_type: str
     return body, ""
 
 
+def refusal(r) -> str:
+    """Why OMSGuru refused a posted form; "" when it did not."""
+    if r.status_code != 200:
+        return f"HTTP {r.status_code}"
+    if '"result":"Fail"' not in r.text.replace(" ", ""):
+        return ""
+    m = REASON.search(r.text)
+    return m.group(1)[:80] if m else "OMSGuru answered Fail"
+
+
+def split_on_forms(forms: list, wanted: dict[str, int]) -> tuple[list[tuple], dict[str, int], set[str]]:
+    """Each SKU's qty on the forms that have it, up to what each takes: ([(form, part)], qty left, the SKUs on no form).
+    An AWB can open several forms (an order split in parts)."""
+    plan, left, seen = [], dict(wanted), set()
+    for form in forms:
+        part = {}
+        for sku, on_form in rows_of(form).items():
+            seen.add(sku)
+            if left.get(sku):
+                rooms = [room for _, room in on_form]
+                take = left[sku] if None in rooms else min(left[sku], sum(rooms))
+                if take:
+                    part[sku] = take
+                    left[sku] -= take
+        if part:
+            plan.append((form, part))
+    return plan, {s: n for s, n in left.items() if n}, set(wanted) - seen
+
+
 def accept(client: OmsGuruClient, awb: str, wanted: dict[str, int], note: str, warehouses: dict[str, str], dry_run: bool = False,
            erp_type: str = "") -> Result:
-    """Accept one AWB's SKUs as Good. wanted: {SKU in capitals: qty}"""
+    """Accept one AWB's SKUs as Good. wanted: {SKU in capitals: qty}
+
+    Accepted means OMSGuru refused no form and, read back from the order page, an item's status moved to a received one. An AWB can
+    belong to several orders: all of them are read, and each one that moved gets the note."""
     res = Result(awb=awb, outcome="Failed", skus=wanted)
     ids = client.search(awb, "AWB")
     if not ids:
         res.outcome = "Not found in OMS"
         return res
     res.order = ids[0]
-    html, statuses, res.return_awb = read_order(client, res.order)
+    before = {i: read_order(client, i) for i in ids}
+    html, first, res.return_awb = before[ids[0]]
     details(res, html)
-    res.status = statuses[0] if statuses else ""
+    res.status = first[0] if first else ""
+    statuses = [s for i in ids for s in before[i][1]]
     if statuses and all(s in ACCEPTED for s in statuses):
-        res.note = add_note(client, res.order, html, note) if not dry_run else False
+        if not dry_run:
+            res.note = all([add_note(client, i, before[i][0], note) for i in ids])
         res.outcome = "Already accepted"
         return res
     if statuses and all(s in CANCELLED for s in statuses):
@@ -144,35 +195,42 @@ def accept(client: OmsGuruClient, awb: str, wanted: dict[str, int], note: str, w
     if not forms:
         res.detail = "no return form"
         return res
-    # an AWB can open several forms (an order split in parts): each SKU goes on the form that has it
-    plan, left = [], dict(wanted)
-    for form in forms:
-        on_form = {i.get("value", "").strip().upper() for i in form.find_all("input") if re.fullmatch(r"data\[SkuQty\]\[\d+\]\[sku_code\]", i.get("name") or "")}
-        part = {s: left.pop(s) for s in list(left) if s in on_form}
-        if part:
-            body, why = fill(form, part, warehouses, erp_type)
-            if body is None:
-                res.detail = why
-                return res
-            plan.append((form, body))
-    if left:
-        res.outcome, res.detail = "SKU not on the form", ", ".join(sorted(left))[:80]
+    split, left, unknown = split_on_forms(forms, wanted)
+    if unknown:
+        res.outcome, res.detail = "SKU not on the form", ", ".join(sorted(unknown))[:80]
         return res
+    if left:
+        res.outcome, res.detail = "Qty above sent", ", ".join(sorted(left))[:80]
+        return res
+    plan = []
+    for form, part in split:
+        body, why = fill(form, part, warehouses, erp_type)
+        if body is None:
+            res.detail = why
+            return res
+        plan.append((form, body, part))
     if dry_run:
         res.outcome = "Would accept"
         return res
-    for form, body in plan:
-        r = client.s.post(BASE_URL + form.get("action"), data=body, timeout=client.timeout)
-        if r.status_code != 200:
-            res.detail = f"HTTP {r.status_code}"
-            return res
-        if '"result":"Fail"' in r.text.replace(" ", ""):
-            res.detail = r.text[:120]
-    html, statuses, res.return_awb = read_order(client, res.order)
-    res.status = statuses[0] if statuses else ""
-    if any(s in ACCEPTED for s in statuses):
+    refused, went, stuck = [], set(), set()
+    for form, body, part in plan:
+        why = refusal(client.s.post(BASE_URL + form.get("action"), data=body, timeout=client.timeout))
+        if why:
+            refused.append(why)
+            stuck |= set(part)
+        else:
+            went |= set(part)
+    after = {i: read_order(client, i) for i in ids}
+    moved = [i for i in ids if after[i][1] != before[i][1] and any(s in ACCEPTED for s in after[i][1])]
+    shown = after[moved[0] if moved else ids[0]]
+    res.status = shown[1][0] if shown[1] else ""
+    res.return_awb = shown[2] or res.return_awb
+    if moved:
+        res.note = all([add_note(client, i, after[i][0], note) for i in moved])
+    if moved and not refused:
         res.outcome = "Accepted"
-        res.note = add_note(client, res.order, html, note)
-    else:
-        res.detail = f"status after: {res.status}"
+        return res
+    res.detail = "; ".join(refused) or f"status after: {res.status}"
+    if moved:
+        res.done = went - stuck
     return res

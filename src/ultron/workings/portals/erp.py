@@ -24,7 +24,10 @@ log = logging.getLogger(__name__)
 API = "https://digicorptech.net/DigiBizzErpBindalApi/api"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
 COMPANY = [{"key": "companyId", "value": 1}, {"key": "companyYearId", "value": 50}, {"key": "officeBranchId", "value": 1}]
-PAGE = 10000
+# One request for the whole report, sorted, never pages (seen 4 Nov 2026): without a sort the ERP orders each page its own way, so a
+# paged read of 28,071 rows could repeat about 1,200 and lose about 700 with its count still right; with a filter it ignores skip, so
+# every page repeats the first and the rows past 10,000, the newest among them, never come.
+TAKE_ALL = 1000000
 
 GRN_REPORT = 58          # "GR GRN Report"
 DISPATCH_REPORT = 62     # "Shipping Label Print (Packing Report)"
@@ -112,30 +115,33 @@ class Erp:
         missing = [f for f in headers if f not in alias.values()]
         if missing:
             raise ErpError(f"ERP report {report_id} no longer has fields {missing}")
-        rows, skip, total = [], 0, None
-        while total is None or skip < total:
-            p = {"reportId": report_id, "userId": self.user_id, "runtimeParamJSON": "[]",
-                 "skip": skip, "take": PAGE, "requireTotalCount": "true"}
-            if where:
-                column = {f: c for c, f in alias.items()}
-                parts = [[column[f], op, v] for f, op, v in where]
-                p["filter"] = json.dumps(parts[0] if len(parts) == 1 else
-                                         [x for part in parts for x in ("and", part)][1:])
-            v = self.s.get(f"{API}/TblRptReports/GetReportPreviewDataSource", params=p, timeout=self.timeout).json()
-            total = v.get("totalCount") or 0
-            data = v.get("data") or []
-            if not data:
-                break
-            for rec in data:
-                row = {}
-                for col, field in alias.items():
-                    if field in headers:
-                        val = rec.get(col)
-                        if isinstance(val, str) and ISO.match(val):
-                            val = datetime.fromisoformat(val[:19])
-                        row[headers[field]] = val
-                rows.append(row)
-            skip += PAGE
+        p = {"reportId": report_id, "userId": self.user_id, "runtimeParamJSON": "[]", "skip": 0, "take": TAKE_ALL,
+             "requireTotalCount": "true", "sort": json.dumps([{"selector": c, "desc": False} for c in alias])}
+        if where:
+            column = {f: c for c, f in alias.items()}
+            parts = [[column[f], op, v] for f, op, v in where]
+            p["filter"] = json.dumps(parts[0] if len(parts) == 1 else
+                                     [x for part in parts for x in ("and", part)][1:])
+        r = self.s.get(f"{API}/TblRptReports/GetReportPreviewDataSource", params=p, timeout=self.timeout)
+        if r.status_code != 200:
+            raise ErpError(f"ERP report {report_id}: HTTP {r.status_code}")
+        try:
+            v = r.json()
+            data, total = v["data"], v["totalCount"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise ErpError(f"ERP report {report_id}: no data in its answer") from exc
+        if len(data) != total:
+            raise ErpError(f"ERP report {report_id}: {len(data)} rows came of {total}")
+        rows = []
+        for rec in data:
+            row = {}
+            for col, field in alias.items():
+                if field in headers:
+                    val = rec.get(col)
+                    if isinstance(val, str) and ISO.match(val):
+                        val = datetime.fromisoformat(val[:19])
+                    row[headers[field]] = val
+            rows.append(row)
         log.info("ERP report %s: %d rows", report_id, len(rows))
         return rows
 

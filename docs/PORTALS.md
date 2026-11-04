@@ -80,6 +80,10 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   like the web app). Report **58** GR GRN (returns booked into the warehouse), report **62**
   Shipping Label Print / packing (`packed(portal, since)`).
 * In report 62 the "Order ID" is the **AWB** for AJIO and the **Myntra tracking number** for Myntra.
+* **Never page a report** (`skip` / `take`), measured 4 Nov 2026. Without a sort each page has its own order: a read of 28,071 rows
+  repeated about 1,200 and lost about 700 with its count still right, not on every read. With a `filter`, `skip` is ignored: every
+  page repeats the first 10,000 and the rest, the newest rows among them, never come. `report()` asks for everything in one request,
+  sorted on every column, and raises when the rows are not `totalCount`, the status is not 200 or the answer has no data.
 
 ## OMSGuru — `portals/omsguru.py`, `portals/omsguru_returns.py`
 

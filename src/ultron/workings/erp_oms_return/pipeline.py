@@ -5,7 +5,8 @@ adds it up by month and by portal and month, in formulas on that sheet. Each AWB
 Good, the note "Return accepted in ERP <GRN date>" on the order. Never a Putaway, so OMSGuru's stock does not change.
 
 Not accepted, and said why on the sheet: a line with no id in the ERP (it cannot be tied to an order), an AWB OMSGuru does not know, a
-SKU the ERP booked that the order does not have (maybe the wrong item came back).
+SKU the ERP booked that the order does not have (maybe the wrong item came back), a qty above what was sent, a GRN line with no date,
+qty or SKU. ACTION is kept per GRN line, so a later GRN line of an AWB already accepted is still worked.
 """
 from __future__ import annotations
 
@@ -35,14 +36,21 @@ FILE = "ERP TO OMSGURU RETURN.xlsx"
 SHEET = "2026"
 DONE = "Accepted"
 NO_ID = "No ERP ID"
+NO_DATA = "No GRN date, qty or SKU: check"
 FAILS_IN_A_ROW = 40
 COLUMNS = ["GRN DATE", "GRN VOUCHER", "PORTAL", "OMS CHANNEL", "ORDER DATE", "SHIPPING LABEL PRINT DATE", "ORDER ID", "ITEM ID", "SUB ORDER ID",
            "FWD AWB", "RT AWB", "SKU", "BARCODE", "QTY", "ERP STATUS", "OMS STATUS", "ACTION", "NOTE IN OMS", "ERP REMARK"]
-KEEP = ["OMS CHANNEL", "ORDER DATE", "ORDER ID", "SUB ORDER ID", "RT AWB", "OMS STATUS", "ACTION", "NOTE IN OMS"]
+KEEP = ["OMS CHANNEL", "ORDER DATE", "ORDER ID", "SUB ORDER ID", "RT AWB", "OMS STATUS"]      # the order's, per AWB
+KEEP_LINE = ["ACTION", "NOTE IN OMS"]                                                         # the GRN line's
 
 
 def blank(s: pd.Series) -> pd.Series:
-    return s.astype(str).str.strip().replace({"-": "", "nan": "", "NaN": "", "None": "", "NaT": ""})
+    return s.fillna("").astype(str).str.strip().replace({"-": "", "nan": "", "NaN": "", "None": "", "NaT": ""})
+
+
+def line_key(d: pd.DataFrame) -> pd.Series:
+    """One GRN line: its AWB, SKU and voucher."""
+    return d["FWD AWB"] + "|" + blank(d["SKU"]).str.upper() + "|" + blank(d["GRN VOUCHER"])
 
 
 def erp_lines(erp: Erp) -> pd.DataFrame:
@@ -57,20 +65,21 @@ def erp_lines(erp: Erp) -> pd.DataFrame:
         "GRN DATE": pd.to_datetime(g["Voucher Date"], errors="coerce"), "GRN VOUCHER": g["Voucher No."],
         "PORTAL": blank(g["Order Portal Name"]).replace("", "No Portal"), "OMS CHANNEL": "", "ORDER DATE": "",
         "SHIPPING LABEL PRINT DATE": awb.map(printed), "ORDER ID": "", "ITEM ID": blank(g["Order Item Id"]), "SUB ORDER ID": "",
-        "FWD AWB": awb, "RT AWB": "", "SKU": g["SKU Code"].astype(str).str.strip(), "BARCODE": g["Barcode"],
-        "QTY": pd.to_numeric(g["Qty (Pcs.)"], errors="coerce").fillna(1), "ERP STATUS": "GRN " + g["Stock Type"].astype(str).str.strip(),
+        "FWD AWB": awb, "RT AWB": "", "SKU": blank(g["SKU Code"]), "BARCODE": g["Barcode"],
+        "QTY": pd.to_numeric(g["Qty (Pcs.)"], errors="coerce"), "ERP STATUS": "GRN " + g["Stock Type"].astype(str).str.strip(),
         "OMS STATUS": "", "ACTION": "", "NOTE IN OMS": "", "ERP REMARK": blank(g["Trans. Remarks"])})
 
 
 def last_sheet(folder: DriveFolder, work: Path) -> pd.DataFrame:
-    """What the sheet knows of each AWB already (kept when the portal is not asked again); empty on a first run."""
+    """What the sheet knows of each AWB and GRN line already (kept when the portal is not asked again); empty on a first run."""
+    cols = ["FWD AWB", "SKU", "GRN VOUCHER"] + KEEP + KEEP_LINE
     path = folder.download(FILE, work / FILE)
     if not path:
-        return pd.DataFrame(columns=["FWD AWB"] + KEEP)
+        return pd.DataFrame(columns=cols)
     d = pd.read_excel(path, sheet_name=SHEET, dtype=str)
     if "FWD AWB" not in d.columns:
-        return pd.DataFrame(columns=["FWD AWB"] + KEEP)
-    d = d.reindex(columns=["FWD AWB"] + KEEP).fillna("")
+        return pd.DataFrame(columns=cols)
+    d = d.reindex(columns=cols).fillna("")
     d["FWD AWB"] = d["FWD AWB"].astype(str).str.strip().str.upper()
     return d[d["FWD AWB"] != ""]
 
@@ -113,6 +122,8 @@ def action_of(res) -> str:
         return DONE
     if res.outcome == "SKU not on the form":
         return "ERP and OMS SKU differ: check"
+    if res.outcome == "Qty above sent":
+        return "ERP qty above sent: check"
     if res.outcome == "OMS shows cancelled":
         return "OMS shows cancelled: check"
     if res.outcome == "Not found in OMS":
@@ -225,9 +236,16 @@ def run(args) -> int:
     has_id = out["FWD AWB"] != ""
     for c in KEEP:
         out.loc[has_id, c] = out.loc[has_id, "FWD AWB"].map(known[c]).fillna("").values
+    known_line = prev.assign(k=line_key(prev).astype(object)).drop_duplicates("k", keep="last").set_index("k")
+    keys = line_key(out)
+    for c in KEEP_LINE:
+        out.loc[has_id, c] = keys[has_id].map(known_line[c]).fillna("").values
     out.loc[~has_id, "ACTION"] = NO_ID
+    complete = out["GRN DATE"].notna() & (out["QTY"] > 0) & (out["SKU"] != "")
+    out.loc[has_id & ~complete & (out["ACTION"] != DONE), "ACTION"] = NO_DATA
 
-    todo = out[has_id & (out["ACTION"] != DONE)].copy()
+    pending = has_id & complete & (out["ACTION"] != DONE)
+    todo = out[pending].copy()
     todo["k"] = todo["SKU"].str.upper()
     jobs = []
     for awb, g in todo.groupby("FWD AWB"):
@@ -237,17 +255,20 @@ def run(args) -> int:
     results, stopped = work_returns(jobs, args.dry_run or args.no_upload)
     accepted_now = 0
     for awb, res in results.items():
-        at = out["FWD AWB"] == awb
+        same = out["FWD AWB"] == awb
+        at = same & pending                     # lines already accepted stay as they are
         out.loc[at, "ACTION"] = action_of(res)
         if res is None:
             continue
         accepted_now += res.outcome == "Accepted"
+        if res.done:                            # some forms went through, others were refused
+            out.loc[at & out["SKU"].str.upper().isin(res.done), "ACTION"] = DONE
         for col, val in (("ORDER ID", res.order_no), ("ORDER DATE", res.order_date), ("OMS CHANNEL", res.channel), ("RT AWB", res.return_awb), ("OMS STATUS", res.status)):
             if val:
-                out.loc[at, col] = val
+                out.loc[same, col] = val
         if res.note:
             day = next(j["day"] for j in jobs if j["awb"] == awb)
-            out.loc[at, "NOTE IN OMS"] = f"Return accepted in ERP {day}"
+            out.loc[at & (out["ACTION"] == DONE), "NOTE IN OMS"] = f"Return accepted in ERP {day}"
     out["ACTION"] = out["ACTION"].replace("", "To accept")
     out = out.sort_values(["GRN DATE", "GRN VOUCHER"]).reset_index(drop=True)
 
@@ -259,10 +280,13 @@ def run(args) -> int:
     qty = out.groupby("ACTION")["QTY"].sum()
     done, total = int(qty.get(DONE, 0)), int(out["QTY"].sum())
     others = {k: int(v) for k, v in qty.items() if k not in (DONE, NO_ID)}
+    no_qty = int(out["QTY"].isna().sum())
     lines = ["↩️ <b>ERP to OMSGuru returns</b>", f"<i>{date.today():%d %b %Y}</i>", "",
              f"Accepted today: <b>{accepted_now:,}</b> of {len(jobs):,} AWBs tried",
              f"ERP returns {total:,}, OMS accepted {done:,}, pending {total - done:,}",
              f"No id in the ERP: {int(qty.get(NO_ID, 0)):,}"]
+    if no_qty:
+        lines.append(f"GRN lines with no qty (left out of the totals): {no_qty:,}")
     lines += [f"{telegram.esc(k[:44])}: {v:,}" for k, v in sorted(others.items(), key=lambda x: -x[1])[:6]]
     if stopped:
         lines.append(f"\n❌ Stopped after {FAILS_IN_A_ROW} failures in a row: the next run goes on")
