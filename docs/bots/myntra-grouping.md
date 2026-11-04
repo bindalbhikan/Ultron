@@ -20,6 +20,11 @@ starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the 
 * For every group x brand x article type of every account: each style's live colour group on
   myntra.com, then DONE / NOT DONE / DONE - EXTRA IN PORTAL (remove) / NOT LIVE / NOT LISTED /
   DUPLICATE - NOT IN GROUP / ONLY 1 LISTED / DONE IN OTHER ACCOUNT, with PORTAL GROUP and MISSING IN PORTAL.
+  The main live group's members are DONE even when their individual colour lists differ (fixed
+  4 Nov 2026): an inactive style can list the full group while the other pages omit it. Membership
+  is checked against the main group's style IDs, rather than requiring identical SKU coverage on
+  every page. Separate smaller groups and ungrouped styles remain pending; extra styles retain
+  the remove flag. HISTORY keeps each page's raw PORTAL GROUP and MISSING IN PORTAL evidence.
 * Output in `LISTING GROUPING`: `MYNTRA GROUPING MASTER.xlsx` (one sheet per account + Summary, replaced
   each run), `GROUPING REASONS.xlsx`, `HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx`, and `TEMPLATES/<date>/ACC-<seller id>/` one
   upload file per pending group (Unique ID, Group Type, Style ID; one style per SKU: the one already

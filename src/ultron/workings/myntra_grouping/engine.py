@@ -537,10 +537,12 @@ def build_account_rows(account, groups, styles, master, sales, inventory, cache)
 
         # Main portal group = the live group covering most SKUs of this block. Its styles are DONE
         # even if some SKUs are still missing (those are flagged on their own rows).
-        main_cover = max(
-            (covered(sid) for sid in sorted(live_expected) if portal(sid).get("colours")),
-            key=len, default=frozenset(),
+        main_sid = max(
+            (sid for sid in sorted(live_expected) if portal(sid).get("colours")),
+            key=lambda sid: len(covered(sid)), default=None,
         )
+        main_cover = covered(main_sid) if main_sid else frozenset()
+        main_group = {main_sid, *(c["styleId"] for c in portal(main_sid).get("colours", []))} if main_sid else set()
 
         for sku, listed in members:
             if not listed:
@@ -567,7 +569,10 @@ def build_account_rows(account, groups, styles, master, sales, inventory, cache)
                 ]
                 if not p.get("colours"):
                     remark = REMARK_NOT_GROUPED
-                elif not missing or (len(main_cover) >= 2 and covered(sid) == main_cover):
+                # Colour lists can be asymmetric: an inactive style may list the whole group
+                # while the other members omit it. Membership in the main group's response
+                # is sufficient; equal SKU coverage on every product page is not required.
+                elif not missing or (len(main_cover) >= 2 and sid in main_group):
                     remark = REMARK_DONE
                 else:
                     remark = REMARK_NOT_DONE
