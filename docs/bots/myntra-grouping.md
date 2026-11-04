@@ -26,6 +26,13 @@ starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the 
   every page. This includes a member whose own colour list is empty when the main group's response
   explicitly lists it; two empty lists alone never establish grouping. Separate smaller groups and ungrouped styles remain pending; extra styles retain
   the remove flag. HISTORY keeps each page's raw PORTAL GROUP and MISSING IN PORTAL evidence.
+  Explicit colour links are joined across responses, including one-way links, overlapping lists
+  and shared partners outside the input block. The connected group covering the most expected
+  SKUs is the main group. Disconnected groups stay separate; an upload approval alone never proves
+  a live group. Raw per-page evidence remains unchanged in HISTORY.
+  A separate connected group that covers every expected live SKU is also DONE (alternative style
+  IDs can form another complete group). Duplicate detection and upload-anchor selection use the
+  same connected membership, avoiding false duplicate and ungroup flags from partial responses.
 * Output in `LISTING GROUPING`: `MYNTRA GROUPING MASTER.xlsx` (one sheet per account + Summary, replaced
   each run), `GROUPING REASONS.xlsx`, `HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx`, and `TEMPLATES/<date>/ACC-<seller id>/` one
   upload file per pending group (Unique ID, Group Type, Style ID; one style per SKU: the one already

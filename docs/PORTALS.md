@@ -34,6 +34,9 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   full group while other members omit it, including a two-style group where one member returns an
   empty `colours` list and the other explicitly lists its partner. The grouping checker uses membership in the main
   group's response; it does not require identical lists on every product page.
+  Group members can also return overlapping subsets or share the same external colour partner.
+  The checker joins these explicit links before comparing the live group with the intended SKUs;
+  it preserves each original response separately for inspection.
 
 ## AJIO Seller Central — `portals/ajio.py`
 

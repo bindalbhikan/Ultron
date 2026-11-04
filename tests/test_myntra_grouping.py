@@ -43,6 +43,27 @@ class ColourGroupingTests(unittest.TestCase):
         rows = self.rows({"1": [], "2": []})
         self.assertEqual([r["GROUPING REMARK"] for r in rows], [e.REMARK_NOT_DONE] * 2)
 
+    def test_overlapping_colour_lists_form_one_group(self):
+        rows = self.rows({"1": ["2"], "2": ["3"], "3": ["4"], "4": []})
+        self.assertEqual([r["GROUPING REMARK"] for r in rows], [e.REMARK_DONE] * 4)
+
+    def test_shared_external_partner_confirms_group(self):
+        rows = self.rows({"1": ["9"], "2": ["9"]})
+        actual = {str(r["Style ID"]): r["GROUPING REMARK"] for r in rows}
+        self.assertEqual(actual, {"1": e.REMARK_DONE, "2": e.REMARK_DONE, "9": e.REMARK_EXTRA})
+
+    def test_two_complete_groups_with_alternative_styles_are_done(self):
+        rows = self.rows({"1": ["2"], "2": [], "3": ["4"], "4": []},
+                         {"1": "A", "2": "B", "3": "A", "4": "B"})
+        self.assertEqual([r["GROUPING REMARK"] for r in rows], [e.REMARK_DONE] * 4)
+
+    def test_template_uses_connected_group_without_false_ungroup_flag(self):
+        rows = self.rows({"1": ["2"], "2": ["3"], "3": [], "4": []})
+        pending = e.pending_group_styles(rows)
+        self.assertEqual(len(pending['001']['style_ids']), 2)
+        self.assertIn(4, pending['001']['style_ids'])
+        self.assertFalse(any(r['REMARK'] for r in rows))
+
     def test_separate_smaller_group_stays_pending(self):
         rows = self.rows({"1": ["2", "3"], "2": ["1", "3"], "3": ["1", "2"],
                           "4": ["5"], "5": ["4"]})

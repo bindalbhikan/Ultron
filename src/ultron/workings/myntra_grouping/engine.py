@@ -429,7 +429,34 @@ def fetch_portal(style_ids, cache, concurrency=CONCURRENT_REQUESTS):
 
 # ---------------------------------------------------------------- report
 
+def portal_components(cache):
+    """Colour groups connected by explicit product links, including one-way/shared-partner links."""
+    parent = {}
+
+    def root(sid):
+        parent.setdefault(sid, sid)
+        while parent[sid] != sid:
+            parent[sid] = parent[parent[sid]]
+            sid = parent[sid]
+        return sid
+
+    for sid, record in cache.items():
+        if not record.get("live"):
+            continue
+        root(sid)
+        for colour in record.get("colours", []):
+            other = str(colour.get("styleId") or "")
+            if other.isdigit():
+                parent[root(other)] = root(sid)
+    members = {}
+    for sid in parent:
+        members.setdefault(root(sid), set()).add(sid)
+    frozen = {key: frozenset(value) for key, value in members.items()}
+    return {sid: frozen[root(sid)] for sid in parent}
+
+
 def build_account_rows(account, groups, styles, master, sales, inventory, cache):
+    connected = portal_components(cache)
     acc = styles[styles["account"] == account]
     by_brand_sku = {}
     for r in acc.itertuples():
@@ -501,6 +528,7 @@ def build_account_rows(account, groups, styles, master, sales, inventory, cache)
             group_ids = sorted({sid, *(c["styleId"] for c in p.get("colours", []))}) if p.get("live") else []
             return {
                 "_key": (gi, brand, article),
+                "_portal_group": connected.get(sid, frozenset()),
                 "Unique ID": f"{uid:03d}",
                 "Group Type": GROUP_TYPE,
                 "Category": category,
@@ -527,22 +555,20 @@ def build_account_rows(account, groups, styles, master, sales, inventory, cache)
             sku: [r.style_id for r in listed if r.style_id in live_expected] for sku, listed in members
         }
         live_skus = [sku for sku in skus if live_by_sku.get(sku)]
-        grouped_ids = {
-            c["styleId"] for sid in live_expected for c in portal(sid).get("colours", [])
-        }
+        grouped_ids = {sid for sid in live_expected if len(connected.get(sid, ())) > 1}
 
         def covered(sid):
-            group = {sid, *(c["styleId"] for c in portal(sid).get("colours", []))}
+            group = connected.get(sid, {sid})
             return frozenset(s for s in live_skus if any(x in group for x in live_by_sku[s]))
 
         # Main portal group = the live group covering most SKUs of this block. Its styles are DONE
         # even if some SKUs are still missing (those are flagged on their own rows).
         main_sid = max(
-            (sid for sid in sorted(live_expected) if portal(sid).get("colours")),
+            (sid for sid in sorted(live_expected) if len(connected.get(sid, ())) > 1),
             key=lambda sid: len(covered(sid)), default=None,
         )
         main_cover = covered(main_sid) if main_sid else frozenset()
-        main_group = {main_sid, *(c["styleId"] for c in portal(main_sid).get("colours", []))} if main_sid else set()
+        main_group = connected.get(main_sid, frozenset())
 
         for sku, listed in members:
             if not listed:
@@ -570,12 +596,10 @@ def build_account_rows(account, groups, styles, master, sales, inventory, cache)
                 # Colour lists can be asymmetric: an inactive style may list the whole group
                 # while the other members omit it. Membership in the main group's response
                 # is sufficient even when this member's own colour list is empty.
-                if len(main_cover) >= 2 and sid in main_group:
+                if (len(main_cover) >= 2 and sid in main_group) or len(covered(sid)) == len(live_skus):
                     remark = REMARK_DONE
                 elif not p.get("colours"):
                     remark = REMARK_NOT_GROUPED
-                elif not missing:
-                    remark = REMARK_DONE
                 else:
                     remark = REMARK_NOT_DONE
                 missing_txt = ", ".join(f"{s} ({'/'.join(live_by_sku[s])})" for s in missing)
@@ -643,7 +667,7 @@ def pending_group_styles(rows):
         # ones. Styles of that same group are together already; a style in another group cannot be
         # moved by an upload and is named in REMARK.
         by_sid = {r["Style ID"]: r for r in group_rows}
-        ids_of = lambda sid: {x for x in str(by_sid[sid]["PORTAL GROUP"]).split(", ") if x}  # noqa: E731
+        ids_of = lambda sid: by_sid[sid].get("_portal_group") or {x for x in str(by_sid[sid]["PORTAL GROUP"]).split(", ") if x}  # noqa: E731
         grouped = [sid for sid in style_ids if len(ids_of(sid)) > 1]
         if len(grouped) > 1:
             anchor = max(grouped, key=lambda sid: len(ids_of(sid)))
