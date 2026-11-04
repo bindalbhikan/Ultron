@@ -31,7 +31,8 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 * Backfilled months: the order report carries the return status as of the day it is generated.
 * Buyer-site colour groups (`www.myntra.com/gateway/v2/product/<style>`): the `colours` lists can
   differ between members of the same group (verified 4 Nov 2026). An inactive style can show the
-  full group while other members omit it. The grouping checker uses membership in the main
+  full group while other members omit it, including a two-style group where one member returns an
+  empty `colours` list and the other explicitly lists its partner. The grouping checker uses membership in the main
   group's response; it does not require identical lists on every product page.
 
 ## AJIO Seller Central — `portals/ajio.py`

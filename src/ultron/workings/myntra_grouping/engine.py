@@ -567,12 +567,14 @@ def build_account_rows(account, groups, styles, master, sales, inventory, cache)
                     s for s in live_skus
                     if s != sku and not any(x in own_group for x in live_by_sku[s])
                 ]
-                if not p.get("colours"):
-                    remark = REMARK_NOT_GROUPED
                 # Colour lists can be asymmetric: an inactive style may list the whole group
                 # while the other members omit it. Membership in the main group's response
-                # is sufficient; equal SKU coverage on every product page is not required.
-                elif not missing or (len(main_cover) >= 2 and sid in main_group):
+                # is sufficient even when this member's own colour list is empty.
+                if len(main_cover) >= 2 and sid in main_group:
+                    remark = REMARK_DONE
+                elif not p.get("colours"):
+                    remark = REMARK_NOT_GROUPED
+                elif not missing:
                     remark = REMARK_DONE
                 else:
                     remark = REMARK_NOT_DONE

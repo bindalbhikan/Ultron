@@ -34,6 +34,15 @@ class ColourGroupingTests(unittest.TestCase):
         self.assertEqual([r["GROUPING REMARK"] for r in rows],
                          [e.REMARK_DONE, e.REMARK_DONE, e.REMARK_NOT_DONE])
 
+    def test_member_with_empty_own_list_is_done_when_partner_lists_it(self):
+        rows = self.rows({"1": [], "2": ["1"]})
+        self.assertEqual([r["GROUPING REMARK"] for r in rows], [e.REMARK_DONE] * 2)
+        self.assertEqual(e.pending_group_styles(rows), {})
+
+    def test_two_empty_lists_remain_pending(self):
+        rows = self.rows({"1": [], "2": []})
+        self.assertEqual([r["GROUPING REMARK"] for r in rows], [e.REMARK_NOT_DONE] * 2)
+
     def test_separate_smaller_group_stays_pending(self):
         rows = self.rows({"1": ["2", "3"], "2": ["1", "3"], "3": ["1", "2"],
                           "4": ["5"], "5": ["4"]})
