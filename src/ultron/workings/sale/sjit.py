@@ -21,8 +21,8 @@ import zipfile
 from collections import Counter
 from datetime import date, datetime
 
-from google.auth.transport.requests import AuthorizedSession
 
+from ..core.drive import RetrySession
 from ..core.gauth import credentials
 
 log = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ def parse(files: list[tuple[str, bytes]]) -> tuple[Counter, Counter, set[date]]:
 
 def files_from_drive(folder_id: str, limit: int = 10) -> list[tuple[str, bytes]]:
     """Newest CSV / ZIP files of the SJIT drop folder."""
-    http = AuthorizedSession(credentials(SCOPES))
+    http = RetrySession(credentials(SCOPES))
     r = http.get(DRIVE_API, timeout=60, params={
         "q": f"'{folder_id}' in parents and trashed=false",
         "orderBy": "modifiedTime desc", "pageSize": limit,

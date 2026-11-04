@@ -115,9 +115,12 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   each folder / workbook. It can update and create folders but **not create files** ("Service
   Accounts do not have storage quota"): with the Drive owner's OAuth refresh token (`GOOGLE_OAUTH_*`,
   `scripts/google/oauth_token.py`) Drive is used as the owner, who can create files. Uploads are
-  resumable; a timeout or 5xx is tried three times.
+  resumable.
 * `DriveFile.upload()` refuses when the file changed on Drive since it was downloaded. Drive can
-  answer a 502 on a master's upload (3 Nov 2026): `DriveFile` tries a 5xx, timeout or dropped
-  connection three times (10 s, 30 s apart), repeating the change check before each try; a 502 can
-  still have saved the file, so finding this run's own content on Drive is not a conflict.
+  answer a 502 on a master's upload (3 Nov 2026): a 5xx, a rate limit (429, 403 `rateLimitExceeded`),
+  a timeout or a dropped connection, also on the token refresh, is tried three times (10 s, 30 s apart).
+  Every read through `RetrySession` does this by itself, also for code using a folder's `.http`. A
+  write is tried again only by the upload methods: the change check repeats before each try, and this
+  run's own content found on Drive means the upload is done (a 502 can still have saved it). A new file
+  that a failed try did create is reused, never made twice. Creating a folder is not tried again.
 * The bot cannot delete files you own: to drop data it overwrites the file (e.g. header-only CSV).

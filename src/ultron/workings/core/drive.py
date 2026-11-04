@@ -16,6 +16,7 @@ import logging
 import time
 from pathlib import Path
 
+from google.auth.exceptions import TransportError
 from google.auth.transport.requests import AuthorizedSession
 
 from .gauth import drive_credentials, oauth_configured
@@ -38,28 +39,57 @@ class DriveConflict(DriveError):
     """The file was changed on Drive since this run downloaded it."""
 
 
+def _passing(r) -> bool:
+    """An answer that says try again: a 5xx, or Drive's rate limit (429, 403 rateLimitExceeded)."""
+    return r.status_code >= 500 or r.status_code == 429 or (r.status_code == 403 and "ateLimitExceeded" in r.text)
+
+
 def _with_retries(send, what: str):
-    """send() again on a 5xx answer, a timeout or a dropped connection (three tries, 3 Nov 2026: a
-    502 from Drive ended a whole run). The last answer is returned, or its error raised."""
+    """send() again on a passing answer, a timeout or a dropped connection (three tries, 3 Nov 2026: a
+    502 from Drive ended a whole run). The last answer is returned; a last dropped connection raises DriveError."""
     for attempt, pause in enumerate(RETRY_PAUSES, 1):
         try:
             r = send()
-            if r.status_code < 500 or not pause:
+            if not _passing(r) or not pause:
                 return r
             problem = f"HTTP {r.status_code}"
-        except (OSError, ConnectionError) as exc:   # requests' timeouts and dropped connections
-            if not pause:
-                raise
+        except (OSError, ConnectionError, TransportError) as exc:   # timeouts, dropped connections, also on the token refresh
             problem = f"{type(exc).__name__}: {str(exc)[:120]}"
+            if not pause:
+                raise DriveError(f"Drive {what} failed {attempt} times: {problem}") from exc
         log.warning("Drive %s: %s (try %d of %d); trying again", what, problem, attempt, len(RETRY_PAUSES))
         time.sleep(pause)
     raise AssertionError("unreachable")
 
 
+class RetrySession(AuthorizedSession):
+    """Every read tried again by itself, also for code that uses a folder's .http directly. A write is not: only the
+    upload methods here know when sending it twice is safe."""
+
+    def request(self, method, url, *args, **kwargs):
+        send = lambda: super(RetrySession, self).request(method, url, *args, **kwargs)  # noqa: E731
+        return _with_retries(send, f"read of {url.split('?')[0][-60:]}") if method.upper() == "GET" else send()
+
+
+def session() -> AuthorizedSession:
+    return RetrySession(drive_credentials(SCOPES))
+
+
+class _Saved:
+    """The answer of an upload that was not sent: Drive already has this content."""
+    status_code, ok, text = 200, True, ""
+
+    def __init__(self, meta: dict):
+        self.meta = meta
+
+    def json(self) -> dict:
+        return self.meta
+
+
 class DriveFile:
     def __init__(self, file_id: str, http: AuthorizedSession | None = None):
         self.file_id = file_id
-        self.http = http or AuthorizedSession(drive_credentials(SCOPES))
+        self.http = http or session()
         self.meta: dict = {}
 
     def _check(self, r, what: str):
@@ -70,8 +100,7 @@ class DriveFile:
         return r
 
     def metadata(self) -> dict:
-        r = _with_retries(lambda: self.http.get(f"{API}/{self.file_id}", timeout=60,
-                                                params={"fields": FIELDS, "supportsAllDrives": "true"}), "metadata")
+        r = self.http.get(f"{API}/{self.file_id}", timeout=60, params={"fields": FIELDS, "supportsAllDrives": "true"})
         return self._check(r, "metadata").json()
 
     @property
@@ -88,8 +117,7 @@ class DriveFile:
             raise DriveError(f"{self.name} is {self.meta.get('mimeType')}, expected an .xlsx file")
         if need_edit and not self.meta.get("capabilities", {}).get("canEdit"):
             raise DriveError(f"Service account can read but not edit {self.name} - share it as Editor")
-        r = _with_retries(lambda: self.http.get(f"{API}/{self.file_id}", timeout=300,
-                                                params={"alt": "media", "supportsAllDrives": "true"}), "download")
+        r = self.http.get(f"{API}/{self.file_id}", timeout=300, params={"alt": "media", "supportsAllDrives": "true"})
         self._check(r, "download")
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(r.content)
@@ -106,9 +134,11 @@ class DriveFile:
         mine = hashlib.md5(body).hexdigest()  # noqa: S324 - Drive's own change check, not security
 
         def send():
-            # checked before every try; a 5xx can still have saved the file, so our own content is no conflict
+            # checked before every try; a 5xx can still have saved the file: our own content there means done
             now = self.metadata()
-            if now.get("md5Checksum") not in (self.meta.get("md5Checksum"), mine):
+            if now.get("md5Checksum") == mine:
+                return _Saved(now)
+            if now.get("md5Checksum") != self.meta.get("md5Checksum"):
                 raise DriveConflict(f"{now.get('name')} was changed on Drive during the run "
                                     f"(modified {now.get('modifiedTime')}); not overwriting it. Run again.")
             return self.http.patch(f"{UPLOAD}/{self.file_id}", data=body, timeout=300,
@@ -125,7 +155,7 @@ class DriveFolder:
 
     def __init__(self, folder_id: str, http: AuthorizedSession | None = None):
         self.folder_id = folder_id
-        self.http = http or AuthorizedSession(drive_credentials(SCOPES))
+        self.http = http or session()
 
     def _check(self, r, what: str):
         if not r.ok:
@@ -189,27 +219,23 @@ class DriveFolder:
 
     def _upload(self, src: Path, mime: str, file_id: str | None) -> str:
         """A resumable upload: replaces file_id's content, or creates src.name in this folder.
-        A timeout or a 5xx answer is tried again (three tries)."""
-        meta ={} if file_id else {"name": src.name, "parents": [self.folder_id]}
+        Start and send are tried again together, on a passing answer or a dropped connection (three tries)."""
         params = {"uploadType": "resumable", "supportsAllDrives": "true", "fields": "id"}
-        for attempt, pause in enumerate((10, 30, 0), 1):
-            try:
-                if file_id:
-                    r = self.http.patch(f"{UPLOAD}/{file_id}", params=params, json=meta, timeout=60,
-                                        headers={"X-Upload-Content-Type": mime})
-                else:
-                    r = self.http.post(UPLOAD, params=params, json=meta, timeout=60,
-                                       headers={"X-Upload-Content-Type": mime})
-                self._check(r, f"upload start of {src.name}")
-                r = self.http.put(r.headers["Location"], data=src.read_bytes(), timeout=900,
-                                  headers={"Content-Type": mime})
-                if r.status_code < 500:
-                    return self._check(r, f"upload of {src.name}").json()["id"]
-                problem = f"HTTP {r.status_code}"
-            except (OSError, ConnectionError) as exc:   # requests' timeouts and dropped connections
-                problem = f"{type(exc).__name__}: {str(exc)[:120]}"
-            if not pause:
-                raise DriveError(f"Drive upload of {src.name} failed 3 times: {problem}")
-            log.warning("Drive upload of %s: %s (try %d of 3); trying again", src.name, problem, attempt)
-            time.sleep(pause)
-        raise AssertionError("unreachable")
+        tries = [0]
+
+        def send():
+            target = file_id
+            if not target and tries[0]:     # the try that failed may still have created the file: never a second one
+                made = self.children().get(src.name)
+                target = made["id"] if made else None
+            tries[0] += 1
+            if target:
+                r = self.http.patch(f"{UPLOAD}/{target}", params=params, json={}, timeout=60, headers={"X-Upload-Content-Type": mime})
+            else:
+                r = self.http.post(UPLOAD, params=params, json={"name": src.name, "parents": [self.folder_id]}, timeout=60,
+                                   headers={"X-Upload-Content-Type": mime})
+            if not r.ok:
+                return r
+            return self.http.put(r.headers["Location"], data=src.read_bytes(), timeout=900, headers={"Content-Type": mime})
+
+        return self._check(_with_retries(send, f"upload of {src.name}"), f"upload of {src.name}").json()["id"]
