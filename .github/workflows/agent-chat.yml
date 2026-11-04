@@ -32,6 +32,7 @@ jobs:
       # the repo is public: this run's log is uploaded only encrypted (scripts/github/ci_run.sh)
       ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
       GITHUB_TOKEN: ${{ github.token }}
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
       OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
       OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
       OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}

@@ -44,6 +44,7 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import env, num
 from ..core.drive import DriveFolder
+from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.myntra_grouping")
 
@@ -55,7 +56,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def agent_work() -> DriveFolder:
-    return DriveFolder(env("AGENT_WORK_FOLDER_ID", pr.AGENT_WORK))
+    return DriveFolder(agent_work_id())
 
 
 def subfolder(root: DriveFolder, names, create: bool = False) -> DriveFolder | None:

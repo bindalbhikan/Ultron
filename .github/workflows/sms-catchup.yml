@@ -23,6 +23,8 @@ jobs:
       RUN_MODE: github-actions
       # the SMS sheet (shared with the service account) and the web app that files the SMS
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      SMS_SHEET_ID: ${{ vars.SMS_SHEET_ID }}
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
       SMS_WEBAPP_URL: ${{ secrets.SMS_WEBAPP_URL }}
       SMS_WEBAPP_KEY: ${{ secrets.SMS_WEBAPP_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

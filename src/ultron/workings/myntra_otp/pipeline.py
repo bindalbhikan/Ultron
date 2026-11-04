@@ -21,7 +21,7 @@ from datetime import datetime
 
 from ..core import telegram
 from ..core.app import run_bot
-from ..core.config import env
+from ..core.config import env, required
 
 log = logging.getLogger("bindal.myntra_otp")
 
@@ -78,7 +78,6 @@ def message(rows, couriers, notes, now: datetime) -> str:
     return "\n".join(out)
 
 
-SHEET_ID = "1dKfym74siyYHPM-JgisDq_2LcOckiqod59aibOAHbAA"
 PORTAL_NAMES = {"TLPL": "Myntra_Main_TLPL", "MMRJ": "Myntra_DBCC_MMRJ", "BOAT": "Myntra_FF X MUR CC_BOAT"}
 COURIER_TAGS = {"MYE": "EK", "MYS": "FL"}
 
@@ -118,7 +117,7 @@ def write_sheet(rows, now: datetime, notes: list[str] | None = None) -> tuple[in
     import gspread
     from ..core.gauth import credentials
     ws = gspread.authorize(credentials(["https://www.googleapis.com/auth/spreadsheets"])).open_by_key(
-        env("MYNTRA_OTP_SHEET_ID") or SHEET_ID).sheet1
+        required("MYNTRA_OTP_SHEET_ID")).sheet1
     existing = ws.get_all_values()
     had_today = any(r and str(r[0]).strip() == f"{now:%d-%m-%Y}" for r in existing)
     new, replace = sheet_rows(rows, now, existing, notes)

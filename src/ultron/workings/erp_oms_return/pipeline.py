@@ -29,6 +29,7 @@ from ..core.config import env, num, output_dir
 from ..core.drive import DriveFolder
 from ..portals.erp import Erp
 from .accept import accept
+from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.erp_oms_return")
 
@@ -227,7 +228,7 @@ def write(out: pd.DataFrame, path: Path) -> None:
 
 def run(args) -> int:
     work = Path(tempfile.mkdtemp(prefix="erp_oms_return_"))
-    folder = DriveFolder(env("AGENT_WORK_FOLDER_ID", pr.AGENT_WORK))
+    folder = DriveFolder(agent_work_id())
     erp = Erp.from_env()
     erp.login()
     out = erp_lines(erp)

@@ -28,9 +28,8 @@ import requests
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ultron.workings.core.config import env, load_dotenv  # noqa: E402
+from ultron.workings.core.config import env, load_dotenv, required  # noqa: E402
 
-SMS_SHEET = "1bKyLu132rZQakC4sOwQNJ4Ev4lpN-ff4E9ewflIeZkI"
 COURIERS = re.compile(r"DLHVRY|SFX|XPBEES|EKART", re.I)
 LINK = re.compile(r"https?://\S+")
 EXPIRED = re.compile(r"HTTP 4\d\d|not a PDF")
@@ -73,7 +72,7 @@ def sms_rows():
     import gspread
     from ultron.workings.core.gauth import credentials
     return gspread.authorize(credentials(["https://www.googleapis.com/auth/spreadsheets"])).open_by_key(
-        SMS_SHEET).worksheet("SMS").get_all_values()[1:]
+        required("SMS_SHEET_ID")).worksheet("SMS").get_all_values()[1:]
 
 
 def main() -> int:

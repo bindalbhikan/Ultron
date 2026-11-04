@@ -29,6 +29,7 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import env, num
 from ..core.drive import DriveFolder
+from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.ticket_followup")
 
@@ -188,7 +189,7 @@ def write_master(master: pd.DataFrame, path: Path) -> pd.DataFrame:
 def run(args) -> int:
     today = date.today()
     work = Path(tempfile.mkdtemp(prefix="ticket_followup_"))
-    root = DriveFolder(env("AGENT_WORK_FOLDER_ID", pr.AGENT_WORK))
+    root = DriveFolder(agent_work_id())
     got = root.download(MASTER, work / "old_master.xlsx")
     old = pd.read_excel(got, sheet_name="ALL", dtype=str).reindex(columns=COLS) if got else pd.DataFrame(columns=COLS, dtype=object)
 

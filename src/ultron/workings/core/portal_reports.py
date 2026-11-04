@@ -20,10 +20,10 @@ from pathlib import Path
 
 from .config import env
 from .drive import API, DriveFolder
+from .config import agent_work_id
 
 log = logging.getLogger("bindal.portal_reports")
 
-AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 ROOT = "PORTAL REPORTS"
 KINDS = {"sale": "ORDER REPORT", "return": "RETURN REPORT", "payment": "PAYMENT REPORT",
          "sales": "SALES REPORT",   # SALES REPORT: Flipkart's tax Sales Report (every sale / return / cancel event, invoice value)
@@ -43,7 +43,7 @@ def file_name(portal: str, month: date, kind: str, account: str = "", ext: str =
 
 def month_folder(portal: str, month: date, create: bool = False) -> DriveFolder | None:
     """PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/ on Drive."""
-    folder = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK))
+    folder = DriveFolder(agent_work_id())
     for name in (ROOT, portal.upper(), f"{month:%Y}", label(month)):
         folder = folder.subfolder(name, create=create)
         if folder is None:

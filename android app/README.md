@@ -45,7 +45,9 @@ Ultron Phone works.
 ## SMS sheet (Google Sheet + Apps Script)
 
 1. A Google Sheet -> Extensions -> Apps Script, the code of `apps-script/Code.gs`.
-2. In `setupSecret()` put a long random key, run it once, allow the permissions.
+2. In `setupSecret()` put a long random key, run it once, allow the permissions. In Project Settings ->
+   Script Properties add `OTP_SHEET_ID` and `AGENT_WORK_ID` (the same ids as the GitHub variables
+   `MYNTRA_OTP_SHEET_ID` and `AGENT_WORK_FOLDER_ID`); do this before deploying this code over an older version.
 3. Run `testInsert`: a header row and a test row appear in the `SMS` tab.
 4. Deploy -> New deployment -> Web app, execute as Me, access Anyone; copy the `/exec` URL into the app
    with the same key. Later script changes: Manage deployments -> Edit -> New version (same URL);

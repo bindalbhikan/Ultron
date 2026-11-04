@@ -122,6 +122,9 @@ detailed **hyper log** is kept on Drive in `AGENT WORK/AGENT LOGS/<month>/<date>
 - GitHub: repository **Secrets** (logins, Drive ids, `GOOGLE_SERVICE_ACCOUNT_JSON`,
   `GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN`, `ARTIFACT_KEY`) and **Variables** (tuning). `SPF_DRY_RUN=0` = AJIO SPF
   posts for real. A blank GitHub variable arrives as an empty string and falls back to the default.
+  Variables with no default, also in the local `.env` (the code holds no Drive id, `tests/test_no_ids_in_repo.py`
+  checks it; a run without one stops and names it): `AGENT_WORK_FOLDER_ID`, `MYNTRA_OTP_SHEET_ID`, `POD_MASTER_SHEET_ID`, `SMS_SHEET_ID`.
+  Their old values remain in the git history.
 - Cloudflare worker secrets: see `docs/bots/worker-and-dashboard.md`.
 - New Drive files need the owner's OAuth token (the service account cannot create files): `docs/PORTALS.md`.
 

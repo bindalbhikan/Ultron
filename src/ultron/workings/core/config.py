@@ -32,6 +32,19 @@ def env(name: str, default: str = "") -> str:
     return (os.getenv(name) or "").strip() or default
 
 
+def required(name: str) -> str:
+    """A setting the run cannot go on without, such as a Drive id (never in this public repo)."""
+    value = env(name)
+    if not value:
+        raise RuntimeError(f"Setting {name} is missing: set it as a GitHub variable or in .env")
+    return value
+
+
+def agent_work_id() -> str:
+    """The Drive folder AGENT WORK."""
+    return required("AGENT_WORK_FOLDER_ID")
+
+
 def flag(name: str, default: bool = False) -> bool:
     """A yes/no setting. Anything that is not clearly yes or no keeps the default."""
     value = env(name).lower()

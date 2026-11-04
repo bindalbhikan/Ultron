@@ -37,6 +37,7 @@ jobs:
       GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
       AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+      POD_MASTER_SHEET_ID: ${{ vars.POD_MASTER_SHEET_ID }}
       SPF_DRY_RUN: ${{ inputs.dry_run || vars.SPF_DRY_RUN || '1' }}
       AJIO_USERNAME: ${{ secrets.AJIO_USERNAME }}
       AJIO_PASSWORD: ${{ secrets.AJIO_PASSWORD }}

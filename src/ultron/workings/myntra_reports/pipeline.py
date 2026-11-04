@@ -25,11 +25,11 @@ import pandas as pd
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import csv_list, env, num, output_dir
+from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.myntra_reports")
 
 ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
-AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 AREA = "MYNTRA"   # the agent's folder is kept by portal: AGENT WORK/MYNTRA (since 29 Oct 2026)
 FOLDER = "MYNTRA DAILY REPORTS"
 WORKBOOK = "MYNTRA DAILY RETURN DELIVERY REPORT.xlsx"
@@ -211,7 +211,7 @@ def backfill(args) -> int:
             rows.append((day, account, delivery_split(delivery[delivery["_day"] == day], orders)))
         log.info("%s: %d days, %d deliveries", account, len(mp._days(start, end)),
                  int((delivery["_day"].between(start, end)).sum()))
-    root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(AREA, create=True)
+    root = DriveFolder(agent_work_id()).subfolder(AREA, create=True)
     link = update_workbook(root, rows, Path(tempfile.mkdtemp(prefix="myntra_rd_")))
     total = sum(s["TOTAL"] for _, _, s in rows)
     print(f"{WORKBOOK}: {len(rows)} rows for {start}..{end}, {total} return deliveries. {link}")
@@ -251,7 +251,7 @@ def run(args) -> int:
         notes.append(f"not uploaded to Drive (test run): {dest}")
     else:
         from ..core.drive import DriveFolder
-        root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(AREA, create=True)
+        root = DriveFolder(agent_work_id()).subfolder(AREA, create=True)
         folder = root.subfolder(FOLDER, create=True).subfolder(f"{day}", create=True)
         for p in files:
             try:

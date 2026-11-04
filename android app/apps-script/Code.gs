@@ -20,8 +20,9 @@ const SHEET_NAME = 'SMS';
 const HEADERS = ['Received At', 'From', 'Message', 'Device Time', 'SIM', 'Agent', 'OTP SHEET'];
 const DEDUPE_LOOKBACK = 50;
 
-const OTP_SHEET_ID = '1dKfym74siyYHPM-JgisDq_2LcOckiqod59aibOAHbAA';   // Daily OTP 2026
-const AGENT_WORK_ID = '1uO-aOha_QKkI3f19EA7sweYPgkjMukZI';            // Drive BINDAL EXPORTS/AGENT WORK
+// Project Settings -> Script Properties: the ids are not in this public file (README, step 2)
+const OTP_SHEET_ID = PropertiesService.getScriptProperties().getProperty('OTP_SHEET_ID');   // Daily OTP 2026
+const AGENT_WORK_ID = PropertiesService.getScriptProperties().getProperty('AGENT_WORK_ID');           // Drive BINDAL EXPORTS/AGENT WORK
 const POD_FOLDER = 'RETURN PODS';
 const POD_MASTER = 'RETURN PODS MASTER';
 const POD_TAB = 'PODS';

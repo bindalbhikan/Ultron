@@ -15,6 +15,7 @@ import secrets
 import subprocess
 import sys
 from pathlib import Path
+from ultron.workings.core.config import agent_work_id
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
@@ -22,13 +23,12 @@ sys.path.insert(0, str(ROOT / "src"))
 from ultron.workings.core.config import env  # noqa: E402
 from ultron.workings.core.drive import DriveFolder  # noqa: E402
 
-AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 FOLDER = "ULTRON PHONE"
 KEYSTORE, PASSWORD, APK = "ultronphone.keystore", "ultronphone.keystore.password", "Ultron Phone.apk"
 
 
 def folder() -> DriveFolder:
-    return DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(FOLDER, create=True)
+    return DriveFolder(agent_work_id()).subfolder(FOLDER, create=True)
 
 
 def keystore(out: Path) -> None:

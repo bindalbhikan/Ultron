@@ -23,10 +23,10 @@ import time
 from datetime import datetime
 
 from .config import OUTPUT, env
+from .config import agent_work_id
 
 log = logging.getLogger("bindal.hyperlog")
 
-AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 FOLDER = "AGENT LOGS"
 FORMAT = "%(asctime)s.%(msecs)03d %(levelname)-7s [%(threadName)s] %(name)s %(funcName)s:%(lineno)d | %(message)s"
 QUIET = ("urllib3", "requests", "google", "googleapiclient", "google_auth_httplib2", "openpyxl", "PIL",
@@ -126,7 +126,7 @@ class HyperLog:
                     f"{'OK' if ok else 'FAIL'}{' #' + run if run else ''}.log")
             dest = self.path.with_name(name)
             dest.write_bytes(self.path.read_bytes())
-            folder = (DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(FOLDER, create=True)
+            folder = (DriveFolder(agent_work_id()).subfolder(FOLDER, create=True)
                       .subfolder(f"{self.when:%b-%y}".upper(), create=True)
                       .subfolder(f"{self.when:%d-%m-%y}", create=True))
             folder.put(dest, "text/plain")

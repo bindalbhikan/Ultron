@@ -31,7 +31,7 @@ from pathlib import Path
 
 from ..core import dashboard, telegram
 from ..core.app import run_bot
-from ..core.config import env, flag, num, output_dir
+from ..core.config import env, flag, num, output_dir, required
 from . import claims, followup, inputs, master_engine
 from .inputs import OMS_COLUMNS, write_xlsx
 
@@ -39,7 +39,6 @@ OUTPUT = output_dir("ajio_spf")
 WORK = OUTPUT / "work"
 MASTER_NAME = "AJIO MASTER.xlsx"
 # RETURN PODS MASTER (Drive AGENT WORK/RETURN PODS), filled by the phone app's Apps Script
-POD_SHEET = "1_q_x-bnV6Zx0StH6PF1ex2HM_t9krAWUeidHIngYw3k"
 POD_TAB = "PODS"
 ENGINE = __package__ + ".master_engine"
 log = logging.getLogger("bindal.ajio_spf")
@@ -171,7 +170,7 @@ def fetch_all(today: date, ctx: dict) -> None:
         import gspread
         from ..core.gauth import credentials
         values = gspread.authorize(credentials(["https://www.googleapis.com/auth/spreadsheets"])).open_by_key(
-            env("POD_MASTER_SHEET_ID") or POD_SHEET).worksheet(POD_TAB).get_all_values()
+            required("POD_MASTER_SHEET_ID")).worksheet(POD_TAB).get_all_values()
         head = [h.strip() for h in values[0]] if values else []
         rows = [dict(zip(head, r)) for r in values[1:] if any(c.strip() for c in r)]
         for r in rows:

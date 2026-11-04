@@ -27,10 +27,10 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import csv_list, env, num, output_dir
 from ..portals.omsguru import OmsGuruClient
+from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.flipkart_tat")
 
-AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 AREA = "FLIPKART"
 MASTER_NAME = "FLIPKART_TAT_MASTER.xlsx"
 TITLE = "Flipkart Dispatch TAT Summary"
@@ -59,7 +59,7 @@ def sla_deadlines(o: pd.DataFrame) -> pd.Series:
 
 def master_folder():
     from ..core.drive import DriveFolder
-    return DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(AREA, create=True)
+    return DriveFolder(agent_work_id()).subfolder(AREA, create=True)
 
 
 def run(args) -> int:

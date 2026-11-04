@@ -30,10 +30,10 @@ import pandas as pd
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import env, num
+from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.myntra_history")
 
-AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 AREA = "MYNTRA"   # the agent's folder is kept by portal: AGENT WORK/MYNTRA (since 29 Oct 2026)
 ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 CSV = "text/csv"
@@ -201,7 +201,7 @@ def run(args) -> int:
     wanted = months(first, last)
     accounts, labels = args.accounts.split(","), args.reports.split(",")
     rids = {"ORDERS": mp.REPORT_ID, "RETURNS": mp.RETURNS_REPORT_ID}
-    root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK)).subfolder(AREA, create=True)
+    root = DriveFolder(agent_work_id()).subfolder(AREA, create=True)
     name = f"MYNTRA ORDER RETURN REPORTS {tag(first)} TO {tag(last)}"
     folder = root.subfolder(name, create=args.step in ("prepare", "all"))
     if folder is None:

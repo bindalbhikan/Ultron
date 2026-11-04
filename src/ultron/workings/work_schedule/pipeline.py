@@ -26,10 +26,10 @@ import requests
 
 from ..core.app import run_bot
 from ..core.config import env, num
+from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.work_schedule")
 
-AGENT_WORK = "1uO-aOha_QKkI3f19EA7sweYPgkjMukZI"   # Drive BINDAL EXPORTS/AGENT WORK
 WORKBOOK = "AGENT REPORT WORK SCHEDULE REPORT.xlsx"
 IST = timezone(timedelta(hours=5, minutes=30))
 DONE, DUE = "☑", "☐"
@@ -360,7 +360,7 @@ def run(args) -> int:
         stats = build(work, months, now)
         print(f"{work}: {', '.join(map(month_sheet, months))}; today {stats['today_done']}/{stats['today_due']} done")
         return 0
-    root = DriveFolder(env("AGENT_WORK_FOLDER_ID", AGENT_WORK))
+    root = DriveFolder(agent_work_id())
     found = root.children().get(WORKBOOK)
     if not found:
         raise RuntimeError(f"{WORKBOOK} not found in AGENT WORK on Drive")
