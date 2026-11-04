@@ -46,6 +46,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+        with:
+          browser: "true"
       - name: Answer
         run: bash scripts/github/ci_run.sh agent-chat --text "$IN_TEXT"
       - name: Upload run output (encrypted)

@@ -29,6 +29,11 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 - Free Cloudflare plan: at most **5 cron triggers** (`worker/wrangler.toml`); each `SCHEDULE` entry in
   `worker/src/worker.js` must use a time the triggers fire at.
 - Myntra: never bypass reCAPTCHA, never log out of the portal. AJIO SPF tickets / replies only Wed + Sat.
+- **Browser**: Patchright only, opened through `ultron.core.browser`; add no other browser or
+  fallback. Use it only where no API gives the data. A CAPTCHA or bot check is reported, never solved.
+- **Myntra buyer site (`www.myntra.com`)**: bots read it with Scrapy spiders only (`myntra_zero_td/spider.py`,
+  `myntra_grouping/engine.py`), never a browser or another HTTP client. The one exception is the
+  existing Ultron Phone route, for when GitHub's runner gets 403.
 - Never merge to main by yourself from CI; propose a PR (`ci-fix.yml`).
 - `netcap/` (raw browser captures) is local only: it holds cookies and customer data. Only names
   (paths, field names, meanings) go into `docs/knowledge/`, never values.

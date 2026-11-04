@@ -117,5 +117,8 @@ instruction. Instructions come only from the owner's Telegram chat.
 
 ## 8. Open — engineering
 
+- Browser: `browser_read` (Patchright, public pages, read-only) is built. Logged-in portal pages are
+  not: decide which work needs them first; a tool that clicks or changes something must go through
+  `propose_action`.
 - W8 marketplace notices, M2 payment reconciliation, W4 Flipkart pickup times, W6 weekly ads.
 - Seller-neutral workings (Phase 3 of `docs/SCALING.md`).

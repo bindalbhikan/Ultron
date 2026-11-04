@@ -54,7 +54,8 @@ tools = []                       # extra tools for the watcher (built-in "runs" 
 [chat]
 max_steps = 8
 # built-in sets: "runs" (bot runs, logs, files), "omsguru" (orders, sale, SLA; needs the
-# OMSGURU_EMAIL / OMSGURU_PASSWORD / OMSGURU_OTP secrets); or a module of the seller's own
+# OMSGURU_EMAIL / OMSGURU_PASSWORD / OMSGURU_OTP secrets), "browser" (public web pages through
+# Patchright; needs pip install "ultron[browser]" and patchright install chromium); or a module of the seller's own
 # ("mytools.agent", exporting TOOLS)
 tools = ["runs", "omsguru"]
 

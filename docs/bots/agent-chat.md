@@ -5,7 +5,13 @@ started by the worker's `askAgent`; inputs `text`, `chat_id`, `reply_to`). Never
 
 * The owner writes to the Telegram bot in plain words; Ultron (`src/ultron/agents/chat.py`) reads what
   it needs with its tools (`[chat] tools` in `agent.toml`: run history and logs, OMSGuru, the Myntra
-  login checks) and answers in the same chat, at most about 10 lines, numbers exact.
+  login checks, public web pages) and answers in the same chat, at most about 10 lines, numbers exact.
+* Web pages: `browser_read` (`ultron.tools.browser`) opens them in Patchright, the only browser Ultron
+  uses (`ultron.core.browser`). Public internet only, new empty profile each time, no logins; it
+  reads and never clicks, types or sends. A page with a CAPTCHA or bot check is named and left out,
+  never solved. CI installs it through the setup action (`browser: "true"`); on a seller's machine:
+  `pip install -e ".[browser]"`, then `patchright install chromium`. `BROWSER_HEADLESS=0` shows the
+  window; `BROWSER_CHANNEL=chrome` uses the installed Chrome.
 * The model is Cloudflare Workers AI (free allocation) reached through the worker's `/api/ai` with the
   dashboard token; `AGENT_MODEL` (repo variable) overrides the model in `agent.toml`.
 * Read-only. Anything to be done (start a report, add orders, push inventory) is proposed with

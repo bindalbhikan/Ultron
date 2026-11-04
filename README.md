@@ -55,6 +55,7 @@ release of Ultron is `src/ultron` without `workings/`.
       omsguru.py              "omsguru": find_order, sale_by_channel, due_today
       memory.py               "memory": recall, remember, forget (on whenever the memory is)
       knowledge.py            "knowledge": knowledge_search, knowledge_read over docs/knowledge/ (the agent's brain)
+      browser.py              "browser": browser_read, a public web page through Patchright (extra "browser")
     portals/                  portal clients shared by every seller (OMSGuru), the seller's own login
     integrations/             github.py (runs API), telegram.py (messages), crypto.py (run artifacts)
   worker/

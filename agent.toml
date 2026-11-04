@@ -70,7 +70,7 @@ paths = ["docs/knowledge", "docs/PORTALS.md"]
 
 [chat]
 max_steps = 8
-tools = ["runs", "omsguru", "knowledge", "ultron.workings.agent_tools"]
+tools = ["runs", "omsguru", "knowledge", "browser", "ultron.workings.agent_tools"]
 
 # What the agent may propose; each starts only after the owner taps Approve. The worker's
 # AGENT_ACTIONS (worker/wrangler.toml) must list the same workflows and inputs (a test checks).

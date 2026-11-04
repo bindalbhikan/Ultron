@@ -160,7 +160,7 @@ def channel_line(name: str) -> str:
 
 # tool sets every seller gets: name in agent.toml -> module
 BUILTIN_TOOLS = {"runs": "ultron.tools.runs", "omsguru": "ultron.tools.omsguru", "memory": "ultron.tools.memory",
-                 "knowledge": "ultron.tools.knowledge"}
+                 "knowledge": "ultron.tools.knowledge", "browser": "ultron.tools.browser"}
 
 
 def load_tools(names: tuple[str, ...]) -> list[Callable]:

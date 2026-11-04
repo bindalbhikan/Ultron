@@ -19,6 +19,8 @@ dependencies = [
 # xlsx summaries of run files (pandas, openpyxl) and reading encrypted GitHub run artifacts
 # (cryptography); on Termux these come from pkg instead (deploy/termux/setup.sh)
 full = ["pandas>=2.2,<4", "openpyxl>=3.1", "cryptography>=42"]
+# the agent's browser (ultron.core.browser); then run: patchright install chromium
+browser = ["patchright>=1.64,<2"]
 # the report workings (ultron.workings: sale, VMS, AJIO TAT / SPF, Myntra SPF, returns ...)
 workings = [
     "pandas>=2.2,<4", "openpyxl>=3.1", "cryptography>=42",
