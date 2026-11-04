@@ -86,6 +86,10 @@ def _read_window(client: OmsGuruClient, start: datetime, end: datetime, max_page
     return out, rows
 
 
+def _key(r: dict) -> tuple:
+    return r["order"], r["ordered"], r["status"], r["awb"], tuple(r["skus"])
+
+
 def order_lines(client: OmsGuruClient, days: list[date], max_pages: int = 80) -> tuple[list[dict], dict[str, str]]:
     """(every order list line ordered on one of `days`, {channel id: name}), every warehouse.
     Each day is its own window (the days need not follow each other); a window near the list's
@@ -100,7 +104,7 @@ def order_lines(client: OmsGuruClient, days: list[date], max_pages: int = 80) ->
             names = channel_names(client)
         todo = [(datetime.combine(d, datetime.min.time()), datetime.combine(d + timedelta(days=1), datetime.min.time()))
                 for d in sorted(wanted)]
-        rows = 0
+        rows, seen = 0, set()
         while todo:
             a, b = todo.pop(0)
             got, n = _read_window(client, a, b, max_pages)
@@ -109,7 +113,11 @@ def order_lines(client: OmsGuruClient, days: list[date], max_pages: int = 80) ->
                 log.info("%d lines %s..%s, near the list limit: read in two halves", n, a, b)
                 todo[:0] = [(a, mid), (mid, b)]
                 continue
-            lines += [r for r in got if r["day"] in wanted]
+            # two halves share the minute they meet at: a line read in an earlier window is not counted twice.
+            # Inside one window two equal lines are real (the same SKU twice), so they stay.
+            mine = [(r, _key(r)) for r in got if r["day"] in wanted]
+            lines += [r for r, key in mine if key not in seen]
+            seen.update(key for _, key in mine)
             rows += n
         log.info("OMSGuru warehouse %s: %d order lines read", wh or "current", rows)
     return lines, names
@@ -125,6 +133,7 @@ def order_lines_range(client: OmsGuruClient, first: date, last: date, channel_id
             client.set_warehouse(wh)
         todo = [(datetime.combine(first, datetime.min.time()),
                  datetime.combine(last + timedelta(days=1), datetime.min.time()))]
+        seen = set()
         while todo:
             a, b = todo.pop(0)
             got, n = _read_window(client, a, b, max_pages, channel_ids)
@@ -132,7 +141,9 @@ def order_lines_range(client: OmsGuruClient, first: date, last: date, channel_id
                 mid = a + (b - a) / 2
                 todo[:0] = [(a, mid), (mid, b)]
                 continue
-            lines += [r for r in got if first <= r["day"] <= last]
+            mine = [(r, _key(r)) for r in got if first <= r["day"] <= last]
+            lines += [r for r, key in mine if key not in seen]      # halves share the minute they meet at
+            seen.update(key for _, key in mine)
     return lines
 
 

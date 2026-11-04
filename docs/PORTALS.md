@@ -87,8 +87,9 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 
 ## OMSGuru — `portals/omsguru.py`, `portals/omsguru_returns.py`
 
+* The order list stops near 3,000 orders: `vms.list_rows` reads a day at a time, `order_lines` halves a window near the limit (the halves share a minute, so a line read in an earlier window is not counted twice; two equal lines inside one window are real).
 * One session (`OMSGURU_EMAIL/PASSWORD/OTP`), warehouse by warehouse; list pages, order pages,
-  search box (AWB / order id). `omsguru_returns.ReturnLookup`: an item counts as received only
+  search box (AWB / order id). The search box answers an **empty body** for no match; an HTML page is the login or an error page and raises, never "not found". `omsguru_returns.ReturnLookup`: an item counts as received only
   when its order page shows "Return Log RT… (date)". Myntra masters have no SKU, so Myntra
   lookups match the order on its AWBs / store order id.
 * An order list line's status carries what became of it (Return Init, Return Received, Cancel Init,

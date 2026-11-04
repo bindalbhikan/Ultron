@@ -136,10 +136,12 @@ class OmsGuruClient:
         if not term:
             return []
         r = self.get(f"{BASE_URL}/orders/general_search", params={"f": kind, "term": term}, headers=self.ajax)
+        if not r.text.strip():      # OMSGuru's answer for no match: an empty body
+            return []
         try:
             hits = r.json()
-        except ValueError:
-            return []
+        except ValueError as exc:   # the login or an error page is not "this order does not exist"
+            raise RuntimeError(f"OMSGuru search answered no JSON (HTTP {r.status_code})") from exc
         hits = [h for h in hits if isinstance(h, dict) and h.get("id")] if isinstance(hits, list) else []
         if kind == "AWB":   # the autocomplete also returns near matches
             hits = [h for h in hits if str(h.get("label", "")).upper() == term.upper()]

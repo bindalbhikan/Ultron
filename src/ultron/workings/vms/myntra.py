@@ -14,7 +14,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -32,43 +32,45 @@ ROW_COLS = ["Order Id", "Channel Id", "Status", "Courier", "AWB", "SLA"]
 def list_rows(client: OmsGuruClient, start: datetime, end: datetime, channel_ids: list[str],
               max_pages: int = 80) -> pd.DataFrame:
     """One row per order in the order-date window, every warehouse, read from the list
-    pages only (no order page is opened)."""
+    pages only (no order page is opened). Read a day at a time: the list stops near 3,000 orders."""
     rows: dict[str, dict] = {}
+    pieces = [start + timedelta(days=i) for i in range(max((end - start).days + (1 if (end - start).seconds else 0), 1))]
     for wh in list(client.warehouses()) or [None]:
         if wh:
             client.set_warehouse(wh)
-        flt = client.order_filter(start, end, channel_ids)
-        for page in range(1, max_pages + 1):
-            url = client.list_page_url(flt, page)
-            soup = BeautifulSoup(client.get(url).text, "html.parser")
-            table = soup.select_one("#order-table")
-            if table is None:
-                raise RuntimeError(f"Orders table not found on {url}")
-            added = 0
-            for tr in table.select("tbody > tr"):
-                tds = tr.find_all("td", recursive=False)
-                link = tr.select_one('a[href*="/orders/view/"]')
-                if not link or len(tds) < 7:
-                    continue
-                oid = VIEW_ID.search(link["href"]).group(1)
-                if oid in rows:
-                    continue
-                ch = tr.select_one('a[href*="channel_companies/edit/"]')
-                ship = text_of(tds[5])
-                sla = SLA_RE.search(text_of(tds[6]))
-                rows[oid] = {
-                    "Order Id": oid,
-                    "Channel Id": re.search(r"edit/(\d+)", ch["href"]).group(1) if ch else "",
-                    "Status": item_status(text_of(tds[4])),
-                    "Courier": (re.search(r"Courier\s+(.*?)\s+AWB", ship) or [None, ""])[1],
-                    "AWB": (re.search(r"AWB\s+(\S+)", ship) or [None, ""])[1],
-                    "SLA": sla.group(1) if sla else "",
-                }
-                added += 1
-            log.info("Warehouse %s list page %d: +%d orders (total %d)", wh or "current", page, added, len(rows))
-            if added == 0 or not soup.select_one(f'a[href*="page:{page + 1}"]'):
-                break
-            time.sleep(client.delay)
+        for piece in pieces:
+            flt = client.order_filter(piece, min(piece + timedelta(days=1), end), channel_ids)
+            for page in range(1, max_pages + 1):
+                url = client.list_page_url(flt, page)
+                soup = BeautifulSoup(client.get(url).text, "html.parser")
+                table = soup.select_one("#order-table")
+                if table is None:
+                    raise RuntimeError(f"Orders table not found on {url}")
+                added = 0
+                for tr in table.select("tbody > tr"):
+                    tds = tr.find_all("td", recursive=False)
+                    link = tr.select_one('a[href*="/orders/view/"]')
+                    if not link or len(tds) < 7:
+                        continue
+                    oid = VIEW_ID.search(link["href"]).group(1)
+                    if oid in rows:
+                        continue
+                    ch = tr.select_one('a[href*="channel_companies/edit/"]')
+                    ship = text_of(tds[5])
+                    sla = SLA_RE.search(text_of(tds[6]))
+                    rows[oid] = {
+                        "Order Id": oid,
+                        "Channel Id": re.search(r"edit/(\d+)", ch["href"]).group(1) if ch else "",
+                        "Status": item_status(text_of(tds[4])),
+                        "Courier": (re.search(r"Courier\s+(.*?)\s+AWB", ship) or [None, ""])[1],
+                        "AWB": (re.search(r"AWB\s+(\S+)", ship) or [None, ""])[1],
+                        "SLA": sla.group(1) if sla else "",
+                    }
+                    added += 1
+                log.info("Warehouse %s list page %d: +%d orders (total %d)", wh or "current", page, added, len(rows))
+                if added == 0 or not soup.select_one(f'a[href*="page:{page + 1}"]'):
+                    break
+                time.sleep(client.delay)
     df = pd.DataFrame(list(rows.values()), columns=ROW_COLS)
     df["SLA Date"] = pd.to_datetime(df["SLA"], format="%B %d, %Y %I:%M:%S %p", errors="coerce").dt.normalize()
     return df
