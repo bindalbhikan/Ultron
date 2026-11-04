@@ -2679,7 +2679,8 @@ def write_ticket_details(wb, f, old=()):
             if isinstance(v, (dt.datetime, dt.date)):
                 ws.write_datetime(r, i, v, f['date'])
             else:
-                ws.write(r, i, v, alert if h == 'NEEDS OUR REPLY' and v == 'YES' else None)
+                fmt = alert if h == 'NEEDS OUR REPLY' and v == 'YES' else None
+                ws.write_string(r, i, v, fmt) if isinstance(v, str) else ws.write(r, i, v, fmt)
     ws.freeze_panes(1, 2)
     ws.autofilter(0, 0, len(rows), len(DETAIL_COLS) - 1)
 

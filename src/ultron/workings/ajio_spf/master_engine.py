@@ -1395,7 +1395,9 @@ def ingest_input(headers, rows):
         source = load_workbook(path, data_only=True)
         source_sheet = source[source.sheetnames[0]]
         stream = source_sheet.iter_rows(values_only=True)
-        source_headers = [header for header in next(stream) if header is not None]
+        source_row = list(next(stream))
+        source_at = [i for i, header in enumerate(source_row) if header is not None]    # a blank header column shifts nothing
+        source_headers = [source_row[i] for i in source_at]
         unknown = [header for header in source_headers if header not in column_of]
         if unknown:
             raise SystemExit(f"{path.name}: columns not in the master: {unknown}")
@@ -1407,7 +1409,7 @@ def ingest_input(headers, rows):
         }
 
         for values in stream:
-            values = list(values)[: len(source_headers)]
+            values = [values[i] if i < len(values) else None for i in source_at]
             if all(value in (None, "") for value in values):
                 continue
             fresh = [None] * len(headers)
@@ -1624,7 +1626,9 @@ def read_master():
     workbook = load_workbook(SOURCE_MASTER, read_only=True, data_only=True)
     first = first_sheet(workbook)
     stream = workbook[first].iter_rows(values_only=True)
-    headers = [header for header in next(stream) if header is not None]
+    first_row = list(next(stream))
+    named_at = [i for i, header in enumerate(first_row) if header is not None]    # a blank header column shifts nothing
+    headers = [first_row[i] for i in named_at]
     date_columns = [
         position
         for position, header in enumerate(headers)
@@ -1644,7 +1648,7 @@ def read_master():
 
     rows = []
     for values in stream:
-        take(values)
+        take([values[i] if i < len(values) else None for i in named_at])
     # the returns still in transit sit on their own sheet: one master all the same
     if TRANSIT_SHEET in workbook.sheetnames and first in (SHEET, LEGACY_SHEET):
         stream = workbook[TRANSIT_SHEET].iter_rows(values_only=True)

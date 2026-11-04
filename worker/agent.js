@@ -113,7 +113,7 @@ export function makeAgent({
     const saved = await env[kv].get(key, "json");
     const edit = (text) => telegram(env, "editMessageText", { chat_id: cb.message.chat.id, message_id: cb.message.message_id,
                                                              text, parse_mode: "HTML", disable_web_page_preview: true });
-    if (!saved) {
+    if (!saved || String(saved.chat) !== String(cb.message.chat.id)) {     // a tap from another chat uses nothing up
       await telegram(env, "answerCallbackQuery", { callback_query_id: cb.id, text: "Expired or already decided" });
       return edit(`${cb.message.text ? esc(cb.message.text) : ""}\n\n⌛ <i>Expired or already decided.</i>`);
     }

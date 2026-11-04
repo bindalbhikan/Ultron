@@ -4,6 +4,8 @@ OMSGURU_EMAIL / OMSGURU_PASSWORD / OMSGURU_OTP). Read-only. Channels are named a
 """
 from __future__ import annotations
 
+import time
+
 from collections import Counter
 from datetime import date, datetime, timedelta
 
@@ -11,14 +13,17 @@ from ..core.config import channel_line
 from ..core.llm import tool
 
 _client = None
+_logged_in = 0.0
+LOGIN_HOURS = 6      # ultron serve runs for days: the portal's session does not
 
 
 def _oms():
-    global _client
-    if _client is None:
+    global _client, _logged_in
+    if _client is None or time.time() - _logged_in > LOGIN_HOURS * 3600:
         from ..portals.omsguru import OmsGuruClient
         _client = OmsGuruClient.from_env()
         _client.login()
+        _logged_in = time.time()
     return _client
 
 

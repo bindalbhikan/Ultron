@@ -99,11 +99,11 @@ def decide(aid: str, approve: bool, chat: str) -> str:
     """Approve or reject one pending approval (a button tap in `chat`); what to tell the owner."""
     with _lock:
         data = _load()
-        item = data.pop(aid, None)
-        if item is not None:
-            _save(data)                   # one tap decides it, a second does nothing
-    if item is None or item["chat"] != str(chat):
-        return "⌛ Expired or already decided."
+        item = data.get(aid)
+        if item is None or item["chat"] != str(chat):     # a tap from another chat uses nothing up
+            return "⌛ Expired or already decided."
+        del data[aid]
+        _save(data)                       # one tap decides it, a second does nothing
     if not approve:
         return "✖️ Rejected."
     cfg = config.get()

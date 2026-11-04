@@ -38,3 +38,5 @@ only when it did not succeed. By hand: run the workflow with a run id. The same 
   notes every alert it sends, so a recurring problem is called recurring.
 
 A grep of a run's log keeps its **end** when it is too long for the model: the fatal lines are the last ones, and the retry check and the plain alert read that text too. `curl: (n)` counts as a passing cause.
+
+A `[watch] lost_runner` workflow (`myntra-zero-td.yml`) whose self-hosted runner goes away mid-run is started once more with `runner=cloud`: the style lookups then go through Ultron Phone. Only workflows with no other inputs belong on the list: a dispatch starts them with defaults.

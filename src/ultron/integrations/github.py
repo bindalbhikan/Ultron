@@ -87,9 +87,13 @@ def run(run_id: int) -> dict:
     return {**brief(r), "workflow_file": Path(r.get("path") or "").name}
 
 
+def jobs(run_id: int) -> list[dict]:
+    return get(f"/actions/runs/{run_id}/jobs").json().get("jobs", [])
+
+
 def dispatch(workflow_file: str, inputs: dict, ref: str = "main") -> None:
-    """Start a workflow (workflow_dispatch). Needs a token with Actions: write on the repo; the
-    GITHUB_TOKEN of an agent-chat run cannot, so this is for ultron serve with GH_TOKEN."""
+    """Start a workflow (workflow_dispatch). Needs a token with Actions: write on the repo: agent-watch.yml's
+    GITHUB_TOKEN and ultron serve's GH_TOKEN can, an agent-chat run's GITHUB_TOKEN cannot."""
     if not token():
         raise RuntimeError("no GitHub token (GITHUB_TOKEN / GH_TOKEN) to start a workflow")
     r = requests.post(f"{api()}/actions/workflows/{workflow_file}/dispatches", timeout=60,

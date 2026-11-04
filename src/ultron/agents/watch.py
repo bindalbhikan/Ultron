@@ -163,6 +163,32 @@ def retry_reason(info: dict, errors: str) -> str:
     return ""
 
 
+def runner_lost(info: dict) -> bool:
+    """The run's self-hosted runner went away mid-run (PC off, network lost): the job failed with steps it never finished.
+    A cloud run does not match, so this starts at most one more run."""
+    if info["workflow_file"] not in config.get().watch_lost_runner or info["conclusion"] != "failure" or info["attempt"] != 1:
+        return False
+    return any(job.get("conclusion") == "failure" and "self-hosted" in (job.get("labels") or [])
+               and any(step.get("status") != "completed" for step in job.get("steps") or [])
+               for job in github.jobs(info["id"]))
+
+
+def move_to_cloud(info: dict, no_telegram: bool) -> bool:
+    """Start the workflow again with runner=cloud when its runner was lost; True when it started."""
+    try:
+        if not runner_lost(info):
+            return False
+        github.dispatch(info["workflow_file"], {"runner": "cloud"})
+    except Exception as exc:  # noqa: BLE001 - the run is then checked as usual
+        log.warning("Not started on the cloud runner: %s", exc)
+        return False
+    note_incident(info, "its self-hosted runner was lost mid-run; started again with runner=cloud")
+    text = (f"🔁 <b>Ultron: {telegram.esc(info['workflow'] or '')}</b>\n\nThe office PC's runner went away mid-run: "
+            f"started again on GitHub's runner.\n\n<a href=\"{info['url']}\">run {info['id']}</a>")
+    print(text) if no_telegram else telegram.send(text)
+    return True
+
+
 def retry(info: dict, errors: str, no_telegram: bool) -> bool:
     """Run the failed jobs again once when the run failed on a known passing cause (portal timeout,
     5xx, connection reset); True when the retry started (the next attempt is watched as usual)."""
@@ -201,7 +227,7 @@ def run(args) -> int:
         # replaced by a newer run of the same workflow (concurrency) or stopped by hand: nothing to say
         log.info("Run %s %s cancelled without errors: nothing sent", args.run_id, info["workflow"])
         return 0
-    if retry(info, errors, args.no_telegram):
+    if move_to_cloud(info, args.no_telegram) or retry(info, errors, args.no_telegram):
         return 0
     if not why:
         log.info("Run %s %s: plainly fine (no model call)", args.run_id, info["workflow"])
