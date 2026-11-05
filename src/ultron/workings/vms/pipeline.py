@@ -191,11 +191,19 @@ def run(args) -> int:
     errors: list[str] = []
     missing = None
     per_day: dict = {}
+    sla_error = ""
     if not args.erp_only:
-        df, new_pairs, errors = collect(dates, book.awb_cache())
-        if df.empty:
-            # Never overwrite the sheet with zeros: no Myntra order at all means a listing problem.
-            raise RuntimeError(f"No Myntra orders found for SLA {dates[0]} - {dates[-1]}; workbook left unchanged")
+        # ERP vs VMS needs no SLA date: this part failing must not stop it (it is reported at the end).
+        try:
+            df, new_pairs, errors = collect(dates, book.awb_cache())
+            if df.empty:
+                # Never overwrite the sheet with zeros: no Myntra order at all means a listing problem.
+                raise RuntimeError(f"No Myntra orders found for SLA {dates[0]} - {dates[-1]}; month sheet left unchanged")
+        except Exception as exc:  # noqa: BLE001
+            log.error("VMS report by SLA date failed: %s", exc, exc_info=True)
+            sla_error = str(exc)
+    sla_ok = not args.erp_only and not sla_error
+    if sla_ok:
         per_day = {d: day_counts(df, d) for d in dates}
         if not args.only_no_vms:
             for d, counts in per_day.items():
@@ -210,6 +218,8 @@ def run(args) -> int:
     erp, erp_error = (None, "") if args.no_erp else run_erp(book)
     if args.erp_only and erp is None:
         raise RuntimeError(f"ERP vs VMS failed: {erp_error}")
+    if sla_error and erp is None:   # nothing new to save or send
+        raise RuntimeError(f"{sla_error}{f' | ERP vs VMS failed: {erp_error}' if erp_error else ''}")
 
     replace_atomically(book.save, book_path)
     if drive:
@@ -222,7 +232,9 @@ def run(args) -> int:
         log.warning("%d label warnings, see %s", len(errors), errors_log)
 
     parts = []
-    if not args.erp_only:
+    if sla_error:
+        parts.append(f"📹 <b>Myntra VMS by SLA date</b>\n\n⚠️ Not updated: <code>{telegram.esc(sla_error[:300])}</code>")
+    if sla_ok:
         month = VmsWorkbook(book_path).month_totals(dates[-1])
         text = telegram_report({d: per_day[d] for d in dates[-2:]}, month, dates[-1])
         if errors:
@@ -236,7 +248,7 @@ def run(args) -> int:
     for text in parts:
         print(text) if args.no_telegram else telegram.send(text)
 
-    if not args.erp_only:
+    if sla_ok:
         saved, last = VmsWorkbook(book_path), dates[-1]
         prev = (last.replace(day=1) - timedelta(days=1))
         dashboard.publish("vms", {
@@ -248,6 +260,8 @@ def run(args) -> int:
         })
     if erp is not None:
         dashboard.publish("vms_erp", {**erp, "missing": erp["missing"][-600:], "missing_count": len(erp["missing"])})
+    if sla_error:   # ERP vs VMS went out; the run still counts as failed so the watcher sees it
+        raise RuntimeError(sla_error)
     return 0
 
 

@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from bs4 import BeautifulSoup
 
-from ..portals.omsguru import BASE_URL, VIEW_ID, OmsGuruClient, item_status, text_of
+from ..portals.omsguru import BASE_URL, VIEW_ID, OmsGuruClient, item_status, sla_column, text_of
 
 log = logging.getLogger(__name__)
 
@@ -47,17 +47,19 @@ def list_rows(client: OmsGuruClient, start: datetime, end: datetime, channel_ids
                 if table is None:
                     raise RuntimeError(f"Orders table not found on {url}")
                 added = 0
-                for tr in table.select("tbody > tr"):
+                trs = table.select("tbody > tr")
+                sla_col = sla_column(table) if trs else 0
+                for tr in trs:
                     tds = tr.find_all("td", recursive=False)
                     link = tr.select_one('a[href*="/orders/view/"]')
-                    if not link or len(tds) < 7:
+                    if not link or len(tds) <= max(sla_col, 6):
                         continue
                     oid = VIEW_ID.search(link["href"]).group(1)
                     if oid in rows:
                         continue
                     ch = tr.select_one('a[href*="channel_companies/edit/"]')
                     ship = text_of(tds[5])
-                    sla = SLA_RE.search(text_of(tds[6]))
+                    sla = SLA_RE.search(text_of(tds[sla_col]))
                     rows[oid] = {
                         "Order Id": oid,
                         "Channel Id": re.search(r"edit/(\d+)", ch["href"]).group(1) if ch else "",

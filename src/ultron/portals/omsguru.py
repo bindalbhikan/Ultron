@@ -382,6 +382,15 @@ def _dl_map(container) -> dict[str, str]:
     return out
 
 
+def sla_column(table) -> int:
+    """Where the order list's SLA Date column is. Found by its header, not its place: OMSGuru added
+    a column in front of it once and every order read as having no SLA."""
+    heads = [text_of(th) for th in table.select("thead th")]
+    if "SLA Date" not in heads:
+        raise OmsGuruError("No SLA Date column on the order list - layout changed?")
+    return heads.index("SLA Date")
+
+
 def item_status(text: str) -> str:
     for st in ITEM_STATUSES:
         if re.search(r"(?<![A-Za-z])" + re.escape(st) + r"(?![A-Za-z])", text):

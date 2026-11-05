@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 
 from bs4 import BeautifulSoup
 
-from .omsguru import BASE_URL, OmsGuruClient, text_of
+from .omsguru import BASE_URL, OmsGuruClient, sla_column, text_of
 
 log = logging.getLogger(__name__)
 
@@ -35,11 +35,11 @@ def channel_names(client: OmsGuruClient) -> dict[str, str]:
     return json.loads(m.group(1))
 
 
-def _row(tr) -> dict | None:
+def _row(tr, sla_col: int) -> dict | None:
     """One order list line: day, time, channel id, order id, units, status, AWB, [(SKU, qty)],
     order value (the line's Total, Rs), SLA; None for others."""
     tds = tr.find_all("td", recursive=False)
-    if len(tds) < 7:
+    if len(tds) <= max(sla_col, 6):
         return None
     m = ORDER_DATE_RE.search(text_of(tds[2]))
     if not m:
@@ -47,7 +47,7 @@ def _row(tr) -> dict | None:
     ordered = datetime.strptime(m.group(1), "%d/%b/%Y %I:%M %p")
     ch = tr.select_one('a[href*="channel_companies/edit/"]')
     order = re.search(r"OrderID\s+(\S+)", text_of(tds[1]))
-    sla = SLA_RE.search(text_of(tds[6]))
+    sla = SLA_RE.search(text_of(tds[sla_col]))
     awb = re.search(r"AWB\s+(\S+)", text_of(tds[5]))
     skus = [(s.upper(), int(q)) for s, q in re.findall(r"SkuCode\s+(\S+).*?Qty\s+(\d+)", text_of(tds[3]))]
     total = re.search(r"Total\s+([\d,]+(?:\.\d+)?)", text_of(tds[2]))
@@ -72,8 +72,10 @@ def _read_window(client: OmsGuruClient, start: datetime, end: datetime, max_page
         if table is None:
             raise RuntimeError(f"Orders table not found on {url}")
         added = 0
-        for tr in table.select("tbody > tr"):
-            r = _row(tr)
+        trs = table.select("tbody > tr")
+        sla_col = sla_column(table) if trs else 0
+        for tr in trs:
+            r = _row(tr, sla_col)
             if r is None:
                 continue
             added += 1
