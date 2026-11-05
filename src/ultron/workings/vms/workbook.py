@@ -196,8 +196,7 @@ class VmsWorkbook:
         ncol = 1 + 3 * len(groups)
         put = lambda r, c, v, style: setattr(ws.cell(r, c, v), "_style", copy.copy(st[style]))
 
-        put(1, 1, f"ERP vs VMS · {calendar.month_name[month]} {year} · 1-{upto.day} "
-                  "(parcels packed in the ERP that have a VMS packing video)", "title")
+        put(1, 1, f"ERP vs VMS · {calendar.month_name[month]} {year} · 1-{upto.day}", "title")
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncol)
         put(2, 1, "", "group")
         put(3, 1, "DATE", "head")
