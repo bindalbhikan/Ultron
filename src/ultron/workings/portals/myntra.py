@@ -200,6 +200,43 @@ def _days(first: date, last: date) -> set[date]:
     return {first + timedelta(days=i) for i in range((last - first).days + 1)}
 
 
+# Date columns of the Seller_Orders_Report (header case differs between downloads)
+STAMP_COLUMNS = ("created on", "packed on", "fmpu date", "inscanned on", "shipped on", "delivered on",
+                 "cancelled on", "rto creation date", "lost date", "return creation date")
+
+
+def report_time(value: str) -> datetime | None:
+    text = (value or "").strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            pass
+    return None
+
+
+def data_stamp(text: str) -> datetime | None:
+    """How fresh the data of a Seller_Orders_Report CSV is: the newest time in any of its date
+    columns. Myntra builds the report from a copy of its data that is renewed about once a day
+    (the copy runs to about 03:30 AM IST of its day), and the copy is renewed only after 07:00 AM:
+    a report asked for on 6 Nov 2026 at 07:01 held 5 Nov only up to 03:28 (4 SJIT lines of 52)."""
+    import csv
+    import io
+    newest = None
+    for raw in csv.DictReader(io.StringIO(text)):
+        row = {(k or "").strip().casefold(): v for k, v in raw.items()}
+        for col in STAMP_COLUMNS:
+            t = report_time(row.get(col, ""))
+            if t and (newest is None or t > newest):
+                newest = t
+    return newest
+
+
+def data_through(stamp: datetime | None) -> date | None:
+    """The last day a report with that data time holds in full: the day before the stamp's day."""
+    return stamp.date() - timedelta(days=1) if stamp else None
+
+
 def plan(jobs: list[dict], days: list[date]) -> tuple[list[dict], list[dict], list[date]]:
     """Which existing jobs give the wanted days: (completed jobs to download, newest first;
     jobs still running to wait for; days no job covers)."""
@@ -420,21 +457,42 @@ class MyntraPortal:
         jobs = self.jobs()
         done, running, missing = plan(jobs, days)
         got: list[tuple[dict, tuple[str, bytes]]] = []
+        stamps: dict[object, datetime | None] = {}
+
+        def full_days(job: dict, file: tuple[str, bytes]) -> set[date]:
+            # a job's days count only up to the day its data holds in full (see data_stamp)
+            stamps[job.get("id")] = stamp = data_stamp(file[1].decode("utf-8-sig", "replace"))
+            through = data_through(stamp)
+            wanted = _days(*job_range(job))
+            full = {d for d in wanted if through and d <= through}
+            if full != wanted:
+                log.warning("SJIT report job %s (%s..%s) holds data only up to %s: %s not complete",
+                            job.get("id"), *job_range(job), stamp, ", ".join(f"{d}" for d in sorted(wanted - full)))
+            return full
+
+        covered: set[date] = set()
         for job in done:
             try:
                 got.append((job, self.download(job)))
+                covered |= full_days(*got[-1])
             except Exception as exc:  # noqa: BLE001 - asked for again below
                 log.warning("Existing SJIT report not usable: %s", exc)
-        covered = set().union(*(_days(*job_range(j)) for j, _ in got)) if got else set()
         waiting = set().union(*(_days(*job_range(j)) for j in running)) if running else set()
         missing = sorted(set(days) - covered - waiting)
+        asked = bool(missing)
         if missing:
             running.append(self.schedule(missing[0], missing[-1]))
         deadline = time.time() + wait_minutes * 60
         for job in running:
             job = self._wait(job, deadline, poll_seconds)
             got.append((job, self.download(job)))
-            covered |= _days(*job_range(job))
+            covered |= full_days(*got[-1])
+        missing = sorted(set(days) - covered)
+        if missing and not asked:
+            # a report that was still running turned out to hold old data: one new request
+            job = self._wait(self.schedule(missing[0], missing[-1]), time.time() + wait_minutes * 60, poll_seconds)
+            got.append((job, self.download(job)))
+            covered |= full_days(*got[-1])
         if extra_from and extra_from < days[0]:
             # the newest report per earlier day, only as many as needed
             used = {j.get("id") for j, _ in got}
@@ -444,7 +502,8 @@ class MyntraPortal:
                     got.append((job, self.download(job)))
                 except Exception as exc:  # noqa: BLE001 - only extra cancellations
                     log.warning("Older SJIT report skipped: %s", exc)
-        got.sort(key=lambda g: g[0].get("createdOn") or 0, reverse=True)
+        # newest data first (not newest request: a report asked for early can hold older data)
+        got.sort(key=lambda g: (stamps.get(g[0].get("id")) or datetime.min, g[0].get("createdOn") or 0), reverse=True)
         return [f for _, f in got], covered
 
     # ------------------------------------------------------------ SPF claims (Support > Seller Protection Fund)

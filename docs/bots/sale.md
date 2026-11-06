@@ -13,7 +13,10 @@
 * Myntra SJIT: `Seller_Orders_Report` of MAIN from the partner portal (saved session); reports
   already on the portal are reused, only uncovered days get a new job. po_type SJIT / FBM only;
   GROSS by created on, Cancel = status F by cancelled on. A CSV dropped into the `sjit` Drive
-  folder still counts. A day no report covers stays blank, shows `-` on Telegram, is left out of the totals and is named in the notes; never a 0.
+  folder still counts. A report counts only for the days its data holds in full (the newest time in
+  any of its date columns, minus one day; Myntra's data copy is renewed only after 7 AM, so the 7:00 AM
+  report is usually old): a stale portal report gets a new job at 3:30 PM, and the newest data wins
+  per order line. On 5 Nov 2026 a stale report gave 4 Nov 5 SJIT lines instead of 64. A day no report covers stays blank, shows `-` on Telegram, is left out of the totals and is named in the notes; never a 0.
 * RETURN is typed by hand and never touched.
 
 **Notes**: Since Oct 2026 a COCOBLU block follows AZ/FX/FBA and there is no SNAPDEAL block; older

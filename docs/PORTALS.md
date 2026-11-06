@@ -29,6 +29,11 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   reused. Statuses like `INTERRUPTED`, `FAILED`, `EXPIRED` are dead — never reused or waited for.
   A job that will not download is asked for again (`collect_or_regenerate`).
 * Backfilled months: the order report carries the return status as of the day it is generated.
+* **Stale data**: the order report is built from a copy of Myntra's data renewed once a day (it runs to
+  ~03:30 AM IST), and the copy is renewed only after 7 AM: a job asked for on 6 Nov 2026 at 07:01 held
+  5 Nov only up to 03:28, one asked for at 09:36 held all of 5 Nov. `data_stamp` (newest time in any
+  date column) tells how fresh a file is; `reports()` (SJIT, TAT) counts a job's days only up to the
+  day before it. `ensure` / `exact_job` users (portal sale, monthly, returns) do not check this yet.
 * Buyer site (`www.myntra.com`): fixed rule, bots read it with Scrapy spiders only, no browser. On
   4 Nov 2026 a Patchright page load failed with `ERR_HTTP2_PROTOCOL_ERROR` (bundled Chromium and
   installed Chrome), while the Scrapy zero TD run from the office PC took 94 seconds. GitHub's

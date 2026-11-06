@@ -21,8 +21,8 @@ import zipfile
 from collections import Counter
 from datetime import date, datetime
 
-
 from ..core.drive import RetrySession
+from ..portals.myntra import data_stamp, data_through, report_time as _dt
 from ..core.gauth import credentials
 
 log = logging.getLogger(__name__)
@@ -30,16 +30,6 @@ log = logging.getLogger(__name__)
 SJIT_PO_TYPES = {"sjit", "fbm"}
 DRIVE_API = "https://www.googleapis.com/drive/v3/files"
 SCOPES = ["https://www.googleapis.com/auth/drive"]
-
-
-def _dt(value: str) -> datetime | None:
-    text = (value or "").strip()
-    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
-        try:
-            return datetime.strptime(text, fmt)
-        except ValueError:
-            pass
-    return None
 
 
 def _csv_texts(name: str, data: bytes) -> list[str]:
@@ -50,22 +40,29 @@ def _csv_texts(name: str, data: bytes) -> list[str]:
 
 
 def parse(files: list[tuple[str, bytes]]) -> tuple[Counter, Counter, set[date]]:
-    """(gross per day, cancel per day, days the files cover) from report files, newest first."""
+    """(gross per day, cancel per day, days the files hold in full) from report files.
+
+    The file with the newest data wins for an order line (not the newest request: a report
+    asked for before Myntra renews its data holds older data, see data_stamp). A day counts
+    only up to the day a file's data holds in full; a day it holds only in part is left out."""
+    texts = [t for name, data in files for t in _csv_texts(name, data)]
+    stamped = sorted(((data_stamp(t), i, t) for i, t in enumerate(texts)),
+                     key=lambda s: (s[0] or datetime.min, -s[1]), reverse=True)
     lines: dict[str, dict] = {}
     covered: set[date] = set()
-    for name, data in files:
-        for text in _csv_texts(name, data):
-            for raw in csv.DictReader(io.StringIO(text)):
-                # header case differs between portal downloads ("Created On" vs "created on")
-                row = {(k or "").strip().casefold(): v for k, v in raw.items()}
-                created = _dt(row.get("created on", ""))
-                if created:
-                    covered.add(created.date())
-                if (row.get("po_type") or "").strip().casefold() not in SJIT_PO_TYPES:
-                    continue
-                key = (row.get("order line id") or "").strip()
-                if key and key not in lines:  # newest file wins
-                    lines[key] = row
+    for stamp, _, text in stamped:
+        through = data_through(stamp)
+        for raw in csv.DictReader(io.StringIO(text)):
+            # header case differs between portal downloads ("Created On" vs "created on")
+            row = {(k or "").strip().casefold(): v for k, v in raw.items()}
+            created = _dt(row.get("created on", ""))
+            if created and through and created.date() <= through:
+                covered.add(created.date())
+            if (row.get("po_type") or "").strip().casefold() not in SJIT_PO_TYPES:
+                continue
+            key = (row.get("order line id") or "").strip()
+            if key and key not in lines:  # newest data wins
+                lines[key] = row
     gross, cancel = Counter(), Counter()
     for row in lines.values():
         created = _dt(row.get("created on", ""))
