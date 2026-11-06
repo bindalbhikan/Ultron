@@ -18,6 +18,8 @@ Output (Drive AGENT WORK/MYNTRA/LISTING GROUPING):
                                     DONE - EXTRA IN PORTAL, ...; a style in no group is NOT DONE too), on a NOT DONE
                                     style its newest job and reason + Summary; replaced each run
   GROUPING REASONS.xlsx             every row of every job's result report, what the portal said per style
+  BRAND WISE/MYNTRA GROUPING MASTER - <brand>.xlsx   the master split by brand (same layout: an account
+                                    sheet per account with the brand, Summary, SUBMISSIONS); replaced each run
   HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx   the day's check with all its columns (MISSING IN PORTAL, PORTAL GROUP ...)
   TEMPLATES/<date>/ACC-<seller id>/<unique id>_<brand>_<article>.xlsx   one upload file per pending
                                     group (Unique ID, Group Type, Style ID), ready to submit on Myntra
@@ -157,6 +159,14 @@ def phone_records(style_ids: list[str]) -> dict:
     return out
 
 
+def put_brand_files(lg: DriveFolder, files: list[Path]) -> None:
+    """The brand-wise masters into LISTING GROUPING/BRAND WISE (replaced each run)."""
+    from . import submit as sb
+    folder = lg.subfolder(sb.BRAND_FOLDER, create=True)
+    for f in files:
+        folder.put(f, XLSX)
+
+
 def run_status(args) -> int:
     """The upload jobs read again, without the check on myntra.com."""
     from . import submit as sb
@@ -175,6 +185,7 @@ def run_status(args) -> int:
     if not master:
         raise RuntimeError("MYNTRA GROUPING MASTER.xlsx not found in AGENT WORK/MYNTRA/LISTING GROUPING")
     states = sb.apply(master, record, reasons)
+    brand_files = sb.brand_masters(master, work / sb.BRAND_FOLDER)
     lines = [f"🎨 <b>Myntra grouping status</b> {datetime.now():%Y-%m-%d %H:%M}",
              "<i>the portal's jobs read again; DONE / NOT DONE are as of the last full check</i>", ""]
     lines.append("Changed: " + (" · ".join(f"{s} {n}" for s, n in changed.most_common()) if changed else "no job"))
@@ -185,10 +196,12 @@ def run_status(args) -> int:
         print("\n".join(lines))
         Path("output/myntra_grouping").mkdir(parents=True, exist_ok=True)
         shutil.copy2(master, Path("output/myntra_grouping") / master.name)
+        shutil.copytree(work / sb.BRAND_FOLDER, Path("output/myntra_grouping") / sb.BRAND_FOLDER, dirs_exist_ok=True)
         sb.write_record(record, Path("output/myntra_grouping") / sb.RECORD)
         sb.write_reasons(reasons, Path("output/myntra_grouping") / sb.REASONS)
         return 0
     lg.put(master, XLSX)
+    put_brand_files(lg, brand_files)
     lg.put(sb.write_record(record, work / sb.RECORD), XLSX)
     lg.put(sb.write_reasons(reasons, work / sb.REASONS), XLSX)
     text = "\n".join(lines)
@@ -246,7 +259,8 @@ def run(args) -> int:
         raise RuntimeError(f"myntra.com answered for only {len(to_check) - len(missing)} of {len(to_check)} styles: "
                            "report not written (a blocked run would mark live groups as not live)")
     account_rows = {a: e.build_account_rows(a, groups, styles, master, sales, inventory, cache) for a in accounts}
-    e.apply_cross_account_done(account_rows)
+    # no "DONE IN OTHER ACCOUNT" (owner, 6 Nov 2026): a group listed in two accounts is grouped, and
+    # its job submitted, in each account on its own
     stamp = f"{datetime.now():%Y-%m-%d}"
     report = work / "output" / f"GROUPING_ACCOUNT_WISE_{stamp}.xlsx"
     for rows in account_rows.values():
@@ -269,6 +283,7 @@ def run(args) -> int:
     master_file = report.with_name("MYNTRA GROUPING MASTER.xlsx")      # HISTORY keeps the check's columns
     shutil.copy2(report, master_file)
     states = sb.apply(master_file, record, reasons)
+    brand_files = sb.brand_masters(master_file, work / "output" / sb.BRAND_FOLDER)
 
     lines = [f"🎨 <b>Myntra colour grouping</b> {stamp}", ""]
     for a, rows in account_rows.items():
@@ -297,6 +312,7 @@ def run(args) -> int:
         shutil.copytree(work / "output", Path("output") / "myntra_grouping", dirs_exist_ok=True)
         return 0
     lg.put(master_file, XLSX)
+    put_brand_files(lg, brand_files)
     lg.subfolder("HISTORY", create=True).put(report, XLSX)
     lg.put(sb.write_record(record, work / sb.RECORD), XLSX)
     lg.put(sb.write_reasons(reasons, work / sb.REASONS), XLSX)
@@ -308,7 +324,7 @@ def run(args) -> int:
         for f in sorted(acc_dir.glob("*.xlsx")):
             dest.put(f, XLSX)
             n += 1
-    lines.append(f"\n<i>Drive AGENT WORK/MYNTRA/LISTING GROUPING: MYNTRA GROUPING MASTER.xlsx, {n} template files in TEMPLATES/{stamp}</i>")
+    lines.append(f"\n<i>Drive AGENT WORK/MYNTRA/LISTING GROUPING: MYNTRA GROUPING MASTER.xlsx, {len(brand_files)} brand files in {sb.BRAND_FOLDER}, {n} template files in TEMPLATES/{stamp}</i>")
     text = "\n".join(lines)
     print(text) if args.no_telegram else telegram.send(text)
     return 0

@@ -364,6 +364,84 @@ def apply(report: Path, record: pd.DataFrame, reasons: pd.DataFrame, today: date
     return states
 
 
+BRAND_FOLDER = "BRAND WISE"
+
+
+def brand_masters(master: Path, dest: Path) -> list[Path]:
+    """The master split by brand (owner, 6 Nov 2026): one file per brand, `MYNTRA GROUPING MASTER - <brand>.xlsx`,
+    in the master's layout: an account sheet for every account that has the brand, a Summary of those
+    sheets and the brand's SUBMISSIONS rows. Built from the finished master, so the job columns match."""
+    import re
+    from openpyxl import Workbook, load_workbook
+    from .engine import BRANDS, FILLS, format_workbook
+    wanted = {b.strip().lower() for b in BRANDS}      # only the owner's brands, nothing else
+    src = load_workbook(master, read_only=True)
+    sheets: dict[str, dict[str, list]] = {}      # brand -> account sheet -> rows
+    heads: dict[str, list] = {}
+    brand_of: dict[tuple[str, str], str] = {}     # (seller id, style id) -> brand
+    for ws in src.worksheets:
+        if not ws.title.startswith("ACC-"):
+            continue
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            continue
+        heads[ws.title] = head = list(rows[0])
+        at, sid_at = head.index("Brand"), head.index("Style ID")
+        for values in rows[1:]:
+            brand = str(values[at] or "").strip()
+            if brand.lower() in wanted:
+                sheets.setdefault(brand, {}).setdefault(ws.title, []).append(values)
+                brand_of[(ws.title[4:], str(values[sid_at] or "").replace(".0", "").strip())] = brand
+    record = []
+    if "SUBMISSIONS" in src.sheetnames:
+        record = list(src["SUBMISSIONS"].iter_rows(values_only=True))
+    src.close()
+
+    def job_brands(values, col) -> set[str]:
+        # a job uploaded by hand on the portal has no BRAND: the brands of its styles
+        named = str(values[col["BRAND"]] or "").strip() if "BRAND" in col else ""
+        if named:
+            return {named.lower()}
+        seller = str(values[col["SELLER ID"]] or "").strip() if "SELLER ID" in col else ""
+        styles = str(values[col["STYLE IDS"]] or "").split(",") if "STYLE IDS" in col else []
+        return {brand_of[(seller, x.strip())].lower() for x in styles if (seller, x.strip()) in brand_of}
+
+    dest.mkdir(parents=True, exist_ok=True)
+    out = []
+    for brand in sorted(sheets, key=str.lower):
+        wb = Workbook()
+        wb.remove(wb.active)
+        summary = []
+        for title in heads:                               # the master's account order
+            rows = sheets[brand].get(title)
+            if not rows:
+                continue
+            ws = wb.create_sheet(title)
+            ws.append(heads[title])
+            for values in rows:
+                ws.append(list(values))
+            col = {c: i for i, c in enumerate(heads[title])}
+            remarks = Counter(r[col["GROUPING REMARK"]] for r in rows)
+            summary.append([title[4:], len({r[col["Unique ID"]] for r in rows}), len(rows), *(remarks.get(k, 0) for k in FILLS)])
+        ws = wb.create_sheet("Summary")
+        ws.append(["Account", "Groups", "Rows", *FILLS])
+        for values in summary:
+            ws.append(values)
+        ws = wb.create_sheet("SUBMISSIONS")
+        if record:
+            ws.append(list(record[0]))
+            col = {c: i for i, c in enumerate(record[0])}
+            for values in record[1:]:
+                if brand.lower() in job_brands(values, col):
+                    ws.append(list(values))
+        format_workbook(wb)
+        safe = re.sub(r'[\\/:*?"<>|]+', "-", brand)
+        path = dest / f"MYNTRA GROUPING MASTER - {safe}.xlsx"
+        wb.save(path)
+        out.append(path)
+    return out
+
+
 def state_line(tally: Counter) -> str:
     """The pending groups of one account, per state, for Telegram."""
     return " · ".join(f"{s} {tally[s]}" for s in (FRESH, WAITING, APPROVED, CHECK, PARTIAL, FAILED, REJECTED) if tally[s]) or "none pending"

@@ -19,7 +19,9 @@ starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the 
   inventory of every warehouse per FINAL SKU (left blank, and said so, when OMSGuru cannot be read).
 * For every group x brand x article type of every account: each style's live colour group on
   myntra.com, then DONE / NOT DONE / DONE - EXTRA IN PORTAL (remove) / NOT LIVE / NOT LISTED /
-  DUPLICATE - NOT IN GROUP / ONLY 1 LISTED / DONE IN OTHER ACCOUNT, with PORTAL GROUP and MISSING IN PORTAL.
+  DUPLICATE - NOT IN GROUP / ONLY 1 LISTED, with PORTAL GROUP and MISSING IN PORTAL.
+  Each account on its own (owner, 6 Nov 2026): a group listed in two accounts is checked, gets its
+  upload file and is submitted in each account; there is no DONE IN OTHER ACCOUNT any more.
   A style myntra.com did not answer for (up to 20% of a run) is NO ANSWER FROM MYNTRA, action CHECK, left out of the
   upload files and counted on Telegram, never NOT LIVE. SALE that is low because an account has no order report for a
   month (on the 1st, last month's arrives only on the 2nd) is named on Telegram too.
@@ -37,7 +39,10 @@ starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the 
   IDs can form another complete group). Duplicate detection and upload-anchor selection use the
   same connected membership, avoiding false duplicate and ungroup flags from partial responses.
 * Output in `LISTING GROUPING`: `MYNTRA GROUPING MASTER.xlsx` (one sheet per account + Summary, replaced
-  each run), `GROUPING REASONS.xlsx`, `HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx`, and `TEMPLATES/<date>/ACC-<seller id>/` one
+  each run), `BRAND WISE/MYNTRA GROUPING MASTER - <brand>.xlsx` (the master split by brand, owner 6 Nov 2026: only the four
+  brands all about you, Fashfun, Murcia, DressBerry (`engine.BRANDS`, the only brands the check reads); the same
+  layout, an account sheet for each account that has the brand, its Summary, and the SUBMISSIONS rows of that brand;
+  a job uploaded by hand gets the brands of its styles; rebuilt by the full run and the 8 PM status run), `GROUPING REASONS.xlsx`, `HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx`, and `TEMPLATES/<date>/ACC-<seller id>/` one
   upload file per pending group (Unique ID, Group Type, Style ID; one style per SKU: the one already
   grouped, else Active, else the best seller).
 * When myntra.com (and the phone) answer for less than 80% of the styles the report is not written

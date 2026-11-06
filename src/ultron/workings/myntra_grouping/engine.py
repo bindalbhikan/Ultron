@@ -1,6 +1,7 @@
 """The owner's hand-run Myntra colour-grouping checker (LISTING/MYNTRA/Grouping2/main.py), unchanged:
-its loaders, portal spider, rules and report, except one change of the owner (2 Nov 2026): NOT GROUPED
-is reported as NOT DONE. pipeline.py points its folders at the run's work folder and gives it the bot's
+its loaders, portal spider, rules and report, except changes of the owner: NOT GROUPED is reported as
+NOT DONE (2 Nov 2026), and no DONE IN OTHER ACCOUNT: a group listed in two accounts is checked and
+submitted in each account on its own (6 Nov 2026). pipeline.py points its folders at the run's work folder and gives it the bot's
 inputs (Drive AGENT WORK/MYNTRA/LISTING GROUPING, the daily listings reports, OMSGuru's inventory).
 """
 """
@@ -95,12 +96,11 @@ REMARK_NOT_LISTED = "NOT LISTED"
 REMARK_NOT_GROUPED = REMARK_NOT_DONE
 REMARK_DUPLICATE = "DUPLICATE - NOT IN GROUP"
 REMARK_SINGLE = "ONLY 1 LISTED"
-REMARK_DONE_OTHER = "DONE IN OTHER ACCOUNT"
 
 COLUMNS = [
     "Unique ID", "Group Type", "Category", "Article Type", "Style ID", "SKU", "FINAL SKU", "Brand",
     "GROUPING REMARK", "STATUS", "REMARK", "INV", "SALE", "REMARK2", "ACTION",
-    "PORTAL COLOR", "MISSING IN PORTAL", "PORTAL GROUP", "COMPLETE IN",
+    "PORTAL COLOR", "MISSING IN PORTAL", "PORTAL GROUP",
 ]
 
 
@@ -618,26 +618,6 @@ def build_account_rows(account, groups, styles, master, sales, inventory, cache)
 PENDING_REMARKS = {REMARK_NOT_DONE, REMARK_NOT_GROUPED}
 
 
-def apply_cross_account_done(account_rows):
-    """A group (sheet group + brand + article type) that is complete in one account
-    is not shown as pending in the other accounts."""
-    by_key = {}
-    for account, rows in account_rows.items():
-        for row in rows:
-            by_key.setdefault((row["_key"], account), []).append(row["GROUPING REMARK"])
-    complete = {}
-    for (key, account), remarks in by_key.items():
-        if REMARK_DONE in remarks and not PENDING_REMARKS & set(remarks):
-            complete.setdefault(key, []).append(account)
-    for account, rows in account_rows.items():
-        for row in rows:
-            done_in = [a for a in complete.get(row["_key"], []) if a != account]
-            if done_in and row["GROUPING REMARK"] in PENDING_REMARKS:
-                row["GROUPING REMARK"] = REMARK_DONE_OTHER
-                row["ACTION"] = ""
-                row["COMPLETE IN"] = ", ".join(f"ACC-{a}" for a in done_in)
-
-
 TEMPLATE_SKIP_REMARKS = {REMARK_NOT_LISTED, REMARK_EXTRA, REMARK_NOT_LIVE, REMARK_NO_ANSWER}
 
 
@@ -722,7 +702,6 @@ FILLS = {
     REMARK_NOT_LIVE: "D9D9D9",
     REMARK_NO_ANSWER: "F8CBAD",
     REMARK_NOT_LISTED: "EDEDED",
-    REMARK_DONE_OTHER: "E2EFDA",
     REMARK_DUPLICATE: "BDD7EE",
     REMARK_SINGLE: "FFFFFF",
 }
@@ -815,7 +794,6 @@ def main():
         account: build_account_rows(account, groups, styles, master, sales, inventory, cache)
         for account in accounts
     }
-    apply_cross_account_done(account_rows)
     stamp = f"{datetime.now():%Y-%m-%d}"
     out = os.path.join(OUTPUT_DIR, f"GROUPING_ACCOUNT_WISE_{stamp}.xlsx")
     write_report(out, account_rows)
