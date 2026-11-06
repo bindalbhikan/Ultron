@@ -34,17 +34,22 @@ class BrandWiseTests(unittest.TestCase):
         master = tmp / "MYNTRA GROUPING MASTER.xlsx"
         wb.save(master)
 
-        files = {f.name: pd.read_excel(f, sheet_name=None) for f in sb.brand_masters(master, tmp / "out")}
-        self.assertEqual(len(files), 2)                    # "Other" is not one of the brands
-        fashfun = files["MYNTRA GROUPING MASTER - Fashfun.xlsx"]
-        murcia = files["MYNTRA GROUPING MASTER - Murcia.xlsx"]
-        self.assertEqual(list(fashfun), ["ACC-19170", "ACC-35426", "Summary", "SUBMISSIONS"])
-        self.assertEqual(list(murcia), ["ACC-19170", "Summary", "SUBMISSIONS"])
-        self.assertEqual(list(fashfun["ACC-35426"].columns), sb.LAYOUT)
-        self.assertEqual(fashfun["Summary"].set_index("Account").loc[35426, "NOT DONE"], 2)
-        self.assertEqual(len(fashfun["SUBMISSIONS"]), 1)
-        self.assertEqual(len(murcia["SUBMISSIONS"]), 1)   # brand taken from its style
+        book = pd.read_excel(sb.brand_master(master, tmp / "out"), sheet_name=None)
+        self.assertEqual(list(book), ["Fashfun", "Murcia", "Summary", "SUBMISSIONS"])   # "Other" is not a brand
+        self.assertEqual(list(book["Fashfun"].columns), ["ACCOUNT", *sb.LAYOUT])
+        self.assertEqual(book["Fashfun"]["ACCOUNT"].tolist(), ["MAIN", "FMCC", "FMCC"])
+        summary = book["Summary"].set_index(["Brand", "Account"])
+        self.assertEqual(summary.loc[("Fashfun", "FMCC"), "NOT DONE"], 2)
+        self.assertEqual(book["SUBMISSIONS"]["BRANDS"].tolist(), ["Fashfun", "Murcia"])   # the 2nd from its style
 
+    def test_again_sends_rejected_but_not_waiting(self):
+        from datetime import date
+        jobs = [{"seller": "19170", "styles": {"1", "2"}, "status": "REJECTED", "day": "2026-11-05"},
+                {"seller": "19170", "styles": {"3", "4"}, "status": "IN_PROGRESS", "day": "2026-11-05"}]
+        today = date(2026, 11, 6)
+        self.assertTrue(sb.skip_reason("19170", ["1", "2"], jobs, today))
+        self.assertEqual(sb.skip_reason("19170", ["1", "2"], jobs, today, again=True), "")
+        self.assertEqual(sb.skip_reason("19170", ["3", "4"], jobs, today, again=True), "waiting on Myntra")
 
 if __name__ == "__main__":
     unittest.main()

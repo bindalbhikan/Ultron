@@ -40,17 +40,19 @@ starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the 
   IDs can form another complete group). Duplicate detection and upload-anchor selection use the
   same connected membership, avoiding false duplicate and ungroup flags from partial responses.
 * Output in `LISTING GROUPING`: `MYNTRA GROUPING MASTER.xlsx` (one sheet per account + Summary, replaced
-  each run), `BRAND WISE/MYNTRA GROUPING MASTER - <brand>.xlsx` (the master split by brand, owner 6 Nov 2026: only the four
-  brands all about you, Fashfun, Murcia, DressBerry (`engine.BRANDS`, the only brands the check reads); the same
-  layout, an account sheet for each account that has the brand, its Summary, and the SUBMISSIONS rows of that brand;
-  a job uploaded by hand gets the brands of its styles; rebuilt by the full run and the 8 PM status run), `GROUPING REASONS.xlsx`, `HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx`, and `TEMPLATES/<date>/ACC-<seller id>/` one
+  each run), `MYNTRA GROUPING MASTER BRAND WISE.xlsx` (owner 6 Nov 2026: one file, made after the
+  account-wise master and from it: a sheet per brand, only all about you, Fashfun, Murcia, DressBerry (`engine.BRANDS`),
+  with every account's rows, ACCOUNT first; Summary per brand and account; SUBMISSIONS with a BRANDS column, a job
+  uploaded by hand getting the brands of its styles; rebuilt by the full run and the 8 PM status run), `GROUPING REASONS.xlsx`, `HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx`, and `TEMPLATES/<date>/ACC-<seller id>/` one
   upload file per pending group (Unique ID, Group Type, Style ID; one style per SKU: the one already
   grouped, else Active, else the best seller).
 * When myntra.com (and the phone) answer for less than 80% of the styles the report is not written
   (a blocked run would show live groups as not live).
 * **Submitting** (`--submit`, by hand; the scheduled run only checks): workflow input `submit=1`, Telegram
   `/grouping submit [phone]` or Menu > Myntra > Colour grouping > Submit pending groups (asks first); every account's
-  pending groups, each in the account that lists its styles: each pending group's file goes up on its
+  pending groups, each in the account that lists its styles:
+  `submit=again` (`--again`, `/grouping submit again`) sends every NOT DONE group, rejected / failed / recently
+  approved ones too (owner, 6 Nov 2026); only a job still waiting on Myntra holds a group back. each pending group's file goes up on its
   account as the portal's Catalog > Style Grouping does (`getUploadToken/cms`, the file to the CMS blob
   store, `diy-cataloguing/style-grouping/bulk-upload/submit`); Myntra then approves it, usually within hours (status IN_PROGRESS, then COMPLETED, or REJECTED by the approver).
   Myntra fails a whole upload holding more than one style that already has a colour group, so a file

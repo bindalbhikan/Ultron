@@ -211,12 +211,15 @@ def _recent(job: dict, today: date) -> bool:
         return False
 
 
-def skip_reason(seller: str, styles: list[str], jobs: list[dict], today: date) -> str:
+def skip_reason(seller: str, styles: list[str], jobs: list[dict], today: date, again: bool = False) -> str:
     """Why this upload is not sent now ("" = send it). Only the newest attempt of the same styles counts:
-    a failed upload that later went through blocks nothing."""
+    a failed upload that later went through blocks nothing. again (owner, 6 Nov 2026: "submit every NOT DONE
+    group, rejected ones too"): only a job still waiting on Myntra holds the group back."""
     have, mine = set(styles), [j for j in jobs if j["seller"] == seller]
     if any(j["status"] not in FINISHED and have & j["styles"] for j in mine):
         return "waiting on Myntra"
+    if again:
+        return ""
     same = [j for j in mine if j["styles"] == have]
     if same and same[-1]["status"] == "REJECTED":
         return "rejected, change the styles first"
@@ -247,9 +250,10 @@ def changed_jobs(old: pd.DataFrame, new: pd.DataFrame) -> Counter:
                    if j.isdigit() and was.get(j) != str(s))
 
 
-def submit(folder: Path, record: pd.DataFrame, limit: int = 0, pause: float = 0.005) -> tuple[pd.DataFrame, list[str], int, Counter]:
+def submit(folder: Path, record: pd.DataFrame, limit: int = 0, pause: float = 0.005,
+           again: bool = False) -> tuple[pd.DataFrame, list[str], int, Counter]:
     """Upload the files of folder/ACC-<seller id>/; (record, problems, submitted, reason -> skipped).
-    limit: at most that many groups in all (a test)."""
+    limit: at most that many groups in all (a test). again: see skip_reason."""
     from ..portals import myntra as mp
     from ..return_analysis.sources import env, myntra_portal
     rows, problems, skipped = [], [], Counter()
@@ -266,7 +270,7 @@ def submit(folder: Path, record: pd.DataFrame, limit: int = 0, pause: float = 0.
             if limit and len(rows) >= limit:
                 break
             uid, styles = template_rows(f)
-            why = skip_reason(seller, styles, jobs, today)
+            why = skip_reason(seller, styles, jobs, today, again)
             if why:
                 skipped[why] += 1
                 log.info("%s %s: %s: skipped", account, f.name, why)
@@ -364,82 +368,73 @@ def apply(report: Path, record: pd.DataFrame, reasons: pd.DataFrame, today: date
     return states
 
 
-BRAND_FOLDER = "BRAND WISE"
+BRAND_MASTER = "MYNTRA GROUPING MASTER BRAND WISE.xlsx"
 
 
-def brand_masters(master: Path, dest: Path) -> list[Path]:
-    """The master split by brand (owner, 6 Nov 2026): one file per brand, `MYNTRA GROUPING MASTER - <brand>.xlsx`,
-    in the master's layout: an account sheet for every account that has the brand, a Summary of those
-    sheets and the brand's SUBMISSIONS rows. Built from the finished master, so the job columns match."""
-    import re
+def brand_master(master: Path, dest: Path) -> Path:
+    """The master brand-wise, one file (owner, 6 Nov 2026): a sheet per brand (only engine.BRANDS) with the rows
+    of every account, ACCOUNT first and then the master's columns; a Summary per brand and account; and
+    SUBMISSIONS with a BRANDS column (a job uploaded by hand gets the brands of its styles). Built from the
+    finished account-wise master, so the job columns match it."""
     from openpyxl import Workbook, load_workbook
     from .engine import BRANDS, FILLS, format_workbook
-    wanted = {b.strip().lower() for b in BRANDS}      # only the owner's brands, nothing else
+    names = {b.strip().lower(): b for b in BRANDS}      # only the owner's brands, nothing else
     src = load_workbook(master, read_only=True)
-    sheets: dict[str, dict[str, list]] = {}      # brand -> account sheet -> rows
-    heads: dict[str, list] = {}
-    brand_of: dict[tuple[str, str], str] = {}     # (seller id, style id) -> brand
+    per_brand: dict[str, list] = {k: [] for k in names}
+    head: list = []
+    brand_of: dict[tuple[str, str], str] = {}           # (seller id, style id) -> brand
     for ws in src.worksheets:
         if not ws.title.startswith("ACC-"):
             continue
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
             continue
-        heads[ws.title] = head = list(rows[0])
-        at, sid_at = head.index("Brand"), head.index("Style ID")
+        head = head or list(rows[0])
+        col = {c: i for i, c in enumerate(rows[0])}
+        seller = ws.title[4:]
         for values in rows[1:]:
-            brand = str(values[at] or "").strip()
-            if brand.lower() in wanted:
-                sheets.setdefault(brand, {}).setdefault(ws.title, []).append(values)
-                brand_of[(ws.title[4:], str(values[sid_at] or "").replace(".0", "").strip())] = brand
-    record = []
-    if "SUBMISSIONS" in src.sheetnames:
-        record = list(src["SUBMISSIONS"].iter_rows(values_only=True))
+            brand = str(values[col["Brand"]] or "").strip().lower()
+            if brand in names:
+                per_brand[brand].append([ACCOUNT_OF.get(seller, seller), *(values[col[c]] if c in col else None for c in head)])
+                brand_of[(seller, str(values[col["Style ID"]] or "").replace(".0", "").strip())] = names[brand]
+    record = list(src["SUBMISSIONS"].iter_rows(values_only=True)) if "SUBMISSIONS" in src.sheetnames else []
     src.close()
 
-    def job_brands(values, col) -> set[str]:
-        # a job uploaded by hand on the portal has no BRAND: the brands of its styles
-        named = str(values[col["BRAND"]] or "").strip() if "BRAND" in col else ""
-        if named:
-            return {named.lower()}
-        seller = str(values[col["SELLER ID"]] or "").strip() if "SELLER ID" in col else ""
-        styles = str(values[col["STYLE IDS"]] or "").split(",") if "STYLE IDS" in col else []
-        return {brand_of[(seller, x.strip())].lower() for x in styles if (seller, x.strip()) in brand_of}
-
-    dest.mkdir(parents=True, exist_ok=True)
-    out = []
-    for brand in sorted(sheets, key=str.lower):
-        wb = Workbook()
-        wb.remove(wb.active)
-        summary = []
-        for title in heads:                               # the master's account order
-            rows = sheets[brand].get(title)
-            if not rows:
-                continue
-            ws = wb.create_sheet(title)
-            ws.append(heads[title])
-            for values in rows:
-                ws.append(list(values))
-            col = {c: i for i, c in enumerate(heads[title])}
-            remarks = Counter(r[col["GROUPING REMARK"]] for r in rows)
-            summary.append([title[4:], len({r[col["Unique ID"]] for r in rows}), len(rows), *(remarks.get(k, 0) for k in FILLS)])
-        ws = wb.create_sheet("Summary")
-        ws.append(["Account", "Groups", "Rows", *FILLS])
-        for values in summary:
+    wb = Workbook()
+    wb.remove(wb.active)
+    summary = []
+    at = head.index("GROUPING REMARK") + 1 if head else None
+    uid_at = head.index("Unique ID") + 1 if head else None
+    for key, rows in per_brand.items():
+        if not rows:
+            continue
+        ws = wb.create_sheet(names[key][:31])
+        ws.append(["ACCOUNT", *head])
+        for values in rows:
             ws.append(values)
-        ws = wb.create_sheet("SUBMISSIONS")
-        if record:
-            ws.append(list(record[0]))
-            col = {c: i for i, c in enumerate(record[0])}
-            for values in record[1:]:
-                if brand.lower() in job_brands(values, col):
-                    ws.append(list(values))
-        format_workbook(wb)
-        safe = re.sub(r'[\\/:*?"<>|]+', "-", brand)
-        path = dest / f"MYNTRA GROUPING MASTER - {safe}.xlsx"
-        wb.save(path)
-        out.append(path)
-    return out
+        for account in dict.fromkeys(r[0] for r in rows):
+            mine = [r for r in rows if r[0] == account]
+            remarks = Counter(r[at] for r in mine)
+            summary.append([names[key], account, len({r[uid_at] for r in mine}), len(mine), *(remarks.get(k, 0) for k in FILLS)])
+    ws = wb.create_sheet("Summary")
+    ws.append(["Brand", "Account", "Groups", "Rows", *FILLS])
+    for values in summary:
+        ws.append(values)
+    ws = wb.create_sheet("SUBMISSIONS")
+    if record:
+        col = {c: i for i, c in enumerate(record[0])}
+        ws.append(["BRANDS", *record[0]])
+        for values in record[1:]:
+            named = str(values[col["BRAND"]] or "").strip() if "BRAND" in col else ""
+            seller = str(values[col["SELLER ID"]] or "").strip() if "SELLER ID" in col else ""
+            styles = [x.strip() for x in str(values[col["STYLE IDS"]] or "").split(",")] if "STYLE IDS" in col else []
+            brands = [named] if named else sorted({brand_of[(seller, x)] for x in styles if (seller, x) in brand_of})
+            ws.append([", ".join(brands), *values])
+    format_workbook(wb)
+    dest.mkdir(parents=True, exist_ok=True)
+    path = dest / BRAND_MASTER
+    wb.save(path)
+    return path
 
 
 def state_line(tally: Counter) -> str:

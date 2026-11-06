@@ -18,8 +18,8 @@ Output (Drive AGENT WORK/MYNTRA/LISTING GROUPING):
                                     DONE - EXTRA IN PORTAL, ...; a style in no group is NOT DONE too), on a NOT DONE
                                     style its newest job and reason + Summary; replaced each run
   GROUPING REASONS.xlsx             every row of every job's result report, what the portal said per style
-  BRAND WISE/MYNTRA GROUPING MASTER - <brand>.xlsx   the master split by brand (same layout: an account
-                                    sheet per account with the brand, Summary, SUBMISSIONS); replaced each run
+  MYNTRA GROUPING MASTER BRAND WISE.xlsx  the master brand-wise: a sheet per brand with every account's rows
+                                    (ACCOUNT first), Summary per brand and account, SUBMISSIONS; replaced each run
   HISTORY/GROUPING_ACCOUNT_WISE_<date>.xlsx   the day's check with all its columns (MISSING IN PORTAL, PORTAL GROUP ...)
   TEMPLATES/<date>/ACC-<seller id>/<unique id>_<brand>_<article>.xlsx   one upload file per pending
                                     group (Unique ID, Group Type, Style ID), ready to submit on Myntra
@@ -159,14 +159,6 @@ def phone_records(style_ids: list[str]) -> dict:
     return out
 
 
-def put_brand_files(lg: DriveFolder, files: list[Path]) -> None:
-    """The brand-wise masters into LISTING GROUPING/BRAND WISE (replaced each run)."""
-    from . import submit as sb
-    folder = lg.subfolder(sb.BRAND_FOLDER, create=True)
-    for f in files:
-        folder.put(f, XLSX)
-
-
 def run_status(args) -> int:
     """The upload jobs read again, without the check on myntra.com."""
     from . import submit as sb
@@ -185,7 +177,7 @@ def run_status(args) -> int:
     if not master:
         raise RuntimeError("MYNTRA GROUPING MASTER.xlsx not found in AGENT WORK/MYNTRA/LISTING GROUPING")
     states = sb.apply(master, record, reasons)
-    brand_files = sb.brand_masters(master, work / sb.BRAND_FOLDER)
+    brand_file = sb.brand_master(master, work / "brand")
     lines = [f"🎨 <b>Myntra grouping status</b> {datetime.now():%Y-%m-%d %H:%M}",
              "<i>the portal's jobs read again; DONE / NOT DONE are as of the last full check</i>", ""]
     lines.append("Changed: " + (" · ".join(f"{s} {n}" for s, n in changed.most_common()) if changed else "no job"))
@@ -196,12 +188,12 @@ def run_status(args) -> int:
         print("\n".join(lines))
         Path("output/myntra_grouping").mkdir(parents=True, exist_ok=True)
         shutil.copy2(master, Path("output/myntra_grouping") / master.name)
-        shutil.copytree(work / sb.BRAND_FOLDER, Path("output/myntra_grouping") / sb.BRAND_FOLDER, dirs_exist_ok=True)
+        shutil.copy2(brand_file, Path("output/myntra_grouping") / brand_file.name)
         sb.write_record(record, Path("output/myntra_grouping") / sb.RECORD)
         sb.write_reasons(reasons, Path("output/myntra_grouping") / sb.REASONS)
         return 0
     lg.put(master, XLSX)
-    put_brand_files(lg, brand_files)
+    lg.put(brand_file, XLSX)
     lg.put(sb.write_record(record, work / sb.RECORD), XLSX)
     lg.put(sb.write_reasons(reasons, work / sb.REASONS), XLSX)
     text = "\n".join(lines)
@@ -273,7 +265,7 @@ def run(args) -> int:
     record, problems = sb.sync_jobs(record)
     submitted, skipped = 0, {}
     if args.submit and not args.no_upload:
-        record, bad, submitted, skipped = sb.submit(Path(e.TEMPLATE_DIR) / stamp, record, args.submit_limit)
+        record, bad, submitted, skipped = sb.submit(Path(e.TEMPLATE_DIR) / stamp, record, args.submit_limit, again=args.again)
         problems += bad
         record, more = sb.sync_jobs(record)
         problems += more
@@ -283,7 +275,7 @@ def run(args) -> int:
     master_file = report.with_name("MYNTRA GROUPING MASTER.xlsx")      # HISTORY keeps the check's columns
     shutil.copy2(report, master_file)
     states = sb.apply(master_file, record, reasons)
-    brand_files = sb.brand_masters(master_file, work / "output" / sb.BRAND_FOLDER)
+    brand_file = sb.brand_master(master_file, work / "output")
 
     lines = [f"🎨 <b>Myntra colour grouping</b> {stamp}", ""]
     for a, rows in account_rows.items():
@@ -312,7 +304,7 @@ def run(args) -> int:
         shutil.copytree(work / "output", Path("output") / "myntra_grouping", dirs_exist_ok=True)
         return 0
     lg.put(master_file, XLSX)
-    put_brand_files(lg, brand_files)
+    lg.put(brand_file, XLSX)
     lg.subfolder("HISTORY", create=True).put(report, XLSX)
     lg.put(sb.write_record(record, work / sb.RECORD), XLSX)
     lg.put(sb.write_reasons(reasons, work / sb.REASONS), XLSX)
@@ -324,7 +316,7 @@ def run(args) -> int:
         for f in sorted(acc_dir.glob("*.xlsx")):
             dest.put(f, XLSX)
             n += 1
-    lines.append(f"\n<i>Drive AGENT WORK/MYNTRA/LISTING GROUPING: MYNTRA GROUPING MASTER.xlsx, {len(brand_files)} brand files in {sb.BRAND_FOLDER}, {n} template files in TEMPLATES/{stamp}</i>")
+    lines.append(f"\n<i>Drive AGENT WORK/MYNTRA/LISTING GROUPING: MYNTRA GROUPING MASTER.xlsx, {sb.BRAND_MASTER}, {n} template files in TEMPLATES/{stamp}</i>")
     text = "\n".join(lines)
     print(text) if args.no_telegram else telegram.send(text)
     return 0
@@ -334,6 +326,8 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="run.py myntra-grouping", description=__doc__.splitlines()[0])
     p.add_argument("--no-upload", action="store_true", help="build only (output/myntra_grouping), Drive not changed")
     p.add_argument("--submit", action="store_true", help="submit the pending groups on the Myntra partner portal")
+    p.add_argument("--again", action="store_true",
+                   help="with --submit: send rejected, failed and recently approved groups too (only a job still waiting holds one back)")
     p.add_argument("--submit-limit", type=int, default=0, help="with --submit: at most that many groups (a test)")
     p.add_argument("--status", action="store_true", help="only read the portal's upload jobs again, myntra.com not asked")
     p.add_argument("--only-changes", action="store_true", help="with --status: nothing written or sent unless a job changed")
