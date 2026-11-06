@@ -111,12 +111,15 @@ const COMMANDS = {
   ticketfollowup: { workflow: "ticket-followup.yml", icon: "🎫", name: "Ticket follow-up", portal: "reports", minutes: 5,
                     examples: ["/ticketfollowup"], inputs: none("/ticketfollowup") },
   grouping: { workflow: "myntra-grouping.yml", icon: "🎨", name: "Myntra colour grouping", portal: "myntra", minutes: 20, office: true,
-              examples: ["/grouping", "/grouping phone", "/grouping status"], inputs: (args) => {
-                if (args.length === 0) return {};
-                const a = args.length === 1 ? args[0].toLowerCase() : "";
-                if (a === "status") return { status_only: "1" };
-                if (a === "phone") return { runner: "cloud" };   // GitHub's runner, myntra.com through Ultron Phone
-                return "Use /grouping, /grouping phone or /grouping status";
+              examples: ["/grouping", "/grouping phone", "/grouping status", "/grouping submit", "/grouping submit phone"], inputs: (args) => {
+                const a = args.map((x) => x.toLowerCase());
+                if (a.length === 0) return {};
+                if (a.length === 1 && a[0] === "status") return { status_only: "1" };
+                if (a.length === 1 && a[0] === "phone") return { runner: "cloud" };   // GitHub's runner, myntra.com through Ultron Phone
+                // check, then submit every account's pending groups on the partner portal
+                if (a[0] === "submit" && (a.length === 1 || (a.length === 2 && a[1] === "phone")))
+                  return a.length === 2 ? { submit: "1", runner: "cloud" } : { submit: "1" };
+                return "Use /grouping, /grouping phone, /grouping status or /grouping submit [phone]";
               } },
   myntrahistory: { workflow: "myntra-history.yml", icon: "🗄", name: "Myntra order + return history", portal: "myntra", minutes: 60,
                    examples: ["/myntrahistory", "/myntrahistory 2025-04 2026-09"], inputs: (args) => {
@@ -267,10 +270,11 @@ const SCREENS = {
   grouping: {
     title: "🎨 <b>Myntra colour grouping</b>\n<i>all about you · Fashfun · Murcia · DressBerry</i>\n\n" +
       "🎨 Check = office PC, or the phone when the PC is off\n📱 Phone = always through Ultron Phone\n" +
-      "🔄 Status = only the portal's jobs again\n\n📂 Drive LISTING GROUPING: MYNTRA GROUPING MASTER + BRAND WISE (one file per brand)",
+      "🔄 Status = only the portal's jobs again\n⚠️ Submit = check, then upload every account's pending groups on the portal\n\n" +
+      "📂 Drive LISTING GROUPING: MYNTRA GROUPING MASTER + BRAND WISE (one file per brand)",
     rows: [
       [["🎨 Check now", "r:grouping"], ["📱 Check via phone", "r:grouping phone"]],
-      [["🔄 Grouping status", "r:grouping status"]],
+      [["🔄 Grouping status", "r:grouping status"], ["⚠️ Submit pending groups", "c:grouping submit"]],
       back("myntra"),
     ],
   },

@@ -14,6 +14,9 @@ on:
       status_only:
         description: "1 = only read the portal's upload jobs again, myntra.com not asked; changes = the same, quiet unless a job changed"
         default: ""
+      submit:
+        description: "1 = after the check, submit every account's pending groups on the partner portal (by hand only)"
+        default: ""
 
 concurrency:
   group: myntra-grouping
@@ -47,6 +50,7 @@ jobs:
       MYNTRA_GROUPING_VIA: ${{ inputs.runner == 'cloud' && 'phone' || '' }}
       IN_NO_UPLOAD: ${{ inputs.no_upload }}
       IN_STATUS: ${{ inputs.status_only }}
+      IN_SUBMIT: ${{ inputs.submit }}
     steps:
       - uses: actions/checkout@v4
       - if: inputs.runner == 'cloud'
@@ -64,6 +68,7 @@ jobs:
           if [ -n "$IN_NO_UPLOAD" ]; then set -- --no-upload; fi
           if [ -n "$IN_STATUS" ]; then set -- "$@" --status; fi
           if [ "$IN_STATUS" = "changes" ]; then set -- "$@" --only-changes; fi
+          if [ -n "$IN_SUBMIT" ] && [ -z "$IN_STATUS" ]; then set -- "$@" --submit; fi
           bash scripts/github/ci_run.sh myntra-grouping "$@"
       - name: Upload run output (encrypted)
         if: always()

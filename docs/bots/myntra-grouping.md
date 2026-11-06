@@ -48,7 +48,9 @@ starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the 
   grouped, else Active, else the best seller).
 * When myntra.com (and the phone) answer for less than 80% of the styles the report is not written
   (a blocked run would show live groups as not live).
-* **Submitting** (`--submit`, by hand; the scheduled run only checks): each pending group's file goes up on its
+* **Submitting** (`--submit`, by hand; the scheduled run only checks): workflow input `submit=1`, Telegram
+  `/grouping submit [phone]` or Menu > Myntra > Colour grouping > Submit pending groups (asks first); every account's
+  pending groups, each in the account that lists its styles: each pending group's file goes up on its
   account as the portal's Catalog > Style Grouping does (`getUploadToken/cms`, the file to the CMS blob
   store, `diy-cataloguing/style-grouping/bulk-upload/submit`); Myntra then approves it, usually within hours (status IN_PROGRESS, then COMPLETED, or REJECTED by the approver).
   Myntra fails a whole upload holding more than one style that already has a colour group, so a file
