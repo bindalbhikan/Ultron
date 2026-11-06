@@ -1,8 +1,9 @@
 # Myntra colour grouping — `python run.py myntra-grouping`
 
 **When**: every 3 days (the 1st, 4th, 7th ... 28th), 12 PM IST (`myntra-grouping.yml`, started by the
-worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: Menu > Myntra > Colour grouping, `/grouping`, or run the workflow.
-**Status only**: 8 PM daily (quiet unless a job changed), or Menu > Myntra > Grouping status, `/grouping status`, input `status_only`: reads the portal's jobs again into `GROUPING SUBMISSIONS.xlsx` and the master's job columns, without asking myntra.com, so GROUPING REMARK stays as of the last full run. Not a separate row in the work schedule sheet (same workflow as the check).
+worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: Menu > Myntra > Colour grouping > Check now (office PC, the phone when it is offline) or
+Check via phone (`/grouping phone`, always `runner=cloud`), `/grouping`, or run the workflow.
+**Status only**: 8 PM daily (quiet unless a job changed), or Menu > Myntra > Colour grouping > Grouping status, `/grouping status`, input `status_only`: reads the portal's jobs again into `GROUPING SUBMISSIONS.xlsx` and the master's job columns, without asking myntra.com, so GROUPING REMARK stays as of the last full run. Not a separate row in the work schedule sheet (same workflow as the check).
 Runs on the office PC (myntra.com refuses GitHub's runners); when its runner is offline the worker
 starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the same website API
 `www.myntra.com/gateway/v2/product/<style>` from a mobile line; the app sends the colour group since

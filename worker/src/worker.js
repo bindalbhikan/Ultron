@@ -111,9 +111,12 @@ const COMMANDS = {
   ticketfollowup: { workflow: "ticket-followup.yml", icon: "🎫", name: "Ticket follow-up", portal: "reports", minutes: 5,
                     examples: ["/ticketfollowup"], inputs: none("/ticketfollowup") },
   grouping: { workflow: "myntra-grouping.yml", icon: "🎨", name: "Myntra colour grouping", portal: "myntra", minutes: 20, office: true,
-              examples: ["/grouping", "/grouping status"], inputs: (args) => {
+              examples: ["/grouping", "/grouping phone", "/grouping status"], inputs: (args) => {
                 if (args.length === 0) return {};
-                return args.length === 1 && args[0].toLowerCase() === "status" ? { status_only: "1" } : "Use /grouping or /grouping status";
+                const a = args.length === 1 ? args[0].toLowerCase() : "";
+                if (a === "status") return { status_only: "1" };
+                if (a === "phone") return { runner: "cloud" };   // GitHub's runner, myntra.com through Ultron Phone
+                return "Use /grouping, /grouping phone or /grouping status";
               } },
   myntrahistory: { workflow: "myntra-history.yml", icon: "🗄", name: "Myntra order + return history", portal: "myntra", minutes: 60,
                    examples: ["/myntrahistory", "/myntrahistory 2025-04 2026-09"], inputs: (args) => {
@@ -257,9 +260,18 @@ const SCREENS = {
       [["🔐 Courier OTP", "r:myntraotp"], ["📊 Daily reports", "r:myntrareports"]],
       [["🚚 Courier scorecard", "r:myntratat"], ["🔑 Login check", "a:mlogin"]],
       [["📈 Orders yesterday", "a:myn_orders"], ["🏷 Zero TD", "r:myntrazerotd"]],
-      [["🎨 Colour grouping", "r:grouping"], ["🔄 Grouping status", "r:grouping status"]],
-      [["🗄 Order + return history", "c:myntrahistory"]],
+      [["🎨 Colour grouping", "m:grouping"], ["🗄 Order + return history", "c:myntrahistory"]],
       back(),
+    ],
+  },
+  grouping: {
+    title: "🎨 <b>Myntra colour grouping</b>\n<i>all about you · Fashfun · Murcia · DressBerry</i>\n\n" +
+      "🎨 Check = office PC, or the phone when the PC is off\n📱 Phone = always through Ultron Phone\n" +
+      "🔄 Status = only the portal's jobs again\n\n📂 Drive LISTING GROUPING: MYNTRA GROUPING MASTER + BRAND WISE (one file per brand)",
+    rows: [
+      [["🎨 Check now", "r:grouping"], ["📱 Check via phone", "r:grouping phone"]],
+      [["🔄 Grouping status", "r:grouping status"]],
+      back("myntra"),
     ],
   },
   vms: {
