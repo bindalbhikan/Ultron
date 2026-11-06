@@ -102,6 +102,9 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   repeated about 1,200 and lost about 700 with its count still right, not on every read. With a `filter`, `skip` is ignored: every
   page repeats the first 10,000 and the rest, the newest rows among them, never come. `report()` asks for everything in one request,
   sorted on every column, and raises when the rows are not `totalCount`, the status is not 200 or the answer has no data.
+* The count and the rows come from two queries on the server: while the warehouse is packing, a line can land between them
+  (6 Nov 2026, 5:30 PM: report 62 gave 522 rows of 521 and ERP vs VMS was skipped). `report()` now asks again up to 4 times
+  (5, 10, 15 s apart) when they disagree, and raises only if they never agree.
 
 ## OMSGuru — `portals/omsguru.py`, `portals/omsguru_returns.py`
 

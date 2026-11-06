@@ -13,6 +13,7 @@ import base64
 import json
 import logging
 import re
+import time
 from datetime import date, datetime
 
 import requests
@@ -28,6 +29,7 @@ COMPANY = [{"key": "companyId", "value": 1}, {"key": "companyYearId", "value": 5
 # paged read of 28,071 rows could repeat about 1,200 and lose about 700 with its count still right; with a filter it ignores skip, so
 # every page repeats the first and the rows past 10,000, the newest among them, never come.
 TAKE_ALL = 1000000
+COUNT_TRIES = 4  # report answers whose row count and total disagree are asked again
 
 GRN_REPORT = 58          # "GR GRN Report"
 DISPATCH_REPORT = 62     # "Shipping Label Print (Packing Report)"
@@ -122,16 +124,25 @@ class Erp:
             parts = [[column[f], op, v] for f, op, v in where]
             p["filter"] = json.dumps(parts[0] if len(parts) == 1 else
                                      [x for part in parts for x in ("and", part)][1:])
-        r = self.s.get(f"{API}/TblRptReports/GetReportPreviewDataSource", params=p, timeout=self.timeout)
-        if r.status_code != 200:
-            raise ErpError(f"ERP report {report_id}: HTTP {r.status_code}")
-        try:
-            v = r.json()
-            data, total = v["data"], v["totalCount"]
-        except (ValueError, KeyError, TypeError) as exc:
-            raise ErpError(f"ERP report {report_id}: no data in its answer") from exc
-        if len(data) != total:
-            raise ErpError(f"ERP report {report_id}: {len(data)} rows came of {total}")
+        # The server counts and fetches in two queries; while the warehouse is packing, a line
+        # can land between them (522 rows of 521). Ask again; fail only if it never agrees.
+        for attempt in range(1, COUNT_TRIES + 1):
+            r = self.s.get(f"{API}/TblRptReports/GetReportPreviewDataSource", params=p, timeout=self.timeout)
+            if r.status_code != 200:
+                raise ErpError(f"ERP report {report_id}: HTTP {r.status_code}")
+            try:
+                v = r.json()
+                data, total = v["data"], v["totalCount"]
+            except (ValueError, KeyError, TypeError) as exc:
+                raise ErpError(f"ERP report {report_id}: no data in its answer") from exc
+            if len(data) == total:
+                break
+            if attempt == COUNT_TRIES:
+                raise ErpError(f"ERP report {report_id}: {len(data)} rows came of {total} "
+                               f"({COUNT_TRIES} tries)")
+            log.warning("ERP report %s: %d rows came of %d (data changing?), asking again",
+                        report_id, len(data), total)
+            time.sleep(5 * attempt)
         rows = []
         for rec in data:
             row = {}
