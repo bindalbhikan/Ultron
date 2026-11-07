@@ -15,6 +15,8 @@ Raw captures stay in `netcap/` on the owner's PC (git-ignored: they hold cookies
 
 - `myntra-partner.md` — Myntra partner portal: what each call is for, what it could give us
   (notices, payments, seller rating, pricing), what is read-only and what changes something.
+- `myntra-seller-api.md` — Myntra's official Seller API V4 (`api-integration.myntra.com`): orders,
+  returns, stock, payments, listings; not used yet, blocked on the token question.
 - `omsguru.md` — OMSGuru web app calls (inventory push, catalogue sync).
 - `flipkart-seller.md` — Flipkart Seller Hub: every report centre report (Orders, Returns, Sales,
   Settled Transactions, Profit and Loss ...), payments pages, seller tier (W8).

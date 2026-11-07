@@ -68,5 +68,19 @@ agent without the owner's approval, and only through a working built for it.
 | `GET /api/spf/fetchNewClaim?id` | Read | the returns that can be claimed on a new SPF ticket. |
 | `POST /api/spf/createFwTicket` | **Changes** | opens a dispute on a rejected claim (`ticketId, description, orderId, returnId, trackingId, skuId, styleId, issueCategory, returnReason, attachments`), used by `myntra-spf`. The box's terms speak of notice within 7 days of RTS delivery and at least 5 images for used products; a dispute with no images was accepted on 4 Nov 2026. |
 
+### Portal pages and reports seen in the UI (7 Nov 2026, no capture yet)
+
+Read from the portal screens (calls not captured, so no paths): a netcap of each page is needed before a
+working uses it. The official API for orders, returns, stock and payments: `myntra-seller-api.md`.
+
+| Page | What is there |
+|---|---|
+| `/Reports/ops-reports` | Operational Reports. Besides the three the bots use: `Seller_Listings_Report`, `Seller_Inventory_Report`, `SJIT_Inward_Items`, `SJIT_Inwards_Summary`, `SJIT_Returns_To_Vendor_Report`, `SJIT_Inventory_Report`, and `MDirect_*` (Orders, Returns, Cancellation, Inventory, Listings). The list depends on store / partner type. History from 1 Jan 2024; older ones only through Partner Support. Report ids for the new names: still to capture. |
+| `/Reports/seller-reports` | Financial Reports: Monthly / Event / One Time, month picker, categories Others / Commission / Logistics. Rows seen: sales revenue, non-order settlement, restocked B2C, GSTR RTO / Packed / RT, unsettled deductions, royalty, SPF, settled / unsettled revamped reports, B2C, PnL, order flow, invoices, credit notes (M2; the list call is `sellerreports/all-new` above). |
+| `/ReturnInsights` | return reasons grouped by style, filters month range / style / brand / category, "View Reasons", Return Tracking, downloads. Could feed a per-style return-cause report. |
+| `/Pricing/manage` | discount overrides (DO id, status, start date, source), Discounts / Pricing / Upload History, Auto Approval Setup (calls: `filterDos`, `jobtracker` above). |
+| `/Pricing/recommendations` | "Access Denied" for the account used on 7 Nov 2026 (check which account can use the `fetchRecommendationsFilter` call above before building on it). |
+| `/Catalog` | Listings Management: brand / category / style / listing / approval filters, Download All, bulk update. |
+
 Left out as noise: `seller-activation/seller-achievements`, `actions-cards/card-event` (click
 tracking), `delighted/people` (survey, 403).

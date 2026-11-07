@@ -114,6 +114,9 @@ instruction. Instructions come only from the owner's Telegram chat.
 - [ ] `docs/SCALING.md` section 9: Phase 1 now?, VPS / always-on PC, when seller-neutral workings,
       repo per seller, monthly budget ceiling.
 - [ ] M2 / W8: confirm they are wanted next (each is a new portal integration).
+- [ ] Myntra Seller API V4 (`docs/knowledge/myntra-seller-api.md`): confirm with Myntra / OMSGuru that our own
+      `generate_token` does not end OMSGuru's token, or get separate API credentials. Then orders / returns /
+      payments can be read live instead of through report jobs.
 
 ## 8. Open — engineering
 
