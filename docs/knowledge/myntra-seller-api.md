@@ -1,8 +1,8 @@
 # Myntra Seller API V4 (official) — what the calls are for
 
-Not used by any bot yet. Read from Myntra's official docs (6–7 Nov 2026); **no call has been made with our
-credentials**, so the paths are as documented, not tested. Request bodies and answer schemas: the Postman
-collections below (this page is a map, not a spec).
+Not used by any bot yet. Read from Myntra's official docs (6–7 Nov 2026). The base host and the read calls
+marked **[tested]** below were verified on 7 Nov 2026 with OMSGuru's live token; the rest are as documented.
+Request bodies and answer schemas: the Postman collections below (this page is a map, not a spec).
 
 - Developer Centre: `https://mmip.myntrainfo.com/` (PPMP workflow: `/documentation/myntra-ppmp-api-v4`)
 - Seller API V4: `https://documenter.getpostman.com/view/34879541/2sA3JNbLQG`
@@ -12,23 +12,32 @@ collections below (this page is a map, not a spec).
 **Base**: `https://api-integration.myntra.com` (a different host from the portal's `partnersapi.myntrainfo.com`;
 no login session or reCAPTCHA, so it would work from GitHub's runners).
 
-## Login — the open blocker
+## Login — use OMSGuru's token, do not generate our own
 
-- `POST /authorization/generate_token`: header `secret_key`, body `merchant_id` → access + refresh token in the
-  **answer headers**. Access token documented as valid 30 days; the docs say generate once, then only refresh.
-- `POST /authorization/refresh_token`: header `refresh_token` + merchant id.
-- The Merchant Id / Secret Key are the ones in OMSGuru's Myntra channel settings (MAIN). OMSGuru pushes
-  inventory and order status with them. **Do not call `generate_token` until it is confirmed (Myntra or
-  OMSGuru) that a new token does not end OMSGuru's** — better: separate API credentials for Ultron.
-  Credentials go in GitHub secrets only, never in files or logs.
+Decided 7 Nov 2026 (owner): **Ultron borrows OMSGuru's access token instead of calling `generate_token`.**
+Calling `generate_token` ourselves with the shared Merchant Id might end OMSGuru's token and stop its
+inventory/order sync, so we never do it. Instead we read the token OMSGuru already holds:
+
+- It sits in OMSGuru's Myntra channel settings, field `data[ChannelCompany][api_token]`, as JSON
+  `{access_token, refresh_token}` (page `client.omsguru.com/channel_companies/edit/45111/1/1`, MAIN account).
+  OMSGuru refreshes it ~monthly; the access token is a 30-day JWT (`origin: OMSGURU-V4`). Re-read it when it
+  nears expiry. The token and the Merchant Id / Secret Key are secrets: GitHub secrets / local `.env` only,
+  never in files, logs or the repo.
+- `POST /authorization/generate_token` (header `secret_key`, body `merchant_id`) and
+  `POST /authorization/refresh_token` exist and the base answers them (a bare call gives
+  `400 body.merchant_id is required`), but **we do not call them** by the decision above.
+
+**Headers on every call**: `access_token: <token>`, `x-partner-store: <value>`, `Content-Type`. The
+`x-partner-store` value differs by endpoint — the store code `C45111W17453` for `getOrderList` **[tested]**;
+the Postman examples use the literal `MYNTRA` for `returnRecon`. Confirm per endpoint.
 
 ## Read calls — what each could give us
 
 | Call | What it gives / which working could use it |
 |---|---|
-| `GET /partner/v4/order/getOrderList?page&statusCode&startDate&endDate` | orders by status and date, live: could replace the `Seller_Orders_Report` job (15-min cooldown, data stale before ~9 AM) for SJIT, TAT, portal sale, morning |
+| `GET /partner/v4/order/getOrderList?page&statusCode&startDate&endDate` **[tested]** | orders by status and date, live: could replace the `Seller_Orders_Report` job (15-min cooldown, data stale before ~9 AM) for SJIT, TAT, portal sale, morning. Tested 7 Nov with `x-partner-store=C45111W17453`, dates `YYYY-MM-DD`: `statusCode=PK` → 174, `SH` → 310 for a 3-day window; `RFR` → 0. Answer `statusCode 1007`, `{totalCount, data[], hasNextPage}`, paged by `page=0,1,…` |
 | `GET /partner/v4/order/:sellerOrderId`, `GET /partner/v4/packet/:packetId` | one order / packet |
-| `POST /partner/v4/returns/returnRecon` | return search + return details (Return Search and Get Return Details use the same path): returns, SPF |
+| `POST /partner/v4/returns/returnRecon` | return search + return details (Return Search and Get Return Details use the same path): returns, SPF. 7 Nov: our token reaches it (seen `400` validation answers, so authenticated), but the exact request shape is not pinned yet — `403 "This request is not valid"` / `400 "body does not match any of the allowed types"` / `400 "StartDate should be less than EndDate"` across tries. Postman shows it as **form-data** with quoted dates `"dd-mm-yyyy"`, `destinationWarehouseIds` a JSON-string array, and `x-partner-store: MYNTRA`. Still to nail down before use |
 | `POST /partner/v4/inventory/search` | stock Myntra holds per SKU: cross-check of OMSGuru's inventory push |
 | `GET /partner/v4/payments/history/:paymentMethod?fromDate&toDate&pageNo&pageSize` | payouts: M2 payment reconciliation, `myntra-spf` |
 | `POST /partner/v4/payments/report/:reportType` | invoice / payment reports (incl. SPF accepted): M2 |
