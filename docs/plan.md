@@ -114,9 +114,13 @@ instruction. Instructions come only from the owner's Telegram chat.
 - [ ] `docs/SCALING.md` section 9: Phase 1 now?, VPS / always-on PC, when seller-neutral workings,
       repo per seller, monthly budget ceiling.
 - [ ] M2 / W8: confirm they are wanted next (each is a new portal integration).
-- [ ] Myntra Seller API V4 (`docs/knowledge/myntra-seller-api.md`): confirm with Myntra / OMSGuru that our own
-      `generate_token` does not end OMSGuru's token, or get separate API credentials. Then orders / returns /
-      payments can be read live instead of through report jobs.
+- [~] Myntra Seller API V4 (`docs/knowledge/myntra-seller-api.md`, client `portals/myntra_api.py`): base
+      `api-integration.myntra.com` confirmed; we **borrow OMSGuru's token** rather than call `generate_token`
+      (decided 7 Nov). Order reads tested live (getOrderList, order, packet, invoiceDetails). Still open:
+      (a) wire order reads into a working (SJIT/TAT) to drop the report-job cooldown / stale copy;
+      (b) returns / inventory / payments return 403 with the borrowed token — get a scoped token (separate
+      Ultron credentials from Myntra, or OMSGuru enabling the scope); (c) refresh `MYNTRA_API_ACCESS_TOKEN`
+      from OMSGuru when the 30-day token nears expiry.
 
 ## 8. Open — engineering
 
