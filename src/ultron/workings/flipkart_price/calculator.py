@@ -13,20 +13,23 @@ calculator: for every brand + category, a sample of its live listings is priced 
 100 to 3,000 and every change of CLF / commission % / fixed fee is narrowed to the rupee. The
 workbook's formulas use that table; Flipkart's own exact answer per listing sits beside them.
 
-Sheets: Summary, Calculator (enter brand, category, TP or SP), TP TO SP (every FSN of the Final TP
-file), SP TO TP (every live listing), Parameter (the slab table), Rate card (Flipkart's rate card).
+Laid out like the owner's Myntra calculator (PRICING/MYNTRA CAL V2): Summary, TP TO SP (every FSN
+of the Final TP file: P / F / C / L / S blocks per price slot, SP, the forward check, Flipkart's
+exact SP), SP TO TP (every live listing), Parameter (CLF), Parameter1 (Commission, Fixed_Fee),
+Parameter Rate Card (Flipkart's rate card), _Calc_Config (Price_Slots, Price_Thresholds).
 Written to Drive AGENT WORK > FLIPKART > CALCULATOR as "Flipkart Calculator.xlsx". Reads only.
 """
 from __future__ import annotations
 
 import argparse
+import math
 import logging
 import random
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
+import xlsxwriter
 
 from ..core import telegram
 from ..core.app import run_bot
@@ -160,7 +163,7 @@ def run(args) -> int:
         if x.get("service_profile") in ("NON_FBF", "FBF_AND_NON_FBF"):
             groups[key_of(x.get("brand"), x.get("vertical"))].append(x)
 
-    params, rate_cards, checks = [], [], {}
+    params, rate_cards, checks, info = [], [], {}, {}
     random.seed(7)
     for key, xs in sorted(groups.items()):
         own = [x for x in xs if x.get("service_profile") == "NON_FBF"] or xs
@@ -173,6 +176,8 @@ def run(args) -> int:
         sc.scan_cache = table
         checks[key] = sc.check()
         brand, vertical = sample[0].get("brand") or "", sample[0].get("vertical") or ""
+        info[key] = {"brand": brand, "category": vertical, "listings": len(xs),
+                     "package": "{} kg, {}x{}x{}".format(*common)}
         for r in table:
             params.append({"Key": key, "Brand": brand, "Category": vertical, "SP from": r["from"], "SP to": r["to"],
                            "CLF": r["clf"], "Commission %": r["rate"], "Fixed fee": r["fixed"],
@@ -214,17 +219,29 @@ def run(args) -> int:
                 "MRP": x.get("mrp"), "Current SP": x.get("ssp"), "Settlement by Flipkart": x.get("esp")}
                for x in sorted(listings, key=lambda x: (x.get("brand") or "", x.get("vertical") or "", x["sku_id"]))]
 
+    slots = slots_of(params)
+    by_key = defaultdict(list)
+    for p in params:
+        by_key[p["Key"]].append(p)
+    same = known = 0
+    for t in tp_rows:
+        if t["SP by Flipkart"]:
+            known += 1
+            same += price_for(t["Final TP"], by_key.get(key_of(t["Brand"], t["Category"]), []), slots) == t["SP by Flipkart"]
+    log.info("TP TO SP: formula SP = Flipkart SP for %d of %d listings", same, known)
+    checks["_tp_to_sp"] = (known, same)
     out = output_dir("flipkart-calc") / NAME
-    write_workbook(out, started, tier, params, rate_cards, checks, tp_rows, sp_rows)
+    write_workbook(out, started, tier, params, rate_cards, checks, tp_rows, sp_rows, info)
     link = ""
     if not args.no_upload:
         link = upload(out)
-    total = sum(n for n, _ in checks.values())
-    good = sum(ok for _, ok in checks.values())
+    total = sum(n for k, (n, _) in checks.items() if k != "_tp_to_sp")
+    good = sum(ok for k, (_, ok) in checks.items() if k != "_tp_to_sp")
     msg = [f"🧮 <b>Flipkart calculator · {started:%d %b}</b>",
            f"{len(groups)} brand-categories, {len(params)} price slabs (tier {telegram.esc(tier)})",
            f"Formula = Flipkart's calculator at {good:,} of {total:,} prices checked",
-           f"TP TO SP: {len(tp_rows):,} listings · SP TO TP: {len(sp_rows):,}",
+           f"TP TO SP: {len(tp_rows):,} listings, formula SP = Flipkart's exact SP for {same:,} of {known:,}",
+           f"SP TO TP: {len(sp_rows):,} listings",
            *([f'<a href="{link}">Flipkart Calculator.xlsx</a>'] if link else [])]
     text = "\n".join(msg)
     if args.no_telegram:
@@ -244,139 +261,270 @@ def upload(path: Path) -> str:
     return DriveFile(fid).url
 
 
-def write_workbook(out: Path, started, tier, params, rate_cards, checks, tp_rows, sp_rows) -> None:
-    pm = pd.DataFrame(params)
-    n = len(pm) + 1                                   # last data row of Parameter
-    P = lambda col: f"Parameter!${col}$2:${col}${n}"  # noqa: E731
-    KEY, FROM, TO, CLF, RATE, FIX, COLL, SHIP, GST = (P(c) for c in "ADEFGHIJK")
+def price_for(tp: int, rows: list[dict], slots: list[dict]) -> int | None:
+    """The workbook's TP -> SP (TP TO SP sheet) in Python: per slot the SP whose rounded settlement
+    reaches the TP (aiming at TP - 0.5), the first that falls inside its slot."""
+    last = None
+    for s in slots:
+        p = next((r for r in rows if r["SP from"] <= s["start"] <= r["SP to"]), None)
+        if p is None:
+            continue
+        fees = (p["Fixed fee"] + p["Collection fee"] + p["Shipping fee"]) * (1 + GST_ON_FEES)
+        div = 1 - p["Commission %"] * (1 + GST_ON_FEES) - TCS_TDS / 1.05
+        last = max(s["start"], math.ceil((tp - 0.5 + fees) / div + p["CLF"] - 1e-9))
+        if last < s["threshold"]:
+            return last
+    return last
 
-    def row_of(key_cell: str, sp_cell: str) -> str:
-        return f"MATCH(1,INDEX(({KEY}={key_cell})*({FROM}<={sp_cell})*({TO}>={sp_cell}),0),0)"
 
-    def settle(key_cell: str, sp_cell: str) -> str:
-        r = row_of(key_cell, sp_cell)
-        s = f"({sp_cell}-INDEX({CLF},{r}))"
-        fees = f"({s}*INDEX({RATE},{r})+INDEX({FIX},{r})+INDEX({COLL},{r})+INDEX({SHIP},{r}))"
-        return f"ROUND({s}-{fees}*{1 + GST_ON_FEES}-{s}/(1+INDEX({GST},{r}))*{TCS_TDS},0)"
+def slots_of(params: list[dict]) -> list[dict]:
+    """The price slots shared by every Brand-Category (the Myntra calculator's P01..P30): every slab
+    end of any group starts a new slot, so within a slot every group's fees are constant."""
+    ends = sorted({int(p["SP to"]) for p in params if p["SP to"] < 99999})
+    out, start = [], 0
+    for e in ends:
+        out.append({"start": start, "end": e, "label": e, "threshold": e + 1})
+        start = e + 1
+    out.append({"start": start, "end": 99999, "label": f"{start}+", "threshold": 1e99})
+    return out
 
-    def price(key_cell: str, tp_cell: str) -> str:
-        """The lowest SP whose settlement reaches the TP: the first slab (by price) that reaches it,
-        inverted; at least that slab's start."""
-        r = f"MATCH(1,INDEX(({KEY}={key_cell})*(Parameter!$N$2:$N${n}>={tp_cell}),0),0)"
-        g = f"(1-INDEX({RATE},{r})*{1 + GST_ON_FEES}-{TCS_TDS}/(1+INDEX({GST},{r})))"
-        fx = f"(INDEX({FIX},{r})+INDEX({COLL},{r})+INDEX({SHIP},{r}))*{1 + GST_ON_FEES}"
-        return f"MAX(INDEX({FROM},{r}),ROUNDUP(({tp_cell}+{fx})/{g}+INDEX({CLF},{r}),0))"
 
-    with pd.ExcelWriter(out, engine="xlsxwriter") as xw:
-        wb = xw.book
-        bold = wb.add_format({"bold": True})
-        head = wb.add_format({"bold": True, "bg_color": "#DDEBF7", "border": 1, "text_wrap": True})
-        inp = wb.add_format({"bg_color": "#FFF2CC", "border": 1})
-        pct = wb.add_format({"num_format": "0.0%"})
-        money = wb.add_format({"num_format": "#,##0"})
+def write_workbook(out: Path, started, tier, params, rate_cards, checks, tp_rows, sp_rows, info) -> None:
+    """The workbook, laid out like the owner's Myntra calculator (PRICING/MYNTRA CAL V2): Summary,
+    TP TO SP (P / F / C / L / S slot blocks, SP, then the forward check), SP TO TP, Parameter (CLF),
+    Parameter1 (Commission, Fixed_Fee), _Calc_Config (Price_Slots, Price_Thresholds, Slot_Starts)."""
+    from xlsxwriter.utility import xl_col_to_name as col
 
-        # Summary
-        ws = wb.add_worksheet("Summary")
-        lines = [("Flipkart calculator", ""), ("Built", f"{started:%d %b %Y %H:%M}"), ("Seller tier", tier),
-                 ("Brand-categories", len(checks)), ("Price slabs", len(pm)), ("", ""),
-                 ("How it works", "Seller price = SP - CLF. Settlement = seller price - (commission + fixed + "
-                  "collection + shipping) x 1.18 - seller price / (1 + product GST) x 0.6% (TCS + TDS)."),
-                 ("", "CLF, commission % and fixed fee change by price slab and by brand + category (Parameter)."),
-                 ("", "Slabs read from Flipkart's own calculator every Rs 10 from 100 to 3,000, each change "
-                  "narrowed to the rupee."),
-                 ("", "TP TO SP: 'SP by Flipkart' is Flipkart's exact answer; 'SP by formula' the workbook's."),
-                 ("", ""), ("Check: formula = Flipkart (within Rs 1)", "")]
-        for i, (a, b) in enumerate(lines):
-            ws.write(i, 0, a, bold)
-            ws.write(i, 1, b)
-        r0 = len(lines)
-        ws.write_row(r0, 0, ["Brand-Category", "Prices checked", "Equal", "%"], head)
-        for i, (k, (cnt, ok)) in enumerate(sorted(checks.items()), start=r0 + 1):
-            ws.write_row(i, 0, [k, cnt, ok])
-            ws.write_formula(i, 3, f"=IF(B{i + 1}=0,\"\",C{i + 1}/B{i + 1})", pct)
-        ws.set_column(0, 0, 34)
-        ws.set_column(1, 1, 90)
+    slots = slots_of(params)
+    n = len(slots)
+    keys = sorted({p["Key"] for p in params})
+    by_key = defaultdict(list)
+    for p in params:
+        by_key[p["Key"]].append(p)
 
-        # Calculator (single entry)
-        ws = wb.add_worksheet("Calculator")
-        keys = sorted(pm["Key"].unique()) if len(pm) else []
-        ws.write_row(0, 0, ["Brand-Category", "TP (settlement wanted)", "SP for that TP", "",
-                            "SP (selling price)", "Settlement (TP) for that SP"], head)
-        ws.write(1, 0, keys[0] if keys else "", inp)
-        ws.data_validation(1, 0, 30, 0, {"validate": "list", "source": f"=Parameter!$P$2:$P${len(keys) + 1}"})
-        ws.write(1, 1, 400, inp)
-        ws.write(1, 4, 599, inp)
-        for i in range(1, 31):
-            if i > 1:
-                ws.write_blank(i, 0, None, inp)
-                ws.write_blank(i, 1, None, inp)
-                ws.write_blank(i, 4, None, inp)
-            ws.write_formula(i, 2, f'=IF(OR(A{i + 1}="",B{i + 1}=""),"",IFERROR({price(f"A{i + 1}", f"B{i + 1}")},"not reachable"))')
-            ws.write_formula(i, 5, f'=IF(OR(A{i + 1}="",E{i + 1}=""),"",IFERROR({settle(f"A{i + 1}", f"E{i + 1}")},"no slab"))')
-        ws.write(32, 0, "Yellow cells are yours: pick the Brand-Category, type a TP or an SP.")
-        ws.set_column(0, 0, 30)
-        ws.set_column(1, 5, 20)
+    def at(key: str, sp: int) -> dict:
+        return next(p for p in by_key[key] if p["SP from"] <= sp <= p["SP to"])
 
-        # TP TO SP
-        tp = pd.DataFrame(tp_rows)
-        if len(tp):
-            tp.insert(4, "Key", [key_of(b, c) for b, c in zip(tp["Brand"], tp["Category"])])
-            tp.to_excel(xw, sheet_name="TP TO SP", index=False)
-            ws = xw.sheets["TP TO SP"]
-            cols = list(tp.columns)
-            c_key, c_tp, c_mrp = (chr(65 + cols.index(c)) for c in ("Key", "Final TP", "MRP"))
-            base = len(cols)
-            ws.write_row(0, base, ["SP by formula", "Discount % at Flipkart SP", "Remark"], head)
-            c_fk = chr(65 + cols.index("SP by Flipkart"))
-            for i in range(2, len(tp) + 2):
-                ws.write_formula(i - 1, base, f'=IFERROR({price(f"{c_key}{i}", f"{c_tp}{i}")},"")')
-                ws.write_formula(i - 1, base + 1, f'=IF(OR({c_fk}{i}="",{c_mrp}{i}=0),"",1-{c_fk}{i}/{c_mrp}{i})', pct)
-                ws.write_formula(i - 1, base + 2,
-                                 f'=IF({c_fk}{i}="","TP in a fee-slab gap: no exact price",'
-                                 f'IF({c_fk}{i}<109,"below Rs 109",IF(1-{c_fk}{i}/{c_mrp}{i}>0.9,"over 90% discount","")))')
-            ws.set_column(0, base + 2, 16)
-            ws.autofilter(0, 0, len(tp), base + 2)
-            ws.freeze_panes(1, 0)
+    wb = xlsxwriter.Workbook(str(out))
+    bold = wb.add_format({"bold": True})
+    title = wb.add_format({"bold": True, "font_size": 14})
+    head = wb.add_format({"bold": True, "bg_color": "#DDEBF7", "border": 1, "text_wrap": True, "valign": "top"})
+    inp = wb.add_format({"bg_color": "#FFF2CC"})
+    pct = wb.add_format({"num_format": "0.0%"})
+    num0 = wb.add_format({"num_format": "#,##0"})
+    num2 = wb.add_format({"num_format": "#,##0.00"})
+    sheets = {name: wb.add_worksheet(name) for name in
+              ("Summary", "TP TO SP", "SP TO TP", "Parameter", "Parameter1", "Parameter Rate Card", "_Calc_Config")}
 
-        # SP TO TP
-        sp = pd.DataFrame(sp_rows)
-        if len(sp):
-            sp.insert(4, "Key", [key_of(b, c) for b, c in zip(sp["Brand"], sp["Category"])])
-            sp.to_excel(xw, sheet_name="SP TO TP", index=False)
-            ws = xw.sheets["SP TO TP"]
-            cols = list(sp.columns)
-            c_key, c_sp = (chr(65 + cols.index(c)) for c in ("Key", "Current SP"))
-            base = len(cols)
-            ws.write_row(0, base, ["Settlement by formula", "New SP (type)", "Settlement at new SP"], head)
-            for i in range(2, len(sp) + 2):
-                ws.write_formula(i - 1, base, f'=IFERROR({settle(f"{c_key}{i}", f"{c_sp}{i}")},"")')
-                ws.write_blank(i - 1, base + 1, None, inp)
-                nc = chr(65 + base + 1)
-                ws.write_formula(i - 1, base + 2, f'=IF({nc}{i}="","",IFERROR({settle(f"{c_key}{i}", f"{nc}{i}")},""))')
-            ws.set_column(0, base + 2, 16)
-            ws.autofilter(0, 0, len(sp), base + 2)
-            ws.freeze_panes(1, 0)
+    # _Calc_Config: slot numbers, price points, thresholds (price < threshold), slot starts
+    ws = sheets["_Calc_Config"]
+    ws.write_row(0, 0, ["Slot", *range(1, n + 1)], bold)
+    ws.write(1, 0, "Price Point", bold)
+    ws.write(2, 0, "Threshold", bold)
+    ws.write(3, 0, "Slot start", bold)
+    for i, s in enumerate(slots, start=1):
+        ws.write(1, i, s["label"])
+        ws.write(2, i, s["threshold"])
+        ws.write(3, i, s["start"])
+    last = col(n)
+    wb.define_name("Price_Slots", f"=_Calc_Config!$B$2:${last}$2")
+    wb.define_name("Price_Thresholds", f"=_Calc_Config!$B$3:${last}$3")
+    wb.define_name("Slot_Starts", f"=_Calc_Config!$B$4:${last}$4")
 
-        # Parameter (+ settlement at each slab's bounds, used by TP -> SP)
-        pm.to_excel(xw, sheet_name="Parameter", index=False)
-        ws = xw.sheets["Parameter"]
-        ws.write_row(0, 12, ["TP at SP from", "TP at SP to", "", "Brand-Category list"], head)
-        for i in range(2, n + 1):
-            to = f"MIN(E{i},{HIGH})"
-            ws.write_formula(i - 1, 12, f"=ROUND((D{i}-F{i})-((D{i}-F{i})*G{i}+H{i}+I{i}+J{i})*{1 + GST_ON_FEES}"
-                                        f"-(D{i}-F{i})/(1+K{i})*{TCS_TDS},0)", money)
-            ws.write_formula(i - 1, 13, f"=ROUND(({to}-F{i})-(({to}-F{i})*G{i}+H{i}+I{i}+J{i})*{1 + GST_ON_FEES}"
-                                        f"-({to}-F{i})/(1+K{i})*{TCS_TDS},0)", money)
-        for i, k in enumerate(keys, start=1):
-            ws.write(i, 15, k)
-        ws.set_column(6, 6, 12, pct)
-        ws.set_column(10, 10, 12, pct)
-        ws.set_column(0, 0, 30)
-        ws.set_column(15, 15, 30)
-        ws.set_column(11, 11, 22)
-        ws.freeze_panes(1, 0)
+    # Parameter: constants + CLF (customer logistics fee) by Brand-Category and slot
+    ws = sheets["Parameter"]
+    ws.write(0, 0, "TDS_TCS", bold)
+    ws.write(0, 1, TCS_TDS / 1.05)
+    ws.write(0, 2, "TCS 0.5% + TDS 0.1% of the taxable value (seller price / 1.05, product GST 5%)")
+    ws.write(1, 0, "GST_On_Charges", bold)
+    ws.write(1, 1, GST_ON_FEES)
+    ws.write(1, 2, "GST on commission and fees")
+    wb.define_name("TDS_TCS", "=Parameter!$B$1")
+    wb.define_name("GST_On_Charges", "=Parameter!$B$2")
+    ws.write(3, 0, "Customer logistics fee (CLF, Rs) by price slot: seller price = SP - CLF", bold)
+    hdr = ["Brand", "Category", "Vlookup", "Package (kg, cm)", *[s["label"] for s in slots]]
+    ws.write_row(4, 0, hdr, head)
+    for r, k in enumerate(keys, start=5):
+        ws.write_row(r, 0, [info[k]["brand"], info[k]["category"], k, info[k]["package"]])
+        ws.write_row(r, 4, [at(k, s["start"])["CLF"] for s in slots])
+    r1, r2 = 6, len(keys) + 5
+    wb.define_name("CLF_Keys", f"=Parameter!$C${r1}:$C${r2}")
+    wb.define_name("CLF_Rates", f"=Parameter!$E${r1}:${col(3 + n)}${r2}")
+    ws.set_column(0, 1, 16)
+    ws.set_column(2, 2, 28)
+    ws.set_column(3, 3, 20)
 
-        pd.DataFrame(rate_cards).to_excel(xw, sheet_name="Rate card", index=False)
+    # Parameter1: Commission (% of seller price) and Fixed_Fee (Rs, incl. collection + shipping)
+    ws = sheets["Parameter1"]
+    hdr = ["Brand", "Category", "Vlookup", *[s["label"] for s in slots]]
+    ws.write_row(0, 0, hdr, head)
+    for r, k in enumerate(keys, start=1):
+        ws.write_row(r, 0, [info[k]["brand"], info[k]["category"], k])
+        for i, s in enumerate(slots):
+            ws.write(r, 3 + i, at(k, s["start"])["Commission %"], pct)
+    c1, c2 = 2, len(keys) + 1
+    wb.define_name("Commission_Keys", f"=Parameter1!$C${c1}:$C${c2}")
+    wb.define_name("Commission_Rates", f"=Parameter1!$D${c1}:${col(2 + n)}${c2}")
+    f0 = len(keys) + 3                       # Fixed_Fee header row (0-based)
+    ws.write(f0 - 1, 0, "Fixed Fee (Rs, incl. collection fee and shipping fee)", bold)
+    ws.write_row(f0, 0, hdr, head)
+    for r, k in enumerate(keys, start=f0 + 1):
+        ws.write_row(r, 0, [info[k]["brand"], info[k]["category"], k])
+        for i, s in enumerate(slots):
+            p = at(k, s["start"])
+            ws.write(r, 3 + i, p["Fixed fee"] + p["Collection fee"] + p["Shipping fee"])
+    wb.define_name("Fixed_Fee_Keys", f"=Parameter1!$C${f0 + 2}:$C${f0 + 1 + len(keys)}")
+    wb.define_name("Fixed_Fee_Rates", f"=Parameter1!$D${f0 + 2}:${col(2 + n)}${f0 + 1 + len(keys)}")
+    ws.set_column(0, 1, 16)
+    ws.set_column(2, 2, 28)
+
+    # TP TO SP: TP, then per slot P (price point), F (fixed fee x 1.18), C (commission x 1.18),
+    # L (CLF), S (SP for the TP in that slot); SP = the first slot whose S lies in it; then the check
+    ws = sheets["TP TO SP"]
+    ids = ["FSN", "Brand", "Category", "SKU", "TP", "Brand-Category"]
+    blocks = {b: [f"{b}{i:02d}" for i in range(1, n + 1)] for b in "PFCLS"}
+    tail = ["SP", "Sell Price", "Slab Slot", "Slab Price Point", "CLF", "Seller Price", "Comm %", "Comm",
+            "Fixed Fee", "GST on Charges", "TDS_TCS", "Payout", "OG TP", "DELTA", "SP by Flipkart",
+            "Flipkart Status", "Current SP", "Current Settlement", "MRP", "Discount %", "REMARK"]
+    cols = ids + blocks["P"] + blocks["F"] + blocks["C"] + blocks["L"] + blocks["S"] + tail
+    ci = {c: i for i, c in enumerate(cols)}
+    L = lambda name: col(ci[name])  # noqa: E731
+    rows = len(tp_rows)
+    ws.write_row(0, 0, cols, head)
+    for r, t in enumerate(tp_rows, start=1):
+        x = r + 1
+        key = f"$F{x}"
+        ws.write_row(r, 0, [t["FSN"], t["Brand"], t["Category"], t["SKU"], t["Final TP"]])
+        ws.write_formula(r, 5, f'=B{x}&"-"&C{x}')
+        for k in range(1, n + 1):
+            p, f, c, l_, s = (L(f"{b}{k:02d}") for b in "PFCLS")
+            ws.write_formula(r, ci[f"P{k:02d}"], f'=IFERROR(INDEX(Price_Slots,1,{k}),"")')
+            ws.write_formula(r, ci[f"F{k:02d}"], f'=IF({p}{x}="","",IFERROR(INDEX(Fixed_Fee_Rates,MATCH({key},Fixed_Fee_Keys,0),{k})*(1+GST_On_Charges),0))')
+            ws.write_formula(r, ci[f"C{k:02d}"], f'=IF({p}{x}="","",IFERROR(INDEX(Commission_Rates,MATCH({key},Commission_Keys,0),{k})*(1+GST_On_Charges),0))')
+            ws.write_formula(r, ci[f"L{k:02d}"], f'=IF({p}{x}="","",IFERROR(INDEX(CLF_Rates,MATCH({key},CLF_Keys,0),{k}),0))')
+            ws.write_formula(r, ci[f"S{k:02d}"], f'=IF({p}{x}="","",IFERROR(MAX(INDEX(Slot_Starts,1,{k}),'
+                                                 f'ROUNDUP(($E{x}-0.5+{f}{x})/(1-{c}{x}-TDS_TCS)+{l_}{x},0)),""))')
+        s1, sn = L("S01"), L(f"S{n:02d}")
+        rng = f"{s1}{x}:{sn}{x}"
+        ws.write_formula(r, ci["SP"], f'=IFERROR(INDEX({rng},1,MATCH(1,INDEX(({rng}<Price_Thresholds)*({rng}<>""),0),0)),"")')
+        sell, slot, clf_, seller = (f"{L(c)}{x}" for c in ("Sell Price", "Slab Slot", "CLF", "Seller Price"))
+        comm, fix, gst, tds = (f"{L(c)}{x}" for c in ("Comm", "Fixed Fee", "GST on Charges", "TDS_TCS"))
+        ws.write_formula(r, ci["Sell Price"], f"={L('SP')}{x}")
+        ws.write_formula(r, ci["Slab Slot"], f'=IFERROR(MATCH(1,INDEX(({sell}<Price_Thresholds)*(Price_Slots<>""),0),0),"")')
+        ws.write_formula(r, ci["Slab Price Point"], f'=IFERROR(INDEX(Price_Slots,1,{slot}),"")')
+        ws.write_formula(r, ci["CLF"], f"=IFERROR(INDEX(CLF_Rates,MATCH({key},CLF_Keys,0),{slot}),0)")
+        ws.write_formula(r, ci["Seller Price"], f'=IFERROR({sell}-{clf_},"")')
+        ws.write_formula(r, ci["Comm %"], f"=IFERROR(INDEX(Commission_Rates,MATCH({key},Commission_Keys,0),{slot}),0)", pct)
+        ws.write_formula(r, ci["Comm"], f'=IFERROR({seller}*{L("Comm %")}{x},"")', num2)
+        ws.write_formula(r, ci["Fixed Fee"], f"=IFERROR(INDEX(Fixed_Fee_Rates,MATCH({key},Fixed_Fee_Keys,0),{slot}),0)")
+        ws.write_formula(r, ci["GST on Charges"], f'=IFERROR(({comm}+{fix})*GST_On_Charges,"")', num2)
+        ws.write_formula(r, ci["TDS_TCS"], f'=IFERROR({seller}*TDS_TCS,"")', num2)
+        ws.write_formula(r, ci["Payout"], f'=IFERROR(ROUND({seller}-{comm}-{fix}-{gst}-{tds},0),"")')
+        ws.write_formula(r, ci["OG TP"], f"=E{x}")
+        ws.write_formula(r, ci["DELTA"], f'=IFERROR({L("Payout")}{x}-{L("OG TP")}{x},"")')
+        ws.write_row(r, ci["SP by Flipkart"], [t["SP by Flipkart"], t["Flipkart status"], t["Current SP"],
+                                               t["Current settlement"], t["MRP"]])
+        fk, mrp = f"{L('SP by Flipkart')}{x}", f"{L('MRP')}{x}"
+        ws.write_formula(r, ci["Discount %"], f'=IF(OR({sell}="",N({mrp})=0),"",1-{sell}/{mrp})', pct)
+        ws.write_formula(r, ci["REMARK"],
+                         f'=IF({sell}="","no slab",IF(AND({fk}<>"",{fk}<>{sell}),"Flipkart SP differs (package / slab)",'
+                         f'IF({fk}="","TP in a fee-slab gap",IF({sell}<109,"below Rs 109",'
+                         f'IF(N({mrp})>0,IF(1-{sell}/{mrp}>0.9,"over 90% discount",""),"")))))')
+    ws.add_table(0, 0, max(rows, 1), len(cols) - 1, {"name": "Table5", "header_row": True, "autofilter": True,
+                                                     "style": "Table Style Light 9",
+                                                     "columns": [{"header": c} for c in cols]})
+    ws.freeze_panes(1, 6)
+    ws.set_column(0, 3, 16)
+    ws.set_column(ci["P01"], ci[f"S{n:02d}"], 7)
+    ws.set_column(ci["SP"], len(cols) - 1, 11)
+    ws.set_column(ci["REMARK"], ci["REMARK"], 30)
+
+    # SP TO TP: every live listing; Sell Price is yours to change (yellow), Payout is the settlement
+    ws = sheets["SP TO TP"]
+    cols = ["FSN", "Brand", "Category", "SKU", "Brand-Category", "MRP", "Sell Price", "Slab Slot", "Slab Price Point",
+            "CLF", "Seller Price", "Comm %", "Comm", "Fixed Fee", "GST on Charges", "TDS_TCS", "Payout",
+            "Settlement by Flipkart", "Delta", "TP", "Remark"]
+    ci = {c: i for i, c in enumerate(cols)}
+    ws.write_row(0, 0, cols, head)
+    tp_of = {t["FSN"]: t["Final TP"] for t in tp_rows}
+    for r, s in enumerate(sp_rows, start=1):
+        x = r + 1
+        key = f"$E{x}"
+        ws.write_row(r, 0, [s["FSN"], s["Brand"], s["Category"], s["SKU"]])
+        ws.write_formula(r, 4, f'=B{x}&"-"&C{x}')
+        ws.write(r, 5, s["MRP"])
+        ws.write(r, 6, s["Current SP"], inp)
+        ws.write_formula(r, ci["Slab Slot"], f'=IFERROR(MATCH(1,INDEX((G{x}<Price_Thresholds)*(Price_Slots<>""),0),0),"")')
+        ws.write_formula(r, ci["Slab Price Point"], f'=IFERROR(INDEX(Price_Slots,1,H{x}),"")')
+        ws.write_formula(r, ci["CLF"], f"=IFERROR(INDEX(CLF_Rates,MATCH({key},CLF_Keys,0),H{x}),0)")
+        ws.write_formula(r, ci["Seller Price"], f'=IFERROR(G{x}-J{x},"")')
+        ws.write_formula(r, ci["Comm %"], f"=IFERROR(INDEX(Commission_Rates,MATCH({key},Commission_Keys,0),H{x}),0)", pct)
+        ws.write_formula(r, ci["Comm"], f'=IFERROR(K{x}*L{x},"")', num2)
+        ws.write_formula(r, ci["Fixed Fee"], f"=IFERROR(INDEX(Fixed_Fee_Rates,MATCH({key},Fixed_Fee_Keys,0),H{x}),0)")
+        ws.write_formula(r, ci["GST on Charges"], f'=IFERROR((M{x}+N{x})*GST_On_Charges,"")', num2)
+        ws.write_formula(r, ci["TDS_TCS"], f'=IFERROR(K{x}*TDS_TCS,"")', num2)
+        ws.write_formula(r, ci["Payout"], f'=IFERROR(ROUND(K{x}-M{x}-N{x}-O{x}-P{x},0),"")')
+        ws.write(r, ci["Settlement by Flipkart"], s["Settlement by Flipkart"])
+        ws.write_formula(r, ci["Delta"], f'=IF(R{x}="","",IFERROR(Q{x}-R{x},""))')
+        tpv = tp_of.get(s["FSN"])
+        if tpv is not None:
+            ws.write(r, ci["TP"], tpv)
+        ws.write_formula(r, ci["Remark"], f'=IF(T{x}="","",IF(Q{x}=T{x},"at TP",IF(Q{x}<T{x},"below TP","above TP")))')
+    ws.add_table(0, 0, max(len(sp_rows), 1), len(cols) - 1, {"name": "Table4", "style": "Table Style Light 9",
+                                                             "columns": [{"header": c} for c in cols]})
+    ws.freeze_panes(1, 0)
+    ws.set_column(0, 4, 16)
+    ws.set_column(5, len(cols) - 1, 11)
+
+    # Parameter Rate Card: what Flipkart's rate card call shows (base rates, for reference)
+    ws = sheets["Parameter Rate Card"]
+    rc_cols = ["Key", "Fee", "Price from", "Price to", "Rate / fee"]
+    ws.write_row(0, 0, rc_cols, head)
+    for r, row in enumerate(rate_cards, start=1):
+        ws.write_row(r, 0, [row.get(c) for c in rc_cols])
+    ws.write(len(rate_cards) + 2, 0, "Flipkart's rate card shows the base commission; the commission charged "
+             "(Parameter1) comes from Flipkart's own settlement calculator.")
+    ws.set_column(0, 1, 28)
+    ws.set_column(2, 4, 14)
+
+    # Summary
+    ws = sheets["Summary"]
+    ws.write(0, 0, "Flipkart calculator", title)
+    lines = [("Built", f"{started:%d %b %Y %H:%M}"), ("Seller tier", tier),
+             ("Brand-Categories", len(keys)), ("Price slots", n),
+             ("Listings in TP TO SP / SP TO TP", f"{len(tp_rows):,} / {len(sp_rows):,}"),
+             ("TP TO SP: formula SP = Flipkart's exact SP", "{1:,} of {0:,} listings".format(*checks.get("_tp_to_sp", (0, 0)))),
+             ("", ""),
+             ("How a settlement is made", "Seller price = SP - CLF. Payout = seller price - Comm - Fixed Fee - "
+              "GST on Charges (18%) - TDS_TCS (0.6% of seller price / 1.05)."),
+             ("Where the rates come from", "Flipkart's own settlement calculator, every Rs 10 from 100 to 3,000 for "
+              "each Brand-Category, every change narrowed to the rupee (Parameter, Parameter1, _Calc_Config)."),
+             ("TP TO SP", "Type the TP: S01..Snn is the SP for each slot, SP the first that falls in its slot "
+              "(as in the Myntra calculator). 'SP by Flipkart' is Flipkart's exact answer for the listing."),
+             ("SP TO TP", "Type a Sell Price (yellow): Payout is the settlement.")]
+    for i, (a, b) in enumerate(lines, start=2):
+        ws.write(i, 0, a, bold)
+        ws.write(i, 1, b)
+    r0 = len(lines) + 4
+    ws.write(r0 - 1, 0, "Brand-Categories", bold)
+    shdr = ["Brand", "Category", "Listings", "Package (kg, cm)", "Commission % (low - high)", "CLF Rs (low - high)",
+            "Fixed Fee Rs", "Prices checked", "Formula = Flipkart", "%"]
+    ws.write_row(r0, 0, shdr, head)
+    for i, k in enumerate(keys, start=r0 + 1):
+        rows_k = by_key[k]
+        cm = [p["Commission %"] for p in rows_k]
+        cl = [p["CLF"] for p in rows_k]
+        fx = sorted({p["Fixed fee"] + p["Collection fee"] + p["Shipping fee"] for p in rows_k})
+        cnt, ok = checks.get(k, (0, 0))
+        ws.write_row(i, 0, [info[k]["brand"], info[k]["category"], info[k]["listings"], info[k]["package"],
+                            f"{min(cm):.0%} - {max(cm):.0%}", f"{min(cl)} - {max(cl)}",
+                            " / ".join(f"{v:g}" for v in fx), cnt, ok])
+        ws.write_formula(i, 9, f'=IF(H{i + 1}=0,"",I{i + 1}/H{i + 1})', pct)
+    ws.set_column(0, 0, 30)
+    ws.set_column(1, 1, 22)
+    ws.set_column(2, 9, 16)
+    ws.activate()
+    wb.close()
     log.info("Written %s", out)
 
 

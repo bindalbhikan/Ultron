@@ -24,18 +24,31 @@ common package are priced together (one price per listing per call) every Rs 10 
 formula is checked against every price read (Summary: "formula = Flipkart"; 14 Nov test,
 All About You apparel set: 351 of 351).
 
-**Sheets**
+**Sheets** (laid out like the owner's Myntra calculator, PRICING/MYNTRA CAL V2; owner, 14 Nov 2026)
 
-* *Summary*: build time, tier, how it works, the check per brand-category.
-* *Calculator*: yellow cells: pick the Brand-Category, type a TP → SP, or an SP → settlement.
-* *TP TO SP*: every FSN of the Final TP file (FLIPKART/PRICE UPDATE): Flipkart's exact SP for its
-  TP (reverse calculator, the listing's own package), the workbook's SP, discount %, remark
-  (fee-slab gap, below Rs 109, over 90% discount).
-* *SP TO TP*: every live listing: its SP and Flipkart's settlement, the formula's settlement, and a
-  "New SP" column to try a price.
-* *Parameter*: the slab table (Brand-Category, SP from / to, CLF, commission %, fixed, collection,
-  shipping, product GST, package) with the settlement at each slab's ends.
-* *Rate card*: Flipkart's rate card (orchestrator) per brand-category, for reference.
+* *Summary*: build time, tier, how a settlement is made, and per Brand-Category: listings,
+  package, commission % / CLF / fixed fee range, and the check (formula = Flipkart), plus how
+  often the workbook's SP equals Flipkart's exact SP in TP TO SP.
+* *TP TO SP* (`Table5`): every FSN of the Final TP file. TP, Brand-Category, then per price slot
+  **P** (price point), **F** (fixed fee × 1.18), **C** (commission % × 1.18), **L** (CLF) and
+  **S** (the SP that reaches the TP in that slot); **SP** = the first S inside its slot. Then the
+  forward check: Sell Price, Slab Slot, Slab Price Point, CLF, Seller Price, Comm %, Comm,
+  Fixed Fee, GST on Charges, TDS_TCS, Payout, OG TP, DELTA; and Flipkart's exact SP / status,
+  current SP / settlement, MRP, Discount %, REMARK (Rs 109, 90% discount, fee-slab gap, Flipkart
+  differs). The SP aims at TP − 0.5, since Flipkart rounds the settlement.
+* *SP TO TP* (`Table4`): every live listing; Sell Price (yellow) is yours to change; Payout is
+  the settlement, beside Flipkart's own settlement, Delta, the Final TP and a remark.
+* *Parameter*: TDS_TCS (0.6% / 1.05 of seller price), GST_On_Charges (18%), and the CLF table
+  (CLF_Keys / CLF_Rates) by Brand-Category and slot.
+* *Parameter1*: `Commission` and `Fixed_Fee` (incl. collection and shipping) by Brand-Category
+  and slot (Commission_Keys / _Rates, Fixed_Fee_Keys / _Rates).
+* *Parameter Rate Card*: Flipkart's rate card call, for reference (base rates only).
+* *_Calc_Config*: Price_Slots, Price_Thresholds (price < threshold), Slot_Starts. The slots are
+  every slab end of any Brand-Category, so the fees are constant inside a slot.
+
+Checked 14 Nov in Excel: SP TO TP gives Flipkart's settlements exactly (110 → 29, 499 → 401,
+501 → 371, 1,501 → 1,086, 2,000 → 1,506 for All About You apparel sets); TP TO SP gives
+DELTA 0.
 
 The formulas are for the group's common package; a listing with another package can differ by
 a few rupees of CLF. Flipkart's exact column (TP TO SP) is per listing.
