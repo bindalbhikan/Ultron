@@ -47,6 +47,15 @@ CRC32 mod 5 is its own, logs in on its own), then a **report** job decrypts the 
 joins them (`--merge parts`): one Telegram message and one Excel. A failed part is named in the
 message ("only N of 5 parts finished").
 
+**TP update master** (owner, 14 Nov 2026; `flipkart_price/master.py`): Drive AGENT WORK > FLIPKART >
+TP UPDATE MASTER > `FLIPKART TP UPDATE MASTER.xlsx`, one sheet per month. Columns FSN | SKU | Final TP,
+then per day the date over two columns **Old TP | New TP** (the settlement before the day's first run
+and after its last run). A listing gets its row the first time the update works on it. The report job
+writes it after every run (not a dry run, not `--no-upload`) and it is the file sent on Telegram; the
+run's own detailed Excel stays in the run's encrypted output. It is kept outside PRICE UPDATE, whose
+newest .xlsx is the Final TP file. 14 Nov was seeded from the 3:18 PM listing read (before any change)
+and the live settlements: 2,545 listings, 431 at TP.
+
 **Telegram summary** (owner, 14 Nov: simple): at Final TP (and how many today), price updated
 today, still pending (moved closer / not changed) with the reasons, not live.
 

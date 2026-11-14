@@ -392,12 +392,27 @@ def report(metas: list[dict], summary: pd.DataFrame, steps: pd.DataFrame, not_li
            f"❔ Not live on Flipkart: {len(not_live):,}"]
     if m0["parts"] > 1 and len(metas) < m0["parts"]:
         msg += ["", f"⚠️ Only {len(metas)} of {m0['parts']} parts finished: the others are left out (named in the run)"]
+    # the master sheet (owner, 14 Nov): FSN | SKU | Final TP | per day Old TP / New TP; it is the file
+    # sent on Telegram. A dry run or --no-upload leaves it alone and sends the run's own Excel.
+    send = out
+    if not dry and not getattr(args, "no_upload", False) and len(summary):
+        try:
+            from . import master
+            day = datetime.strptime(m0["started"][:10], "%Y-%m-%d").date()
+            rows = [{"fsn": r["FSN"], "sku": r["SKU"], "tp": int(r["Final TP"]),
+                     "old": int(r["Settlement start"]), "new": int(r["Settlement now"])}
+                    for _, r in summary.iterrows()]
+            send, link = master.sync(day, rows, out.parent)
+            msg.append(f'📒 <a href="{link}">TP update master</a>')
+        except Exception as exc:  # noqa: BLE001 - the update itself is done; name the miss
+            log.warning("TP update master not updated: %s", exc)
+            msg.append(f"⚠️ TP update master not updated ({telegram.esc(str(exc)[:80])})")
     text = "\n".join(m for m in msg if m or m == msg[2])
     if args.no_telegram:
         print(text)
     else:
         telegram.send(text)
-        telegram.send_document(out, caption="Flipkart Final TP update")
+        telegram.send_document(send, caption="Flipkart TP update master" if send != out else "Flipkart Final TP update")
     return 0
 
 
@@ -454,6 +469,7 @@ def main(argv=None) -> int:
     p.add_argument("--limit", type=int, default=0, help="only the first N listings to change (a test)")
     p.add_argument("--part", type=part_of, default=(1, 1), metavar="I/N",
                    help="GitHub matrix: change only part I of N of the listings (no summary message)")
+    p.add_argument("--no-upload", action="store_true", help="leave the TP update master on Drive alone")
     p.add_argument("--merge", metavar="DIR", help="report job: join the parts' results under DIR, send one message")
     p.add_argument("--no-telegram", action="store_true", help="print the report instead of sending it")
     return run_bot("Flipkart Final TP update", p, run, argv)
