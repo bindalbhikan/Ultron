@@ -47,7 +47,7 @@ const COMMANDS = {
   myntratat: { workflow: "myntra-tat.yml", icon: "🚚", name: "Myntra courier scorecard", portal: "myntra", minutes: 3,
                examples: ["/myntratat"], inputs: none("/myntratat") },
   // Flipkart
-  fkprice: { workflow: "flipkart-price.yml", icon: "💸", name: "Flipkart Final TP update", portal: "flipkart", minutes: 40,
+  fkprice: { workflow: "flipkart-price.yml", icon: "💸", name: "Flipkart Final TP update", portal: "flipkart", minutes: 60,
              examples: ["/fkprice dry", "/fkprice"],
              inputs: (args) => {
                if (args.length === 0) return {};

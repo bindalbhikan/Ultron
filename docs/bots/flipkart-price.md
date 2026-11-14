@@ -21,8 +21,8 @@ a local workbook instead.
 3. Every other listing moves toward its TP in steps Flipkart accepts:
    * up: at most **+20%** of the current settlement a step. Some listings have a lower limit
      (14 Nov: "upto 10% of current value"): the % in Flipkart's refusal is used and the step is
-     tried again at once. At most **2 increases a day**: today's increases (Seller Hub's price
-     history, also the ones made by hand) count.
+     tried again at once. At most **2 increases a day**: a 3rd (also after increases made by hand)
+     is refused by Flipkart ("2 times a day") and that listing waits for the next run.
    * down: at most **−30%** a step, repeated in the same run.
    * the selling price for the settlement comes from **Flipkart's own calculator** (reverse:
      settlement → price). A settlement inside a fee-slab gap has no price
@@ -33,6 +33,12 @@ a local workbook instead.
    * discount at most **90%**: a TP whose price would be under 10% of MRP is not set, and named.
    * at most `FK_PRICE_MAX_STEPS` (6) steps per listing a run.
 4. What is not at TP today (2-a-day limit, a refusal) continues on the next run.
+
+**GitHub matrix** (owner, 14 Nov 2026): one job managed ~5 listings a minute, too slow for ~2,500.
+The workflow runs **5 parts at once** (`--part I/5`: each takes the listings whose listing-id
+CRC32 mod 5 is its own, logs in on its own), then a **report** job decrypts the parts' outputs and
+joins them (`--merge parts`): one Telegram message and one Excel. A failed part is named in the
+message ("only N of 5 parts finished").
 
 **Output**: `output/flipkart-price/Flipkart Final TP update <date time>.xlsx` (sheets *Listings*:
 start / now / status per listing; *Steps*: every step, its settlement and price, and Flipkart's

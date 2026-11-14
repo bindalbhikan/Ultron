@@ -17,9 +17,11 @@ Every step and every refusal is written to an Excel in output/flipkart-price and
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import re
+import zlib
 from datetime import datetime
 from pathlib import Path
 
@@ -145,6 +147,8 @@ def plan_step(client: FlipkartClient, tier: str, items: list[dict]) -> None:
 
 
 def run(args) -> int:
+    if args.merge:
+        return merge(Path(args.merge), args)
     started = datetime.now()
     path = Path(args.file) if args.file else fetch_target_file()
     targets = read_targets(path)
@@ -176,18 +180,14 @@ def run(args) -> int:
                          "mrp": float(mrp), "esp": int(esp), "ssp": int(ssp), "start_esp": int(esp),
                          "start_ssp": int(ssp), "tp": tp, "ups": 0, "steps": 0, "up": UP, "down": DOWN})
     log.info("Listings at TP: %d, to change: %d, FSNs not live: %d", matched, len(todo), len(not_live))
+    part, parts = args.part
+    if parts > 1:                    # GitHub matrix: this job takes its share of the listings only
+        todo = [it for it in todo if zlib.crc32(it["listing_id"].encode()) % parts == part - 1]
+        log.info("Part %d of %d: %d listings to change", part, parts, len(todo))
     if args.limit:
         todo = todo[:args.limit]
-
-    # today's increases already made (by hand or an earlier run) count toward Flipkart's 2 a day
-    if not args.dry_run:
-        for it in todo:
-            if it["tp"] > it["esp"]:
-                try:
-                    it["ups"] = increases_today(client, it["listing_id"])
-                except Exception as exc:  # noqa: BLE001
-                    it["ups"] = UPS_A_DAY
-                    it["done"] = f"history not read ({exc}): not increased today"
+    # today's increases made by hand or an earlier run: Flipkart refuses a 3rd one ("2 times a day"),
+    # which stops that listing for today (reading every listing's history first took too long)
 
     max_steps = num("FK_PRICE_MAX_STEPS", 6)
     active = [it for it in todo if "done" not in it]
@@ -258,22 +258,42 @@ def run(args) -> int:
                              "Settlement now": it["esp"], "Price now": it["ssp"], "Steps": it["steps"],
                              "Status": "at TP" if it["esp"] == it["tp"] else it.get("done", "not reached")}
                             for it in todo])
-    out = output_dir("flipkart-price") / f"Flipkart Final TP update {started:%Y-%m-%d %H%M}.xlsx"
+    tag = f" part {part} of {parts}" if parts > 1 else ""
+    out = output_dir("flipkart-price") / f"Flipkart Final TP update {started:%Y-%m-%d %H%M}{tag}.xlsx"
     with pd.ExcelWriter(out) as xw:
         summary.to_excel(xw, sheet_name="Listings", index=False)
         pd.DataFrame(log_rows).to_excel(xw, sheet_name="Steps", index=False)
         pd.DataFrame({"FSN not live on Flipkart": not_live}).to_excel(xw, sheet_name="Not live", index=False)
+    meta = {"started": f"{started:%Y-%m-%d %H:%M}", "file": path.name, "fsns": len(targets), "matched": matched,
+            "todo": len(todo), "reached": reached, "moved": moved, "dry_run": bool(args.dry_run), "part": part, "parts": parts}
+    out.with_suffix(".json").write_text(json.dumps(meta), encoding="utf-8")
     log.info("Written %s", out)
+    if parts > 1:                    # the report job (--merge) joins the parts and sends one message
+        log.info("Part %d of %d done: %d at TP, %d moved, %d left", part, parts, reached, moved, len(left))
+        return 0
+    return report([meta], summary, pd.DataFrame(log_rows), not_live, out, args)
 
-    reasons = summary[summary["Status"] != "at TP"]["Status"].map(lambda s: str(s)[:90]).value_counts()
-    mode = " (dry run: nothing changed)" if args.dry_run else ""
-    msg = [f"💸 <b>Flipkart Final TP update · {started:%d %b %H:%M}</b>{mode}",
-           f"<i>{len(targets):,} FSNs in {telegram.esc(path.name)}</i>", "",
-           f"✅ Already at TP: {matched:,}",
-           f"🎯 Brought to TP now: {reached:,}" if not args.dry_run else f"📝 To change: {len(todo):,}",
-           f"↗️ Moved, not at TP yet: {moved:,}" if not args.dry_run else "",
+
+def report(metas: list[dict], summary: pd.DataFrame, steps: pd.DataFrame, not_live: list[str],
+           out: Path, args) -> int:
+    m0 = metas[0]
+    todo = sum(m["todo"] for m in metas)
+    reached = sum(m["reached"] for m in metas)
+    moved = sum(m["moved"] for m in metas)
+    left = summary[summary["Status"] != "at TP"] if len(summary) else summary
+    reasons = left["Status"].map(lambda s: str(s)[:90]).value_counts() if len(left) else pd.Series(dtype=int)
+    dry = m0["dry_run"]
+    parts = f" · {len(metas)} of {m0['parts']} parts" if m0["parts"] > 1 else ""
+    msg = [f"💸 <b>Flipkart Final TP update · {m0['started'][8:10]}/{m0['started'][5:7]} {m0['started'][11:]}</b>"
+           + (" (dry run: nothing changed)" if dry else ""),
+           f"<i>{m0['fsns']:,} FSNs in {telegram.esc(m0['file'])}{parts}</i>", "",
+           f"✅ Already at TP: {m0['matched']:,}",
+           f"📝 To change: {todo:,}" if dry else f"🎯 Brought to TP now: {reached:,}",
+           "" if dry else f"↗️ Moved, not at TP yet: {moved:,}",
            f"⏳ Not at TP: {len(left):,}", *[f"• {telegram.esc(r)}: {n}" for r, n in reasons.head(8).items()],
            f"❔ FSN not live on Flipkart: {len(not_live):,}"]
+    if m0["parts"] > 1 and len(metas) < m0["parts"]:
+        msg += ["", f"⚠️ Only {len(metas)} of {m0['parts']} parts finished: the others are left out (named in the run)"]
     text = "\n".join(m for m in msg if m or m == msg[2])
     if args.no_telegram:
         print(text)
@@ -281,6 +301,29 @@ def run(args) -> int:
         telegram.send(text)
         telegram.send_document(out, caption="Flipkart Final TP update")
     return 0
+
+
+def merge(folder: Path, args) -> int:
+    """The report job of the GitHub matrix: join the parts' files found under folder."""
+    metas, sums, steps, not_live = [], [], [], set()
+    for js in sorted(folder.rglob("Flipkart Final TP update *part*.json")):
+        meta = json.loads(js.read_text(encoding="utf-8"))
+        xl = js.with_suffix(".xlsx")
+        if not xl.exists():
+            continue
+        metas.append(meta)
+        sums.append(pd.read_excel(xl, sheet_name="Listings"))
+        steps.append(pd.read_excel(xl, sheet_name="Steps"))
+        not_live |= set(pd.read_excel(xl, sheet_name="Not live").iloc[:, 0].dropna().astype(str))
+    if not metas:
+        raise RuntimeError(f"No part results under {folder}: every part of the matrix failed")
+    summary, step_df = pd.concat(sums, ignore_index=True), pd.concat(steps, ignore_index=True)
+    out = output_dir("flipkart-price") / f"Flipkart Final TP update {metas[0]['started'].replace(':', '')}.xlsx"
+    with pd.ExcelWriter(out) as xw:
+        summary.to_excel(xw, sheet_name="Listings", index=False)
+        step_df.to_excel(xw, sheet_name="Steps", index=False)
+        pd.DataFrame({"FSN not live on Flipkart": sorted(not_live)}).to_excel(xw, sheet_name="Not live", index=False)
+    return report(metas, summary, step_df, sorted(not_live), out, args)
 
 
 def fetch_target_file() -> Path:
@@ -299,10 +342,20 @@ def fetch_target_file() -> Path:
     return folder.download(name, output_dir("flipkart-price") / name)
 
 
+def part_of(text: str) -> tuple[int, int]:
+    i, n = (int(v) for v in text.split("/"))
+    if not 1 <= i <= n:
+        raise argparse.ArgumentTypeError(f"part {text}: I must be 1..N")
+    return i, n
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="run.py flipkart-price", description="Flipkart settlement to Final TP")
     p.add_argument("--file", help="the Final TP workbook (default: newest .xlsx in the Drive folder)")
     p.add_argument("--dry-run", action="store_true", help="plan the steps, change no price")
     p.add_argument("--limit", type=int, default=0, help="only the first N listings to change (a test)")
+    p.add_argument("--part", type=part_of, default=(1, 1), metavar="I/N",
+                   help="GitHub matrix: change only part I of N of the listings (no summary message)")
+    p.add_argument("--merge", metavar="DIR", help="report job: join the parts' results under DIR, send one message")
     p.add_argument("--no-telegram", action="store_true", help="print the report instead of sending it")
     return run_bot("Flipkart Final TP update", p, run, argv)
