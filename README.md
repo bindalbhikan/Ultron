@@ -20,7 +20,7 @@ repo on 25 Oct 2026):
 
 | Path | What it is |
 |---|---|
-| `src/ultron/workings/` | the report workings: sale, VMS, AJIO TAT / SPF / ads, Myntra SPF / OTP / reports, returns, morning, SLA, labels, stock, evening, weekly, dead stock, listings, Flipkart Final TP update, MIS, Myntra TAT, inventory push; their portal clients (`workings/portals`) and shared frame (`workings/core`) |
+| `src/ultron/workings/` | the report workings: sale, VMS, AJIO TAT / SPF / ads, Myntra SPF / OTP / reports, returns, morning, SLA, labels, stock, evening, weekly, dead stock, listings, Flipkart Final TP update and calculator, MIS, Myntra TAT, inventory push; their portal clients (`workings/portals`) and shared frame (`workings/core`) |
 | `run.py` | `python run.py <working>`: what every report workflow runs (through `scripts/github/ci_run.sh`) |
 | `.github/workflows/` | one workflow per working, plus `agent-watch.yml` and `agent-chat.yml` (Ultron) |
 | `agent.toml` | Bindal's Ultron setup (company, channels, actions, tools) |
