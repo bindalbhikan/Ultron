@@ -34,12 +34,15 @@ from ..portals.flipkart import FlipkartClient
 
 log = logging.getLogger("bindal.flipkart_price")
 
-UP, DOWN = 0.20, 0.30          # Flipkart: +20% / -30% of the current settlement a time
+UP, DOWN = 0.20, 0.2968        # Flipkart: +20% / -30% of the current settlement a time; down is
+                               # stepped 0.32 points under the limit (owner, 14 Nov 2026)
+UP_10 = 0.0968                 # a listing Flipkart holds to "upto 10%": stepped at 9.68% (owner, 14 Nov)
 UPS_A_DAY = 2                  # Flipkart: the settlement can be increased 2 times a day
 MIN_SP = 109                   # Flipkart: lowest price a step can reach from above
 MAX_DISCOUNT = 0.90            # Flipkart: discount up to 90% of MRP
 FOLDER = ("FLIPKART", "PRICE UPDATE")
 GAP = 15                       # rupees around a settlement tried when it falls in a fee-slab gap
+TWICE = re.compile(r"2 times (a|per) day", re.I)   # "You can increase the bank settlement 2 times per day"
 LIMIT_UP = re.compile(r"revise your settlement upto (\d+)%", re.I)
 LIMIT_DOWN = re.compile(r"reduce the Bank Settlement Value by a maximum of (\d+)%", re.I)
 
@@ -238,11 +241,15 @@ def run(args) -> int:
             else:
                 why = " | ".join(e.get("description", "") for e in ans.get("errors") or []) or str(ans)[:200]
                 lim = limit_in(why)
+                if lim and lim[0] == "up" and abs(lim[1] - 0.10) < 1e-9:
+                    lim = ("up", UP_10)      # 10% listings: 9.68% a step (owner)
+                elif lim and lim[0] == "down":
+                    lim = ("down", lim[1] - 0.0032)
                 if lim and len(ans.get("errors") or []) == 1 and lim[1] < it[lim[0]]:
                     it[lim[0]] = lim[1]      # this listing's own limit: the next round steps inside it
-                    log_rows.append({**row, "Result": f"refused, retried at {lim[1]:.0%}: {why}"})
+                    log_rows.append({**row, "Result": f"refused, retried at {lim[1]:.2%}: {why}"})
                     continue
-                if "2 times a day" in why:
+                if TWICE.search(why):
                     it["ups"] = UPS_A_DAY
                 it["done"] = f"refused: {why}"
                 log_rows.append({**row, "Result": f"refused: {why}"})
@@ -277,21 +284,36 @@ def run(args) -> int:
 def report(metas: list[dict], summary: pd.DataFrame, steps: pd.DataFrame, not_live: list[str],
            out: Path, args) -> int:
     m0 = metas[0]
+    dry = m0["dry_run"]
     todo = sum(m["todo"] for m in metas)
     reached = sum(m["reached"] for m in metas)
-    moved = sum(m["moved"] for m in metas)
+    changed = int((summary["Steps"] > 0).sum()) if len(summary) else 0
     left = summary[summary["Status"] != "at TP"] if len(summary) else summary
-    reasons = left["Status"].map(lambda s: str(s)[:90]).value_counts() if len(left) else pd.Series(dtype=int)
-    dry = m0["dry_run"]
+    untouched = left[left["Steps"] == 0] if len(left) else left
+
+    def why(status: str) -> str:
+        s = str(status)
+        if "increase" in s.lower() and ("2 times" in s or "today" in s):
+            return "2 increases done today: continues next run"
+        if "fee slab gap" in s:
+            return "TP falls in a fee-slab gap (no exact price)"
+        if "discount" in s:
+            return "TP too low for the MRP (over 90% discount)"
+        if "dry run" in s:
+            return "dry run"
+        return s.replace("refused: ", "Flipkart refused: ")[:80]
+
+    pending_why = left["Status"].map(why).value_counts() if len(left) else pd.Series(dtype=int)
     parts = f" · {len(metas)} of {m0['parts']} parts" if m0["parts"] > 1 else ""
-    msg = [f"💸 <b>Flipkart Final TP update · {m0['started'][8:10]}/{m0['started'][5:7]} {m0['started'][11:]}</b>"
-           + (" (dry run: nothing changed)" if dry else ""),
-           f"<i>{m0['fsns']:,} FSNs in {telegram.esc(m0['file'])}{parts}</i>", "",
-           f"✅ Already at TP: {m0['matched']:,}",
-           f"📝 To change: {todo:,}" if dry else f"🎯 Brought to TP now: {reached:,}",
-           "" if dry else f"↗️ Moved, not at TP yet: {moved:,}",
-           f"⏳ Not at TP: {len(left):,}", *[f"• {telegram.esc(r)}: {n}" for r, n in reasons.head(8).items()],
-           f"❔ FSN not live on Flipkart: {len(not_live):,}"]
+    when = f"{m0['started'][8:10]}/{m0['started'][5:7]} {m0['started'][11:]}"
+    msg = [f"💸 <b>Flipkart Final TP update · {when}</b>" + (" (dry run: nothing changed)" if dry else ""),
+           f"<i>{telegram.esc(m0['file'])}{parts}</i>", "",
+           f"✅ <b>At Final TP: {m0['matched'] + reached:,}</b> (today: {reached:,})",
+           f"🔄 <b>Price updated today: {changed:,}</b>" if not dry else f"📝 <b>To change: {todo:,}</b>",
+           f"⏳ <b>Still pending: {len(left):,}</b>"
+           + ("" if dry else f" ({len(left) - len(untouched):,} moved closer, {len(untouched):,} not changed)"),
+           *[f"   • {telegram.esc(r)}: {n:,}" for r, n in pending_why.head(6).items()],
+           f"❔ Not live on Flipkart: {len(not_live):,}"]
     if m0["parts"] > 1 and len(metas) < m0["parts"]:
         msg += ["", f"⚠️ Only {len(metas)} of {m0['parts']} parts finished: the others are left out (named in the run)"]
     text = "\n".join(m for m in msg if m or m == msg[2])

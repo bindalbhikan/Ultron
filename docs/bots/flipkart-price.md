@@ -20,10 +20,12 @@ a local workbook instead.
    that are not live are listed ("Not live").
 3. Every other listing moves toward its TP in steps Flipkart accepts:
    * up: at most **+20%** of the current settlement a step. Some listings have a lower limit
-     (14 Nov: "upto 10% of current value"): the % in Flipkart's refusal is used and the step is
-     tried again at once. At most **2 increases a day**: a 3rd (also after increases made by hand)
-     is refused by Flipkart ("2 times a day") and that listing waits for the next run.
-   * down: at most **−30%** a step, repeated in the same run.
+     (14 Nov: "upto 10% of current value", 247 of 479 in one part): the step is tried again at
+     once at **9.68%** (owner, 14 Nov: 9.68% × 2 a day). At most **2 increases a day**: a 3rd (also after increases made by hand)
+     is refused by Flipkart ("You can increase the bank settlement 2 times per day") and that
+     listing waits for the next run.
+   * down: at most **−29.68%** a step (0.32 points under Flipkart's 30%, owner 14 Nov), repeated
+     in the same run.
    * the selling price for the settlement comes from **Flipkart's own calculator** (reverse:
      settlement → price). A settlement inside a fee-slab gap has no price
      (`DELTA_IN_SETTLEMENT_VALUE`): the nearest reachable one within the step limits is used,
@@ -39,6 +41,12 @@ The workflow runs **5 parts at once** (`--part I/5`: each takes the listings who
 CRC32 mod 5 is its own, logs in on its own), then a **report** job decrypts the parts' outputs and
 joins them (`--merge parts`): one Telegram message and one Excel. A failed part is named in the
 message ("only N of 5 parts finished").
+
+**Telegram summary** (owner, 14 Nov: simple): at Final TP (and how many today), price updated
+today, still pending (moved closer / not changed) with the reasons, not live.
+
+**Run of 14 Nov 2026** (5 parts, 16:03–16:19): 3,566 at TP before, 2,532 listings changed;
+most increases need 2–3 days (2 a day). Part 1: 920 steps made, 247 "10%" refusals retried.
 
 **Output**: `output/flipkart-price/Flipkart Final TP update <date time>.xlsx` (sheets *Listings*:
 start / now / status per listing; *Steps*: every step, its settlement and price, and Flipkart's
