@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import tempfile
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -114,12 +115,26 @@ def split_html(text: str, limit: int = MAX_LEN) -> list[str]:
     return parts
 
 
-def _post(token: str, method: str, **kw) -> requests.Response | None:
-    try:
-        return requests.post(API.format(token=token, method=method), timeout=120, **kw)
-    except requests.RequestException as exc:
-        log.error("Telegram %s failed: %s", method, exc)
-        return None
+def _post(token: str, method: str, tries: int = 3, **kw) -> requests.Response | None:
+    """POST to the Bot API; a dropped connection or a timeout is tried again (14 Nov 2026: a GitHub
+    runner's sendMessage got "Connection reset by peer" once and the report message was lost)."""
+    for attempt in range(1, tries + 1):
+        for f in (kw.get("files") or {}).values():          # a file sent again starts from its first byte
+            fh = f[1] if isinstance(f, tuple) else f
+            if hasattr(fh, "seek"):
+                fh.seek(0)
+        try:
+            return requests.post(API.format(token=token, method=method), timeout=120, **kw)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            if attempt == tries:
+                log.error("Telegram %s failed after %d tries: %s", method, tries, exc)
+                return None
+            log.warning("Telegram %s: %s, trying again", method, exc)
+            time.sleep(5 * attempt)
+        except requests.RequestException as exc:
+            log.error("Telegram %s failed: %s", method, exc)
+            return None
+    return None
 
 
 def send(text: str) -> bool:
