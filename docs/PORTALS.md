@@ -58,6 +58,11 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 
 ## Flipkart Seller Hub — `portals/flipkart.py`
 
+* API discovery, 7 Nov 2026: [Seller Hub reverse-engineering notes](knowledge/flipkart-seller.md),
+  [GraphQL operation inventory](knowledge/flipkart-graphql.md), and
+  [official OAuth API reference](knowledge/flipkart-seller-api.md). Official report endpoints use
+  a separate paid partner entitlement; their documented retention is not a verified Seller Hub limit.
+
 * Login: JSON POST `/login` (`FLIPKART_EMAIL/PASSWORD`); CSRF from `/getFeaturesForSeller`.
 * Report centre, 4 Nov 2026: the same report and dates are refused while the link is active (HTTP 500 around a 400, "has already been requested"). The Oct-26 Orders file had no 31 Oct and fewer lines on some days (27 Oct: 377) than a 10-day range asked the same day (31 Oct: 300; 27 Oct: 414). Cause not known.
 * FBF units: `/napi/metrics/search` filtered on Flipkart's own warehouses (sale bot).
@@ -73,6 +78,31 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   0 % returns). The Sales Report carries Return events but cannot split RTO from customer returns
   and has no reasons, so it is not used for returns.
 * The local `.env` `FLIPKART_PASSWORD` was stale on 2026-10-18 (GitHub's secret works).
+* **Listings and prices** (`flipkart-price`, tested live 14 Nov 2026; `fk-csrf-token` header):
+  * `POST /napi/listing/listingsDataForStates` `{"search_text":"","search_filters":{"internal_state":"ACTIVE"},
+    "column":{"pagination":{"batch_no":n,"batch_size":100}}}` → `count`, `listing_data_response[]` (sku_id,
+    listing_id, product_id = FSN, vertical, service_profile, mrp, `ssp` selling price, `esp` bank settlement).
+    500 a page → HTTP 500. **Do not sort**: with `sort` (demand_weight) pages repeat and skip rows (6,388 rows,
+    5,389 listings); sku_id / listing_id sorts → HTTP 500. Unsorted pages still drop a few now and then
+    (6,384 of 6,388): read again and merge by listing_id.
+  * Calculator: `POST /napi/graphql` `settlements_calculator_web_getAverageSettlementPrice`, `listings` up to
+    50 per call: forward `{listing_id, selling_price}` or reverse `{listing_id, type:"reverse", settlement_value}`,
+    `darwin_tier` from `GET /napi/darwin/finalTier`, `new_reverse_api: true`. Answer by listing id: selling_price,
+    settlement_value, settlement_status (`SETTLEMENT_VALUE_ACHIEVED`, or `DELTA_IN_SETTLEMENT_VALUE` with price 0
+    when the settlement falls in a fee-slab gap), total_fees_and_taxes, zone_level_splits (FBF / NON_FBF share,
+    fee groups: commission, shipping, fixed fee, collection, pick and pack, with GST). The `esp` is this blended value.
+  * Rate card: `POST /orchestrator/graphql?` `GetPlatformFeeOrchestrator` / `GetClosingFeeOrchestrator` /
+    `GetCollectionFeeOrchestrator` / `GetReverseShippingFeeOrchestrator`, input `{serviceProfile, partnerContext:
+    "flipkart", darwinTier, date, fsn}` → slabs by price (asp) or weight. 14 Nov, apparel set: commission 14%,
+    fixed fee Rs 10 up to 1,500 / Rs 20 above, collection fee 0.
+  * `GET /napi/listing/priceUpdateHistory?id=<listing_id>&attribute=esp|ssp` → channel, timestamp, old / new value.
+  * **Changes the price**: `POST /napi/listing/updateSellingPrice?userName=<display name>` `{"listingUpdate":{<sku>:
+    {"product_id":<FSN>,"price":{"mrp","selling_price","currency":"INR","esp"}}},"priceRecoUpdate":{}}` →
+    `{<sku>:{"status":"SUCCESS"}}` or FAILURE with errors (code 25025): settlement up to +20% a time (10% on
+    some listings), down to −30% a time, up only 2 times a day, discount up to 90%, price at least Rs 109 in one step.
+  * The listing file (`POST /napi/listing/enqueueDownload`, `stockFileDownloadRequestStatus`, ~4 min for 6,388) gives a
+    `file_link` under `/operations/downloadFile/`; the download path behind it was not found (the bare link and
+    `/napi/...` guesses give HTML / 404). Not needed: the listing table has the same prices.
 
 ## Reliance SRM — `portals/srm.py`
 

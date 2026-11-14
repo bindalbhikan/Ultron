@@ -224,3 +224,131 @@ class FlipkartClient:
         r = self._report_api("GET", f"downloadReport/{file_name}?token={rid}&sellerId={self.seller_id}")
         log.info("Flipkart %s report downloaded (%d bytes)", name, len(r.content))
         return f"Flipkart {name} {start} to {end}.xlsx", r.content
+
+    # ------------------------------------------------------------ listings and prices
+    # Seller Hub > Listings: the table, the settlement calculator and the price update (captured
+    # 7 Nov 2026, tested 14 Nov). esp = bank settlement ("TP"), ssp = selling price.
+    _CALC_QUERY = (
+        "query settlements_calculator_web_getAverageSettlementPrice($darwin_tier: String, $listings: "
+        "[OptionalInputParams], $reward_params: IRewardParams, $page_name: String, $include_returns: Boolean, "
+        "$new_reverse_api: Boolean) {\n  getAverageSettlementPrice: getAverageSettlementPrice(\n"
+        "    darwin_tier: $darwin_tier\n    listings: $listings\n    reward_params: $reward_params\n"
+        "    page_name: $page_name\n    include_returns: $include_returns\n    new_reverse_api: $new_reverse_api\n  )\n}")
+    _FEE_PARAMS = ("fixedRate prepaid postpaid localFee zonalFee nationalFee localAdditionalCharges "
+                   "zonalAdditionalCharges nationalAdditionalCharges startSlab incrementalSlab")
+    # rate card parts (orchestrator query) by their field in the answer
+    FEES = {"platformFee": "GetPlatformFeeOrchestrator", "closingFee": "GetClosingFeeOrchestrator",
+            "collectionFee": "GetCollectionFeeOrchestrator", "reverseShippingFee": "GetReverseShippingFeeOrchestrator"}
+
+    def _json_headers(self) -> dict:
+        return {"fk-csrf-token": self.csrf, "Content-Type": "application/json", "Origin": BASE,
+                "Referer": f"{BASE}/index.html"}
+
+    def _post(self, path: str, body: dict, tries: int = 3) -> dict:
+        """POST JSON; an HTTP 5xx or a dropped connection is tried again (only when tries > 1),
+        any other refusal is raised."""
+        r = None
+        for attempt in range(1, tries + 1):
+            try:
+                r = self.s.post(f"{BASE}{path}", json=body, headers=self._json_headers(), timeout=self.timeout)
+            except requests.ConnectionError:
+                if attempt == tries:
+                    raise
+                time.sleep(5 * attempt)
+                continue
+            if r.status_code < 500 or attempt == tries:
+                break
+            time.sleep(5 * attempt)
+        if r.status_code != 200:
+            raise FlipkartError(f"Flipkart {path.split('?')[0]}: HTTP {r.status_code} {r.text[:200]}")
+        return r.json()
+
+    def tier(self) -> str:
+        """The seller's tier (bronze, silver ...): the calculator and the rate card depend on it."""
+        r = self.s.get(f"{BASE}/napi/darwin/finalTier", headers=self._json_headers(), timeout=self.timeout)
+        if r.status_code != 200:
+            raise FlipkartError(f"Flipkart tier: HTTP {r.status_code}")
+        return r.json().get("tier") or "bronze"
+
+    def listings(self, state: str = "ACTIVE", page_size: int = 100) -> list[dict]:
+        """Every listing in a state: sku_id, listing_id, product_id (FSN), vertical, mrp, ssp, esp ...
+        No sort: a sorted list (demand_weight) repeats and skips rows across pages (14 Nov: 6,388
+        rows, 5,389 listings), and 500 a page is refused. Raises unless every listing was read."""
+        rows, count = {}, None
+        for _ in range(4):           # unsorted paging still drops a few rows now and then (14 Nov: 6,384 of
+            page = 0                 # 6,388): read again and merge until every listing is in
+            while True:
+                data = self._post("/napi/listing/listingsDataForStates", {
+                    "search_text": "", "search_filters": {"internal_state": state},
+                    "column": {"pagination": {"batch_no": page, "batch_size": page_size}}})
+                got = data.get("listing_data_response") or []
+                count = data.get("count", count)
+                for x in got:
+                    rows[x["listing_id"]] = x
+                page += 1
+                if not got or page * page_size >= (count or 0):
+                    break
+            if count is not None and len(rows) >= count:
+                break
+            log.info("Flipkart listings: %d of %s read, reading again", len(rows), count)
+        if count is None or len(rows) != count:
+            raise FlipkartError(f"Flipkart listings: read {len(rows)} of {count}")
+        log.info("Flipkart %s listings: %d", state, len(rows))
+        return list(rows.values())
+
+    def calculator(self, items: list[dict], tier: str, chunk: int = 50) -> dict[str, dict]:
+        """Flipkart's own settlement calculator, by listing id. Each item is
+        {"listing_id", "selling_price"} (forward: SP -> settlement) or {"listing_id", "type": "reverse",
+        "settlement_value"} (reverse: settlement -> SP). The answer per listing has selling_price,
+        settlement_value, settlement_status (reverse), total_fees_and_taxes, zone_level_splits ..."""
+        out = {}
+        for i in range(0, len(items), chunk):
+            data = self._post("/napi/graphql", {
+                "operationName": "settlements_calculator_web_getAverageSettlementPrice", "query": self._CALC_QUERY,
+                "variables": {"listings": items[i:i + chunk], "darwin_tier": tier, "reward_params": {},
+                              "page_name": "", "include_returns": False, "new_reverse_api": True}})
+            out.update(((data.get("data") or {}).get("getAverageSettlementPrice")) or {})
+        return out
+
+    def rate_card(self, fsn: str, tier: str, service_profile: str = "NON_FBF") -> dict:
+        """The rate card of one FSN: commission, fixed (closing) fee, collection fee and reverse
+        shipping, each with its price (asp) or weight (shippingSlab) slabs, as Seller Hub shows it."""
+        slab = f"asp {{ start end agreementParameters {{ {self._FEE_PARAMS} }} }}"
+        ship = (f"shippingSlab {{ start end {slab} agreementParameters "
+                "{ localFee zonalFee nationalFee startSlab incrementalSlab } }")
+        out = {}
+        for field, op in self.FEES.items():
+            q = (f"query {op}($input: SettlementInput!) {{ settlement(input: $input) {{ {field} {{ displayName "
+                 f"namespace agreementIds serviceProfile slabs {{ {slab} {ship} }} }} }} }}")
+            data = self._post("/orchestrator/graphql?", {"operationName": op, "query": q, "variables": {"input": {
+                "serviceProfile": service_profile, "partnerContext": "flipkart", "darwinTier": tier,
+                "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "fsn": fsn}}})
+            out[field] = ((data.get("data") or {}).get("settlement") or {}).get(field)
+        return out
+
+    def price_history(self, listing_id: str, attribute: str = "esp") -> list[dict]:
+        """Past changes of a listing's esp (settlement) or ssp (selling price), newest first:
+        channel, timestamp (ms), old_value, new_value."""
+        r = self.s.get(f"{BASE}/napi/listing/priceUpdateHistory", params={"id": listing_id, "attribute": attribute},
+                       headers=self._json_headers(), timeout=self.timeout)
+        if r.status_code != 200:
+            raise FlipkartError(f"Flipkart price history: HTTP {r.status_code}")
+        return r.json() or []
+
+    def update_settlement(self, sku: str, fsn: str, mrp: float, selling_price: int, esp: int,
+                          user_name: str) -> dict:
+        """CHANGES THE LIVE PRICE. Sets a listing's bank settlement (esp) with the selling price the
+        calculator gives for it, as Seller Hub's "Edit settlement" does. Answers {"status": "SUCCESS"}
+        or {"status": "FAILURE", "errors": [{"code", "description"}]} (limits: +20% / -30% a time,
+        2 increases a day, discount up to 90%, Rs 109 floor). Not retried."""
+        data = self._post(f"/napi/listing/updateSellingPrice?userName={requests.utils.quote(user_name)}", {
+            "listingUpdate": {sku: {"product_id": fsn, "price": {
+                "mrp": mrp, "selling_price": int(selling_price), "currency": "INR", "esp": int(esp)}}},
+            "priceRecoUpdate": {}}, tries=1)
+        return data.get(sku) or {"status": "FAILURE", "errors": [{"description": f"no answer for {sku}"}]}
+
+    def seller_name(self) -> str:
+        """The display name Seller Hub sends as userName on a price update."""
+        f = self.s.get(f"{BASE}/getFeaturesForSeller", headers={"X-Requested-With": "XMLHttpRequest"},
+                       timeout=self.timeout).json()
+        return (f.get("sellerDetails") or {}).get("displayName") or f.get("displayName") or ""

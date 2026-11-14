@@ -34,6 +34,24 @@ Results and the log go to `output/<bot>/` (git-ignored, has customer data: delet
 
 ## Rules
 
+### Git metadata outside Google Drive
+
+On this PC, Git metadata is stored at
+`%USERPROFILE%\.ultron\git\AGENT-ULTRON-BINDAL.git`; the repository's `.git` file points there.
+Google Drive previously inserted `desktop.ini` into Git refs, breaking pulls and fetches.
+Keeping metadata outside Drive prevents recurrence for all Git clients, without a cleanup hook
+or scheduled task. Normal `git pull`, `git fetch`, and `git push` commands work unchanged.
+
+The migration on 14 November 2026 verified the copied files and preserved the original metadata
+in ignored `output/git-metadata-backup-20261114`. The existing linked worktree was repaired to use
+the new metadata location. Local uncommitted changes were preserved.
+
+The external metadata directory is part of this checkout: back it up with the working files.
+On another machine, clone the repository afresh; the Drive-synced pointer is specific to this PC.
+Do not recreate a `.git` directory inside Drive or run cleanup commands that assume `.git` is a folder.
+
+### Bot runs
+
 * Do not run a Myntra bot here while the same bot runs on GitHub: Myntra refuses the same report
   twice within 15 minutes, so both runs lose reports.
 * The local `FLIPKART_PASSWORD` was out of date on 18 Oct 2026 (the GitHub secret works): update

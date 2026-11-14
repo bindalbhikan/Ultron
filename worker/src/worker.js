@@ -47,6 +47,13 @@ const COMMANDS = {
   myntratat: { workflow: "myntra-tat.yml", icon: "🚚", name: "Myntra courier scorecard", portal: "myntra", minutes: 3,
                examples: ["/myntratat"], inputs: none("/myntratat") },
   // Flipkart
+  fkprice: { workflow: "flipkart-price.yml", icon: "💸", name: "Flipkart Final TP update", portal: "flipkart", minutes: 40,
+             examples: ["/fkprice dry", "/fkprice"],
+             inputs: (args) => {
+               if (args.length === 0) return {};
+               if (args.length === 1 && args[0].toLowerCase() === "dry") return { dry_run: "1" };
+               return "Use /fkprice or /fkprice dry";
+             } },
   fktat: { workflow: "flipkart-tat.yml", icon: "📦", name: "Flipkart TAT", portal: "flipkart", chat: true, minutes: 6,
            examples: ["/fktat"], inputs: none("/fktat") },
   // Ultron Phone: courier SMS the SMS sheet's script did not file (returns OTP / POD), worked again
@@ -219,6 +226,7 @@ const SCHEDULE = [
   // last month's order + payment reports of every portal into Drive AGENT WORK/PORTAL REPORTS
   // (return reports: the return analysis on the 10th / 15th)
   { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "portalreports" },
+  { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "fkprice" },
   { ist: "11:30 AM daily", cron: "0 6 * * *", cmd: "listings" },
   { ist: "12:00 PM daily", cron: "30 6 * * *", cmd: "sla" },
   // Myntra colour grouping, every 3 days (office PC: myntra.com refuses GitHub's runners)
@@ -317,7 +325,7 @@ const SCREENS = {
     title: "🛒 <b>Flipkart</b>\n<i>incl. FBF</i>\n\nWhat do you need?",
     rows: [
       [["📈 Orders yesterday", "a:fk_orders"], ["⏰ Due today", "a:fk_due"]],
-      [["📦 Flipkart TAT", "r:fktat"]],
+      [["📦 Flipkart TAT", "r:fktat"], ["💸 Final TP update", "r:fkprice"]],
       [["📈 Sale report", "m:sale"], ["↩️ Return analysis", "m:returns"]],
       back(),
     ],

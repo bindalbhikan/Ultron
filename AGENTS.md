@@ -70,8 +70,11 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 
 ## Working on this machine (owner's Windows PC)
 
-- The repo sits on Google Drive (`G:\My Drive\...`): Drive drops `desktop.ini` files; the local hook
-  removes them from `.git` before push / pull / fetch.
+- Project files sit on Google Drive (`G:\My Drive\...`), but Git metadata lives outside Drive at
+  `%USERPROFILE%\.ultron\git\AGENT-ULTRON-BINDAL.git`. The project's `.git` is a pointer file.
+  This prevents Drive's `desktop.ini` files from corrupting Git refs for any Git client; no cleanup
+  hook is needed. Keep this local directory when moving or backing up the checkout. On another PC,
+  clone afresh rather than reuse the synced `.git` pointer. See `scripts/local/README.md`.
 - Pull before you start (`git pull`): the Docs sync workflow may have committed on main.
 - In bash heredocs `\\n` / `\\b` become real control characters; write regexes with the Edit/Write tools.
 - Deploy the worker from `worker/` and the dashboard from `dashboard/` (`npx wrangler deploy`); the

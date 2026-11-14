@@ -21,6 +21,7 @@
   deadstock  monthly dead / slow stock      python run.py deadstock --help
   myntra-otp 11 / 11:45 AM Myntra pickup / return OTPs python run.py myntra-otp --help
   listings   11:30 AM listing health        python run.py listings --help
+  flipkart-price 10 AM Flipkart settlement to Final TP  python run.py flipkart-price --help
   myntra-tat 6:30 PM Myntra courier pickups   python run.py myntra-tat --help
   mis        monthly MIS and plan           python run.py mis --help
   myntra-reports 10 AM Myntra orders / returns / listings  python run.py myntra-reports --help
@@ -54,7 +55,8 @@ BOTS = {"sale": "ultron.workings.sale.pipeline", "vms": "ultron.workings.vms.pip
         "ticket-followup": "ultron.workings.ticket_followup.pipeline",
         "erp-oms-return": "ultron.workings.erp_oms_return.pipeline",
         "work-schedule": "ultron.workings.work_schedule.pipeline",
-        "myntra-history": "ultron.workings.myntra_history.pipeline"}
+        "myntra-history": "ultron.workings.myntra_history.pipeline",
+        "flipkart-price": "ultron.workings.flipkart_price.pipeline"}
 
 
 def main(argv: list[str]) -> int:
