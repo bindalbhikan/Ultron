@@ -90,7 +90,7 @@ TASKS = [
     Task("Monthly MIS", "mis.yml", _at(11), "MONTHLY (2nd)", day=2),
     Task("Portal reports", "portal-reports.yml", _at(11), "MONTHLY (2nd)", day=2),
     Task("Portal sale report", "portal-sale.yml", _at(17, 30), "DAILY"),
-    Task("Flipkart Final TP update", "flipkart-price.yml", _at(10), "DAILY"),
+    Task("Flipkart Final TP update", "flipkart-price.yml", _at(8), "DAILY"),
     Task("Listing health", "listings.yml", _at(11, 30), "DAILY"),
     Task("SLA warning", "sla.yml", _at(12), "DAILY"),
     Task("Myntra colour grouping", "myntra-grouping.yml", _at(12), "EVERY 3 DAYS", days=(1, 4, 7, 10, 13, 16, 19, 22, 25, 28)),

@@ -21,7 +21,7 @@
   deadstock  monthly dead / slow stock      python run.py deadstock --help
   myntra-otp 11 / 11:45 AM Myntra pickup / return OTPs python run.py myntra-otp --help
   listings   11:30 AM listing health        python run.py listings --help
-  flipkart-price 10 AM Flipkart settlement to Final TP  python run.py flipkart-price --help
+  flipkart-price 8 AM Flipkart settlement to Final TP  python run.py flipkart-price --help
   myntra-tat 6:30 PM Myntra courier pickups   python run.py myntra-tat --help
   mis        monthly MIS and plan           python run.py mis --help
   myntra-reports 10 AM Myntra orders / returns / listings  python run.py myntra-reports --help

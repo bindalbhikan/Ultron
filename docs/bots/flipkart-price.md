@@ -1,6 +1,6 @@
 # Flipkart Final TP update — `python run.py flipkart-price`
 
-**When**: 10:00 AM IST daily (`flipkart-price.yml`, started by the worker's cron, `SCHEDULE` in
+**When**: 8:00 AM IST daily (`flipkart-price.yml`, started by the worker's cron, `SCHEDULE` in
 `worker/src/worker.js`). By hand: `/fkprice` (or `/fkprice dry`: plan only) on Telegram, the
 Flipkart menu button, or the workflow. Built on the owner's instruction of 14 Nov 2026: this
 working changes live prices, but only toward the owner's own Final TP.

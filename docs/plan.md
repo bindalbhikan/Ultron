@@ -81,7 +81,7 @@ instruction. Instructions come only from the owner's Telegram chat.
 | M1 | MIS for the MD | 🟡 gross figures; net after commission and shipping once the `MIS_RATES` repo variable is set (the owner gives the rates) | `mis` the 2nd, 11 AM |
 | M2 | Payment reconciliation (settlement vs delivered orders) | ❌ Myntra's calls are known (next / outstanding payment, payment history, monthly seller reports: `docs/knowledge/myntra-partner.md`); the AJIO SRM ledger is already read by `ajio-spf`; Flipkart's Settled Transactions / Profit and Loss reports are known (`docs/knowledge/flipkart-seller.md`); the monthly payment reports of all three are now kept in PORTAL REPORTS (`portal-reports`) | |
 | M3 | Return analysis (full month) + SPF month | ✅ | `returns` the 15th |
-| M6 | Flipkart settlement to the owner's Final TP | ✅ (14 Nov 2026); per-category TP ↔ SP calculator workbook: 🟡 being built | `flipkart-price` 10 AM daily |
+| M6 | Flipkart settlement to the owner's Final TP | ✅ (14 Nov 2026); per-category TP ↔ SP calculator workbook: 🟡 being built | `flipkart-price` 8 AM daily |
 | M4 | Dead / slow stock | ✅ | `deadstock` the 1st, 11 AM |
 | M5 | Next month's plan | ✅ | inside `mis` |
 

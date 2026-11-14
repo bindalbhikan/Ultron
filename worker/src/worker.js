@@ -226,7 +226,7 @@ const SCHEDULE = [
   // last month's order + payment reports of every portal into Drive AGENT WORK/PORTAL REPORTS
   // (return reports: the return analysis on the 10th / 15th)
   { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "portalreports" },
-  { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "fkprice" },
+  { ist: "8:00 AM daily", cron: "30 2 * * *", cmd: "fkprice" },
   { ist: "11:30 AM daily", cron: "0 6 * * *", cmd: "listings" },
   { ist: "12:00 PM daily", cron: "30 6 * * *", cmd: "sla" },
   // Myntra colour grouping, every 3 days (office PC: myntra.com refuses GitHub's runners)

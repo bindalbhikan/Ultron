@@ -27,7 +27,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 | deadstock | `python run.py deadstock` | Dead stock report | `deadstock.yml` Dead stock report | 11:00 AM monthly (1st) | `docs/bots/deadstock.md` |
 | erp-oms-return | `python run.py erp-oms-return` | ERP to OMSGuru returns | `erp-oms-return.yml` ERP to OMSGuru returns | 8:00 PM daily | `docs/bots/erp-oms-return.md` |
 | evening | `python run.py evening` | Evening summary | `evening.yml` Evening summary | 8:00 PM daily | `docs/bots/evening.md` |
-| flipkart-price | `python run.py flipkart-price` | Flipkart Final TP update | `flipkart-price.yml` Flipkart Final TP update | 10:00 AM daily | `docs/bots/flipkart-price.md` |
+| flipkart-price | `python run.py flipkart-price` | Flipkart Final TP update | `flipkart-price.yml` Flipkart Final TP update | 8:00 AM daily | `docs/bots/flipkart-price.md` |
 | flipkart-tat | `python run.py flipkart-tat` | Flipkart TAT | `flipkart-tat.yml` Flipkart TAT daily update | 6:00 PM daily | `docs/bots/flipkart-tat.md` |
 | inv-push | `python run.py inv-push` | OMSGuru inventory push | `inv-push.yml` OMSGuru inventory push | every 3 hours, 6 AM - 3 AM daily (8 times) | `docs/bots/inv-push.md` |
 | labels | `python run.py labels` | Label check | `labels.yml` Label check | 6:00 PM daily | `docs/bots/labels.md` |
