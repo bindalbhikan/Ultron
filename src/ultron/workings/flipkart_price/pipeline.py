@@ -42,6 +42,7 @@ MIN_SP = 109                   # Flipkart: lowest price a step can reach from ab
 MAX_DISCOUNT = 0.90            # Flipkart: discount up to 90% of MRP
 FOLDER = ("FLIPKART", "PRICE UPDATE")
 GAP = 15                       # rupees around a settlement tried when it falls in a fee-slab gap
+NEAR = 2                       # a TP in a gap: TP +-1, +-2 tried first (owner, 14 Nov)
 TWICE = re.compile(r"2 times (a|per) day", re.I)   # "You can increase the bank settlement 2 times per day"
 LIMIT_UP = re.compile(r"revise your settlement upto (\d+)%", re.I)
 LIMIT_DOWN = re.compile(r"reduce the Bank Settlement Value by a maximum of (\d+)%", re.I)
@@ -80,14 +81,72 @@ def limit_in(why: str) -> tuple[str, float] | None:
 
 
 def gap_tries(current: int, nxt: int, target: int, up: float = UP, down: float = DOWN) -> list[int]:
-    """Settlements to try, nearest first, when nxt has no price: inside Flipkart's step limits from
-    current, never below the target, and not the current settlement itself."""
+    """Settlements to try, nearest first, when nxt has no price (a fee-slab gap): inside Flipkart's
+    step limits from current and not the current settlement itself. On the last step (nxt is the
+    TP) the TP +-1, +-2 come first, below the TP too (owner, 14 Nov: "TP must match, try Rs 1-2
+    either side"); then the nearest above the TP. Never more than NEAR below the TP."""
     hi = math.floor(current * (1 + up)) if target > current else current - 1
-    lo = max(target, current + 1) if target > current else max(target, math.ceil(current * (1 - down)))
+    lo_step = current + 1 if target > current else math.ceil(current * (1 - down))
     out = []
+    if nxt == target:
+        for k in range(1, NEAR + 1):
+            out += [v for v in (target + k, target - k) if max(lo_step, target - NEAR) <= v <= hi]
+    lo = max(target, lo_step)
     for k in range(1, GAP + 1):
-        out += [v for v in (nxt + k, nxt - k) if lo <= v <= hi]
+        out += [v for v in (nxt + k, nxt - k) if lo <= v <= hi and v not in out]
     return out
+
+
+def forward_search(client: FlipkartClient, tier: str, items: list[dict]) -> dict[int, dict[int, int]]:
+    """{id(item): {SP: settlement}} around the price whose settlement (Flipkart's forward calculator)
+    crosses the item's "next" settlement: halving between Rs 109 and the MRP, then the prices on
+    both sides of the crossing. All items go in the same calls (one price per listing a call)."""
+    if not items:
+        return {}
+    lo = {id(it): MIN_SP for it in items}
+    hi = {id(it): max(MIN_SP + 1, int(it["mrp"])) for it in items}
+    seen: dict[int, dict[int, int]] = {id(it): {} for it in items}
+
+    def price(todo: list[tuple[dict, int]]) -> None:
+        todo = [(it, sp) for it, sp in todo if sp not in seen[id(it)]]
+        if todo:
+            ans = client.calculator([{"listing_id": it["listing_id"], "selling_price": sp} for it, sp in todo], tier)
+            for it, sp in todo:
+                sv = (ans.get(it["listing_id"]) or {}).get("settlement_value")
+                if sv is not None:
+                    seen[id(it)][sp] = int(sv)
+
+    for _ in range(14):
+        live = [it for it in items if hi[id(it)] - lo[id(it)] > 1]
+        if not live:
+            break
+        price([(it, (lo[id(it)] + hi[id(it)]) // 2) for it in live])
+        for it in live:
+            m = (lo[id(it)] + hi[id(it)]) // 2
+            sv = seen[id(it)].get(m)
+            if sv is None:
+                hi[id(it)] = lo[id(it)]          # no answer: give up on this one
+            elif sv < it["next"]:
+                lo[id(it)] = m
+            else:
+                hi[id(it)] = m
+    price([(it, sp) for it in items for sp in range(lo[id(it)] - 2, hi[id(it)] + 3) if sp >= MIN_SP])
+    return seen
+
+
+def pick(it: dict, prices: dict[int, int]) -> tuple[int, int] | None:
+    """(SP, settlement) from the forward search: on the last step the settlement nearest the TP
+    within NEAR rupees (exact first, then above); on a middle step the one nearest the step's
+    target inside Flipkart's step limits."""
+    hi = math.floor(it["esp"] * (1 + it["up"])) if it["tp"] > it["esp"] else it["esp"] - 1
+    lo = it["esp"] + 1 if it["tp"] > it["esp"] else math.ceil(it["esp"] * (1 - it["down"]))
+    if it["next"] == it["tp"]:
+        ok = [(sp, sv) for sp, sv in prices.items() if abs(sv - it["tp"]) <= NEAR and (lo <= sv <= hi)]
+    else:
+        ok = [(sp, sv) for sp, sv in prices.items() if lo <= sv <= hi]
+    if not ok:
+        return None
+    return min(ok, key=lambda c: (abs(c[1] - it["next"]), c[1] < it["next"], c[0]))
 
 
 def increases_today(client: FlipkartClient, listing_id: str) -> int:
@@ -106,8 +165,23 @@ def plan_step(client: FlipkartClient, tier: str, items: list[dict]) -> None:
     """Give each item (listing + current esp/ssp + target) its next step: esp, sp, or a stop reason."""
     rev = client.calculator([{"listing_id": it["listing_id"], "type": "reverse", "settlement_value": it["next"]}
                              for it in items], tier)
-    # a settlement inside a fee-slab gap has no price (DELTA_IN_SETTLEMENT_VALUE, price 0): take the
-    # nearest one that stays inside the step limits and never goes below the TP
+    # a TP inside a fee-slab gap has no price (DELTA_IN_SETTLEMENT_VALUE, price 0), and Flipkart's
+    # reverse calculator also fails next to the slab edge: search by price with the forward
+    # calculator: the last step takes the settlement nearest the TP within NEAR rupees (owner, 14 Nov:
+    # "TP must match, try Rs 1-2 either side"), a middle step the nearest inside the step limits
+    missing = [it for it in items if not (rev.get(it["listing_id"]) or {}).get("selling_price")]
+    found = forward_search(client, tier, missing)
+    for it in missing:
+        got = pick(it, found.get(id(it)) or {})
+        if got:
+            sp, sv = got
+            rev[it["listing_id"]] = {"selling_price": sp, "settlement_status": None}
+            if sv != it["next"]:
+                it["gap_note"] = (f"settlement {it['next']} not reachable (fee slab gap): {sv} set"
+                                  + (f" (Rs {sv - it['tp']:+d} from TP)" if it["next"] == it["tp"] else ""))
+            it["next"] = sv
+    # otherwise the nearest one that stays inside the step limits (intermediate steps, and a TP
+    # with nothing within NEAR rupees: the nearest above it)
     for it in items:
         it["tries"] = gap_tries(it["esp"], it["next"], it["tp"], it["up"], it["down"])
     for k in range(2 * GAP):
@@ -127,7 +201,9 @@ def plan_step(client: FlipkartClient, tier: str, items: list[dict]) -> None:
         ans = rev.get(it["listing_id"]) or {}
         sp = ans.get("selling_price")
         if not sp:
-            it["stop"] = f"no price for settlement {it['next']} or near it (fee slab gap)"
+            d = it["esp"] - it["tp"]
+            it["stop"] = (f"at {it['esp']}, Rs {d:+d} from TP {it['tp']}: no closer settlement exists (fee slab gap)"
+                          if abs(d) <= NEAR else f"no price for settlement {it['next']} or near it (fee slab gap)")
             continue
         it["sp"], it["new_esp"] = int(sp), it["next"]
         if ans.get("settlement_status") not in (None, "SETTLEMENT_VALUE_ACHIEVED"):

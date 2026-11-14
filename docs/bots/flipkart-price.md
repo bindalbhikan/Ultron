@@ -28,8 +28,13 @@ a local workbook instead.
      in the same run.
    * the selling price for the settlement comes from **Flipkart's own calculator** (reverse:
      settlement → price). A settlement inside a fee-slab gap has no price
-     (`DELTA_IN_SETTLEMENT_VALUE`): the nearest reachable one within the step limits is used,
-     never below the TP. If the TP itself is unreachable, the listing stays at that nearest value.
+     (`DELTA_IN_SETTLEMENT_VALUE`), and Flipkart's reverse calculator also fails next to a slab
+     edge. Then the price is searched with the **forward** calculator (SP → settlement, halving
+     between Rs 109 and the MRP): on the last step the settlement nearest the TP within **±Rs 2**
+     (exact first, then above; owner 14 Nov: "TP must match, try Rs 1-2 either side"), on a middle
+     step the nearest inside the step limits. Example (All About You dress): SP 400 → 279,
+     SP 401 → 288, so TP 286 → 288 (+2), TP 278 → 280 (+2). A listing already within Rs 2 that
+     cannot get closer is reported as such.
    * price floor **Rs 109**: a step that would go below it stops at 109 first (its settlement
      from the forward calculator); the next step goes lower.
    * discount at most **90%**: a TP whose price would be under 10% of MRP is not set, and named.
