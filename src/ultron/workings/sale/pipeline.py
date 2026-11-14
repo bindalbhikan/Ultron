@@ -41,7 +41,9 @@ def report_days(args) -> list[date]:
         end = datetime.strptime(args.to_date, "%Y-%m-%d").date() if args.to_date else today - timedelta(days=1)
     else:
         end = today - timedelta(days=1)
-        start = end - timedelta(days=args.days - 1)
+        # 0 (the default since 14 Nov 2026, owner): every day from the 1st of yesterday's month, so a
+        # day left blank or wiped is written again by the next run
+        start = end.replace(day=1) if args.days <= 0 else end - timedelta(days=args.days - 1)
     return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
 
@@ -266,6 +268,41 @@ def snapshot_month(value: str, default: date) -> tuple[int, int]:
     return default.year, default.month
 
 
+BOT_COPY = "SALE REPORT (last bot save).xlsx"
+
+
+def _backup_folder(drive: DriveFile):
+    from ..core.drive import DriveFolder
+    parents = (drive.http.get(f"https://www.googleapis.com/drive/v3/files/{drive.file_id}", timeout=60,
+                              params={"fields": "parents", "supportsAllDrives": "true"}).json().get("parents") or [])
+    return DriveFolder(parents[0], drive.http).subfolder("BACKUP", create=True) if parents else None
+
+
+def last_bot_copy(drive: DriveFile | None) -> Path | None:
+    """The workbook as the bot last saved it (BACKUP/BOT_COPY). On 14 Nov 2026 a copy of the file
+    from 7 Nov, open in Excel, was saved over the Drive file and wiped 7-11 Nov; cells blank now but
+    filled in this copy are filled again. Never fails the run."""
+    if not drive:
+        return None
+    try:
+        folder = _backup_folder(drive)
+        return folder.download(BOT_COPY, Path(tempfile.mkdtemp(prefix="sale_copy_")) / BOT_COPY) if folder else None
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Bot copy of the sale report not read: %s", exc)
+        return None
+
+
+def keep_bot_copy(drive: DriveFile, path: Path) -> None:
+    try:
+        folder = _backup_folder(drive)
+        if folder:
+            tmp = Path(tempfile.mkdtemp(prefix="sale_keep_")) / BOT_COPY
+            tmp.write_bytes(path.read_bytes())
+            folder.put(tmp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Bot copy of the sale report not kept: %s", exc)
+
+
 def open_book(args) -> tuple[DriveFile | None, Path]:
     """The one workbook: the Drive file (worked on in a temp folder) or, with --no-drive, SALE_XLSX_PATH."""
     if env("SALE_DRIVE_FILE_ID") and not args.no_drive:
@@ -311,6 +348,13 @@ def run(args) -> int:
     drive, path = open_book(args)
     book = SaleWorkbook(path)
     notes: list[str] = []
+    copy = last_bot_copy(drive)
+    if copy:
+        restored = book.refill_from(SaleWorkbook(copy), date.today() - timedelta(days=1))
+        if restored:
+            notes.append(f"{len(restored)} cells were blank but filled in the bot's last save (an older copy of the "
+                         f"file was saved over it): filled again ({', '.join(restored[:6])}"
+                         + (" ..." if len(restored) > 6 else "") + ")")
 
     # OMSGuru: required - without it there is no report
     gross, unmapped = oms_source(days)
@@ -360,6 +404,7 @@ def run(args) -> int:
     replace_atomically(book.save, path)
     if drive:
         drive.upload(path)
+        keep_bot_copy(drive, path)
     log.info("Sale report saved (%s)", "Drive" if drive else path)
 
     saved = SaleWorkbook(path)
@@ -373,8 +418,8 @@ def run(args) -> int:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="run.py sale", description="Daily sale report")
-    p.add_argument("--days", type=int, default=num("SALE_REPORT_DAYS", 2),
-                   help="report days ending yesterday (default 2 = day before yesterday + yesterday)")
+    p.add_argument("--days", type=int, default=num("SALE_REPORT_DAYS", 0),
+                   help="report days ending yesterday (default 0 = from the 1st of the month)")
     p.add_argument("--from", dest="from_date", help="first day to refresh, YYYY-MM-DD (back-fill)")
     p.add_argument("--to", dest="to_date", help="last day to refresh, YYYY-MM-DD (default yesterday)")
     p.add_argument("--today", action="store_true",

@@ -1,6 +1,7 @@
 # Daily sale — `python run.py sale`
 
-**When**: 3:30 PM daily (report days = day before yesterday + yesterday, `SALE_REPORT_DAYS`);
+**When**: 3:30 PM daily (report days = **the 1st of the month to yesterday**, `SALE_REPORT_DAYS` = 0 since
+14 Nov 2026, owner: a blank or wiped day is written again by the next run; a number = that many days);
 7:00 AM `--sjit-request` asks Myntra for the SJIT report. On demand: `/sale`, `/sale today`,
 `/sale FROM TO`, `/salepic [YYYY-MM]` (sheet picture).
 
@@ -22,3 +23,11 @@
 **Notes**: Since Oct 2026 a COCOBLU block follows AZ/FX/FBA and there is no SNAPDEAL block; older
 sheets keep their layout. The run also keeps the DBCC / FMCC Myntra sessions alive and alerts on
 Telegram when a Myntra session expired or expires within 3 days.
+
+**Old copy saved over the file** (14 Nov 2026): a copy of the workbook from 7 Nov, open in Excel on
+the PC, was saved over the Drive file at 11:16 AM and wiped 7-11 Nov (the bot's runs had written them;
+Drive revisions show the ~705 KB Excel saves between the bot's ~673 KB ones). Since then every run
+keeps the file as it saved it in `BACKUP/SALE REPORT (last bot save).xlsx` and, before writing, fills
+GROSS / RETURN / CANCEL cells that are blank but held a number in that copy (named in the Telegram
+notes). Close the workbook in Excel before the 3:30 PM run, or save only a freshly opened copy.
+

@@ -154,6 +154,33 @@ class SaleWorkbook:
         cell.value = int(value)
         return True
 
+    def refill_from(self, other: "SaleWorkbook", last_day: date) -> list[str]:
+        """Fill GROSS / RETURN / CANCEL cells that are blank here but hold a number in `other` (the bot's
+        last save), for days up to last_day. Returns "DD Mon BLOCK METRIC" of every cell filled."""
+        theirs = dict(other._month_sheets())
+        done = []
+        for key, ws in self._month_sheets():
+            ows = theirs.get(key)
+            if ows is None:
+                continue
+            layout, rows, _ = self.layout(ws)
+            olayout, orows, _ = other.layout(ows)
+            for day, r in rows.items():
+                if day > last_day or day not in orows:
+                    continue
+                for block, metrics in layout.items():
+                    if block == "TOTAL" or block not in olayout:
+                        continue
+                    for metric in ("GROSS", "RETURN", "CANCEL"):
+                        if metric not in metrics or metric not in olayout[block]:
+                            continue
+                        mine = ws.cell(r, metrics[metric])
+                        val = ows.cell(orows[day], olayout[block][metric]).value
+                        if mine.value in (None, "") and isinstance(val, (int, float)):
+                            mine.value = val
+                            done.append(f"{day:%d %b} {block} {metric}")
+        return done
+
     def has_block(self, day: date, block: str) -> bool:
         layout, _, _ = self.layout(self.month_sheet(day.year, day.month))
         return block in layout
