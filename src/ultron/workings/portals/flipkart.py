@@ -270,10 +270,21 @@ class FlipkartClient:
             raise FlipkartError(f"Flipkart tier: HTTP {r.status_code}")
         return r.json().get("tier") or "bronze"
 
-    def listings(self, state: str = "ACTIVE", page_size: int = 100) -> list[dict]:
-        """Every listing in a state: sku_id, listing_id, product_id (FSN), vertical, mrp, ssp, esp ...
-        No sort: a sorted list (demand_weight) repeats and skips rows across pages (14 Nov: 6,388
-        rows, 5,389 listings), and 500 a page is refused. Raises unless every listing was read."""
+    def stock(self, listings: list[dict], chunk: int = 200) -> dict[str, dict]:
+        """Stock by listing id: {"FBF": [{quantity, locationId}], "NON_FBF": [{quantity, reserved,
+        locationId}]} (Seller Hub > Listings, POST listingsStockCount; 200 a call answer in 0.5 s)."""
+        out = {}
+        for i in range(0, len(listings), chunk):
+            part = [{"listing_id": x["listing_id"], "service_profile": x.get("service_profile") or "NON_FBF"}
+                    for x in listings[i:i + chunk]]
+            out.update(self._post("/napi/listing/listingsStockCount", part) or {})
+        return out
+
+    def listings(self, state: str = "ACTIVE", page_size: int = 100, complete: bool = True) -> list[dict]:
+        """Every listing in a state (ACTIVE, INACTIVE, ARCHIVED): sku_id, listing_id, product_id (FSN),
+        vertical, mrp, ssp, esp ... No sort: a sorted list (demand_weight) repeats and skips rows across
+        pages (14 Nov: 6,388 rows, 5,389 listings), and 500 a page is refused. Raises unless every
+        listing was read; complete=False returns what was read (the caller names the shortfall)."""
         rows, count = {}, None
         for _ in range(4):           # unsorted paging still drops a few rows now and then (14 Nov: 6,384 of
             page = 0                 # 6,388): read again and merge until every listing is in
@@ -291,7 +302,8 @@ class FlipkartClient:
             if count is not None and len(rows) >= count:
                 break
             log.info("Flipkart listings: %d of %s read, reading again", len(rows), count)
-        if count is None or len(rows) != count:
+        self.last_count = count
+        if complete and (count is None or len(rows) != count):
             raise FlipkartError(f"Flipkart listings: read {len(rows)} of {count}")
         log.info("Flipkart %s listings: %d", state, len(rows))
         return list(rows.values())

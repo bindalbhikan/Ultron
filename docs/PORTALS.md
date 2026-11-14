@@ -100,6 +100,9 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
     {"product_id":<FSN>,"price":{"mrp","selling_price","currency":"INR","esp"}}},"priceRecoUpdate":{}}` →
     `{<sku>:{"status":"SUCCESS"}}` or FAILURE with errors (code 25025): settlement up to +20% a time (10% on
     some listings), down to −30% a time, up only 2 times a day, discount up to 90%, price at least Rs 109 in one step.
+  * Stock: `POST /napi/listing/listingsStockCount` `[{listing_id, service_profile}]` (200 a call, 0.5 s) → by listing id
+    `FBF: [{quantity, locationId}]`, `NON_FBF: [{quantity, reserved, locationId}]`. States readable in the listing table:
+    ACTIVE (6,388), INACTIVE (123), ARCHIVED (15,567); BLOCKED → HTTP 500.
   * The listing file (`POST /napi/listing/enqueueDownload`, `stockFileDownloadRequestStatus`, ~4 min for 6,388) gives a
     `file_link` under `/operations/downloadFile/`; the download path behind it was not found (the bare link and
     `/napi/...` guesses give HTML / 404). Not needed: the listing table has the same prices.

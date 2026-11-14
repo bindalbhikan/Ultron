@@ -23,6 +23,7 @@
   listings   11:30 AM listing health        python run.py listings --help
   flipkart-price 8 AM Flipkart settlement to Final TP  python run.py flipkart-price --help
   flipkart-calc  Monday 7 AM Flipkart TP / SP calculator workbook  python run.py flipkart-calc --help
+  flipkart-listing-file 11 AM Flipkart listing file (price, settlement, stock) to Drive  python run.py flipkart-listing-file --help
   myntra-tat 6:30 PM Myntra courier pickups   python run.py myntra-tat --help
   mis        monthly MIS and plan           python run.py mis --help
   myntra-reports 10 AM Myntra orders / returns / listings  python run.py myntra-reports --help
@@ -58,7 +59,8 @@ BOTS = {"sale": "ultron.workings.sale.pipeline", "vms": "ultron.workings.vms.pip
         "work-schedule": "ultron.workings.work_schedule.pipeline",
         "myntra-history": "ultron.workings.myntra_history.pipeline",
         "flipkart-price": "ultron.workings.flipkart_price.pipeline",
-        "flipkart-calc": "ultron.workings.flipkart_price.calculator"}
+        "flipkart-calc": "ultron.workings.flipkart_price.calculator",
+        "flipkart-listing-file": "ultron.workings.flipkart_price.listing_file"}
 
 
 def main(argv: list[str]) -> int:

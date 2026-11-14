@@ -54,6 +54,8 @@ const COMMANDS = {
                if (args.length === 1 && args[0].toLowerCase() === "dry") return { dry_run: "1" };
                return "Use /fkprice or /fkprice dry";
              } },
+  fklisting: { workflow: "flipkart-listing-file.yml", icon: "📄", name: "Flipkart listing file", portal: "flipkart", minutes: 3,
+               examples: ["/fklisting"], inputs: none("/fklisting") },
   fkcalc: { workflow: "flipkart-calc.yml", icon: "🧮", name: "Flipkart calculator", portal: "flipkart", minutes: 8,
             examples: ["/fkcalc"], inputs: none("/fkcalc") },
   fktat: { workflow: "flipkart-tat.yml", icon: "📦", name: "Flipkart TAT", portal: "flipkart", chat: true, minutes: 6,
@@ -230,6 +232,7 @@ const SCHEDULE = [
   { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "portalreports" },
   { ist: "7:00 AM Monday", cron: "30 1 * * *", weekdays: [1], cmd: "fkcalc" },
   { ist: "8:00 AM daily", cron: "30 2 * * *", cmd: "fkprice" },
+  { ist: "11:00 AM daily", cron: "30 5 * * *", cmd: "fklisting" },
   { ist: "11:30 AM daily", cron: "0 6 * * *", cmd: "listings" },
   { ist: "12:00 PM daily", cron: "30 6 * * *", cmd: "sla" },
   // Myntra colour grouping, every 3 days (office PC: myntra.com refuses GitHub's runners)
@@ -329,7 +332,7 @@ const SCREENS = {
     rows: [
       [["📈 Orders yesterday", "a:fk_orders"], ["⏰ Due today", "a:fk_due"]],
       [["📦 Flipkart TAT", "r:fktat"], ["💸 Final TP update", "r:fkprice"]],
-      [["🧮 Calculator (TP ↔ SP)", "r:fkcalc"]],
+      [["🧮 Calculator (TP ↔ SP)", "r:fkcalc"], ["📄 Listing file", "r:fklisting"]],
       [["📈 Sale report", "m:sale"], ["↩️ Return analysis", "m:returns"]],
       back(),
     ],
