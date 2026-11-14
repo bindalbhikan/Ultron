@@ -146,7 +146,7 @@ class Scanner:
             row = next((r for r in table if r["from"] <= sp <= r["to"]), None)
             if row:
                 n += 1
-                ok += abs(settlement(sp, row) - p["settlement"]) <= 1
+                ok += settlement(sp, row) == p["settlement"]
         return n, ok
 
     scan_cache: list[dict] | None = None
@@ -223,24 +223,31 @@ def run(args) -> int:
     by_key = defaultdict(list)
     for p in params:
         by_key[p["Key"]].append(p)
-    same = known = 0
+    same = near = known = 0
     for t in tp_rows:
         if t["SP by Flipkart"]:
             known += 1
-            same += price_for(t["Final TP"], by_key.get(key_of(t["Brand"], t["Category"]), []), slots) == t["SP by Flipkart"]
-    log.info("TP TO SP: formula SP = Flipkart SP for %d of %d listings", same, known)
+            d = abs(price_for(t["Final TP"], by_key.get(key_of(t["Brand"], t["Category"]), []), slots)
+                    - t["SP by Flipkart"])
+            same += d == 0
+            near += d <= 1
+    # 14 Nov: Flipkart's reverse calculator is itself off by Rs 1 at times (TP 417 -> SP 548, but its
+    # forward calculator gives 416 at 548 and 417 at 549): a Rs 1 difference is Flipkart's rounding
+    log.info("TP TO SP: formula SP = Flipkart SP for %d, within Rs 1 for %d of %d listings", same, near, known)
     checks["_tp_to_sp"] = (known, same)
+    checks["_tp_to_sp_1"] = (known, near)
     out = output_dir("flipkart-calc") / NAME
     write_workbook(out, started, tier, params, rate_cards, checks, tp_rows, sp_rows, info)
     link = ""
     if not args.no_upload:
         link = upload(out)
-    total = sum(n for k, (n, _) in checks.items() if k != "_tp_to_sp")
-    good = sum(ok for k, (_, ok) in checks.items() if k != "_tp_to_sp")
+    total = sum(n for k, (n, _) in checks.items() if not k.startswith("_"))
+    good = sum(ok for k, (_, ok) in checks.items() if not k.startswith("_"))
     msg = [f"🧮 <b>Flipkart calculator · {started:%d %b}</b>",
            f"{len(groups)} brand-categories, {len(params)} price slabs (tier {telegram.esc(tier)})",
            f"Formula = Flipkart's calculator at {good:,} of {total:,} prices checked",
-           f"TP TO SP: {len(tp_rows):,} listings, formula SP = Flipkart's exact SP for {same:,} of {known:,}",
+           f"TP TO SP: {len(tp_rows):,} listings; formula SP = Flipkart's reverse SP for {same:,}, within Rs 1 for "
+           f"{near:,} of {known:,} (Flipkart's reverse is itself Rs 1 off at times)",
            f"SP TO TP: {len(sp_rows):,} listings",
            *([f'<a href="{link}">Flipkart Calculator.xlsx</a>'] if link else [])]
     text = "\n".join(msg)
@@ -427,9 +434,10 @@ def write_workbook(out: Path, started, tier, params, rate_cards, checks, tp_rows
         fk, mrp = f"{L('SP by Flipkart')}{x}", f"{L('MRP')}{x}"
         ws.write_formula(r, ci["Discount %"], f'=IF(OR({sell}="",N({mrp})=0),"",1-{sell}/{mrp})', pct)
         ws.write_formula(r, ci["REMARK"],
-                         f'=IF({sell}="","no slab",IF(AND({fk}<>"",{fk}<>{sell}),"Flipkart SP differs (package / slab)",'
+                         f'=IF({sell}="","no slab",IF(AND({fk}<>"",ABS(N({fk})-{sell})=1),"Flipkart reverse SP Rs 1 off (its rounding)",'
+                         f'IF(AND({fk}<>"",{fk}<>{sell}),"Flipkart SP differs (package / slab)",'
                          f'IF({fk}="","TP in a fee-slab gap",IF({sell}<109,"below Rs 109",'
-                         f'IF(N({mrp})>0,IF(1-{sell}/{mrp}>0.9,"over 90% discount",""),"")))))')
+                         f'IF(N({mrp})>0,IF(1-{sell}/{mrp}>0.9,"over 90% discount",""),""))))))')
     ws.add_table(0, 0, max(rows, 1), len(cols) - 1, {"name": "Table5", "header_row": True, "autofilter": True,
                                                      "style": "Table Style Light 9",
                                                      "columns": [{"header": c} for c in cols]})
@@ -493,7 +501,10 @@ def write_workbook(out: Path, started, tier, params, rate_cards, checks, tp_rows
     lines = [("Built", f"{started:%d %b %Y %H:%M}"), ("Seller tier", tier),
              ("Brand-Categories", len(keys)), ("Price slots", n),
              ("Listings in TP TO SP / SP TO TP", f"{len(tp_rows):,} / {len(sp_rows):,}"),
-             ("TP TO SP: formula SP = Flipkart's exact SP", "{1:,} of {0:,} listings".format(*checks.get("_tp_to_sp", (0, 0)))),
+             ("TP TO SP: formula SP = Flipkart's reverse SP", "{1:,} of {0:,} listings".format(*checks.get("_tp_to_sp", (0, 0)))),
+             ("TP TO SP: within Rs 1 of it", "{1:,} of {0:,} listings".format(*checks.get("_tp_to_sp_1", (0, 0)))),
+             ("Why Rs 1", "Flipkart's reverse calculator rounds its SP; its own forward calculator then pays Rs 1 "
+              "less at times (TP 417: reverse SP 548 pays 416; 549 pays 417). The workbook's SP pays the TP."),
              ("", ""),
              ("How a settlement is made", "Seller price = SP - CLF. Payout = seller price - Comm - Fixed Fee - "
               "GST on Charges (18%) - TDS_TCS (0.6% of seller price / 1.05)."),

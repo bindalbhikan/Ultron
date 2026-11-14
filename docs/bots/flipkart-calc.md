@@ -46,6 +46,12 @@ All About You apparel set: 351 of 351).
 * *_Calc_Config*: Price_Slots, Price_Thresholds (price < threshold), Slot_Starts. The slots are
   every slab end of any Brand-Category, so the fees are constant inside a slot.
 
+**Flipkart's reverse calculator is Rs 1 off at times** (14 Nov): its forward calculator rounds the
+settlement to the nearest rupee (548 → 416.27 → 416, 549 → 417.25 → 417), but its reverse gives
+TP 417 → SP 548. Of 6,011 listings the formula SP equalled Flipkart's reverse SP for 2,512 and was
+Rs 1 apart for 3,458; the workbook's SP is the one Flipkart's forward calculator pays the TP at.
+REMARK names it ("Flipkart reverse SP Rs 1 off"). The scan check is exact (not ±1).
+
 Checked 14 Nov in Excel: SP TO TP gives Flipkart's settlements exactly (110 → 29, 499 → 401,
 501 → 371, 1,501 → 1,086, 2,000 → 1,506 for All About You apparel sets); TP TO SP gives
 DELTA 0.
