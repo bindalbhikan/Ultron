@@ -50,3 +50,17 @@ def test_payment_history_goes_through_the_check():
     p._call = lambda method, path, **kw: {"data": {"payments": [{**PAYOUT, "utrNumber": None}], "totalElements": 1}}
     with pytest.raises(mp.PortalChanged, match="utrNumber"):
         p.payment_history(date(2026, 11, 1), date(2026, 11, 10))
+
+
+SRM = {"DOC_TYPE": "RV", "REF_DOC_NO_LONG": "R1", "VENDOR": "V1", "DOC_DATE": "05.11.2026", "DOC_NO": "D1",
+       "EBELN": "P1", "FISC_YEAR": "2026", "amount": "-123.45", "due_date": "05.12.2026", "CLR_DOC_NO": "",
+       "CLEAR_DATE": None, "ITEM_TEXT": "G4", "type": "Debit", "INV_REF": "I1"}
+
+
+def test_srm_ledger_lines_checked():
+    from ultron.workings.core.shapes import PortalChanged, SrmLedgerLine, check_rows
+    assert check_rows([dict(SRM)], SrmLedgerLine, "SRM ledger line", key="DOC_NO")[0] == SRM
+    with pytest.raises(PortalChanged, match="amount"):
+        check_rows([{**SRM, "amount": "1,234.00"}], SrmLedgerLine, "SRM ledger line", key="DOC_NO")
+    with pytest.raises(PortalChanged, match="DOC_DATE"):
+        check_rows([{**SRM, "DOC_DATE": "2026-11-05"}], SrmLedgerLine, "SRM ledger line", key="DOC_NO")

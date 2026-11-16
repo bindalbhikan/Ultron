@@ -26,7 +26,11 @@ at once, with the field named. Rust core: fast enough for every row of a big sel
   tickets of the whole history fitted (MAIN 17,215, DBCC 728, FMCC 515). Its page retry moved onto
   `ultron/core/retry.py` too (3 tries, waits 15, 30 s; tested).
 
+* SRM ledger (`Srm.statement`, AJIO SPF and AJIO ads / TOT and the portal reports' AJIO payments):
+  `SrmLedgerLine` — every field text, `DOC_DATE` DD.MM.YYYY, `amount` a plain number ("1,234.00" or another
+  date shape would stop the run, named); all 17,640 lines of the last 400 days fitted.
+
 **Next, one by one (each checked on real answers first)**: Myntra SPF claim detail, Flipkart report centre,
-SRM ledger lines, AJIO JSON answers. Not pydantic: the OMSGuru order list is HTML the code turns into rows
+AJIO JSON answers. Not pydantic: the OMSGuru order list is HTML the code turns into rows
 itself; there the risk is a layout change that leaves fields at their defaults (order "", value 0.0) — a
 row-quality check, planned with the Polars move.

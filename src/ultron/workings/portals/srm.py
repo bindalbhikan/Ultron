@@ -91,6 +91,8 @@ class Srm:
         if r.status_code != 200:
             raise SrmError(f"SRM statement failed: HTTP {r.status_code} {r.text[:200]}")
         items = ((r.json() or {}).get("param") or {}).get("T_ITEMS") or []
+        from ..core.shapes import SrmLedgerLine, check_rows    # a ledger in another shape stops here, named
+        check_rows(items, SrmLedgerLine, "SRM ledger line", key="DOC_NO")
         log.info("SRM statement %s..%s: %d ledger lines", start, end, len(items))
         return items
 

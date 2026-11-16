@@ -10,8 +10,9 @@ named instead of reading on with empty or 0 values ("data must never be wrong").
 from __future__ import annotations
 
 from datetime import date
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError
 
 
 class PortalChanged(RuntimeError):
@@ -55,6 +56,29 @@ class MyntraSpfTicket(_Row):
     createdOn: str
     lastModifiedOn: str
     returnId: int | None = None
+
+
+_DOTTED_DATE = r"^\d{2}\.\d{2}\.\d{4}$"
+_AMOUNT = r"^-?\d+(\.\d+)?$"
+
+
+class SrmLedgerLine(_Row):
+    """Reliance SRM statement of accounts (AJIO's ledger: G4 payments, IC reversals), T_ITEMS; all 11,337 lines of
+    the last 150 days fitted on 16 Nov 2026: every field text, dates DD.MM.YYYY, amounts plain numbers."""
+    DOC_TYPE: str
+    REF_DOC_NO_LONG: str
+    VENDOR: str
+    DOC_DATE: Annotated[str, StringConstraints(pattern=_DOTTED_DATE)]
+    DOC_NO: str
+    EBELN: str
+    FISC_YEAR: str
+    amount: Annotated[str, StringConstraints(pattern=_AMOUNT)]
+    due_date: str
+    CLR_DOC_NO: str
+    CLEAR_DATE: str | None = None
+    ITEM_TEXT: str
+    type: str
+    INV_REF: str
 
 
 def check_rows(rows: list, model: type[BaseModel], what: str, key: str = "id") -> list:
