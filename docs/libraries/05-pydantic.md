@@ -34,6 +34,10 @@ at once, with the field named. Rust core: fast enough for every row of a big sel
   `request_id`, `report_name`, `created_at` (the download name is made of these two), `status`, `filters`;
   all 172 requests listed fitted.
 
-**Next, one by one (each checked on real answers first)**: Myntra SPF claim detail, AJIO JSON answers. Not pydantic: the OMSGuru order list is HTML the code turns into rows
+* Myntra SPF claim detail (`spf_claim`, disputes and replies): `MyntraSpfClaim` — `status`, `orderId`,
+  `eligibleForTagLoop` required (read with [] by the SPF master), the rest may be empty; 233 claims of every
+  status across the three accounts' whole history fitted. No claim from the portal stays `{}`, as before.
+
+**Next (each checked on real answers first)**: AJIO JSON answers. Not pydantic: the OMSGuru order list is HTML the code turns into rows
 itself; there the risk is a layout change that leaves fields at their defaults (order "", value 0.0) — a
 row-quality check, planned with the Polars move.

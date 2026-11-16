@@ -81,6 +81,23 @@ class SrmLedgerLine(_Row):
     INV_REF: str
 
 
+class MyntraSpfClaim(_Row):
+    """SPF /v2/fetchClaimByTicketId, one claim (disputes, replies, payments); 66 claims of every status of the three
+    accounts (REJECT, ACCEPT, PAYMENT_COMPLETED, AWAITING_AGENT_RESPONSE) fitted on 16 Nov 2026."""
+    status: str
+    orderId: int
+    eligibleForTagLoop: bool
+    description: str | None = None
+    validationReason: str | None = None
+    history: str | None = None
+    fwTicketId: int | None = None
+    returnId: int | None = None
+    utr: str | None = None
+    compensationAmount: float | None = None
+    paymentInitiatedOn: str | None = None
+    returnDeliveredDate: str | None = None
+
+
 class FlipkartReportRequest(_Row):
     """Seller Hub report centre report/getReportsV2 report_requests; all 172 requests listed on 16 Nov 2026
     fitted (the download name is request_id + created_at, so both must be there)."""

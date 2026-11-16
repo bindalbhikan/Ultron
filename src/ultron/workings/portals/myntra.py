@@ -588,7 +588,10 @@ class MyntraPortal:
         fwTicketId (the Seller Support ticket when the claim was taken up there)."""
         data = self._call("GET", f"{SPF_API}/v2/fetchClaimByTicketId",
                           params={"id": ticket_id, "fetchAccio": "true"}).get("data") or []
-        return data[0] if data else {}
+        if not data:
+            return {}
+        from ..core.shapes import MyntraSpfClaim, check_rows
+        return check_rows(data[:1], MyntraSpfClaim, "Myntra SPF claim", key="ticketId")[0]
 
     def spf_comments(self, fw_ticket_id) -> list[dict]:
         """The Seller Support replies of a claim's fwTicketId: comment (HTML), user, createdOn

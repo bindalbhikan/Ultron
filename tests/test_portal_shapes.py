@@ -76,3 +76,19 @@ def test_flipkart_report_requests_checked():
     with pytest.raises(PortalChanged, match="created_at"):
         check_rows([{k: v for k, v in FK.items() if k != "created_at"}], FlipkartReportRequest, "Flipkart report request",
                    key="request_id")
+
+
+CLAIM = {"ticketId": 7, "status": "ACCEPT", "orderId": 123, "eligibleForTagLoop": False, "description": "lost",
+         "validationReason": "ok", "history": "{}", "fwTicketId": None, "returnId": None, "utr": None,
+         "compensationAmount": None, "paymentInitiatedOn": None}
+
+
+def test_spf_claim_checked_and_empty_kept():
+    p = mp.MyntraPortal.__new__(mp.MyntraPortal)
+    p._call = lambda method, path, **kw: {"data": [dict(CLAIM)]}
+    assert p.spf_claim(7) == CLAIM
+    p._call = lambda method, path, **kw: {"data": []}
+    assert p.spf_claim(7) == {}
+    p._call = lambda method, path, **kw: {"data": [{k: v for k, v in CLAIM.items() if k != "eligibleForTagLoop"}]}
+    with pytest.raises(mp.PortalChanged, match="eligibleForTagLoop"):
+        p.spf_claim(7)
