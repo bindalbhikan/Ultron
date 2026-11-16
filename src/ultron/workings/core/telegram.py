@@ -201,33 +201,14 @@ def fits(report: list) -> bool:
 
 
 def write_xlsx(report: list, path) -> Path | None:
-    """One sheet per list with rows: bold frozen header, columns as wide as their text."""
-    from openpyxl import Workbook
-    from openpyxl.styles import Font
+    """One sheet per list with rows: bold frozen header, columns as wide as their text (workings/core/xlsx.py)."""
+    from .xlsx import write_sheets
     lists = [b for b in report if isinstance(b, Listing) and b.rows]
     if not lists:
         return None
-    wb = Workbook()
-    wb.remove(wb.active)
-    for block in lists:
-        name, n = re.sub(r"[\\/*?:\[\]]", "-", block.sheet)[:31] or "List", 2
-        while name in wb.sheetnames:
-            name, n = f"{block.sheet[:28]} {n}", n + 1
-        ws = wb.create_sheet(name)
-        cols = list(dict.fromkeys(k for r in block.rows for k in r))
-        ws.append(cols)
-        for r in block.rows:
-            ws.append([r.get(c) for c in cols])
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
-        ws.freeze_panes = "A2"
-        for i, c in enumerate(cols, 1):
-            width = max(len(str(c)), *(len(str(r.get(c) if r.get(c) is not None else "")) for r in block.rows))
-            ws.column_dimensions[ws.cell(1, i).column_letter].width = min(width + 2, 60)
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(path)
-    return path
+    sheets = [(block.sheet or "List", list(dict.fromkeys(k for r in block.rows for k in r)), block.rows)
+              for block in lists]                    # same names allowed: write_sheets makes them unique
+    return write_sheets(path, sheets, bold_header=True, freeze=True, auto_width=True)
 
 
 def send_report(report: list, name: str, dry: bool = False, excel: bool = False) -> bool:

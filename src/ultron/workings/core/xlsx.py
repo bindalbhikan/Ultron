@@ -1,0 +1,77 @@
+"""New xlsx files written in one place (docs/CENTRALISE.md step 6), on xlsxwriter (docs/libraries: the fast
+streaming writer, built for a big seller's rows). openpyxl stays only to edit an existing workbook in place.
+
+    write_sheets(path, {"Sheet1": (headers, rows)}, bold_header=True, freeze=True, auto_width=True)
+
+rows: dicts (read by header) or lists. Dates and times come out as Excel dates (yyyy-mm-dd hh:mm:ss); None and
+NaN as empty cells; text is never turned into a number or a link. A sheet name is cut to Excel's 31
+characters without the characters it refuses.
+"""
+from __future__ import annotations
+
+import math
+import re
+from datetime import date, datetime
+from pathlib import Path
+
+BAD = re.compile(r"[\\/*?:\[\]]")
+
+
+def sheet_name(name: str, taken: set[str]) -> str:
+    """An Excel sheet name for `name`: refused characters out, 31 characters, unique in the workbook."""
+    base = BAD.sub("-", str(name))[:31] or "Sheet"
+    out, n = base, 2
+    while out.lower() in {t.lower() for t in taken}:
+        out, n = f"{base[:28]} {n}", n + 1
+    return out
+
+
+def _blank(v) -> bool:
+    return v is None or (isinstance(v, float) and math.isnan(v)) or (type(v).__name__ in ("NaTType", "NAType"))
+
+
+def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze: bool = False,
+                 auto_width: bool = False, max_width: int = 60) -> Path:
+    """{sheet: (headers, rows)} or [(sheet, headers, rows), ...] (a name may repeat) -> one xlsx at path (its
+    folder made); the path."""
+    import xlsxwriter
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb = xlsxwriter.Workbook(str(path), {"strings_to_numbers": False, "strings_to_formulas": False,
+                                         "strings_to_urls": False, "nan_inf_to_errors": True})
+    head = wb.add_format({"bold": True}) if bold_header else None
+    when = wb.add_format({"num_format": "yyyy-mm-dd hh:mm:ss"})
+    day = wb.add_format({"num_format": "yyyy-mm-dd"})
+    taken: set[str] = set()
+    items = [(n, h, r) for n, (h, r) in sheets.items()] if isinstance(sheets, dict) else list(sheets)
+    for name, headers, rows in items:
+        ws = wb.add_worksheet(sheet_name(name, taken))
+        taken.add(ws.get_name())
+        headers = list(headers)
+        widths = [len(str(h)) for h in headers]
+        for c, h in enumerate(headers):
+            ws.write_string(0, c, str(h), head) if head else ws.write_string(0, c, str(h))
+        for r, row in enumerate(rows, 1):
+            values = [row.get(h) for h in headers] if isinstance(row, dict) else list(row)
+            for c, v in enumerate(values):
+                if _blank(v):
+                    continue
+                if isinstance(v, datetime):
+                    ws.write_datetime(r, c, v.replace(tzinfo=None), when)
+                elif isinstance(v, date):
+                    ws.write_datetime(r, c, datetime(v.year, v.month, v.day), day)
+                elif isinstance(v, bool):
+                    ws.write_boolean(r, c, v)
+                elif isinstance(v, (int, float)) and not isinstance(v, bool):
+                    ws.write_number(r, c, v)
+                else:
+                    ws.write_string(r, c, str(v))
+                if auto_width and c < len(widths):
+                    widths[c] = max(widths[c], len(str(v)))
+        if freeze:
+            ws.freeze_panes(1, 0)
+        if auto_width:
+            for c, w in enumerate(widths):
+                ws.set_column(c, c, min(w + 2, max_width))
+    wb.close()
+    return path

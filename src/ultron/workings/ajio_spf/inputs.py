@@ -11,7 +11,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from openpyxl import Workbook
 
 OMS_COLUMNS = [
     "Return Log ID", "Channel Name", "Invoice Number", "Invoice Date", "Order Number", "Sub Order ID",
@@ -33,16 +32,9 @@ TAGS = re.compile(r"<[^>]+>")
 
 
 def write_xlsx(path: Path, sheets: dict[str, tuple[list[str], list[dict]]]) -> Path:
-    """{sheet name: (headers, rows as dicts)} -> one workbook, written in streaming mode."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    wb = Workbook(write_only=True)
-    for name, (headers, rows) in sheets.items():
-        ws = wb.create_sheet(name)
-        ws.append(headers)
-        for row in rows:
-            ws.append([row.get(h) for h in headers])
-    wb.save(path)
-    return path
+    """{sheet name: (headers, rows as dicts)} -> one workbook (workings/core/xlsx.py, streaming xlsxwriter)."""
+    from ..core.xlsx import write_sheets
+    return write_sheets(path, sheets)
 
 
 def plain(text) -> str:
