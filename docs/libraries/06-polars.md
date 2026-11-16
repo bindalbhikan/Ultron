@@ -30,6 +30,12 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   Parity on real data before the switch: the 30-day jobs of MAIN, DBCC and FMCC gave the same split for every
   day, old pandas vs new Polars, and with pandas frames given to the new code too (1,705 / 1,308 / 74 deliveries).
 
-**Next, one by one, each with a parity test on real files**: portal sale, business report, return analysis,
+* Portal sale counting (`portal_sale/numbers.py`: Myntra, Flipkart and AJIO gross / return / cancel units per
+  order day and block). Parity on the real Oct-26 PORTAL REPORTS files before the switch, every (day, block)
+  count the same: Myntra MAIN 10,015 / 2,322 / 1,552, DBCC 5,100 / 1,149 / 813, FMCC 254 / 55 / 47, Flipkart
+  13,146 / 4,084 / 1,424, AJIO 3,544 gross / 180 cancel / 852 return. The reports are still read by pandas
+  (`read_report`): moving the xlsx reading is its own step (number cells must come out as the same text).
+
+**Next, one by one, each with a parity test on real files**: business report, return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
 owner's OK. With it: a row-quality check of the OMSGuru order list (fields left at their defaults).

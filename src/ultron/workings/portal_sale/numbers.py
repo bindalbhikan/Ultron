@@ -14,8 +14,12 @@ from __future__ import annotations
 from collections import Counter
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    import polars as pl
 
 SJIT_MODELS = {"FBM", "SJIT"}
 OMS_RETURN = {"return init", "return received", "partial return received"}
@@ -37,64 +41,88 @@ def read_report(path: Path, needed: str) -> pd.DataFrame:
     raise ValueError(f"{path.name}: no column {needed!r}")
 
 
-def _count(days: pd.Series, qty: pd.Series, blocks: pd.Series | str) -> Counter:
-    frame = pd.DataFrame({"day": days, "qty": qty})
-    frame["block"] = blocks
-    frame = frame[frame["day"].notna() & (frame["qty"] != 0)]
+# The counting is Polars (docs/libraries/06-polars.md); the reports may come as pandas or Polars frames.
+
+def _count(frame: "pl.DataFrame", qty: "pl.Expr", block: "pl.Expr | str") -> Counter:
+    """Counter[(order day, block)] of qty, the frame having a date column "_day"; days missing or qty 0 left out."""
+    import polars as pl
+    blk = pl.lit(block) if isinstance(block, str) else block
+    f = (frame.select(pl.col("_day"), qty.cast(pl.Float64).alias("_q"), blk.alias("_b"))
+              .filter(pl.col("_day").is_not_null() & (pl.col("_q") != 0))
+              .group_by(["_day", "_b"]).agg(pl.col("_q").sum()))
     out: Counter = Counter()
-    if not frame.empty:
-        for (day, block), value in frame.groupby([frame["day"].dt.date, "block"])["qty"].sum().items():
-            out[(day, block)] += int(value)
+    for day, blk_value, value in f.iter_rows():
+        out[(day, blk_value)] += int(value)
     return out
 
 
-def _qty(df: pd.DataFrame, column: str, default: int = 1) -> pd.Series:
-    return pd.to_numeric(df[column], errors="coerce").fillna(default)
+def _qty(column: str, default: int = 1) -> "pl.Expr":
+    import polars as pl
+    return pl.col(column).cast(pl.Float64, strict=False).fill_null(default)
 
 
-def _iso(values: pd.Series) -> pd.Series:
+def _iso(column: str) -> "pl.Expr":
     """Dates that start with YYYY-MM-DD."""
-    return pd.to_datetime(values.astype(str).str[:10], format="%Y-%m-%d", errors="coerce")
+    import polars as pl
+    return pl.col(column).cast(pl.Utf8).str.slice(0, 10).str.to_date("%Y-%m-%d", strict=False)
 
 
-def _ajio_date(values: pd.Series) -> pd.Series:
+def _ajio_date(column: str) -> "pl.Expr":
     """AJIO writes 'Wed Sep 30 23:21:44 IST 2026'."""
-    return pd.to_datetime(values.astype(str).str.replace(" IST ", " ", regex=False),
-                          format="%a %b %d %H:%M:%S %Y", errors="coerce")
+    import polars as pl
+    return (pl.col(column).cast(pl.Utf8).str.replace(" IST ", " ", literal=True)
+              .str.to_datetime("%a %b %d %H:%M:%S %Y", strict=False).dt.date())
 
 
-def myntra_orders(df: pd.DataFrame) -> dict[str, Counter]:
-    day = _iso(df["created on"])
-    block = df["po_type"].astype(str).str.strip().str.upper().map(lambda m: "SJIT" if m in SJIT_MODELS else "MYNTRA")
-    status = df["order status"].astype(str).str.strip().str.upper()
+def _text(column: str) -> "pl.Expr":
+    """The column as stripped upper text; a missing value as "" (never equal to a status)."""
+    import polars as pl
+    return pl.col(column).cast(pl.Utf8).str.strip_chars().str.to_uppercase().fill_null("")
+
+
+def myntra_orders(df) -> dict[str, Counter]:
+    import polars as pl
+
+    from ..core.tables import to_polars
+    d = to_polars(df).with_columns(_iso("created on").alias("_day"))
+    block = pl.when(_text("po_type").is_in(sorted(SJIT_MODELS))).then(pl.lit("SJIT")).otherwise(pl.lit("MYNTRA"))
+    status = _text("order status")
     cancel = status == "F"
-    rto = ~cancel & (df["rto creation date"].notna() | (status == "RTO"))
-    returned = ~cancel & (rto | df["return creation date"].notna())
-    one = pd.Series(1, index=df.index)
-    return {"GROSS": _count(day, one, block), "RETURN": _count(day, one.where(returned, 0), block),
-            "CANCEL": _count(day, one.where(cancel, 0), block)}
+    rto = ~cancel & (pl.col("rto creation date").is_not_null() | (status == "RTO"))
+    returned = ~cancel & (rto | pl.col("return creation date").is_not_null())
+    one = pl.lit(1)
+    return {"GROSS": _count(d, one, block), "RETURN": _count(d, pl.when(returned).then(1).otherwise(0), block),
+            "CANCEL": _count(d, pl.when(cancel).then(1).otherwise(0), block)}
 
 
-def flipkart_orders(df: pd.DataFrame) -> dict[str, Counter]:
-    day = _iso(df["order_date"])
-    qty = _qty(df, "quantity")
-    block = df["fulfilment_type"].astype(str).str.replace(r"[\s_]", "", regex=True).str.upper().map(
-        lambda t: "FBF" if t == "FBF" else "FLIPKART")
-    status = df["order_item_status"].astype(str).str.strip().str.upper()
-    return {"GROSS": _count(day, qty, block),
-            "RETURN": _count(day, qty.where(status.isin(["RETURNED", "RETURN_REQUESTED"]), 0), block),
-            "CANCEL": _count(day, qty.where(status == "CANCELLED", 0), block)}
+def flipkart_orders(df) -> dict[str, Counter]:
+    import polars as pl
+
+    from ..core.tables import to_polars
+    d = to_polars(df).with_columns(_iso("order_date").alias("_day"))
+    qty = _qty("quantity")
+    kind = pl.col("fulfilment_type").cast(pl.Utf8).fill_null("nan").str.replace_all(r"[\s_]", "").str.to_uppercase()
+    block = pl.when(kind == "FBF").then(pl.lit("FBF")).otherwise(pl.lit("FLIPKART"))
+    status = _text("order_item_status")
+    return {"GROSS": _count(d, qty, block),
+            "RETURN": _count(d, pl.when(status.is_in(["RETURNED", "RETURN_REQUESTED"])).then(qty).otherwise(0), block),
+            "CANCEL": _count(d, pl.when(status == "CANCELLED").then(qty).otherwise(0), block)}
 
 
-def ajio_orders(orders: pd.DataFrame, rtv: pd.DataFrame) -> dict[str, Counter]:
-    day = _ajio_date(orders["cust order date"])
-    first_day = pd.DataFrame({"order": orders["cust order no"], "day": day}).dropna().groupby("order")["day"].min()
-    rtv = rtv[~rtv["3pl delivery status"].astype(str).str.contains("cancel", case=False)]
-    rtv = rtv.drop_duplicates(["return order number", "seller sku"])
-    matched = rtv[rtv["cust order no"].isin(first_day.index)]
-    return {"GROSS": _count(day, _qty(orders, "order qty"), "AJIO B2C"),
-            "CANCEL": _count(day, _qty(orders, "cancelled qty", 0), "AJIO B2C"),
-            "RETURN": _count(matched["cust order no"].map(first_day), _qty(matched, "return qty"), "AJIO B2C")}
+def ajio_orders(orders, rtv) -> dict[str, Counter]:
+    import polars as pl
+
+    from ..core.tables import to_polars
+    o = to_polars(orders).with_columns(_ajio_date("cust order date").alias("_day"))
+    first_day = (o.select(pl.col("cust order no"), pl.col("_day")).drop_nulls()
+                  .group_by("cust order no").agg(pl.col("_day").min()))
+    r = to_polars(rtv)
+    r = r.filter(~pl.col("3pl delivery status").cast(pl.Utf8).fill_null("nan").str.to_lowercase().str.contains("cancel"))
+    r = r.unique(subset=["return order number", "seller sku"], keep="first", maintain_order=True)
+    matched = r.join(first_day, on="cust order no", how="inner")
+    return {"GROSS": _count(o, _qty("order qty"), "AJIO B2C"),
+            "CANCEL": _count(o, _qty("cancelled qty", 0), "AJIO B2C"),
+            "RETURN": _count(matched, _qty("return qty"), "AJIO B2C")}
 
 
 def oms_metric(status: str) -> str | None:
