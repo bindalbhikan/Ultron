@@ -24,8 +24,8 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import num
 from ..morning.pipeline import channel_line
-from ..portals.omsguru import OmsGuruClient
 from ..stock.pipeline import stock_of
+from ..core import clients
 
 log = logging.getLogger("bindal.listings")
 
@@ -112,8 +112,7 @@ def message(res: dict, failed_tab: list[dict], unmanaged: int, now: datetime, da
 def run(args) -> int:
     now = datetime.now()
     days = int(num("LISTING_FAIL_DAYS", 7))
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     active = {c["id"] for c in client.channels() if c["inventory_sync"]}
     warehouses = list(client.warehouses()) or [None]
     blobs = []

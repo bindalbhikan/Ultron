@@ -90,12 +90,8 @@ def myntra_payments(account: str, first: date, last: date, dest: Path) -> Path:
 
 
 def ajio_orders(first: date, last: date, dest: Path) -> Path:
-    from ..portals.ajio import AjioClient
-    user, pwd = env("AJIO_USERNAME"), env("AJIO_PASSWORD")
-    if not user or not pwd:
-        raise RuntimeError("AJIO_USERNAME / AJIO_PASSWORD not set")
-    ajio = AjioClient(user, pwd)
-    ajio.login()
+    from ..core import clients
+    ajio = clients.ajio()
     path = dest / "ajio_orders.xlsx"
     path.write_bytes(ajio.order_report(first, last))
     return path
@@ -103,12 +99,9 @@ def ajio_orders(first: date, last: date, dest: Path) -> Path:
 
 def ajio_payments(first: date, last: date, dest: Path) -> Path:
     from ..ajio_spf.inputs import write_xlsx
-    from ..portals.srm import PAYMENT_COLUMNS, Srm, payment_rows
-    if not env("SRM_USERNAME") or not env("SRM_PASSWORD"):
-        raise RuntimeError("SRM_USERNAME / SRM_PASSWORD not set")
-    srm = Srm(env("SRM_USERNAME"), env("SRM_PASSWORD"))
-    srm.login()
-    rows = payment_rows(srm.statement(first, last))
+    from ..core import clients
+    from ..portals.srm import PAYMENT_COLUMNS, payment_rows
+    rows = payment_rows(clients.srm().statement(first, last))
     if not rows:
         raise RuntimeError(f"SRM statement {first}..{last} has no lines")
     path = dest / "ajio_payments.xlsx"
@@ -193,9 +186,8 @@ def myntra_returns(account: str, first: date, last: date, dest: Path) -> Path:
 def ajio_returns(first: date, last: date, dest: Path) -> Path:
     """The Dropship RTV report of the month (by return created date), AJIO's return report: on the 2nd
     and in a back-fill; the return analysis replaces it on the 10th / 15th with a newer one."""
-    from ..portals.ajio import AjioClient
-    ajio = AjioClient(env("AJIO_USERNAME"), env("AJIO_PASSWORD"))
-    ajio.login()
+    from ..core import clients
+    ajio = clients.ajio()
     path = dest / "ajio_rtv.xlsx"
     path.write_bytes(ajio.rtv_report(first, last))
     return path
@@ -206,13 +198,11 @@ OMS_LOCK = threading.Lock()        # one OMSGuru session at a time
 
 def oms_lines(portal: str, first: date, last: date, dest: Path) -> Path:
     """OMSGuru's order lines of the portal's channels ordered in the month (AJIO: both Ajio and Ajio Api), read only."""
-    from ultron.portals.omsguru import OmsGuruClient
     from ultron.portals.omsguru_orders import channel_names, order_lines_range
     from ..business_report.oms import rows_of
+    from ..core import clients
     with OMS_LOCK:
-        client = OmsGuruClient.from_env()
-        client.login()
-        client.set_warehouse(next(iter(client.warehouses())))
+        client = clients.omsguru(warehouse=True)
         names = channel_names(client)
         wanted = [k for k, v in names.items() if v.rsplit(" - ", 1)[-1].lower() in OMS_CHANNELS[portal]]
         if not wanted:

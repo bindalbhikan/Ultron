@@ -20,9 +20,9 @@ from ultron.core.style import MOBILE, tidy
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import num
-from ..portals.omsguru import OmsGuruClient
 from ..sale.oms_sales import order_lines
 from ..stock.pipeline import size_key, sold_of, stock_of, style_size
+from ..core import clients
 
 log = logging.getLogger("bindal.deadstock")
 
@@ -75,8 +75,7 @@ def section(title: str, items: list[dict], slow: bool) -> telegram.Listing:
 def run(args) -> int:
     today = date.today()
     days = int(num("DEAD_SALE_DAYS", 90))
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     blobs = []
     for wh in list(client.warehouses()) or [None]:
         if wh:

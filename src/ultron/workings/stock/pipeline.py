@@ -19,8 +19,8 @@ import pandas as pd
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import num
-from ..portals.omsguru import OmsGuruClient
 from ..sale.oms_sales import CANCELLED, order_lines
+from ..core import clients
 
 log = logging.getLogger("bindal.stock")
 
@@ -105,8 +105,7 @@ def run(args) -> int:
     today = date.today()
     days = int(num("STOCK_SALE_DAYS", 14))
     min_sold, cover = int(num("STOCK_MIN_SOLD", 7)), float(num("STOCK_DAYS", 3))
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     blobs = []
     for wh in list(client.warehouses()) or [None]:
         if wh:

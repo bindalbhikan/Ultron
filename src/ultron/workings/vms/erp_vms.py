@@ -20,6 +20,7 @@ from ..portals.erp import Erp
 from ..portals.omsguru import OmsGuruClient
 from .myntra import MYNTRA_AWB, list_rows, myntra_awbs
 from .vms import VmsClient
+from ..core import clients
 
 log = logging.getLogger(__name__)
 OTHER = "OTHER"
@@ -90,8 +91,7 @@ def run(book, today: date, codes: list[str], chans: dict[str, str]) -> dict:
     if not parcels:
         raise RuntimeError(f"ERP has no Myntra parcels packed since {yesterday}")
 
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     lookback = num("SLA_LOOKBACK_DAYS", 10)
     codes_of, new_pairs, errors = channel_map(client, yesterday - timedelta(days=lookback), today, chans, book.awb_cache())
     book.save_awb_cache(new_pairs)

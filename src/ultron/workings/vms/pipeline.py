@@ -19,10 +19,10 @@ from ..core.app import run_bot
 from ..core.config import env, num, output_dir
 from ..core.drive import DriveFile
 from ..core.files import replace_atomically
-from ..portals.omsguru import OmsGuruClient
 from .myntra import MYNTRA_AWB, list_rows, myntra_awbs
 from .vms import VmsClient
 from .workbook import CODES, VmsWorkbook, sheet_month
+from ..core import clients
 
 BOOK_NAME = "MYNTRA ORDER ID WISE VMS.xlsx"
 log = logging.getLogger("bindal.vms")
@@ -52,8 +52,7 @@ def collect(dates: list[date], awb_cache: dict[str, str]):
     if not chans:
         raise RuntimeError("MYNTRA_CHANNELS has no channel id:code pairs")
     lookback = num("SLA_LOOKBACK_DAYS", 10)
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     start = datetime.combine(min(dates) - timedelta(days=lookback), datetime.min.time())
     end = datetime.combine(max(dates) + timedelta(days=1), datetime.min.time())
     log.info("Listing Myntra orders with order date %s -> %s", start.date(), end.date())

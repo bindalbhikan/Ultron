@@ -19,7 +19,7 @@ import pandas as pd
 from ultron.core.style import MOBILE, tidy
 
 from ..awb_tracker import CourierRegistry, Job, track_all
-from ..core import dashboard, telegram
+from ..core import clients, dashboard, telegram
 from ..core.app import run_bot
 from ..core.config import ROOT, csv_list, env, num, output_dir
 from ..portals.omsguru import OmsGuruClient
@@ -39,9 +39,7 @@ def _key(s):
 
 def ajio_order_report(first, last) -> pd.DataFrame:
     """The AJIO Dropship order report for order dates first..last, read 30 days at a time."""
-    from ..portals.ajio import AjioClient
-    client = AjioClient(env("AJIO_USERNAME"), env("AJIO_PASSWORD"))
-    client.login()
+    client = clients.ajio()
     frames, a = [], first
     while a <= last:
         b = min(a + timedelta(days=29), last)
@@ -508,11 +506,10 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
     follow-up comment listing them once our last word on it is TICKET_FOLLOWUP_HOURS (24) old (a
     comment re-opens a resolved ticket); at most TICKET_FOLLOWUP_CAP (40) tickets per run.
     Returns one record per candidate order and every order's pickup ticket ids (old and new)."""
-    from ..portals.ajio import AjioClient, pickup_payload
+    from ..portals.ajio import pickup_payload
     if not env("AJIO_USERNAME"):
         return [], {}
-    client = AjioClient(env("AJIO_USERNAME"), env("AJIO_PASSWORD"))
-    client.login()
+    client = clients.ajio()
     ids, courier_tickets = pickup_ticket_ids(
         client, client.ticket_list((now - pd.Timedelta(days=30)).date(), now.date()))
     cands = pickup_ticket_candidates(df, now)
@@ -919,8 +916,7 @@ def run(args) -> int:
 
 def probe(args) -> int:
     """Login + list only: checks credentials and page layout without writing anything."""
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     end = datetime.now() + timedelta(days=1)
     channels = csv_list("AJIO_CHANNEL_IDS", "57285,34958")
     whs = warehouse_ids() or list(client.warehouses()) or [None]

@@ -20,7 +20,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from ultron.portals.omsguru import OmsGuruClient
 
 from ..core import telegram
 from ..core.app import run_bot
@@ -29,6 +28,7 @@ from ..core.drive import DriveFolder
 from ..portals.erp import Erp
 from .accept import accept
 from ..core.config import agent_work_id
+from ..core import clients
 
 log = logging.getLogger("bindal.erp_oms_return")
 
@@ -94,8 +94,7 @@ def work_returns(jobs: list[dict], dry_run: bool) -> tuple[dict, bool]:
             return
         try:
             if not hasattr(local, "client"):
-                local.client = OmsGuruClient.from_env()
-                local.client.login()
+                local.client = clients.omsguru()
                 local.warehouses = dict(local.client.warehouses())
                 local.client.set_warehouse(next(iter(local.warehouses)))
             res = accept(local.client, job["awb"], job["skus"], f"Return accepted in ERP {job['day']}", local.warehouses, dry_run, job["type"])

@@ -29,8 +29,9 @@ import pandas as pd
 
 from ..core import telegram
 from ..core.app import run_bot
-from ..core.config import env, num, output_dir
+from ..core.config import num, output_dir
 from ..portals.flipkart import FlipkartClient
+from ..core import clients
 
 log = logging.getLogger("bindal.flipkart_price")
 
@@ -233,8 +234,7 @@ def run(args) -> int:
     targets = read_targets(path)
     log.info("Final TP file %s: %d FSNs", path.name, len(targets))
 
-    client = FlipkartClient(env("FLIPKART_EMAIL"), env("FLIPKART_PASSWORD"))
-    client.login()
+    client = clients.flipkart()
     tier, user = client.tier(), client.seller_name()
     listings = client.listings("ACTIVE")
     by_fsn: dict[str, list[dict]] = {}

@@ -29,6 +29,7 @@ from ..core.app import run_bot
 from ..core.config import env, num
 from ..core.drive import DriveFolder
 from ..core.config import agent_work_id
+from ..core import clients
 
 log = logging.getLogger("bindal.ticket_followup")
 
@@ -199,9 +200,7 @@ def run(args) -> int:
         except Exception as exc:  # noqa: BLE001 - a failed source keeps its last rows and is named
             problems.append(f"Myntra {account}: not read, last known rows kept ({str(exc).splitlines()[0][:90]})")
     try:
-        from ..portals.ajio import AjioClient
-        client = AjioClient(env("AJIO_USERNAME"), env("AJIO_PASSWORD"))
-        client.login()
+        client = clients.ajio()
         fresh += ajio_rows(client, today)
     except Exception as exc:  # noqa: BLE001
         client = None

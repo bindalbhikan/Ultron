@@ -11,14 +11,13 @@ import logging
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import csv_list
-from ..portals.omsguru import OmsGuruClient
+from ..core import clients
 
 log = logging.getLogger("bindal.inv_push")
 
 
 def run(args) -> int:
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     skip = set(csv_list("INV_PUSH_SKIP"))           # channel ids never pushed
     channels = [c for c in client.channels() if c["inventory_sync"] and c["id"] not in skip]
     if not channels:

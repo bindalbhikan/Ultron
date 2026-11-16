@@ -38,13 +38,9 @@ def windows(month: date, today: date) -> tuple[tuple[date, date], tuple[date, da
 # ------------------------------------------------------------------ Myntra
 
 def myntra_portal(account: str):
-    from ..portals import myntra as mp
-    text = mp.from_worker(env, account)
-    if not text:
-        raise mp.SessionExpired(f"no {account} session saved (python scripts/myntra/myntra_session.py {account})")
-    portal = mp.MyntraPortal(mp.parse_session(text))
-    portal.check()
-    return portal
+    """The account's partner portal (core/clients.py: made in one place for every working)."""
+    from ..core import clients
+    return clients.myntra(account)
 
 
 def request_myntra(account: str, sale: tuple[date, date], parts: list[tuple[date, date]],
@@ -94,12 +90,8 @@ def fetch_myntra(account: str, sale: tuple[date, date], parts: list[tuple[date, 
 # ------------------------------------------------------------------ Ajio
 
 def fetch_ajio(sale: tuple[date, date], ret: tuple[date, date], dest: Path) -> list[str]:
-    from ..portals.ajio import AjioClient
-    user, pwd = env("AJIO_USERNAME"), env("AJIO_PASSWORD")
-    if not user or not pwd:
-        raise RuntimeError("AJIO_USERNAME / AJIO_PASSWORD not set")
-    ajio = AjioClient(user, pwd)
-    ajio.login()
+    from ..core import clients
+    ajio = clients.ajio()
     dest.mkdir(parents=True, exist_ok=True)
     names = [f"DropShipOrderReports {sale[0]} to {sale[1]}.xlsx"]
     (dest / names[0]).write_bytes(ajio.order_report(*sale))
@@ -147,13 +139,9 @@ def returns_complete(xlsx: bytes, start: date, slack_days: int = 7) -> tuple[boo
 
 
 def flipkart_client():
-    from ..portals.flipkart import FlipkartClient
-    user, pwd = env("FLIPKART_EMAIL"), env("FLIPKART_PASSWORD")
-    if not user or not pwd:
-        raise RuntimeError("FLIPKART_EMAIL / FLIPKART_PASSWORD not set")
-    fk = FlipkartClient(user, pwd)
-    fk.login()
-    return fk
+    """Flipkart Seller Hub, logged in (core/clients.py)."""
+    from ..core import clients
+    return clients.flipkart()
 
 
 def request_flipkart(sale: tuple[date, date], ret: tuple[date, date], fresh: bool = False) -> list[str]:

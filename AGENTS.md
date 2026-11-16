@@ -43,6 +43,8 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
   with calamine, new files written with xlsxwriter, openpyxl only to edit an existing workbook in place.
   A switch never changes a number: the old and new code give the same output on the same input first.
   One page per library change, in order, with its status: `docs/libraries/` (run `python -m ruff check src tests run.py` before a commit).
+- **Centralise, do not copy**: a portal login comes from `workings/core/clients.py`, a retry from
+  `ultron/core/retry.py`; what two workings both need goes into one shared place (`docs/CENTRALISE.md`).
 - `netcap/` (raw browser captures) is local only: it holds cookies and customer data. Only names
   (paths, field names, meanings) go into `docs/knowledge/`, never values.
 

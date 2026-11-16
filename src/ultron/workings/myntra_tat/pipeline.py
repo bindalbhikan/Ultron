@@ -20,8 +20,8 @@ import pandas as pd
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import csv_list, env, num
-from ..portals.omsguru import OmsGuruClient
 from ..sale.oms_sales import order_lines
+from ..core import clients
 
 log = logging.getLogger("bindal.myntra_tat")
 
@@ -111,8 +111,7 @@ def run(args) -> int:
     rep = pd.concat([r for r in reps if not r.empty], ignore_index=True) if reps else pd.DataFrame()
     if rep.empty:
         raise RuntimeError("No Myntra order report could be read: " + "; ".join(notes))
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     lines, _ = order_lines(client, [first - timedelta(days=1) + timedelta(days=i) for i in range(len(days) + 2)])
     sla = {l["awb"]: l["sla"] for l in lines if l["awb"] and l["sla"]}
     total = int((rep["created"].dt.date.between(first, last) & rep["cancelled"].isna()).sum())

@@ -22,9 +22,9 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import env
 from ..morning.pipeline import channel_line, change
-from ..portals.omsguru import OmsGuruClient
 from ..sale.oms_sales import CANCELLED, order_lines
 from ..weekly.pipeline import rupees
+from ..core import clients
 
 log = logging.getLogger("bindal.mis")
 
@@ -125,8 +125,7 @@ def run(args) -> int:
     except ValueError:
         rates = {}
         log.warning("MIS_RATES is not valid JSON: rates left out")
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     lines, names = order_lines(client, prev_days + now_days)
     rows = mis(lines, names, now_days, prev_days, rates)
     text = message(rows, now_days, prev_days, rates)

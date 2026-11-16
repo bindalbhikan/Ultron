@@ -20,6 +20,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 from .omsguru import BASE_URL, OmsGuruClient, OmsGuruError, item_status, text_of
+from ..core import clients
 
 log = logging.getLogger(__name__)
 
@@ -97,8 +98,7 @@ class ReturnLookup:
 
     @classmethod
     def from_env(cls) -> "ReturnLookup":
-        client = OmsGuruClient.from_env()
-        client.login()
+        client = clients.omsguru()
         return cls(client)
 
     def search(self, term: str, kind: str = "AWB") -> list[str]:

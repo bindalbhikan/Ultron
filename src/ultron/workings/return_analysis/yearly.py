@@ -25,6 +25,7 @@ from ..core.config import env
 from ..core.drive import DriveFolder
 from . import sources
 from .engine import DATA_COLUMNS, build_all, build_period, read_data
+from ..core import clients
 
 log = logging.getLogger(__name__)
 
@@ -176,9 +177,7 @@ def _myntra_account(account: str, months: list[date], dest: Path, notes: list[st
 
 
 def _ajio(months: list[date], dest: Path, notes: list[str]) -> None:
-    from ..portals.ajio import AjioClient
-    ajio = AjioClient(env("AJIO_USERNAME"), env("AJIO_PASSWORD"))
-    ajio.login()
+    ajio = clients.ajio()
     for m in months:
         folder = dest / tag(m)
         try:

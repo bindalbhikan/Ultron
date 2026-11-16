@@ -46,6 +46,7 @@ from ..core.app import run_bot
 from ..core.config import env, num
 from ..core.drive import DriveFolder
 from ..core.config import agent_work_id
+from ..core import clients
 
 log = logging.getLogger("bindal.myntra_grouping")
 
@@ -146,11 +147,9 @@ def sales_counts(sku_to_style: dict, dest: Path, months: int, accounts: list[str
 def omsguru_inventory(dest: Path) -> Path | None:
     """OMSGuru's stock of every warehouse, summed per SKU (as the stock-out alert reads it), as the
     inventory file engine.load_inventory takes (SKU, Qty); None when OMSGuru cannot be read."""
-    from ...portals.omsguru import OmsGuruClient
     from ..stock.pipeline import stock_of
     try:
-        client = OmsGuruClient.from_env()
-        client.login()
+        client = clients.omsguru()
         blobs = []
         for wh in list(client.warehouses()) or [None]:
             if wh:

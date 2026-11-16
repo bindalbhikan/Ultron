@@ -12,6 +12,8 @@ requires-python = ">=3.12"
 dependencies = [
     "requests>=2.31",
     "beautifulsoup4>=4.12",
+    # one retry helper, ultron.core.retry (docs/libraries/04-tenacity.md); pure Python
+    "tenacity>=9.0",
     "python-dotenv>=1.0",
 ]
 
@@ -56,3 +58,13 @@ extend-exclude = ["scripts/legacy", "netcap", "output", ".claude"]
 select = ["F", "E9", "B"]
 # B905 (zip strict) and B023 (loop variable in a closure) are reviewed one by one, not gated yet
 ignore = ["B905", "B023"]
+
+[tool.pyright]
+# docs/libraries/03-pyright.md: the seller-neutral core first (src/ultron without workings/), basic mode;
+# the workings folder by folder once each is clean
+include = ["src/ultron"]
+exclude = ["src/ultron/workings", "**/__pycache__"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+reportMissingImports = "warning"
+reportMissingModuleSource = "none"

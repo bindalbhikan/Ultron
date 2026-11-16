@@ -34,6 +34,7 @@ from ..core.app import run_bot
 from ..core.config import env, flag, num, output_dir, required
 from . import claims, followup, inputs, master_engine
 from .inputs import OMS_COLUMNS, write_xlsx
+from ..core import clients
 
 OUTPUT = output_dir("ajio_spf")
 WORK = OUTPUT / "work"
@@ -105,9 +106,8 @@ def oldest_open() -> date | None:
 
 def fetch_all(today: date, ctx: dict) -> None:
     """Fill WORK/input with fresh exports. Any failure is recorded in ctx['errors']."""
-    from ..portals.ajio import AjioClient
     from ..portals.erp import Erp
-    from ..portals.srm import Srm, payment_rows
+    from ..portals.srm import payment_rows
 
     inp = WORK / "input"
     lookups = inp / "Manual Sheet"
@@ -124,8 +124,7 @@ def fetch_all(today: date, ctx: dict) -> None:
             ctx["errors"].append(f"{name}: {exc}")
 
     def ajio():
-        client = AjioClient(env("AJIO_USERNAME"), env("AJIO_PASSWORD"))
-        client.login()
+        client = clients.ajio()
         ctx["ajio"] = client
         start = rtv_start(today)
         for a, b, blob in client.rtv_reports(start, today):
@@ -154,8 +153,7 @@ def fetch_all(today: date, ctx: dict) -> None:
         write_xlsx(inp / "Dispatch.xlsx", {"Sheet": (list(dispatch[0].keys()) if dispatch else [], dispatch)})
 
     def srm():
-        client = Srm(env("SRM_USERNAME"), env("SRM_PASSWORD"))
-        client.login()
+        client = clients.srm()
         # from the oldest return still open (its G4 / IC can come any day), at least the last
         # SRM_DAYS (365), at most SRM_MAX_DAYS (540)
         start = max(min(today - timedelta(days=num("SRM_DAYS", 365)), oldest_open() or today),
