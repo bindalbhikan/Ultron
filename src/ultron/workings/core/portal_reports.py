@@ -18,8 +18,7 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-from .drive import API, DriveFolder
-from .config import agent_work_id
+from .drive import API, DriveFolder, agent_folder
 
 log = logging.getLogger("bindal.portal_reports")
 
@@ -42,7 +41,7 @@ def file_name(portal: str, month: date, kind: str, account: str = "", ext: str =
 
 def month_folder(portal: str, month: date, create: bool = False) -> DriveFolder | None:
     """PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/ on Drive."""
-    folder = DriveFolder(agent_work_id())
+    folder = agent_folder()
     for name in (ROOT, portal.upper(), f"{month:%Y}", label(month)):
         folder = folder.subfolder(name, create=create)
         if folder is None:

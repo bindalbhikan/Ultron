@@ -33,7 +33,6 @@ import pandas as pd
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import csv_list, env, num
-from ..core.config import agent_work_id
 from ..core.tables import clean_id
 from ..core.tables import col as _col
 
@@ -213,7 +212,7 @@ def backfill(args) -> int:
     each delivery counted on its deliver_to_seller_date. A missing range is asked for (one job per
     report, waited for)."""
     import tempfile
-    from ..core.drive import DriveFolder
+    from ..core.drive import agent_folder
     from ..portals import myntra as mp
     from ..return_analysis.sources import myntra_portal
     start = date.fromisoformat(args.backfill_from)
@@ -248,7 +247,7 @@ def backfill(args) -> int:
         rows += [(d, account, s) for d, s in got.items()]
         drop |= {(d, PORTALS.get(account, account)) for d in blank}
         log.info("%s: %d days written, %d left blank (data up to %s)", account, len(got), len(blank), through)
-    root = DriveFolder(agent_work_id()).subfolder(AREA, create=True)
+    root = agent_folder(AREA, create=True)
     link = update_workbook(root, rows, Path(tempfile.mkdtemp(prefix="myntra_rd_")), drop)
     total = sum(s["TOTAL"] for _, _, s in rows)
     print(f"{WORKBOOK}: {len(rows)} rows for {start}..{end}, {total} return deliveries. {link}")
@@ -300,9 +299,9 @@ def run(args) -> int:
     book = ""
     if rows or drop:
         import tempfile
-        from ..core.drive import DriveFolder
+        from ..core.drive import agent_folder
         try:
-            root = DriveFolder(agent_work_id()).subfolder(AREA, create=True)
+            root = agent_folder(AREA, create=True)
             book = update_workbook(root, rows, Path(tempfile.mkdtemp(prefix="myntra_rd_")), drop)
         except Exception as exc:  # noqa: BLE001 - the message still goes out
             log.exception("%s not updated", WORKBOOK)

@@ -30,7 +30,6 @@ import pandas as pd
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import env, num
-from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.myntra_history")
 
@@ -195,13 +194,13 @@ def run(args) -> int:
     """--step prepare: the Drive folders (before parallel fetches, so no folder is made twice);
     fetch: get the months (--accounts / --reports), Telegram only when some failed; merge: the
     merged files + the Telegram summary; all: the three in one go."""
-    from ..core.drive import DriveFolder
+    from ..core.drive import agent_folder
     from ..portals import myntra as mp
     first, last = date.fromisoformat(args.from_month + "-01"), date.fromisoformat(args.to_month + "-01")
     wanted = months(first, last)
     accounts, labels = args.accounts.split(","), args.reports.split(",")
     rids = {"ORDERS": mp.REPORT_ID, "RETURNS": mp.RETURNS_REPORT_ID}
-    root = DriveFolder(agent_work_id()).subfolder(AREA, create=True)
+    root = agent_folder(AREA, create=True)
     name = f"MYNTRA ORDER RETURN REPORTS {tag(first)} TO {tag(last)}"
     folder = root.subfolder(name, create=args.step in ("prepare", "all"))
     if folder is None:

@@ -27,7 +27,6 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import csv_list, num, output_dir
 from ..portals.omsguru import OmsGuruClient
-from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.flipkart_tat")
 
@@ -58,8 +57,8 @@ def sla_deadlines(o: pd.DataFrame) -> pd.Series:
 
 
 def master_folder():
-    from ..core.drive import DriveFolder
-    return DriveFolder(agent_work_id()).subfolder(AREA, create=True)
+    from ..core.drive import agent_folder
+    return agent_folder(AREA, create=True)
 
 
 def run(args) -> int:

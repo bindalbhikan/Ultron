@@ -23,7 +23,6 @@ import time
 from datetime import datetime
 
 from .config import OUTPUT, env
-from .config import agent_work_id
 
 log = logging.getLogger("bindal.hyperlog")
 
@@ -116,7 +115,7 @@ class HyperLog:
     def upload(self, ok: bool) -> None:
         """The log into AGENT WORK/AGENT LOGS/<MON-YY>/<dd-mm-yy>/; never fails the run."""
         try:
-            from .drive import DriveFolder
+            from .drive import agent_folder
             from .gauth import oauth_configured
             if not oauth_configured():
                 print("hyperlog: not uploaded (no Drive OAuth token in this workflow)")
@@ -126,7 +125,7 @@ class HyperLog:
                     f"{'OK' if ok else 'FAIL'}{' #' + run if run else ''}.log")
             dest = self.path.with_name(name)
             dest.write_bytes(self.path.read_bytes())
-            folder = (DriveFolder(agent_work_id()).subfolder(FOLDER, create=True)
+            folder = (agent_folder(FOLDER, create=True)
                       .subfolder(f"{self.when:%b-%y}".upper(), create=True)
                       .subfolder(f"{self.when:%d-%m-%y}", create=True))
             folder.put(dest, "text/plain")

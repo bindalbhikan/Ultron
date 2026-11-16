@@ -23,10 +23,9 @@ from ..core import portal_reports as pr
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import output_dir
-from ..core.drive import API, DriveFolder
+from ..core.drive import API, DriveFolder, agent_folder
 from . import ajio, flipkart, myntra, oms
 from .workbook import build
-from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.business_report")
 
@@ -44,7 +43,7 @@ def month_of(text: str) -> date:
 
 def portal_files(portal: str, first: date, last: date, dest: Path) -> list[dict]:
     """Every report file of the portal from first to last month, downloaded: one dict per file."""
-    root = DriveFolder(agent_work_id()).subfolder(pr.ROOT)
+    root = agent_folder(pr.ROOT)
     pf = root.subfolder(portal) if root else None
     out = []
     if not pf:
@@ -74,7 +73,7 @@ def portal_files(portal: str, first: date, last: date, dest: Path) -> list[dict]
 
 
 def master_sheet(dest: Path) -> pd.DataFrame:
-    folder = DriveFolder(agent_work_id()).subfolder(FOLDER)
+    folder = agent_folder(FOLDER)
     path = folder.download("MasterSheet.xlsx", dest / "MasterSheet.xlsx") if folder else None
     if not path:
         raise RuntimeError("MasterSheet.xlsx not found in AGENT WORK/BUSINESS REPORTING")
@@ -447,7 +446,7 @@ def build_ajio(files: list[dict], master: pd.DataFrame, cats: dict, first: date)
 
 # ------------------------------------------------------------------ run
 def upload(path: Path, portal: str) -> None:
-    folder = DriveFolder(agent_work_id()).subfolder(FOLDER, create=True)
+    folder = agent_folder(FOLDER, create=True)
     folder.put(path, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     for name, meta in folder.children().items():
         if name.startswith(f"{portal} SALE RETURN ANALYSIS") and name != path.name:

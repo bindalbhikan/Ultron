@@ -108,9 +108,8 @@ def _month_key(title: str):
 
 def sync(day: date, rows: list[dict], dest: Path) -> tuple[Path, str]:
     """Download the master from Drive (when there), write the day, put it back. (local path, link)."""
-    from ..core.config import agent_work_id
-    from ..core.drive import DriveFile, DriveFolder
-    folder = DriveFolder(agent_work_id())
+    from ..core.drive import DriveFile, agent_folder
+    folder = agent_folder()
     for part in FOLDER:
         folder = folder.subfolder(part, create=True)
     path = dest / NAME

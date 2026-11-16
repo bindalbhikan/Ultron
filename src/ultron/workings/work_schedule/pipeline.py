@@ -26,7 +26,6 @@ import requests
 
 from ..core.app import run_bot
 from ..core.config import env, num
-from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.work_schedule")
 
@@ -349,7 +348,7 @@ def build(path: Path, months: list[date], now: datetime) -> dict:
 
 
 def run(args) -> int:
-    from ..core.drive import DriveFile, DriveFolder
+    from ..core.drive import DriveFile, agent_folder
     now = datetime.now(IST).replace(tzinfo=None) if not args.at else datetime.fromisoformat(args.at)
     months = sorted({(now - timedelta(hours=num("SLOT_HOURS", 12) + 18)).date().replace(day=1),
                      now.date().replace(day=1)})
@@ -361,7 +360,7 @@ def run(args) -> int:
         stats = build(work, months, now)
         print(f"{work}: {', '.join(map(month_sheet, months))}; today {stats['today_done']}/{stats['today_due']} done")
         return 0
-    root = DriveFolder(agent_work_id())
+    root = agent_folder()
     found = root.children().get(WORKBOOK)
     if not found:
         raise RuntimeError(f"{WORKBOOK} not found in AGENT WORK on Drive")

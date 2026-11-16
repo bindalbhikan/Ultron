@@ -44,8 +44,7 @@ from ..core import portal_reports as pr
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import env, num
-from ..core.drive import DriveFolder
-from ..core.config import agent_work_id
+from ..core.drive import DriveFolder, agent_folder
 from ..core import clients
 from ..core.tables import clean_id
 
@@ -58,7 +57,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def agent_work() -> DriveFolder:
-    return DriveFolder(agent_work_id())
+    return agent_folder()
 
 
 def subfolder(root: DriveFolder, names, create: bool = False) -> DriveFolder | None:

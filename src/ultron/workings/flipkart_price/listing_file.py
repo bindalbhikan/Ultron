@@ -81,9 +81,8 @@ def run(args) -> int:
 
     link = ""
     if not args.no_upload:
-        from ..core.config import agent_work_id
-        from ..core.drive import DriveFile, DriveFolder
-        folder = DriveFolder(agent_work_id())
+        from ..core.drive import DriveFile, agent_folder
+        folder = agent_folder()
         for part in (*FOLDER, f"{now:%b-%y}"):
             folder = folder.subfolder(part, create=True)
         link = DriveFile(folder.put(out, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")).url

@@ -29,7 +29,6 @@ import pandas as pd
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import csv_list, env, num, output_dir
-from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.myntra_zero_td")
 
@@ -209,8 +208,8 @@ def file_name(when: datetime) -> str:
 
 def save_to_drive(path: Path, when: datetime) -> str:
     """The workbook into AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/OCT-26/26-10-26/; the folder's link."""
-    from ..core.drive import XLSX, DriveFolder
-    root = DriveFolder(agent_work_id()).subfolder(AREA, create=True)
+    from ..core.drive import XLSX, agent_folder
+    root = agent_folder(AREA, create=True)
     folder = (root.subfolder(FOLDER, create=True).subfolder(f"{when:%b-%y}".upper(), create=True)
               .subfolder(f"{when:%d-%m-%y}", create=True))
     folder.put(path, XLSX)
@@ -223,8 +222,8 @@ def run(args) -> int:
     if args.source:
         source = Path(args.source)
     else:
-        from ..core.drive import DriveFolder
-        source = DriveFolder(agent_work_id()).subfolder(AREA, create=True).download(
+        from ..core.drive import agent_folder
+        source = agent_folder(AREA, create=True).download(
             SOURCE, Path(tempfile.mkdtemp(prefix="zero_td_")) / SOURCE)
         if source is None:
             raise RuntimeError(f"{SOURCE} not found in AGENT WORK/MYNTRA on Drive")

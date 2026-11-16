@@ -24,10 +24,9 @@ import pandas as pd
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import num, output_dir
-from ..core.drive import DriveFolder
+from ..core.drive import DriveFolder, agent_folder
 from ..portals.erp import Erp
 from .accept import accept
-from ..core.config import agent_work_id
 from ..core import clients
 
 log = logging.getLogger("bindal.erp_oms_return")
@@ -226,7 +225,7 @@ def write(out: pd.DataFrame, path: Path) -> None:
 
 def run(args) -> int:
     work = Path(tempfile.mkdtemp(prefix="erp_oms_return_"))
-    folder = DriveFolder(agent_work_id())
+    folder = agent_folder()
     erp = Erp.from_env()
     erp.login()
     out = erp_lines(erp)

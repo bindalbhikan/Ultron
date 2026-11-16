@@ -249,3 +249,14 @@ class DriveFolder:
             return self.http.put(r.headers["Location"], data=src.read_bytes(), timeout=900, headers={"Content-Type": mime})
 
         return self._check(_with_retries(send, f"upload of {src.name}"), f"upload of {src.name}").json()["id"]
+
+
+def agent_folder(*names: str, create: bool = False) -> "DriveFolder | None":
+    """BINDAL EXPORTS/AGENT WORK (AGENT_WORK_FOLDER_ID), or a folder under it by name: agent_folder("MYNTRA",
+    "LISTING GROUPING", create=True). None when one of them is missing and create is False
+    (docs/CENTRALISE.md step 7: one place for the agent's Drive paths)."""
+    from .config import agent_work_id
+    folder: DriveFolder | None = DriveFolder(agent_work_id())
+    for name in names:
+        folder = folder.subfolder(name, create=create) if folder else None
+    return folder

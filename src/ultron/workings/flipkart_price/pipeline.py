@@ -441,9 +441,8 @@ def merge(folder: Path, args) -> int:
 
 def fetch_target_file() -> Path:
     """The newest .xlsx in AGENT WORK > FLIPKART > PRICE UPDATE, downloaded to output/."""
-    from ..core.config import agent_work_id
-    from ..core.drive import DriveFolder
-    folder = DriveFolder(agent_work_id())
+    from ..core.drive import agent_folder
+    folder = agent_folder()
     for name in FOLDER:
         folder = folder.subfolder(name)
         if folder is None:

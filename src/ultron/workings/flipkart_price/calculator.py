@@ -259,9 +259,8 @@ def run(args) -> int:
 
 
 def upload(path: Path) -> str:
-    from ..core.config import agent_work_id
-    from ..core.drive import DriveFile, DriveFolder
-    folder = DriveFolder(agent_work_id())
+    from ..core.drive import DriveFile, agent_folder
+    folder = agent_folder()
     for name in FOLDER:
         folder = folder.subfolder(name, create=True)
     fid = folder.put(path, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
