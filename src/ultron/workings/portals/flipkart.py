@@ -39,15 +39,10 @@ class FlipkartClient:
 
     def login(self, tries: int = 3) -> None:
         """Log in; a dropped connection (Flipkart resets some, 18 Oct backfill) is tried again.
-        A refused login is not retried."""
-        for attempt in range(1, tries + 1):
-            try:
-                return self._login()
-            except requests.ConnectionError as exc:
-                if attempt == tries:
-                    raise
-                log.warning("Flipkart login: connection dropped (%s), trying again", exc)
-                time.sleep(20 * attempt)
+        A refused login is not retried. Waits 20, 40 s (ultron.core.retry)."""
+        from ultron.core.retry import retry_call
+        retry_call(self._login, tries=tries, wait=lambda n: 20 * n, on=(requests.ConnectionError,), log=log,
+                   what="Flipkart login (connection dropped)", sleep=lambda s: time.sleep(s))
 
     def _login(self) -> None:
         xhr = {"Accept": "application/json, text/javascript, */*; q=0.01", "X-Requested-With": "XMLHttpRequest"}
@@ -246,19 +241,25 @@ class FlipkartClient:
 
     def _post(self, path: str, body: dict, tries: int = 3) -> dict:
         """POST JSON; an HTTP 5xx or a dropped connection is tried again (only when tries > 1),
-        any other refusal is raised."""
-        r = None
-        for attempt in range(1, tries + 1):
-            try:
-                r = self.s.post(f"{BASE}{path}", json=body, headers=self._json_headers(), timeout=self.timeout)
-            except requests.ConnectionError:
-                if attempt == tries:
-                    raise
-                time.sleep(5 * attempt)
-                continue
-            if r.status_code < 500 or attempt == tries:
-                break
-            time.sleep(5 * attempt)
+        any other refusal is raised. Waits 5, 10 s (ultron.core.retry)."""
+        from ultron.core.retry import retry_call
+
+        class ServerError(Exception):
+            def __init__(self, r):
+                super().__init__(f"HTTP {r.status_code}")
+                self.response = r
+
+        def once():
+            r = self.s.post(f"{BASE}{path}", json=body, headers=self._json_headers(), timeout=self.timeout)
+            if r.status_code >= 500:
+                raise ServerError(r)
+            return r
+
+        try:
+            r = retry_call(once, tries=tries, wait=lambda n: 5 * n, on=(ServerError, requests.ConnectionError), log=log,
+                           what=f"Flipkart {path.split('?')[0]}", sleep=lambda s: time.sleep(s))
+        except ServerError as last:
+            r = last.response
         if r.status_code != 200:
             raise FlipkartError(f"Flipkart {path.split('?')[0]}: HTTP {r.status_code} {r.text[:200]}")
         return r.json()

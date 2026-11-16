@@ -90,18 +90,26 @@ class AjioClient:
                 "X-Tenant-Id": "AJIO", "x-seller-id": self.seller_id}
 
     def _req(self, method: str, path: str, **kw) -> requests.Response:
-        for attempt in range(1, 4):
-            try:
-                r = self.s.request(method, BASE + path, timeout=self.timeout, **kw)
-                if r.status_code < 500 or attempt == 3:
-                    return r
-                log.warning("%s %s -> HTTP %s (attempt %d)", method, path[:80], r.status_code, attempt)
-            except requests.RequestException as exc:
-                if attempt == 3:
-                    raise
-                log.warning("%s %s failed: %s (attempt %d)", method, path[:80], exc, attempt)
-            time.sleep(3 * attempt)
-        raise AssertionError("unreachable")
+        """Three tries (ultron.core.retry, waits 3, 6 s) on a 5xx or a request error; the last 5xx answer is
+        returned, a last request error raised; any other answer at once."""
+        from ultron.core.retry import retry_call
+
+        class ServerError(Exception):
+            def __init__(self, r):
+                super().__init__(f"HTTP {r.status_code}")
+                self.response = r
+
+        def once() -> requests.Response:
+            r = self.s.request(method, BASE + path, timeout=self.timeout, **kw)
+            if r.status_code >= 500:
+                raise ServerError(r)
+            return r
+
+        try:
+            return retry_call(once, tries=3, wait=lambda n: 3 * n, on=(ServerError, requests.RequestException),
+                              log=log, what=f"{method} {path[:80]}", sleep=lambda s: time.sleep(s))
+        except ServerError as last:
+            return last.response
 
     # ------------------------------------------------------------ returns report
     def rtv_reports(self, start: date, end: date, days: int = 30):

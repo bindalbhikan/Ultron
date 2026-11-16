@@ -46,20 +46,30 @@ def _passing(r) -> bool:
 
 def _with_retries(send, what: str):
     """send() again on a passing answer, a timeout or a dropped connection (three tries, 3 Nov 2026: a
-    502 from Drive ended a whole run). The last answer is returned; a last dropped connection raises DriveError."""
-    for attempt, pause in enumerate(RETRY_PAUSES, 1):
-        try:
-            r = send()
-            if not _passing(r) or not pause:
-                return r
-            problem = f"HTTP {r.status_code}"
-        except (OSError, ConnectionError, TransportError) as exc:   # timeouts, dropped connections, also on the token refresh
-            problem = f"{type(exc).__name__}: {str(exc)[:120]}"
-            if not pause:
-                raise DriveError(f"Drive {what} failed {attempt} times: {problem}") from exc
-        log.warning("Drive %s: %s (try %d of %d); trying again", what, problem, attempt, len(RETRY_PAUSES))
-        time.sleep(pause)
-    raise AssertionError("unreachable")
+    502 from Drive ended a whole run). The last answer is returned; a last dropped connection raises DriveError.
+    On ultron.core.retry: waits RETRY_PAUSES (10, 30 s)."""
+    from ultron.core.retry import retry_call
+
+    class Passing(Exception):
+        def __init__(self, r):
+            super().__init__(f"HTTP {r.status_code}")
+            self.response = r
+
+    def once():
+        r = send()
+        if _passing(r):
+            raise Passing(r)
+        return r
+
+    dropped = (OSError, ConnectionError, TransportError)   # timeouts, dropped connections, also on the token refresh
+    try:
+        return retry_call(once, tries=len(RETRY_PAUSES), wait=lambda n: RETRY_PAUSES[n - 1], on=(Passing, *dropped),
+                          log=log, what=f"Drive {what}", sleep=lambda s: time.sleep(s))
+    except Passing as last:
+        return last.response
+    except dropped as exc:
+        raise DriveError(f"Drive {what} failed {len(RETRY_PAUSES)} times: "
+                         f"{type(exc).__name__}: {str(exc)[:120]}") from exc
 
 
 class RetrySession(AuthorizedSession):

@@ -25,6 +25,14 @@ backoff, stop after N tries, retry only on chosen errors. Pure Python, so the co
   * ERP `report()`: asked again (4 tries, waits 5, 10, 15 s) only while rows and count disagree; an HTTP error
     or an answer without data stops at once — `tests/test_erp_report.py`.
 
-**To do, one by one (each keeping its tries and waits exactly)**: Drive `RetrySession`, AJIO and Flipkart
-clients, the agent's Telegram (`integrations/telegram.py`), the SPF master's report queue, zero TD's phone
-retries, the AWB tracker's http client.
+  * Drive `_with_retries` (every read through `RetrySession`, the safe uploads): 3 tries, waits 10, 30 s, on a
+    5xx / 429 / rate limit or a dropped connection; the last answer returned, a last dropped connection
+    `DriveError` — `tests/test_drive_retries.py`.
+  * AJIO `_req`: 3 tries, waits 3, 6 s, on a 5xx or a request error; the last 5xx answer returned —
+    `tests/test_ajio_req.py`.
+  * Flipkart `login()` (3 tries on a dropped connection, waits 20, 40 s; a refused login once) and `_post()`
+    (3 tries on a 5xx or a dropped connection, waits 5, 10 s) — `tests/test_flipkart_retries.py`.
+
+**To do, one by one (each keeping its tries and waits exactly)**: the agent's Telegram
+(`integrations/telegram.py`), the SPF master's report queue, zero TD's phone retries, the AWB tracker's http
+client, the phone's collect loop.
