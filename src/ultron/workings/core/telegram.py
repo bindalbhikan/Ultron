@@ -13,10 +13,8 @@ title and count and every row goes to one attached Excel, a sheet per list (send
 """
 from __future__ import annotations
 
-import html
 import logging
 import os
-import re
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -24,94 +22,18 @@ from pathlib import Path
 
 import requests
 
+from ultron.integrations.telegram import TAG, _plain, esc, md, split_html  # noqa: F401 - one place
+
 log = logging.getLogger(__name__)
 MAX_LEN = 4000  # Telegram hard limit is 4096
 API = "https://api.telegram.org/bot{token}/{method}"
 PHONE_WIDTH = 28  # monospace characters a <pre> line shows on a phone without wrapping
-TAG = re.compile(r"<(/?)(b|strong|i|em|u|s|code|pre|a)(\s[^>]*)?>", re.I)
-
-
-def esc(value) -> str:
-    return html.escape(str(value))
-
-
-def md(text: str) -> str:
-    """A model's light markdown as Telegram HTML: **bold**, `code`, "- " / "* " bullets, # headings,
-    and | table | rows | as "a · b" lines (a table does not fit a phone); everything else escaped."""
-    out = []
-    for line in esc(text).splitlines():
-        if re.fullmatch(r"\s*\|?[\s:|-]*-[\s:|-]*\|?\s*", line):        # |---|---| separator row
-            continue
-        if line.strip().startswith("|"):
-            line = " · ".join(c.strip() for c in line.strip().strip("|").split("|") if c.strip())
-        line = re.sub(r"^\s{0,3}#{1,6}\s*(.+)$", r"<b>\1</b>", line)
-        line = re.sub(r"^(\s*)[-*]\s+", r"\1• ", line)
-        line = re.sub(r"`([^`]+)`", r"<code>\1</code>", line)
-        out.append(re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", line).rstrip())
-    return "\n".join(out)
 
 
 def _config() -> tuple[str, list[str]]:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     chats = [c.strip() for c in os.getenv("TELEGRAM_CHAT_ID", "").split(",") if c.strip()]
     return token, chats
-
-
-def _plain(text: str) -> str:
-    return html.unescape(re.sub(r"<[^>]+>", "", text))
-
-
-def split_html(text: str, limit: int = MAX_LEN) -> list[str]:
-    """Cut text into parts of at most `limit` characters without breaking HTML tags."""
-    if len(text) <= limit:
-        return [text]
-    parts: list[str] = []
-    open_tags: list[tuple[str, str]] = []   # (name, opening tag text)
-    current = ""
-
-    def closing() -> str:
-        return "".join(f"</{name}>" for name, _ in reversed(open_tags))
-
-    def reopening() -> str:
-        return "".join(tag for _, tag in open_tags)
-
-    def track(piece: str) -> None:
-        for m in TAG.finditer(piece):
-            name = m.group(2).lower()
-            if m.group(1):
-                for i in range(len(open_tags) - 1, -1, -1):
-                    if open_tags[i][0] == name:
-                        del open_tags[i]
-                        break
-            else:
-                open_tags.append((name, m.group(0)))
-
-    lines = text.split("\n")
-    for n, line in enumerate(lines):
-        piece = line + ("\n" if n < len(lines) - 1 else "")
-        # one line longer than a whole message: cut it outside entities (&amp;) and tags
-        while len(piece) > limit // 2:
-            cut = limit // 2
-            amp, lt = piece.rfind("&", 0, cut), piece.rfind("<", 0, cut)
-            if amp > piece.rfind(";", 0, cut):
-                cut = amp
-            if lt > piece.rfind(">", 0, cut):
-                cut = lt
-            cut = cut or limit // 2
-            head, piece = piece[:cut], piece[cut:]
-            if len(current) + len(head) + len(closing()) > limit:
-                parts.append(current + closing())
-                current = reopening()
-            current += head
-            track(head)
-        if current and len(current) + len(piece) + len(closing()) > limit:
-            parts.append(current + closing())
-            current = reopening()
-        current += piece
-        track(piece)
-    if current.strip():
-        parts.append(current + closing())
-    return parts
 
 
 def _post(token: str, method: str, tries: int = 3, **kw) -> requests.Response | None:

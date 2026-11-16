@@ -16,6 +16,7 @@ from ..core.config import env
 log = logging.getLogger("ultron")
 MAX_LEN = 4000  # Telegram hard limit is 4096
 API = "https://api.telegram.org/bot{token}/{method}"
+TAG = re.compile(r"<(/?)(b|strong|i|em|u|s|code|pre|a)(\s[^>]*)?>", re.I)
 
 
 def esc(value) -> str:
@@ -49,6 +50,59 @@ def parts(text: str, limit: int = MAX_LEN) -> list[str]:
             cur = ""
         cur += line
     return [p for p in out + [cur] if p.strip()]
+
+
+def split_html(text: str, limit: int = MAX_LEN) -> list[str]:
+    """Cut text into parts of at most `limit` characters without breaking HTML tags."""
+    if len(text) <= limit:
+        return [text]
+    parts: list[str] = []
+    open_tags: list[tuple[str, str]] = []   # (name, opening tag text)
+    current = ""
+
+    def closing() -> str:
+        return "".join(f"</{name}>" for name, _ in reversed(open_tags))
+
+    def reopening() -> str:
+        return "".join(tag for _, tag in open_tags)
+
+    def track(piece: str) -> None:
+        for m in TAG.finditer(piece):
+            name = m.group(2).lower()
+            if m.group(1):
+                for i in range(len(open_tags) - 1, -1, -1):
+                    if open_tags[i][0] == name:
+                        del open_tags[i]
+                        break
+            else:
+                open_tags.append((name, m.group(0)))
+
+    lines = text.split("\n")
+    for n, line in enumerate(lines):
+        piece = line + ("\n" if n < len(lines) - 1 else "")
+        # one line longer than a whole message: cut it outside entities (&amp;) and tags
+        while len(piece) > limit // 2:
+            cut = limit // 2
+            amp, lt = piece.rfind("&", 0, cut), piece.rfind("<", 0, cut)
+            if amp > piece.rfind(";", 0, cut):
+                cut = amp
+            if lt > piece.rfind(">", 0, cut):
+                cut = lt
+            cut = cut or limit // 2
+            head, piece = piece[:cut], piece[cut:]
+            if len(current) + len(head) + len(closing()) > limit:
+                parts.append(current + closing())
+                current = reopening()
+            current += head
+            track(head)
+        if current and len(current) + len(piece) + len(closing()) > limit:
+            parts.append(current + closing())
+            current = reopening()
+        current += piece
+        track(piece)
+    if current.strip():
+        parts.append(current + closing())
+    return parts
 
 
 def _plain(text: str) -> str:
