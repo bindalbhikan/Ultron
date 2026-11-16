@@ -26,6 +26,7 @@ from ..portals.omsguru import OmsGuruClient
 from .tat_engine import (NOT_PICKED_COURIER_STATUSES, OPEN_PICKUP, apply_status, apply_tracking,
                          dispatch_deadlines, needs_oms_refresh, build_report, merge_master,
                          normalize_master, pickup_times, prepare_tracking, summarize, write_excel)
+from ..core.tables import clean_id
 
 KEEP_BACKUPS = 30
 MASTER_NAME = "AJIO_TAT_MASTER.xlsx"
@@ -34,7 +35,7 @@ log = logging.getLogger("bindal.ajio_tat")
 
 
 def _key(s):
-    return s.astype(str).str.strip().str.upper().str.replace(r"\.0$", "", regex=True)
+    return clean_id(s.astype(str).str.strip().str.upper())
 
 
 def ajio_order_report(first, last) -> pd.DataFrame:
@@ -589,7 +590,7 @@ def add_ticket_ids(df, ids: dict[str, list[str]]):
     if not ids:
         return df
     df = df.copy()
-    key = df["Order ID"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+    key = clean_id(df["Order ID"].astype(str).str.strip())
 
     def joined(old, oid):
         have = [] if pd.isna(old) else [x.strip() for x in str(old).split(",") if x.strip()]

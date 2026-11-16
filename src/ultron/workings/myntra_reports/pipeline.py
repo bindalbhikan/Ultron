@@ -34,6 +34,8 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import csv_list, env, num
 from ..core.config import agent_work_id
+from ..core.tables import clean_id
+from ..core.tables import col as _col
 
 log = logging.getLogger("bindal.myntra_reports")
 
@@ -71,18 +73,11 @@ def _job(portal, label: str, rid: int, day: date, fresh: bool = False) -> dict:
     return portal.schedule(None, None, rid)
 
 
-def _col(df: pd.DataFrame, name: str) -> pd.Series:
-    """The column, whatever its case in the CSV; empty when the report has no such column."""
-    for c in df.columns:
-        if str(c).strip().lower() == name:
-            return df[c].astype(str).str.strip()
-    return pd.Series(dtype=str, index=df.index)
-
 
 def ppmp_only(delivery: pd.DataFrame) -> pd.DataFrame:
     """The rows delivered to our own (PPMP) warehouses; FBM / SJIT returns go to Myntra's warehouses."""
     ours = set(csv_list("MYNTRA_PPMP_WAREHOUSES")) or PPMP_WAREHOUSES
-    return delivery[_col(delivery, "warehouse_id").str.replace(r"\.0$", "", regex=True).isin(ours)]
+    return delivery[clean_id(_col(delivery, "warehouse_id")).isin(ours)]
 
 
 def delivery_split(delivery: pd.DataFrame, orders: pd.DataFrame | None) -> dict[str, int]:
@@ -93,10 +88,10 @@ def delivery_split(delivery: pd.DataFrame, orders: pd.DataFrame | None) -> dict[
     status = pd.Series(dtype=str)
     if orders is not None and len(orders):
         status = pd.Series(_col(orders, "order status").values,
-                           index=_col(orders, "order release id").str.replace(r"\.0$", "", regex=True).values
+                           index=clean_id(_col(orders, "order release id")).values
                            ).groupby(level=0).first()
     rto_or_cancel = kind == "RTO_or_Cancel"
-    cancelled = int((rto_or_cancel & (_col(delivery, "order_id").str.replace(r"\.0$", "", regex=True)
+    cancelled = int((rto_or_cancel & (clean_id(_col(delivery, "order_id"))
                                       .map(status) == "F")).sum())
     return {"CUSTOMER RETURN": int((kind == "Return").sum()), "RTO": int(rto_or_cancel.sum()) - cancelled,
             "CANCELLED": cancelled, "TOTAL": len(delivery)}

@@ -22,6 +22,7 @@ from openpyxl import load_workbook
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from ..core.tables import clean_id
 
 CUTOFF = time(10, 0)          # 10:10 rule cut-off
 SKIP_SUNDAY = False           # True => if due date falls on Sunday, push to Monday
@@ -227,7 +228,7 @@ def normalize_master(m):
         m[c] = pd.to_datetime(m[c], errors="coerce")
     for c in ("Invoice No", "Order ID", "Cust Order No", "AWB", "Pickup Ticket"):
         m[c] = m[c].astype(str).replace({"nan": None, "None": None, "": None, "NaT": None})
-        m[c] = m[c].str.replace(r"\.0$", "", regex=True)
+        m[c] = clean_id(m[c])
     m["RTS Exact"] = m["RTS Exact"].map(
         lambda v: None if pd.isna(v) or str(v).strip() == "" else str(v).strip().upper() in ("TRUE", "1", "YES"))
     return m.dropna(subset=["Invoice No"])
@@ -251,15 +252,15 @@ def merge_master(old, new):
     take_old_rts = both[new.loc[both, "RTS Time"].isna() & old.loc[both, "RTS Time"].notna()]
     merged.loc[take_old_rts, ["RTS Time", "RTS Exact"]] = old.loc[take_old_rts, ["RTS Time", "RTS Exact"]]
 
-    invoiced_orders = set(merged.loc[~merged.index.str.startswith(PENDING_PREFIX), "Order ID"].dropna()
-                          .astype(str).str.replace(r"\.0$", "", regex=True))
+    invoiced_orders = set(clean_id(merged.loc[~merged.index.str.startswith(PENDING_PREFIX), "Order ID"].dropna()
+                                   .astype(str)))
     stale = [k for k in merged.index
              if k.startswith(PENDING_PREFIX) and k[len(PENDING_PREFIX):] in invoiced_orders]
     merged = merged.drop(index=stale)
 
     # one row per AJIO order: if an order id still shows up twice, keep the invoiced / newest row
     out = merged.reset_index().reindex(columns=DATA_COLS)
-    oid = out["Order ID"].astype(str).str.replace(r"\.0$", "", regex=True)
+    oid = clean_id(out["Order ID"].astype(str))
     has_oid = out["Order ID"].notna() & ~oid.isin(["", "nan", "None"])
     rank = out.assign(_oid=oid, _pending=out["Invoice No"].astype(str).str.startswith(PENDING_PREFIX))
     rank = rank[has_oid].sort_values(["_pending", "Last Updated"], ascending=[True, False])

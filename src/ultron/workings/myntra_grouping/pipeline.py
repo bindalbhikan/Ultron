@@ -47,6 +47,7 @@ from ..core.config import env, num
 from ..core.drive import DriveFolder
 from ..core.config import agent_work_id
 from ..core import clients
+from ..core.tables import clean_id
 
 log = logging.getLogger("bindal.myntra_grouping")
 
@@ -133,10 +134,10 @@ def sales_counts(sku_to_style: dict, dest: Path, months: int, accounts: list[str
         seen = set()
         for f in pr.load("MYNTRA", month, "sale", dest / f"orders_{month:%Y%m}"):
             df = pd.read_csv(f, dtype=str, usecols=lambda c: c in ("seller id", "style id", "order status", "order line id"))
-            seen.update(str(s).replace(".0", "") for s in df["seller id"].dropna().unique())
+            seen.update(clean_id(s) for s in df["seller id"].dropna().unique())
             df = df[df["order status"].isin(["C", "SH"])].drop_duplicates("order line id")
             for (seller, style), n in df.groupby(["seller id", "style id"]).size().items():
-                key = (str(seller).replace(".0", ""), str(style).replace(".0", ""))
+                key = (clean_id(seller), clean_id(style))
                 counts[key] = counts.get(key, 0) + int(n)
         lacking = [ACCOUNT_OF.get(a, a) for a in accounts if a not in seen]
         if lacking:

@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from .workbook import Report
+from ..core.tables import clean_id
 
 log = logging.getLogger("bindal.business_report")
 ACCOUNT_OF = {"19170": "MAIN", "32207": "DBCC", "35426": "FMCC"}
@@ -40,7 +41,7 @@ def num(s):
 
 
 def ids(s: pd.Series) -> pd.Series:
-    return s.astype(str).str.replace(r"\.0$", "", regex=True).str.lstrip("'").replace({"nan": None, "None": None})
+    return clean_id(s.astype(str)).str.lstrip("'").replace({"nan": None, "None": None})
 
 
 def payments(p: pd.DataFrame) -> pd.DataFrame:

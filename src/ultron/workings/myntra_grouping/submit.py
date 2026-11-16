@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from ..core.tables import clean_id
 
 log = logging.getLogger("bindal.myntra_grouping")
 
@@ -61,7 +62,7 @@ def template_rows(path: Path) -> tuple[str, list[str]]:
     """(unique id, style ids) of one upload file."""
     df = pd.read_excel(path, dtype=str)
     uid = str(df.iloc[0, 0]).strip() if len(df) else ""
-    return uid, [str(x).replace(".0", "").strip() for x in df.iloc[:, 2].dropna()]
+    return uid, [clean_id(x) for x in df.iloc[:, 2].dropna()]
 
 
 def _when(value) -> tuple[str, str]:
@@ -84,7 +85,7 @@ def _job_styles(job: dict) -> tuple[str, list[str]]:
         r = requests.get(url, timeout=60)
         r.raise_for_status()
         df = pd.read_excel(io.BytesIO(r.content), dtype=str)
-        return str(df.iloc[0, 0]).strip(), [str(x).replace(".0", "").strip() for x in df.iloc[:, 2].dropna()]
+        return str(df.iloc[0, 0]).strip(), [clean_id(x) for x in df.iloc[:, 2].dropna()]
     except Exception as exc:  # noqa: BLE001 - the job is still recorded
         log.info("Input file of job %s not read: %s", job.get("id"), str(exc)[:100])
         return "", []
@@ -145,7 +146,7 @@ def _report_rows(link: str) -> list[dict]:
     df.columns = [re.sub(r"[^a-z]", "", str(c).lower()) for c in df.columns]
     out = []
     for r in df.fillna("").to_dict("records"):
-        style = str(r.get("styleid", "")).replace(".0", "").strip()
+        style = clean_id(r.get("styleid", ""))
         remark = str(r.get("remarks", r.get("rejectreason", ""))).strip()
         unique = str(r.get("uniqueid", "")).strip()
         if style.lower().replace(" ", "") == "styleid":
@@ -155,7 +156,7 @@ def _report_rows(link: str) -> list[dict]:
         if not (style or remark):
             continue
         out.append({"UNIQUE ID": unique, "STYLE ID": style, "GROUPING TYPE": str(r.get("groupingtype", "")).strip(),
-                    "REMARK": remark, "GROUP ID": str(r.get("groupid", "")).replace(".0", "").strip()})
+                    "REMARK": remark, "GROUP ID": clean_id(r.get("groupid", ""))})
     return out
 
 
@@ -194,7 +195,7 @@ def jobs_of(record: pd.DataFrame) -> list[dict]:
     """Every job the portal took, oldest first (by job id: the portal numbers them in order)."""
     out = []
     for _, r in record.iterrows():
-        jid = str(r["JOB ID"]).replace(".0", "")
+        jid = clean_id(r["JOB ID"])
         if not jid.isdigit():
             continue
         remark = r["PORTAL REMARK"]
@@ -334,7 +335,7 @@ def apply(report: Path, record: pd.DataFrame, reasons: pd.DataFrame, today: date
         out = []
         for values in rows[1:]:
             row = dict(zip(head, values))
-            sid = str(row.get("Style ID") or "").replace(".0", "").strip()
+            sid = clean_id(row.get("Style ID") or "")
             job = latest.get((seller, sid))
             remark = row.get("GROUPING REMARK")
             g = groups.setdefault(str(row.get("Unique ID")), {"styles": set(), "pending": False})
@@ -396,7 +397,7 @@ def brand_master(master: Path, dest: Path) -> Path:
             brand = str(values[col["Brand"]] or "").strip().lower()
             if brand in names:
                 per_brand[brand].append([ACCOUNT_OF.get(seller, seller), *(values[col[c]] if c in col else None for c in head)])
-                brand_of[(seller, str(values[col["Style ID"]] or "").replace(".0", "").strip())] = names[brand]
+                brand_of[(seller, clean_id(values[col["Style ID"]] or ""))] = names[brand]
     record = list(src["SUBMISSIONS"].iter_rows(values_only=True)) if "SUBMISSIONS" in src.sheetnames else []
     src.close()
 
