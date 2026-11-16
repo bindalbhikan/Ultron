@@ -28,3 +28,25 @@ def test_jobs_list_goes_through_the_check():
         p.jobs()
     p._call = lambda method, path, **kw: {"data": None}
     assert p.jobs() == []
+
+
+PAYOUT = {"paymentMethod": "NEFT", "utrNumber": "UTR1", "paymentDate": "2026-11-10", "yearMonth": 202611,
+          "amount": 1234.5, "utrDetailsLink": "https://x", "adviceId": None}
+
+
+def test_payouts_checked_and_unchanged():
+    from ultron.workings.core.shapes import MyntraPayout, PortalChanged, check_rows
+    rows = [dict(PAYOUT), {**PAYOUT, "amount": 7}]
+    assert check_rows(rows, MyntraPayout, "Myntra payout", key="utrNumber") is rows and rows[0] == PAYOUT
+    with pytest.raises(PortalChanged, match=r"UTR1 came in another shape: amount"):
+        check_rows([{**PAYOUT, "amount": "n/a"}], MyntraPayout, "Myntra payout", key="utrNumber")
+    with pytest.raises(PortalChanged, match="paymentDate"):
+        check_rows([{**PAYOUT, "paymentDate": "someday"}], MyntraPayout, "Myntra payout", key="utrNumber")
+
+
+def test_payment_history_goes_through_the_check():
+    from datetime import date
+    p = mp.MyntraPortal.__new__(mp.MyntraPortal)
+    p._call = lambda method, path, **kw: {"data": {"payments": [{**PAYOUT, "utrNumber": None}], "totalElements": 1}}
+    with pytest.raises(mp.PortalChanged, match="utrNumber"):
+        p.payment_history(date(2026, 11, 1), date(2026, 11, 10))

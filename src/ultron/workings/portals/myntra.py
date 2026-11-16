@@ -64,34 +64,13 @@ class SessionExpired(RuntimeError):
     """The saved portal session is missing, invalid or logged out."""
 
 
-class PortalChanged(RuntimeError):
-    """The portal answered in another shape than the bots read (docs/libraries/05-pydantic.md): stopped and
-    named, never read on with empty or 0 values."""
+from ..core.shapes import PortalChanged  # noqa: E402,F401 - raised by checked_jobs, caught by callers
 
 
 def checked_jobs(rows: list) -> list[dict]:
-    """The report jobs of /report/jobs/search, each checked against ReportJob (the fields every working reads:
-    all 4,914 jobs of the three accounts had them on 16 Nov 2026); returned unchanged."""
-    from pydantic import BaseModel, ConfigDict, ValidationError
-
-    class ReportJob(BaseModel):
-        model_config = ConfigDict(extra="allow")
-        id: int
-        reportId: int
-        status: str
-        createdOn: int
-        queryParams: dict
-        successFile: str | None = None
-        statusMessage: str | None = None
-
-    for row in rows:
-        try:
-            ReportJob.model_validate(row)
-        except ValidationError as exc:
-            fields = ", ".join(".".join(str(p) for p in e["loc"]) + f" ({e['type']})" for e in exc.errors())
-            raise PortalChanged(f"Myntra report job {str((row or {}).get('id') if isinstance(row, dict) else row)[:20]} "
-                                f"came in another shape: {fields}") from None
-    return rows
+    """The report jobs of /report/jobs/search, each checked against core/shapes.MyntraJob; returned unchanged."""
+    from ..core.shapes import MyntraJob, check_rows
+    return check_rows(rows, MyntraJob, "Myntra report job")
 
 
 @dataclass
@@ -376,7 +355,8 @@ class MyntraPortal:
             d = self._call("GET", "/report/summary/payment-history",
                            params={"fromDate": f"{start}", "toDate": f"{end}", "type": kind,
                                    "pageNo": page, "pageSize": size}).get("data") or {}
-            got = d.get("payments") or []
+            from ..core.shapes import MyntraPayout, check_rows
+            got = check_rows(d.get("payments") or [], MyntraPayout, "Myntra payout", key="utrNumber")
             out += got
             page += 1
             if not got or len(out) >= (d.get("totalElements") or 0) or page >= (d.get("totalPages") or page + 1):
@@ -589,16 +569,13 @@ class MyntraPortal:
             if since:
                 params += [("startDate", f"{since:%Y-%m-%d %H:%M:%S}"),
                            ("endDate", f"{datetime.now() + timedelta(days=1):%Y-%m-%d 23:59:59}")]
-            for attempt in range(1, tries + 1):
-                try:
-                    data = self._call("GET", f"{SPF_API}/v2/getTickets", params=params)
-                    break
-                except Exception as exc:  # noqa: BLE001 - timeouts and error pages come and go
-                    if attempt == tries:
-                        raise
-                    log.warning("SPF tickets page %d failed (%s): trying again", page, str(exc)[:120])
-                    time.sleep(15 * attempt)
-            rows = data.get("data") or []
+            from ultron.core.retry import retry_call
+            # timeouts and error pages come and go: waits 15, 30 s (ultron.core.retry)
+            data = retry_call(lambda: self._call("GET", f"{SPF_API}/v2/getTickets", params=params), tries=tries,
+                              wait=lambda n: 15 * n, on=(Exception,), log=log, what=f"SPF tickets page {page}",
+                              sleep=lambda s: time.sleep(s))
+            from ..core.shapes import MyntraSpfTicket, check_rows
+            rows = check_rows(data.get("data") or [], MyntraSpfTicket, "Myntra SPF ticket", key="ticketId")
             out += rows
             total = (data.get("status") or {}).get("totalCount") or 0
             if not rows or len(out) >= total:

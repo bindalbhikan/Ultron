@@ -17,5 +17,16 @@ at once, with the field named. Rust core: fast enough for every row of a big sel
   FMCC fit. A job in another shape raises `PortalChanged` naming the field ("status (missing)"); the jobs are
   returned unchanged, so no working reads anything differently — `tests/test_portal_shapes.py`.
 
-**Next, one by one (each checked on real answers first)**: Myntra SPF claims and payments, AJIO orders / RTV,
-Flipkart report centre, OMSGuru order list lines (the SLA column case), SRM ledger lines.
+* The models and `check_rows()` live in one place: `workings/core/shapes.py` (`PortalChanged` too).
+* Myntra payouts (`payment_history`, the SPF master's and the portal reports' payments): `MyntraPayout` —
+  `utrNumber`, `paymentDate` (a date), `amount` (a number), `yearMonth`, `paymentMethod`; all 1,320 payouts of
+  the last 400 days of the three accounts fitted.
+* Myntra SPF tickets (`spf_tickets`, claims and disputes): `MyntraSpfTicket` — `ticketId`, `orderLineId`,
+  `orderId`, `issueCategory`, `status`, `createdOn`, `lastModifiedOn` (`returnId` may be empty); all 18,458
+  tickets of the whole history fitted (MAIN 17,215, DBCC 728, FMCC 515). Its page retry moved onto
+  `ultron/core/retry.py` too (3 tries, waits 15, 30 s; tested).
+
+**Next, one by one (each checked on real answers first)**: Myntra SPF claim detail, Flipkart report centre,
+SRM ledger lines, AJIO JSON answers. Not pydantic: the OMSGuru order list is HTML the code turns into rows
+itself; there the risk is a layout change that leaves fields at their defaults (order "", value 0.0) — a
+row-quality check, planned with the Polars move.
