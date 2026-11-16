@@ -30,9 +30,9 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # bots whose workflow is not <bot>.yml, or that run on an event rather than a schedule
 WORKFLOW = {"work-schedule": "agent-watch.yml"}
 # plumbing, not a working: no Telegram command needed
-NO_COMMAND = {"agent-chat.yml", "agent-watch.yml", "android-app.yml", "ci-fix.yml", "docs-sync.yml"}
+NO_COMMAND = {"agent-chat.yml", "agent-watch.yml", "android-app.yml", "ci-fix.yml", "docs-sync.yml", "lint.yml"}
 NOT_WATCHED = {"agent-watch.yml", "agent-chat.yml", "ci-fix.yml", "android-app.yml", "docs-sync.yml",
-               "tests.yml", "myntra-history.yml", "sms-catchup.yml"}
+               "tests.yml", "lint.yml", "myntra-history.yml", "sms-catchup.yml"}
 
 
 def bots() -> tuple[dict[str, str], dict[str, str]]:

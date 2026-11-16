@@ -71,8 +71,7 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 ## Gaps the sync found (fix them)
 
 <!-- AUTO:gaps -->
-- `lint.yml` (Lint) belongs to no bot of `run.py`
-- `lint.yml` (Lint) has no Telegram command (`COMMANDS` in `worker/src/worker.js`)
+- none: every bot has its page and its workflow is watched
 <!-- /AUTO:gaps -->
 
 ## Working on this machine (owner's Windows PC)
