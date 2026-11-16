@@ -37,6 +37,8 @@ workings = [
     "xlsxwriter>=3.1", "python-calamine>=0.2",
     # Myntra zero TD: the buyer-side product API, many styles at once
     "scrapy>=2.13",
+    # portal answers checked before a working reads them (docs/libraries/05-pydantic.md)
+    "pydantic>=2.9",
 ]
 
 [project.scripts]

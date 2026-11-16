@@ -64,6 +64,36 @@ class SessionExpired(RuntimeError):
     """The saved portal session is missing, invalid or logged out."""
 
 
+class PortalChanged(RuntimeError):
+    """The portal answered in another shape than the bots read (docs/libraries/05-pydantic.md): stopped and
+    named, never read on with empty or 0 values."""
+
+
+def checked_jobs(rows: list) -> list[dict]:
+    """The report jobs of /report/jobs/search, each checked against ReportJob (the fields every working reads:
+    all 4,914 jobs of the three accounts had them on 16 Nov 2026); returned unchanged."""
+    from pydantic import BaseModel, ConfigDict, ValidationError
+
+    class ReportJob(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        id: int
+        reportId: int
+        status: str
+        createdOn: int
+        queryParams: dict
+        successFile: str | None = None
+        statusMessage: str | None = None
+
+    for row in rows:
+        try:
+            ReportJob.model_validate(row)
+        except ValidationError as exc:
+            fields = ", ".join(".".join(str(p) for p in e["loc"]) + f" ({e['type']})" for e in exc.errors())
+            raise PortalChanged(f"Myntra report job {str((row or {}).get('id') if isinstance(row, dict) else row)[:20]} "
+                                f"came in another shape: {fields}") from None
+    return rows
+
+
 @dataclass
 class Session:
     cookies: list[dict]
@@ -374,8 +404,9 @@ class MyntraPortal:
             page += 1
 
     def jobs(self, size: int = 50, start: int = 0) -> list[dict]:
-        return self._call("GET", "/report/jobs/search",
-                          params={"fetchSize": size, "sortBy": "id", "sortOrder": "desc", "start": start}).get("data") or []
+        return checked_jobs(self._call("GET", "/report/jobs/search",
+                                       params={"fetchSize": size, "sortBy": "id", "sortOrder": "desc", "start": start}
+                                       ).get("data") or [])
 
     def all_jobs(self, page: int = 500) -> list[dict]:
         """The account's whole report job history, newest first (MAIN had 2,169 jobs back to
