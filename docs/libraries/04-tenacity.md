@@ -33,6 +33,8 @@ backoff, stop after N tries, retry only on chosen errors. Pure Python, so the co
   * Flipkart `login()` (3 tries on a dropped connection, waits 20, 40 s; a refused login once) and `_post()`
     (3 tries on a 5xx or a dropped connection, waits 5, 10 s) — `tests/test_flipkart_retries.py`.
 
-**To do, one by one (each keeping its tries and waits exactly)**: the agent's Telegram
-(`integrations/telegram.py`), the SPF master's report queue, zero TD's phone retries, the AWB tracker's http
+  * The agent's Telegram (`integrations/telegram.py`) had **no retry at all**: it now is the one sender of the
+    agent and the bots (the bots' `_post` calls it), with the bots' rule — `tests/test_telegram_post.py`.
+
+**To do, one by one (each keeping its tries and waits exactly)**: the SPF master's report queue, zero TD's phone retries, the AWB tracker's http
 client, the phone's collect loop.

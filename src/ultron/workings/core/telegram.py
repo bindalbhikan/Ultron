@@ -18,7 +18,6 @@ import logging
 import os
 import re
 import tempfile
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -116,27 +115,10 @@ def split_html(text: str, limit: int = MAX_LEN) -> list[str]:
 
 
 def _post(token: str, method: str, tries: int = 3, **kw) -> requests.Response | None:
-    """POST to the Bot API; a dropped connection or a timeout is tried again (14 Nov 2026: a GitHub
-    runner's sendMessage got "Connection reset by peer" once and the report message was lost).
-    Waits 5, 10 s (ultron.core.retry); any other request error is not tried again. None when not sent."""
-    from ultron.core.retry import retry_call
-
-    def once() -> requests.Response:
-        for f in (kw.get("files") or {}).values():          # a file sent again starts from its first byte
-            fh = f[1] if isinstance(f, tuple) else f
-            if hasattr(fh, "seek"):
-                fh.seek(0)
-        return requests.post(API.format(token=token, method=method), timeout=120, **kw)
-
-    try:
-        return retry_call(once, tries=tries, wait=lambda n: 5 * n, on=(requests.ConnectionError, requests.Timeout),
-                          log=log, what=f"Telegram {method}", sleep=lambda s: time.sleep(s))
-    except (requests.ConnectionError, requests.Timeout) as exc:
-        log.error("Telegram %s failed after %d tries: %s", method, tries, exc)
-        return None
-    except requests.RequestException as exc:
-        log.error("Telegram %s failed: %s", method, exc)
-        return None
+    """The one Bot API sender, shared with the agent (ultron.integrations.telegram._post: tries again on a
+    dropped connection or a timeout, waits 5, 10 s, rewinds files; None when not sent)."""
+    from ultron.integrations.telegram import _post as post
+    return post(token, method, tries, **kw)
 
 
 def send(text: str) -> bool:

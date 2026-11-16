@@ -14,7 +14,7 @@ def _ok():
 
 def test_a_dropped_connection_is_sent_again_and_files_rewound(monkeypatch):
     waits, seen = [], []
-    monkeypatch.setattr(telegram.time, "sleep", waits.append)
+    monkeypatch.setattr("time.sleep", waits.append)
     fh = io.BytesIO(b"abc")
 
     def post(url, timeout, **kw):
@@ -30,7 +30,7 @@ def test_a_dropped_connection_is_sent_again_and_files_rewound(monkeypatch):
 
 def test_gives_up_after_three_tries(monkeypatch):
     waits, seen = [], []
-    monkeypatch.setattr(telegram.time, "sleep", waits.append)
+    monkeypatch.setattr("time.sleep", waits.append)
 
     def post(url, timeout, **kw):
         seen.append(1)
@@ -49,3 +49,19 @@ def test_another_request_error_is_not_tried_again(monkeypatch):
     monkeypatch.setattr(telegram.requests, "post", post)
     assert telegram._post("t", "sendMessage", json={}) is None
     assert len(seen) == 1
+
+
+def test_the_agent_sends_through_the_same_retrying_sender(monkeypatch):
+    """docs/CENTRALISE.md step 3: the agent's Telegram had no retry at all before 16 Nov 2026."""
+    from ultron.integrations import telegram as agent_telegram
+    waits, seen = [], []
+    monkeypatch.setattr(agent_telegram.time, "sleep", waits.append)
+
+    def post(url, timeout, **kw):
+        seen.append(1)
+        if len(seen) < 2:
+            raise requests.ConnectionError("Connection reset by peer")
+        return _ok()
+    monkeypatch.setattr(agent_telegram.requests, "post", post)
+    assert agent_telegram._post("t", "sendMessage", json={}).status_code == 200
+    assert len(seen) == 2 and waits == [5]

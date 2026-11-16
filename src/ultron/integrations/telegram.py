@@ -7,6 +7,7 @@ from __future__ import annotations
 import html
 import logging
 import re
+import time
 
 import requests
 
@@ -54,9 +55,26 @@ def _plain(text: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", text))
 
 
-def _post(token: str, method: str, **kw) -> requests.Response | None:
-    try:
+def _post(token: str, method: str, tries: int = 3, **kw) -> requests.Response | None:
+    """POST to the Bot API, the one sender of the agent and the bots (docs/CENTRALISE.md step 3). A dropped
+    connection or a timeout is tried again (14 Nov 2026: a GitHub runner's sendMessage got "Connection reset by
+    peer" once and the report message was lost); waits 5, 10 s (ultron.core.retry); a file sent again starts
+    from its first byte; any other request error is not tried again. None when not sent."""
+    from ..core.retry import retry_call
+
+    def once() -> requests.Response:
+        for f in (kw.get("files") or {}).values():
+            fh = f[1] if isinstance(f, tuple) else f
+            if hasattr(fh, "seek"):
+                fh.seek(0)
         return requests.post(API.format(token=token, method=method), timeout=120, **kw)
+
+    try:
+        return retry_call(once, tries=tries, wait=lambda n: 5 * n, on=(requests.ConnectionError, requests.Timeout),
+                          log=log, what=f"Telegram {method}", sleep=lambda s: time.sleep(s))
+    except (requests.ConnectionError, requests.Timeout) as exc:
+        log.error("Telegram %s failed after %d tries: %s", method, tries, exc)
+        return None
     except requests.RequestException as exc:
         log.error("Telegram %s failed: %s", method, exc)
         return None
