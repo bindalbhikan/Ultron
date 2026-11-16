@@ -1,5 +1,5 @@
 name: Set up the bots
-description: Python 3.12 with Ultron and its report workings, plus LibreOffice when a sheet picture is wanted
+description: Python 3.12 with Ultron and its report workings (exact versions of uv.lock), plus LibreOffice when a sheet picture is wanted
 inputs:
   libreoffice:
     description: "true = install LibreOffice + poppler for --snapshot"
@@ -15,18 +15,28 @@ runs:
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-        cache: pip
-        cache-dependency-path: pyproject.toml
+    # docs/libraries/02-uv.md: the exact versions of uv.lock, installed by uv (much faster than pip)
+    - uses: astral-sh/setup-uv@v6
+      with:
+        version: "0.13.8"
+        enable-cache: true
+        cache-dependency-glob: uv.lock
     # Ultron with the report workings, from this checkout
-    - run: pip install -e ".[workings]"
+    - run: |
+        uv export --frozen --no-hashes --no-emit-project --extra workings -o "$RUNNER_TEMP/requirements.txt" -q
+        uv pip install --system -r "$RUNNER_TEMP/requirements.txt"
+        uv pip install --system --no-deps -e .
       shell: bash
     - if: inputs.browser == 'true'
       uses: actions/cache@v4
       with:
         path: ~/.cache/ms-playwright
-        key: patchright-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+        key: patchright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
     - if: inputs.browser == 'true'
-      run: pip install -e ".[browser]" && patchright install --with-deps chromium
+      run: |
+        uv export --frozen --no-hashes --no-emit-project --extra browser -o "$RUNNER_TEMP/requirements-browser.txt" -q
+        uv pip install --system -r "$RUNNER_TEMP/requirements-browser.txt"
+        patchright install --with-deps chromium
       shell: bash
     - if: inputs.libreoffice == 'true'
       run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libreoffice-calc poppler-utils fonts-crosextra-carlito
