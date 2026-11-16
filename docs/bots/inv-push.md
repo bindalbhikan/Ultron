@@ -6,6 +6,9 @@
 * Channel > List Channels in OMSGuru: every channel with **Inventory Sync Enabled = Yes** gets
   Related Actions > **Push Inventory** (all its listings), one after the other. 20 Oct 2026: 12
   channels (COCOBLU, Nykaa Fashion, Ajio Api, Myntra x4, Snapdeal, Amazon x2, Meesho, Flipkart).
+* OMSGuru answers HTTP 500 for a few minutes at times (login page, 15 Nov 2026): every OMSGuru GET
+  (`ultron.portals.omsguru`) tries a server error or a dropped connection up to 7 times over about
+  3 minutes, any other refusal 3 times.
 * `INV_PUSH_SKIP` (repo variable): channel ids never pushed, comma separated.
 * Telegram after every run: one message, each channel ✅ pushed or ❌ failed (a failed channel
   does not stop the others). Not sent on a dry run.

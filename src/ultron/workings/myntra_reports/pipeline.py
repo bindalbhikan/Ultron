@@ -115,33 +115,46 @@ def fetch_account(account: str, day: date, dest: Path, wait_minutes: int) -> tup
     from ..portals import myntra as mp
     from ..return_analysis.sources import myntra_portal
     portal = myntra_portal(account)
-    jobs, notes, got, frames = {}, [], {}, {}
-    for label, rid in REPORTS.items():
-        try:
-            jobs[label] = _job(portal, label, rid, day)
-        except Exception as exc:  # noqa: BLE001 - the other reports still come
-            if isinstance(exc, mp.SessionExpired):
-                raise
-            log.warning("%s %s not asked for: %s", account, label, exc)
-            notes.append(f"{account} {label}: {str(exc)[:100]}")
-    for label, job in jobs.items():
-        try:
-            _, data = portal.collect(job, wait_minutes)
-            df = pd.read_csv(io.BytesIO(data), low_memory=False)
-            path = dest / f"{account} {label} {date.today() if label in SNAPSHOT else day}.csv"
-            if label == "Orders":
-                frames["orders_all"] = df
-                df = df[_col(df, "created on").str.startswith(f"{day}")]
-                df.to_csv(path, index=False)
-            else:
-                path.write_bytes(data)
-            frames[label] = df
-            got[label] = (path, summary(label, df))
-        except Exception as exc:  # noqa: BLE001
-            if isinstance(exc, mp.SessionExpired):
-                raise
-            log.warning("%s %s not downloaded: %s", account, label, exc)
-            notes.append(f"{account} {label}: {str(exc)[:100]}")
+    got, frames = {}, {}
+    errors: dict[str, str] = {}
+    # Myntra refuses a request now and then ("Internal server error while scheduling") or kills a
+    # job ("cluster is out of memory", INTERRUPTED): a report not got is asked for again in a
+    # second round, once the others are in (its cooldown has passed by then)
+    for attempt in range(1, int(num("MYNTRA_REPORT_ROUNDS", 2)) + 1):
+        pending = [label for label in REPORTS if label not in got]
+        if not pending:
+            break
+        if attempt > 1:
+            log.warning("%s: %s not got, asking again (round %d)", account, ", ".join(pending), attempt)
+        jobs = {}
+        for label in pending:
+            try:
+                jobs[label] = _job(portal, label, REPORTS[label], day)
+            except Exception as exc:  # noqa: BLE001 - the other reports still come
+                if isinstance(exc, mp.SessionExpired):
+                    raise
+                log.warning("%s %s not asked for: %s", account, label, exc)
+                errors[label] = str(exc)
+        for label, job in jobs.items():
+            try:
+                _, data = portal.collect(job, wait_minutes)
+                df = pd.read_csv(io.BytesIO(data), low_memory=False)
+                path = dest / f"{account} {label} {date.today() if label in SNAPSHOT else day}.csv"
+                if label == "Orders":
+                    frames["orders_all"] = df
+                    df = df[_col(df, "created on").str.startswith(f"{day}")]
+                    df.to_csv(path, index=False)
+                else:
+                    path.write_bytes(data)
+                frames[label] = df
+                got[label] = (path, summary(label, df))
+                errors.pop(label, None)
+            except Exception as exc:  # noqa: BLE001
+                if isinstance(exc, mp.SessionExpired):
+                    raise
+                log.warning("%s %s not downloaded: %s", account, label, exc)
+                errors[label] = str(exc)
+    notes = [f"{account} {label}: {e[:100]}" for label, e in errors.items()]
     mp.save_to_worker(env, portal.cookies(), account)
     split = None
     if "Return Delivery" in frames:

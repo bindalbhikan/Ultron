@@ -28,6 +28,9 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 * **Reuse**: a job for exactly the same dates (`exact_job`) or covering them (`plan`, SJIT) is
   reused. Statuses like `INTERRUPTED`, `FAILED`, `EXPIRED` are dead — never reused or waited for.
   A job that will not download is asked for again (`collect_or_regenerate`).
+* The same refusal also comes **outside** the cooldown (14-16 Nov 2026: a report refused again
+  after the 16-minute wait), and a job can be killed (`INTERRUPTED`: "Connection refused",
+  "Query killed because the cluster is out of memory"). Asking again later works.
 * Backfilled months: the order report carries the return status as of the day it is generated.
 * **Stale data**: the order report is built from a copy of Myntra's data renewed once a day (it runs to
   ~03:30 AM IST), and the copy is renewed only after 7 AM: a job asked for on 6 Nov 2026 at 07:01 held
@@ -142,6 +145,8 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 ## OMSGuru — `portals/omsguru.py`, `portals/omsguru_returns.py`
 
 * An item's status on the order list has no suffix: `Return Received`, `Return Init`, `Cancel Init`, `Cancelled Return Received` (the status filter's names add ` - RTV` / ` - RTO`). `item_status` knows both.
+* The site answers **HTTP 500** for minutes at times, even on `/login` (15 Nov 2026, 3 AM and 6 AM):
+  `get()` tries a server error / dropped connection 7 times over ~3 minutes.
 * The order list's columns can move: `Channel Push` appeared before `SLA Date` on 5 Nov 2026. `sla_column` finds SLA Date by its header and stops the read if it is gone.
 * The order list stops near 3,000 orders: `vms.list_rows` reads a day at a time, `order_lines` halves a window near the limit (the halves share a minute, so a line read in an earlier window is not counted twice; two equal lines inside one window are real).
 * One session (`OMSGURU_EMAIL/PASSWORD/OTP`), warehouse by warehouse; list pages, order pages,

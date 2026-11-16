@@ -2,7 +2,8 @@
 
 **When**: 3:30 PM daily (report days = **the 1st of the month to yesterday**, `SALE_REPORT_DAYS` = 0 since
 14 Nov 2026, owner: a blank or wiped day is written again by the next run; a number = that many days);
-7:00 AM `--sjit-request` asks Myntra for the SJIT report. On demand: `/sale`, `/sale today`,
+7:00 AM `--sjit-request` asks Myntra for the SJIT report (only a head start: when Myntra refuses it, the
+run logs it and ends well, the 3:30 PM run asks for the report itself; since 16 Nov 2026). On demand: `/sale`, `/sale today`,
 `/sale FROM TO`, `/salepic [YYYY-MM]` (sheet picture).
 
 **Result**: `AGENT WORK/DAILY REPORTING/DAILY SALE REPORT BINDAL/SALE REPORT.xlsx` (`SALE_DRIVE_FILE_ID`), one sheet per month

@@ -7,7 +7,10 @@
 * Each Myntra account (MAIN / DBCC / FMCC, `MYNTRA_REPORT_ACCOUNTS`), saved portal sessions:
   Seller_Orders_Report (4, the last 30 days; the file keeps yesterday's lines), Seller_Returns_Report (12) and Return_Delivery_Report (84) for
   yesterday, Seller_Listings_Report (14, a snapshot, no dates) of today. Different reports are
-  asked for together; a job already on the portal for the same dates is reused.
+  asked for together; a job already on the portal for the same dates is reused. A report not got
+  (Myntra's "Internal server error while scheduling", a job INTERRUPTED with "cluster is out of
+  memory") is asked for again in a second round once the others are in (`MYNTRA_REPORT_ROUNDS`, 2;
+  since 16 Nov 2026); the workflow has 100 minutes for that.
 * Files: Drive `BINDAL EXPORTS/AGENT WORK/MYNTRA/MYNTRA DAILY REPORTS/<yesterday>/`, e.g.
   `MAIN Orders 2026-10-23.csv`, `MAIN Listings 2026-10-24.csv` (`AGENT_WORK_FOLDER_ID`).
 * Telegram: one message, first the total return delivery of all accounts (Return vs RTO), then per account each report's rows (orders: lines, value, cancelled;

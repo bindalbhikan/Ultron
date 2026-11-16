@@ -139,9 +139,14 @@ def run_sjit_request(args) -> int:
     alerts: list[str] = []
     portal = myntra_portal(alerts)
     if portal:
-        job = portal.request(days)
-        log.info("SJIT report %s for %s..%s", f"job {job.get('id')} requested" if job else "already on the portal",
-                 days[0], days[-1])
+        try:
+            job = portal.request(days)
+            log.info("SJIT report %s for %s..%s", f"job {job.get('id')} requested" if job else "already on the portal",
+                     days[0], days[-1])
+        except mp.SessionExpired:
+            raise
+        except Exception as exc:  # noqa: BLE001 - only a head start: the sale run asks for it itself
+            log.warning("SJIT report not asked for ahead (%s): the sale run asks for it itself", exc)
         mp.save_to_worker(env, portal.cookies())
     keep_other_accounts_alive(alerts)
     if alerts:

@@ -88,17 +88,24 @@ class OmsGuruClient:
 
     # ------------------------------------------------------------ http
     def get(self, url: str, **kw) -> requests.Response:
-        for attempt in range(1, 4):
+        """GET with retries. A server error (5xx, 429) or a dropped connection is tried up to 7 times
+        over about 3 minutes (OMSGuru answers HTTP 500 for a few minutes at times, Nov 2026); any
+        other refusal 3 times."""
+        for attempt in range(1, 8):
+            transient = True
             try:
                 r = self.s.get(url, timeout=self.timeout, **kw)
                 if r.status_code == 200:
                     if "/login" in r.url and "/login" not in url:
                         raise OmsGuruError("Session expired / not logged in (redirected to /login)")
                     return r
+                transient = r.status_code >= 500 or r.status_code == 429
                 log.warning("GET %s -> HTTP %s (attempt %d)", url[:120], r.status_code, attempt)
             except requests.RequestException as exc:
                 log.warning("GET %s failed: %s (attempt %d)", url[:120], exc, attempt)
-            time.sleep(2 * attempt)
+            if attempt >= (7 if transient else 3):
+                break
+            time.sleep(min(60, 3 * 2 ** (attempt - 1)))
         raise OmsGuruError(f"GET failed after retries: {url[:160]}")
 
     def login(self) -> None:

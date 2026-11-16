@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -85,8 +86,25 @@ def lookup(ids: list[int]) -> dict[int, dict | str]:
             return answers
         log.warning("www.myntra.com refused this machine (%d of %d styles HTTP 403): asking Ultron Phone",
                     refused, len(ids))
-    got = phone.run_job("myntra_style", ids, wait_minutes=num("MYNTRA_ZERO_TD_PHONE_MINUTES", 40))
-    return {i: got.get(str(i), "no answer from the phone") for i in ids}
+    wait = num("MYNTRA_ZERO_TD_PHONE_MINUTES", 40)
+    got = phone.run_job("myntra_style", ids, wait_minutes=wait)
+    answers = {i: got.get(str(i), "no answer from the phone") for i in ids}
+    # the phone's line drops for a while (UnknownHostException) or myntra.com refuses a burst
+    # (HTTP 403): the styles without an answer are asked for again after a pause
+    for again in range(int(num("MYNTRA_ZERO_TD_PHONE_RETRIES", 2))):
+        missing = [i for i, a in answers.items() if not isinstance(a, dict) and a != "NOT FOUND"]
+        if not missing:
+            break
+        pause = 60 * (again + 1)
+        log.warning("%d styles without an answer from the phone: asking again in %d s", len(missing), pause)
+        time.sleep(pause)
+        try:
+            got = phone.run_job("myntra_style", missing, wait_minutes=wait)
+        except phone.PhoneUnavailable as exc:
+            log.warning("Phone retry not done: %s", exc)
+            break
+        answers.update({i: got[str(i)] for i in missing if str(i) in got})
+    return answers
 
 
 def check(answer: dict | str) -> dict:
