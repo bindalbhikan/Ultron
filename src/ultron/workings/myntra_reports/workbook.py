@@ -95,10 +95,12 @@ def last_row(ws) -> int:
     return r
 
 
-def merged(existing: list[list], rows: list[tuple[date, str, dict[str, int]]]) -> list[list]:
+def merged(existing: list[list], rows: list[tuple[date, str, dict[str, int]]],
+           drop: set[tuple[date, str]] = frozenset()) -> list[list]:
     """existing DATA rows [day, portal, 4 figures] with rows replacing those of the same day and
-    portal, in date then portal order."""
-    keys = {(d, p) for d, p, _ in rows}
+    portal, in date then portal order. drop: (day, portal) rows removed (data not complete yet:
+    a blank day, never a 0)."""
+    keys = {(d, p) for d, p, _ in rows} | set(drop)
     kept = []
     for v in existing:
         if v[0] in (None, ""):
@@ -111,10 +113,10 @@ def merged(existing: list[list], rows: list[tuple[date, str, dict[str, int]]]) -
     return kept
 
 
-def put_rows(ws, rows: list[tuple[date, str, dict[str, int]]]) -> None:
+def put_rows(ws, rows: list[tuple[date, str, dict[str, int]]], drop: set[tuple[date, str]] = frozenset()) -> None:
     """rows (day, portal, {CUSTOMER RETURN, RTO, CANCELLED, TOTAL}) into DATA, replacing rows of the
-    same day and portal, the whole sheet kept in date then portal order."""
-    kept = merged([[ws.cell(r, i).value for i in range(1, 7)] for r in range(2, last_row(ws) + 1)], rows)
+    same day and portal (drop: removed), the whole sheet kept in date then portal order."""
+    kept = merged([[ws.cell(r, i).value for i in range(1, 7)] for r in range(2, last_row(ws) + 1)], rows, drop)
     if ws.max_row > 1:
         ws.delete_rows(2, ws.max_row - 1)
     for i, v in enumerate(kept, 2):
@@ -301,10 +303,11 @@ def build_dashboard(wb, portals: list[str]) -> None:
     wb.calculation = CalcProperties(fullCalcOnLoad=True)
 
 
-def update(wb, rows: list[tuple[date, str, dict[str, int]]], portals: list[str]) -> None:
-    """The rows into DATA; the DASHBOARD is built when the workbook has none yet."""
+def update(wb, rows: list[tuple[date, str, dict[str, int]]], portals: list[str],
+           drop: set[tuple[date, str]] = frozenset()) -> None:
+    """The rows into DATA (drop: rows removed); the DASHBOARD is built when the workbook has none yet."""
     ws = wb[DATA] if DATA in wb.sheetnames else wb.worksheets[0]
-    put_rows(ws, rows)
+    put_rows(ws, rows, drop)
     if DASH not in wb.sheetnames:
         build_dashboard(wb, portals)
     wb.calculation = CalcProperties(fullCalcOnLoad=True)
@@ -327,18 +330,19 @@ def _serial(d: date) -> int:
     return (d - date(1899, 12, 30)).days
 
 
-def update_file(path: Path, rows: list[tuple[date, str, dict[str, int]]], portals: list[str]) -> None:
+def update_file(path: Path, rows: list[tuple[date, str, dict[str, int]]], portals: list[str],
+                drop: set[tuple[date, str]] = frozenset()) -> None:
     """rows into the workbook at path. With a DASHBOARD: only DATA's rows are rewritten in the zip
     (each column keeps the style of the first data row), the filter range follows, calcChain goes
     and Excel recalculates on open; every other part stays byte for byte. Else through openpyxl."""
     import openpyxl
     wb = openpyxl.load_workbook(path)
     if DASH not in wb.sheetnames or DATA not in wb.sheetnames:
-        update(wb, rows, portals)
+        update(wb, rows, portals, drop)
         wb.save(path)
         return
     ws = wb[DATA]
-    kept = merged([[ws.cell(r, i).value for i in range(1, 7)] for r in range(2, last_row(ws) + 1)], rows)
+    kept = merged([[ws.cell(r, i).value for i in range(1, 7)] for r in range(2, last_row(ws) + 1)], rows, drop)
 
     with zipfile.ZipFile(path) as z:
         items = [(i, z.read(i.filename)) for i in z.infolist()]

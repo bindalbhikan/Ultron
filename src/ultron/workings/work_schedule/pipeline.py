@@ -159,7 +159,7 @@ WORK = {
     "Myntra courier OTP": "Today's Myntra courier pickup / return OTPs of the warehouses (Telegram)",
     "Myntra courier OTP retry": "OTPs again for couriers that had no trip at 11 AM (sent only when a new code came)",
     "Myntra courier scorecard": "Myntra pickups on time per account and courier, last 7 days (Telegram)",
-    "Myntra daily reports": "The day's Myntra reports made on the portal (orders, returns, return delivery, listings, inventory), used by the other workings; nothing saved",
+    "Myntra daily reports": "The day's Myntra reports made on the portal (orders, returns, return delivery, listings, inventory), used by the other workings, no file saved; the 30 days of MYNTRA DAILY RETURN DELIVERY REPORT.xlsx written again (blank where Myntra has no data yet)",
     "Myntra zero TD 10 AM": "The fixed daily (Sunday too) Myntra zero TD run: styles of the ZERO TD sheet live on myntra.com at MRP",
     "Myntra zero TD": "Styles of the ZERO TD sheet live on myntra.com with stock and selling at MRP; sheet on Telegram and in MYNTRA ZERO TD SHEETS",
     "OMSGuru inventory push": "Pushes the inventory to every channel with inventory sync on in OMSGuru",

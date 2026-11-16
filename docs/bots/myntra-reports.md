@@ -5,9 +5,20 @@ Since 16 Nov 2026 (owner) **the one time of day any bot asks Myntra for its dail
 workings use these jobs and never ask for the same report again. (Not before ~9 AM: a report asked for at 7 AM
 had only 23 of the day's 239 MAIN orders.) By hand: run the workflow (`date` = another day, YYYY-MM-DD).
 
-* **Only made on the portal, nothing saved** (owner, 16 Nov 2026): no CSV on Drive, no workbook row; only the
-  monthly reports are saved (`portal-reports`). `AGENT WORK/MYNTRA/MYNTRA DAILY REPORTS/` and
-  `MYNTRA DAILY RETURN DELIVERY REPORT.xlsx` keep the days up to 15 Nov 2026.
+* **No report file saved** (owner, 16 Nov 2026): the reports are only made on the portal; only the monthly
+  reports are saved (`portal-reports`). `AGENT WORK/MYNTRA/MYNTRA DAILY REPORTS/` keeps the days up to 15 Nov 2026.
+* **`AGENT WORK/MYNTRA/MYNTRA DAILY RETURN DELIVERY REPORT.xlsx` is kept** (owner): from the 30-day return delivery
+  and orders jobs, read in memory, every run writes **every day of the 30 days again** per account (DATE, PORTAL
+  MYNTRA MAIN / DBCC / FMCC, CUSTOMER RETURN, RTO, CANCELLED, TOTAL), so a day missed or wrong before is put right.
+  Only deliveries to our own PPMP warehouses count (MAIN 46148 / 24504, DBCC 50829, FMCC 56765;
+  `MYNTRA_PPMP_WAREHOUSES`; FBM / SJIT returns to Myntra's warehouses 15774, 28, 36, 81, 309 ... are left out); each
+  delivery on its `deliver_to_seller_date`; RTO_or_Cancel told apart by the order's status in the orders job
+  (F = cancelled, else RTO).
+* **Days Myntra's data does not hold yet stay blank, never 0**: the days after the account's last PPMP delivery in
+  the report are removed from DATA, named on Telegram (⏳) and filled by a later run once Myntra has them (a day
+  before that last one with no delivery, e.g. a Sunday, is a real 0). 16 Nov 2026: Myntra's report held no PPMP
+  delivery after 7 Nov (return_created_date up to 2 Nov), so 8-15 Nov, written as 0 before, were made blank.
+  Myntra being late is not a run failure; a report not made or the workbook not written is (exit 1).
 * Each Myntra account (MAIN / DBCC / FMCC, `MYNTRA_REPORT_ACCOUNTS`), saved portal sessions:
   Seller_Orders_Report (4), Seller_Returns_Report (12) and Return_Delivery_Report (84) for the 30 days up to
   yesterday (the very jobs the SPF master reads), Seller_Listings_Report (14) and Seller_Inventory_Report (16),
@@ -24,8 +35,9 @@ had only 23 of the day's 239 MAIN orders.) By hand: run the workflow (`date` = a
   portal sale) or the listings job has no rows (grouping).
 * A report refused ("Internal server error while scheduling") or killed (INTERRUPTED, "cluster is out of
   memory") is asked for again in a second round (`MYNTRA_REPORT_ROUNDS`, 2); the workflow has 100 minutes.
-* Telegram: one message, per account each report made (job id and dates) and, at the end, any report not made
-  and why. Exit 1 when one was not made.
-* `--backfill-from YYYY-MM-DD` (`--backfill-to`), by hand only: the old return delivery workbook's DATA rows
-  (DATE, PORTAL, CUSTOMER RETURN, RTO, CANCELLED, TOTAL; PPMP warehouses only, `workbook.py`) from report
-  jobs already on the portal (each delivery on its deliver_to_seller_date).
+* Telegram: one message: yesterday's return delivery (customer return / RTO / cancelled), per account each report
+  made (job id and dates), the workbook link, then the days left blank and any report not made, and why.
+* The workbook (`workbook.py`): **DASHBOARD** (formulas over DATA, current when opened) and **DATA**; only DATA's
+  rows are rewritten inside the .xlsx, the dashboard's own formatting and charts stay.
+* `--backfill-from YYYY-MM-DD` (`--backfill-to`), by hand: DATA rows for older days from report jobs already on
+  the portal (a range none covers is asked for), with the same blank rule. Run for 17 Oct - 15 Nov on 16 Nov 2026.

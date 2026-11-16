@@ -125,7 +125,29 @@ def test_myntra_reports_asks_anew_when_the_orders_data_is_short(monkeypatch):
             return []
     monkeypatch.setattr(sources, "myntra_portal", lambda a: Portal())
     monkeypatch.setattr(mp, "save_to_worker", lambda *a: True)
-    made, notes = pipeline.make_account("MAIN", date(2026, 11, 15), 1)
+    made, notes, _ = pipeline.make_account("MAIN", date(2026, 11, 15), 1)
     assert notes == [] and set(made) == set(pipeline.REPORTS)
     assert sorted(fresh_asks) == sorted(pipeline.REPORTS[k] for k in pipeline.RANGE_DAYS)
     assert set(downloads) == {4}      # only the orders data time is read; nothing else is downloaded
+
+
+def test_workbook_rows_stop_where_myntras_data_stops():
+    from ultron.workings.myntra_reports.pipeline import window_rows
+    delivery = pd.DataFrame({
+        "warehouse_id": ["46148", "46148", "15774", "46148"],
+        "type": ["Return", "RTO_or_Cancel", "Return", "Return"],
+        "order_id": ["1", "2", "3", "4"],
+        "deliver_to_seller_date": ["2026-11-05 10:00:00", "2026-11-05 11:00:00", "2026-11-09 10:00:00", "2026-11-07 09:00:00"]})
+    rows, blank, through = window_rows(delivery, None, date(2026, 11, 5), date(2026, 11, 9))
+    assert through == date(2026, 11, 7)                      # the FBM row of the 9th does not count
+    assert rows[date(2026, 11, 5)]["TOTAL"] == 2 and rows[date(2026, 11, 6)]["TOTAL"] == 0
+    assert blank == [date(2026, 11, 8), date(2026, 11, 9)]   # left blank, never 0
+
+
+def test_workbook_drop_removes_wrong_rows():
+    from datetime import datetime as dt
+    from ultron.workings.myntra_reports.workbook import merged
+    existing = [[dt(2026, 11, 8), "MYNTRA MAIN", 0, 0, 0, 0], [dt(2026, 11, 7), "MYNTRA MAIN", 5, 1, 0, 6]]
+    out = merged(existing, [(date(2026, 11, 7), "MYNTRA MAIN", {"CUSTOMER RETURN": 7, "RTO": 1, "CANCELLED": 0, "TOTAL": 8})],
+                 {(date(2026, 11, 8), "MYNTRA MAIN")})
+    assert out == [[date(2026, 11, 7), "MYNTRA MAIN", 7, 1, 0, 8]]

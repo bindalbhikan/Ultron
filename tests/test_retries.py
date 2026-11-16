@@ -55,7 +55,7 @@ def test_myntra_reports_second_round_for_a_refused_or_killed_report(monkeypatch)
             return []
     monkeypatch.setattr(sources, "myntra_portal", lambda a: Portal())
     monkeypatch.setattr(mp, "save_to_worker", lambda *a: True)
-    made, notes = pipeline.make_account("MAIN", date(2026, 11, 15), 1)
+    made, notes, _ = pipeline.make_account("MAIN", date(2026, 11, 15), 1)
     assert set(made) == set(pipeline.REPORTS) and notes == []
     assert asked.count(12) == 2 and asked.count(84) == 2 and asked.count(4) == 1
 
