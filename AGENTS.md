@@ -37,6 +37,11 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 - **Myntra SPF tickets**: never close one; a claim stays alive until the return is received or the SPF
   is paid (`docs/bots/myntra-spf.md`, disputes).
 - Never merge to main by yourself from CI; propose a PR (`ci-fix.yml`).
+- **Best-in-class libraries, built for any seller's scale** (owner, 16 Nov 2026): Ultron is sold to sellers
+  far bigger than Bindal, so every library added or kept is the top choice for the job, not the familiar one.
+  Tables: **Polars** for new code (pandas is being moved out working by working, `docs/plan.md`); Excel read
+  with calamine, new files written with xlsxwriter, openpyxl only to edit an existing workbook in place.
+  A switch never changes a number: the old and new code give the same output on the same input first.
 - `netcap/` (raw browser captures) is local only: it holds cookies and customer data. Only names
   (paths, field names, meanings) go into `docs/knowledge/`, never values.
 
