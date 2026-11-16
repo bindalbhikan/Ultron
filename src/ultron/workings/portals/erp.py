@@ -60,6 +60,10 @@ class ErpError(RuntimeError):
     pass
 
 
+class CountMismatch(ErpError):
+    """The report's rows and its count disagree (data changing while packing): asked again."""
+
+
 def web_encrypt(password: str) -> str:
     padder = padding.PKCS7(128).padder()
     data = padder.update(password.encode("utf-8")) + padder.finalize()
@@ -125,8 +129,11 @@ class Erp:
             p["filter"] = json.dumps(parts[0] if len(parts) == 1 else
                                      [x for part in parts for x in ("and", part)][1:])
         # The server counts and fetches in two queries; while the warehouse is packing, a line
-        # can land between them (522 rows of 521). Ask again; fail only if it never agrees.
-        for attempt in range(1, COUNT_TRIES + 1):
+        # can land between them (522 rows of 521). Ask again (ultron.core.retry: waits 5, 10, 15 s);
+        # fail only if it never agrees. An HTTP error or an answer without data is not asked again.
+        from ultron.core.retry import retry_call
+
+        def once() -> list:
             r = self.s.get(f"{API}/TblRptReports/GetReportPreviewDataSource", params=p, timeout=self.timeout)
             if r.status_code != 200:
                 raise ErpError(f"ERP report {report_id}: HTTP {r.status_code}")
@@ -135,14 +142,15 @@ class Erp:
                 data, total = v["data"], v["totalCount"]
             except (ValueError, KeyError, TypeError) as exc:
                 raise ErpError(f"ERP report {report_id}: no data in its answer") from exc
-            if len(data) == total:
-                break
-            if attempt == COUNT_TRIES:
-                raise ErpError(f"ERP report {report_id}: {len(data)} rows came of {total} "
-                               f"({COUNT_TRIES} tries)")
-            log.warning("ERP report %s: %d rows came of %d (data changing?), asking again",
-                        report_id, len(data), total)
-            time.sleep(5 * attempt)
+            if len(data) != total:
+                raise CountMismatch(f"ERP report {report_id}: {len(data)} rows came of {total} (data changing?)")
+            return data
+
+        try:
+            data = retry_call(once, tries=COUNT_TRIES, wait=lambda n: 5 * n, on=(CountMismatch,), log=log,
+                              what="ERP count check", sleep=lambda s: time.sleep(s))
+        except CountMismatch as exc:
+            raise ErpError(f"{str(exc).removesuffix(' (data changing?)')} ({COUNT_TRIES} tries)") from None
         rows = []
         for rec in data:
             row = {}

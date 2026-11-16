@@ -17,6 +17,14 @@ backoff, stop after N tries, retry only on chosen errors. Pure Python, so the co
   other status, waits 3, 6, 12, 24, 48, 60 s, "Session expired" raised at once. Tests: the same tries and waits
   as before (`tests/test_retries.py`), the helper's log and error.
 
-**To do, one by one (each keeping its tries and waits exactly)**: Myntra portal `schedule()` / `_wait()`,
-Telegram send, Drive `RetrySession`, ERP `report()`, AJIO and Flipkart clients, the SPF master's report queue,
-zero TD's phone retries, the AWB tracker's http client.
+* Moved too, each with a test run on the old code first and then the new (same tries, waits, errors):
+  * Telegram `_post` (bots): 3 tries on a dropped connection / timeout, waits 5, 10 s, a file rewound each
+    time, another request error not tried again — `tests/test_telegram_post.py`.
+  * Myntra portal `schedule()`: one wait of the cooldown (16 min) only for a cooldown refusal, none for a
+    logged-out session or another error, none with `cooldown_wait=0` — `tests/test_myntra_schedule.py`.
+  * ERP `report()`: asked again (4 tries, waits 5, 10, 15 s) only while rows and count disagree; an HTTP error
+    or an answer without data stops at once — `tests/test_erp_report.py`.
+
+**To do, one by one (each keeping its tries and waits exactly)**: Drive `RetrySession`, AJIO and Flipkart
+clients, the agent's Telegram (`integrations/telegram.py`), the SPF master's report queue, zero TD's phone
+retries, the AWB tracker's http client.

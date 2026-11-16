@@ -392,16 +392,18 @@ class MyntraPortal:
         """Request a report job. The portal refuses the same report again for 15 minutes after
         a request (coolDownPeriod); such a refusal is waited out once, up to cooldown_wait minutes.
         start / end None: a snapshot report (Seller_Listings_Report, ...), asked for without dates."""
+        from ultron.core.retry import retry_call
         dates = {"reportStartDate": f"{start}", "reportEndDate": f"{end}"} if start else {}
         body = {"reportId": report_id, "queryParams": {**QUERY, **dates}}
-        try:
-            data = self._call("POST", "/report/jobs/schedule", json=body).get("data") or []
-        except RuntimeError as exc:
-            if isinstance(exc, SessionExpired) or not cooldown_wait or not COOLDOWN.search(str(exc)):
-                raise
-            log.warning("Report %s in cooldown (%s): waiting %d min", report_id, exc, cooldown_wait)
-            time.sleep(cooldown_wait * 60)
-            data = self._call("POST", "/report/jobs/schedule", json=body).get("data") or []
+
+        def tries(exc: BaseException) -> int:
+            cooldown = cooldown_wait and not isinstance(exc, SessionExpired) and COOLDOWN.search(str(exc))
+            return 2 if cooldown else 1
+
+        data = retry_call(lambda: self._call("POST", "/report/jobs/schedule", json=body).get("data") or [],
+                          tries=tries, wait=lambda n: cooldown_wait * 60, on=(RuntimeError,), log=log,
+                          what=f"Report {report_id} request (a cooldown refusal waits {cooldown_wait} min)",
+                          sleep=lambda s: time.sleep(s))
         if not data:
             raise RuntimeError("Myntra portal did not return the scheduled report job")
         log.info("Report %s job %s scheduled for %s..%s", report_id, data[0].get("id"), start, end)

@@ -117,24 +117,26 @@ def split_html(text: str, limit: int = MAX_LEN) -> list[str]:
 
 def _post(token: str, method: str, tries: int = 3, **kw) -> requests.Response | None:
     """POST to the Bot API; a dropped connection or a timeout is tried again (14 Nov 2026: a GitHub
-    runner's sendMessage got "Connection reset by peer" once and the report message was lost)."""
-    for attempt in range(1, tries + 1):
+    runner's sendMessage got "Connection reset by peer" once and the report message was lost).
+    Waits 5, 10 s (ultron.core.retry); any other request error is not tried again. None when not sent."""
+    from ultron.core.retry import retry_call
+
+    def once() -> requests.Response:
         for f in (kw.get("files") or {}).values():          # a file sent again starts from its first byte
             fh = f[1] if isinstance(f, tuple) else f
             if hasattr(fh, "seek"):
                 fh.seek(0)
-        try:
-            return requests.post(API.format(token=token, method=method), timeout=120, **kw)
-        except (requests.ConnectionError, requests.Timeout) as exc:
-            if attempt == tries:
-                log.error("Telegram %s failed after %d tries: %s", method, tries, exc)
-                return None
-            log.warning("Telegram %s: %s, trying again", method, exc)
-            time.sleep(5 * attempt)
-        except requests.RequestException as exc:
-            log.error("Telegram %s failed: %s", method, exc)
-            return None
-    return None
+        return requests.post(API.format(token=token, method=method), timeout=120, **kw)
+
+    try:
+        return retry_call(once, tries=tries, wait=lambda n: 5 * n, on=(requests.ConnectionError, requests.Timeout),
+                          log=log, what=f"Telegram {method}", sleep=lambda s: time.sleep(s))
+    except (requests.ConnectionError, requests.Timeout) as exc:
+        log.error("Telegram %s failed after %d tries: %s", method, tries, exc)
+        return None
+    except requests.RequestException as exc:
+        log.error("Telegram %s failed: %s", method, exc)
+        return None
 
 
 def send(text: str) -> bool:
