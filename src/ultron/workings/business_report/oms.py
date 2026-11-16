@@ -31,7 +31,8 @@ def rows_of(lines: list[dict], names: dict[str, str]) -> pd.DataFrame:
 
 
 def read(files: list[Path]) -> pd.DataFrame:
-    frames = [pd.read_excel(f, dtype=str).assign(_file=f.name) for f in files]
+    from ..core.tables import read_excel_text, to_pandas
+    frames = [to_pandas(read_excel_text(f, 0)).assign(_file=f.name) for f in files]
     frames = [f for f in frames if len(f)]
     if not frames:
         return pd.DataFrame(columns=COLUMNS + ["_file", "FINAL"])

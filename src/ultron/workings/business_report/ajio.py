@@ -51,7 +51,9 @@ def num(s) -> pd.Series:
 
 
 def read(files: list[Path]) -> pd.DataFrame:
-    frames = [pd.read_excel(f, dtype=str).assign(_file=f.name) for f in files]
+    from ..core.tables import read_excel_text, to_pandas
+    # openpyxl engine: AJIO's texts keep their outer spaces, as pandas read them (core/tables.read_excel_text)
+    frames = [to_pandas(read_excel_text(f, 0, engine="openpyxl")).assign(_file=f.name) for f in files]
     frames = [f for f in frames if len(f)]
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 

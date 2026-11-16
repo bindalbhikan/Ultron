@@ -46,7 +46,15 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   (checked one by one), the old one in none. Rounding is numpy's (`round2`: x × 100, half to even, / 100), as
   before. Dates: the three ISO shapes of these reports, before 2000 (the 1970 of RTO lines) empty, as before.
 
-**Next, one by one, each with a parity test on real files**: business report Flipkart and AJIO, then its
-workbook (the last pandas there), return analysis,
+* Business report, every input file now read by Polars (no `pd.read_excel` / `pd.read_csv` left there):
+  `tables.read_excel_text` (python-calamine, Rust; `engine="openpyxl"` for AJIO, whose texts keep outer spaces
+  without `xml:space="preserve"` — calamine trims them, pandas kept them) and `tables.read_text_csv(pandas_na=True)`
+  (Myntra CSVs). Read the way pandas did: whole numbers without ".0", dates "YYYY-MM-DD HH:MM:SS", pandas'
+  missing texts ("NA", "N/A", "NULL", "nan" ...) as missing, empty rows inside kept (row positions matter to
+  `bank_paid`), repeated headers ".1". Checked on all 100 sheets of the real Sep–Oct 2026 Flipkart / AJIO files
+  (with and without a header row): every cell the same; then the golden business report run: ALL OUTPUTS THE SAME.
+
+**Next, one by one, each with a parity test on real files**: the business report's Flipkart / AJIO logic and
+its workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
 owner's OK. With it: a row-quality check of the OMSGuru order list (fields left at their defaults).

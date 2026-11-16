@@ -77,7 +77,8 @@ def master_sheet(dest: Path) -> pd.DataFrame:
     path = folder.download("MasterSheet.xlsx", dest / "MasterSheet.xlsx") if folder else None
     if not path:
         raise RuntimeError("MasterSheet.xlsx not found in AGENT WORK/BUSINESS REPORTING")
-    return pd.read_excel(path, sheet_name="Master", dtype=str, engine="calamine")
+    from ..core.tables import read_excel_text, to_pandas
+    return to_pandas(read_excel_text(path, "Master"))
 
 
 def log_rows(files: list[dict], frames: dict[str, pd.DataFrame], date_col: dict[str, tuple[str, callable]]) -> list:
@@ -97,9 +98,11 @@ LOG_COLS = ["Input", "Account", "File", "Rows", "Date Used", "From", "To", "Note
 
 
 def read_any(path: Path, **kw) -> pd.DataFrame:
+    """A report file as text columns, read by Polars (core/tables: the same cells as pandas' readers gave)."""
+    from ..core.tables import read_excel_text, read_text_csv, to_pandas
     if path.suffix.lower() == ".csv":
-        return pd.read_csv(path, dtype=str, low_memory=False)
-    return pd.read_excel(path, dtype=str, **kw)
+        return to_pandas(read_text_csv(path, pandas_na=True))
+    return to_pandas(read_excel_text(path, kw.get("sheet_name", 0), header=kw.get("header", 0)))
 
 
 # ------------------------------------------------------------------ portals

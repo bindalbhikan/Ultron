@@ -62,14 +62,21 @@ def oi(s: pd.Series) -> pd.Series:
 
 
 # ------------------------------------------------------------------ inputs
+def _xlsx(path: Path, sheet: str, header: int | None = 0) -> pd.DataFrame:
+    """A Seller Hub sheet as text, read by Polars' calamine reader (core/tables.read_excel_text: the same cells as
+    pandas' read_excel(dtype=str) on every Flipkart sheet, 16 Nov 2026), handed on as a pandas table."""
+    from ..core.tables import read_excel_text, to_pandas
+    return to_pandas(read_excel_text(path, sheet, header=header))
+
+
 def read_orders(files: list[Path]) -> pd.DataFrame:
-    frames = [pd.read_excel(f, sheet_name="Orders", dtype=str).assign(_file=f.name) for f in files]
+    frames = [_xlsx(f, "Orders").assign(_file=f.name) for f in files]
     o = pd.concat([f for f in frames if len(f)], ignore_index=True) if frames else pd.DataFrame()
     return o.drop_duplicates("order_item_id", keep="last") if len(o) else o
 
 
 def read_returns(files: list[Path]) -> pd.DataFrame:
-    frames = [pd.read_excel(f, sheet_name="Returns", dtype=str).assign(_file=f.name) for f in files]
+    frames = [_xlsx(f, "Returns").assign(_file=f.name) for f in files]
     return pd.concat([f for f in frames if len(f)], ignore_index=True) if frames else pd.DataFrame()
 
 
@@ -81,7 +88,7 @@ def read_settled(files: list[Path]) -> pd.DataFrame:
     """The "Orders" sheet of Settled Transactions files (header on the 2nd row, a sub-header row below)."""
     frames = []
     for f in files:
-        df = pd.read_excel(f, sheet_name="Orders", header=1, dtype=str)
+        df = _xlsx(f, "Orders", header=1)
         df.columns = [_col(c) for c in df.columns]
         df = df[df["Order item ID"].notna() & df["NEFT ID"].notna()]
         if len(df):
@@ -93,7 +100,7 @@ def read_sales(files: list[Path]) -> pd.DataFrame:
     """The "Sales Report" sheet of tax Sales Report files (one row per sale / return / cancel event)."""
     frames = []
     for f in files:
-        df = pd.read_excel(f, sheet_name="Sales Report", dtype=str)
+        df = _xlsx(f, "Sales Report")
         if len(df):
             frames.append(df.assign(_file=f.name))
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
@@ -103,7 +110,7 @@ def read_monthly(files: list[tuple[Path, pd.Timestamp]]) -> pd.DataFrame:
     """The "Order Wise" sheet of the owner's monthly files; one row per order item settled that month."""
     frames = []
     for f, month in files:
-        df = pd.read_excel(f, sheet_name="Order Wise", dtype=str)
+        df = _xlsx(f, "Order Wise")
         df.columns = [re.sub(r"\s+", " ", str(c)).strip().lower() for c in df.columns]
         df = df.rename(columns={"bank settlement value": "payout", "order item id": "oi"})
         df = df[df["oi"].astype(str).str.match(r"^(OI:)?\d+")].copy()     # order lines only, no totals or non-order rows
@@ -125,7 +132,7 @@ def bank_paid(settled_files: list[tuple[Path, pd.Timestamp]], monthly_files: lis
     monthly file (order money + non-order SPF + ads + storage), with the transfers that file lists (rounded by Flipkart)."""
     rows = {}
     for f, month in settled_files:
-        s = pd.read_excel(f, sheet_name="Summary of report", header=None, dtype=str).dropna(how="all").dropna(axis=1, how="all")
+        s = _xlsx(f, "Summary of report", header=None).dropna(how="all").dropna(axis=1, how="all")
         first = s.columns[0]
         head = s.index[s[first].astype(str).str.strip() == "Line Item"][0]
         amount = s.columns[list(s.loc[head]).index("Amount Settled (Rs.)")]
@@ -136,7 +143,7 @@ def bank_paid(settled_files: list[tuple[Path, pd.Timestamp]], monthly_files: lis
     for f, month in monthly_files:
         if month in rows:
             continue
-        d = pd.read_excel(f, sheet_name="Order Wise", dtype=str)
+        d = _xlsx(f, "Order Wise")
         d.columns = [re.sub(r"\s+", " ", str(c)).strip().lower() for c in d.columns]
         d = d.rename(columns={"bank settlement value": "payout"})
         kind = d["type"].astype(str).str.strip().str.lower()
