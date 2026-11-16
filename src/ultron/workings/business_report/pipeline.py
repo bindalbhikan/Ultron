@@ -48,20 +48,24 @@ def portal_files(portal: str, first: date, last: date, dest: Path) -> list[dict]
     out = []
     if not pf:
         return out
+    nxt = (last.replace(day=28) + timedelta(days=4)).replace(day=1)
     for year, yf in sorted(pf.children().items()):
-        if not year.isdigit() or not first.year <= int(year) <= last.year:
+        if not year.isdigit() or not first.year <= int(year) <= nxt.year:
             continue
         for mlabel, mf in DriveFolder(yf["id"], pf.http).children().items():
             try:
                 month = pd.Timestamp(f"01-{mlabel}").date().replace(day=1)
             except ValueError:
                 continue
-            if not first <= month <= last:
+            # the month after `last` only for its PARTIAL return report: the returns of last month's orders that
+            # came in its 1st to 14th (the 15th's return analysis keeps them; owner, 16 Nov 2026)
+            tail = month == nxt
+            if not (first <= month <= last or tail):
                 continue
             folder = DriveFolder(mf["id"], pf.http)
             for name in folder.children():
                 m = NAME.match(name)
-                if not m:
+                if not m or (tail and not (m["kind"] == "RETURN" and m["partial"])):
                     continue
                 path = dest / portal / name
                 if not path.exists():                  # --work: a folder kept between runs is not fetched again

@@ -79,6 +79,20 @@ def save(portal: str, month: date, kind: str, file: Path | None, account: str = 
     return name
 
 
+def save_partial(portal: str, month: date, kind: str, file: Path | None, account: str = "") -> str:
+    """Save file as the month's <kind> report marked PARTIAL (a month not over: the returns of its 1st to
+    14th, kept by the 15th's return analysis) unless the month already has its whole report: that one stays."""
+    if file is None:
+        return ""
+    folder = month_folder(portal, month)
+    whole = file_name(portal, month, kind, account, "")
+    if folder and any(n.startswith(whole) and " PARTIAL" not in n for n in folder.children()):
+        log.info("PORTAL REPORTS/%s %s: the whole %s report is there, the partial one not saved",
+                 portal.upper(), label(month), kind)
+        return ""
+    return save(portal, month, kind, file, account, partial=True)
+
+
 def load(portal: str, month: date, kind: str, dest: Path, account: str = "") -> list[Path]:
     """The month's <kind> report files (every account's when account is empty) into dest."""
     folder = month_folder(portal, month)

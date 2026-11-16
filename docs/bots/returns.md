@@ -8,6 +8,9 @@ run takes the newest), 2:00 PM the report again (owner's rule, 1 Nov 2026). On d
 
 **Windows**: sale = last month 1st to last day; returns = last month 1st to the day before the run
 (the 9th on the 10th, the 14th on the 15th).
+**PORTAL REPORTS**: the month's return report (1st to last day) and, since 16 Nov 2026 (owner: returns of a month's
+orders = that month + the next 1st to 14th), the window's tail as the **next month's PARTIAL return report**
+(`pr.save_partial`: never over a whole report of that month; the month's own run replaces it later).
 
 **Rules**: the hand-run tool `RETURN ANALYSIS/main.py` as `engine.py` (unchanged; SEP-26 output
 identical file by file). Portals: Myntra MAIN / DBCC / FMCC, Ajio, Flipkart.

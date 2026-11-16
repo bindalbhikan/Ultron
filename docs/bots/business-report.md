@@ -4,6 +4,9 @@
 10th / 15th), as `workflow_run` of `business-report.yml`. By hand: Menu > Reports & MIS > Business report,
 `/businessreport [PORTALS] [FROM [TO]]`, or the workflow (inputs `portals`, `from`, `to`, `no_upload`). A failed run goes to "AI fix on failure" (`ci-fix.yml`: Claude Code, else Gemini).
 
+* **Windows** (owner, 16 Nov 2026): sale = each month 1st to 30th / 31st; returns = that + the next month's 1st to
+  14th: for the last month the next month's PARTIAL return report (kept by the 15th's return analysis) is read
+  too (`portal_files`); for older months the next month's whole return report holds them.
 * The owner's sale / return / payment analysis (Drive `AGENT WORK/BUSINESS REPORTING`, the rules in
   `docs/bots/business-report-context.md`, taken over from the hand-run scripts on 1 Nov 2026; the old
   Myntra script is kept in `scripts/legacy/myntra_build_workbook.py`), one workbook per portal:

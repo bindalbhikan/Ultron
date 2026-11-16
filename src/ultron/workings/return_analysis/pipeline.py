@@ -15,7 +15,7 @@ import logging
 import shutil
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from ..core import dashboard, telegram
@@ -109,6 +109,22 @@ def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -
                                      tmp / "flipkart_returns.xlsx", sheet="Returns", key=["return_id", "order_item_id"])
                 ret = cut[0] if cut else None
             pr.save(portal, month, "return", ret, account)
+            # the next month's 1st to 14th, the returns window's tail (owner, 16 Nov 2026: returns of a month's
+            # orders = that month + the next 1st to 14th): kept as the next month's PARTIAL return report, read by
+            # the business report; that month's own whole report replaces it later
+            nxt = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+            if portal == "MYNTRA":
+                tail = files[2] if len(files) > 2 else None
+            elif portal == "AJIO":
+                next_cut = pr.month_slice(files[1:], nxt, ["Return Created Date"], tmp / "ajio_rtv_next.xlsx",
+                                          parse=parse_ajio_date)
+                tail = next_cut[0] if next_cut else None
+            else:
+                next_cut = pr.month_slice(files[1:], nxt, ["return_approval_date", "return_requested_date"],
+                                          tmp / "flipkart_returns_next.xlsx", sheet="Returns",
+                                          key=["return_id", "order_item_id"])
+                tail = next_cut[0] if next_cut else None
+            pr.save_partial(portal, nxt, "return", tail, account)
         except Exception as exc:  # noqa: BLE001
             log.exception("%s reports not saved to PORTAL REPORTS", name)
             notes.append(f"{name} reports not saved to PORTAL REPORTS: {_short_error(exc)}")
