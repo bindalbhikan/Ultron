@@ -40,7 +40,7 @@ scripts/
   * Dates come in two formats (with and without time): parse with `format="mixed"`, otherwise the csv dates
     are lost and the overlap is counted twice.
 * **Daily returns reports** of the bot: `G:/My Drive/BINDAL EXPORTS/AGENT WORK/MYNTRA DAILY REPORTS/<date>/<ACC> Returns <date>.csv`
-  (23-Oct-26 onwards), used to cover the days after the Oct job.
+  (23-Oct-26 to 15-Nov-26: the bot no longer saves them to Drive since 16 Nov 2026), used to cover the days after the Oct job.
 * **Bot repo** (Ultron): `G:/My Drive/BINDAL EXPORTS/AGENT/AGENT-ULTRON-BINDAL`. `src/ultron/workings/myntra_spf/engine.py`
   documents the payment report (Forward / Reverse / NOD lines). `docs/bots/myntra-history.md` and
   `myntra-reports.md` describe how order/return reports are fetched.

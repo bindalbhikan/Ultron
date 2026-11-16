@@ -7,7 +7,7 @@
   flipkart-tat 6 PM Flipkart dispatch TAT (sheet only)  python run.py flipkart-tat --help
   ajio-spf   AJIO SPF claims              python run.py ajio-spf --help
   returns    monthly return analysis      python run.py returns --help
-  myntra-spf Myntra SPF master            python run.py myntra-spf --help
+  myntra-spf 10 AM Myntra SPF master     python run.py myntra-spf --help
   ajio-ads   AJIO ads / TOT gap, monthly  python run.py ajio-ads --help
   inv-push   OMSGuru inventory push, 3-hourly  python run.py inv-push --help
   agent-watch  the agent checks a finished run  python run.py agent-watch --help
@@ -19,19 +19,19 @@
   evening    8 PM summary of the day        python run.py evening --help
   weekly     Monday business review         python run.py weekly --help
   deadstock  monthly dead / slow stock      python run.py deadstock --help
-  myntra-otp 11 / 11:45 AM Myntra pickup / return OTPs python run.py myntra-otp --help
+  myntra-otp 11 / 11:40 AM Myntra pickup / return OTPs python run.py myntra-otp --help
   listings   11:30 AM listing health        python run.py listings --help
   flipkart-price 8 AM Flipkart settlement to Final TP  python run.py flipkart-price --help
   flipkart-calc  Monday 7 AM Flipkart TP / SP calculator workbook  python run.py flipkart-calc --help
   flipkart-listing-file 11 AM Flipkart listing file (price, settlement, stock) to Drive  python run.py flipkart-listing-file --help
   myntra-tat 6:30 PM Myntra courier pickups   python run.py myntra-tat --help
   mis        monthly MIS and plan           python run.py mis --help
-  myntra-reports 10 AM Myntra orders / returns / listings  python run.py myntra-reports --help
+  myntra-reports 9:30 AM Myntra daily reports made on the portal (+ inventory)  python run.py myntra-reports --help
   business-report sale / return / payment analysis per portal  python run.py business-report --help
   myntra-grouping Myntra colour grouping master + upload templates  python run.py myntra-grouping --help
   ticket-followup 8 PM: ticket master + daily follow-up  python run.py ticket-followup --help
   erp-oms-return  8 PM: a return booked in the ERP accepted in OMSGuru, as Good  python run.py erp-oms-return --help
-  portal-reports 2nd: last month's order + payment reports into PORTAL REPORTS  python run.py portal-reports --help
+  portal-reports 2nd (+ fresh 15th): last month's order + payment reports into PORTAL REPORTS  python run.py portal-reports --help
   portal-sale 5:30 PM daily, real sale per order date with its returns + cancels  python run.py portal-sale --help
   myntra-zero-td every 2 h 7 AM-7 PM + 10 AM daily, styles live at MRP  python run.py myntra-zero-td --help
 """

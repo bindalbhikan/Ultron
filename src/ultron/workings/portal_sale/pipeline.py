@@ -125,7 +125,21 @@ def myntra_source(chunks, work: Path) -> Numbers:
             path = month_file("MYNTRA", "sale", first, last, dest, account)
             if path is None:
                 portal = portal or myntra_portal(account)
-                name, data = portal.collect_or_regenerate(portal.ensure(mp.REPORT_ID, first, last), wait)
+                # the 9:30 AM daily reports run's 30-day job holds these days: used, cut to them
+                job = mp.covering_job(portal.jobs(100), mp.REPORT_ID, first, last)
+                name = data = None
+                if job:
+                    log.info("Myntra %s %s..%s from job %s %s..%s", account, first, last, job.get("id"), *mp.job_range(job))
+                    name, data = portal.collect_or_regenerate(job, wait)
+                    through = mp.data_through(mp.data_stamp(data.decode("utf-8-sig", "replace")))
+                    if not through or through < last:
+                        # wrong or short data (owner, 16 Nov 2026): a new report of these days
+                        log.warning("Myntra %s job %s holds data only up to %s: asking for a new report", account, job.get("id"), through)
+                        name = data = None
+                    elif mp.job_range(job) != (first, last):
+                        data = mp.cut_orders(data, first, last)
+                if data is None:
+                    name, data = portal.collect_or_regenerate(portal.ensure(mp.REPORT_ID, first, last, fresh=bool(job)), wait)
                 path = dest / f"{first}_{Path(name).name}"
                 path.write_bytes(data)
             got.append(n.myntra_orders(n.read_report(path, "order status")))

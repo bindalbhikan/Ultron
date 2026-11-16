@@ -11,7 +11,9 @@ against the same weekday a week before, with the change in %, the total and yest
   read in two halves). Cancelled = item status Cancelled / Cancelled Before Shipping / Removed
   Before Shipping.
 * Flipkart FBF from Seller Hub and Myntra SJIT from the partner portal, as in the sale report; the
-  SJIT report asked for at 7 AM is waited for 5 minutes at most (`SJIT_WAIT_MINUTES`), else noted.
+  morning never asks Myntra itself: it waits up to 35 minutes (`SJIT_WAIT_MINUTES`) for the 30-day order
+  report the 9:30 AM `myntra-reports` run asks for (`ask=False`, since 16 Nov 2026); when none comes or it
+  holds yesterday only in part, a new one is asked for and waited for (the workflow has 85 minutes).
 * 2-3 lines on the numbers in English from the agent's free model (Workers AI, `ultron.core.llm`);
   left out when the model is not available.
 * **Sudden drops** (plan E5): a channel that sold `DROP_MIN_UNITS` (20)+ units on last week's

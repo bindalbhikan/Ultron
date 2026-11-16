@@ -67,28 +67,27 @@ def _at(h: int, m: int = 0) -> tuple[int, ...]:
 MON_SAT = (0, 1, 2, 3, 4, 5)
 # SCHEDULE in worker/src/worker.js, by time of day (worker weekdays 0 = Sunday -> here 6)
 TASKS = [
-    Task("SJIT report request", "sale.yml", _at(7), "DAILY"),
-    Task("Myntra SPF report request", "myntra-spf.yml", _at(7), "DAILY"),
     Task("Return analysis report request", "returns.yml", _at(7), "MONTHLY (10th)", day=10),
     Task("Return analysis fresh report request", "returns.yml", _at(7), "MONTHLY (15th)", day=15),
-    Task("Myntra SPF master", "myntra-spf.yml", _at(9), "DAILY"),
     Task("AJIO SPF (tickets + replies)", "ajio-spf.yml", _at(9), "WEEKLY (WED, SAT)", weekdays=(2, 5)),
     Task("AJIO SPF master + disputes due", "ajio-spf.yml", _at(9), "DAILY (not WED, SAT)", weekdays=(0, 1, 3, 4, 6)),
     Task("AJIO Ads / TOT gap", "ajio-ads.yml", _at(9), "MONTHLY (3rd)", day=3),
     Task("AJIO Ads / TOT gap (if missed)", "ajio-ads.yml", _at(9), "MONTHLY (5th)", day=5),
+    Task("Myntra daily reports", "myntra-reports.yml", _at(9, 30), "DAILY"),
     Task("Morning report", "morning.yml", _at(9, 30), "DAILY"),
+    Task("Myntra SPF master", "myntra-spf.yml", _at(10), "DAILY"),
     # Myntra zero TD every 2 hours, 7 AM - 7 PM, Monday to Saturday
     *(Task("Myntra zero TD", "myntra-zero-td.yml", _at(h), "MON-SAT", weekdays=MON_SAT) for h in range(7, 20, 2)),
     # and one fixed run every day (Sunday too) at 10 AM
     Task("Myntra zero TD 10 AM", "myntra-zero-td.yml", _at(10), "DAILY"),
     Task("Myntra courier OTP", "myntra-otp.yml", _at(11), "DAILY"),
-    Task("Myntra daily reports", "myntra-reports.yml", _at(10), "DAILY"),
     Task("Stock-out alert", "stock.yml", _at(10), "DAILY"),
     Task("Weekly review", "weekly.yml", _at(10, 15), "WEEKLY (MON)", weekdays=(0,)),
-    Task("Myntra courier OTP retry", "myntra-otp.yml", _at(11, 45), "DAILY"),
+    Task("Myntra courier OTP retry", "myntra-otp.yml", _at(11, 40), "DAILY"),
     Task("Dead stock report", "deadstock.yml", _at(11), "MONTHLY (1st)", day=1),
     Task("Monthly MIS", "mis.yml", _at(11), "MONTHLY (2nd)", day=2),
     Task("Portal reports", "portal-reports.yml", _at(11), "MONTHLY (2nd)", day=2),
+    Task("Portal reports fresh", "portal-reports.yml", _at(11), "MONTHLY (15th)", day=15),
     Task("Portal sale report", "portal-sale.yml", _at(17, 30), "DAILY"),
     Task("Flipkart calculator", "flipkart-calc.yml", _at(7), "WEEKLY (MON)", weekdays=(0,)),
     Task("Flipkart Final TP update", "flipkart-price.yml", _at(8), "DAILY"),
@@ -121,7 +120,7 @@ PORTAL_OF_WORKFLOW = {
     "ajio-spf.yml": "AJIO", "ajio-ads.yml": "AJIO", "ajio-tat.yml": "AJIO", "flipkart-tat.yml": "FLIPKART",
     "myntra-spf.yml": "MYNTRA", "myntra-otp.yml": "MYNTRA", "myntra-reports.yml": "MYNTRA",
     "myntra-zero-td.yml": "MYNTRA", "myntra-tat.yml": "MYNTRA", "myntra-grouping.yml": "MYNTRA", "vms.yml": "MYNTRA", "inv-push.yml": "OMSGURU"}
-PORTAL_OF_TASK = {"SJIT report request": "MYNTRA"}   # portal-reports.yml / returns.yml: ALL CHANNELS
+PORTAL_OF_TASK: dict[str, str] = {}   # portal-reports.yml / returns.yml: ALL CHANNELS
 
 
 def portal(t: Task) -> str:
@@ -148,11 +147,11 @@ WORK = {
     "ERP to OMSGuru returns": "Every return booked in the ERP's GRN accepted in OMSGuru as Good, with the ERP date in the notes and no Putaway; ERP TO OMSGURU RETURN.xlsx updated",
     "Ticket follow-up": "Every portal ticket in TICKET MASTER.xlsx, the open ones in TICKET FOLLOWUP SHEET.xlsx; AJIO tickets no other bot follows get a comment every 24 h",
     "Portal reports": "Last month's order reports (Myntra x3, AJIO, Flipkart) and payment reports (Myntra x3, AJIO), 1st to last day, saved in AGENT WORK/PORTAL REPORTS",
+    "Portal reports fresh": "Last month's portal reports again, made anew (not the 2nd's), replaced in AGENT WORK/PORTAL REPORTS; business reporting follows",
     "Portal sale report": "Real sale per order date (each day's orders with their own returns and cancels) in the SALE REPORT layout, with a monthly summary, into PORTAL SALE REPORT.xlsx, Telegram table",
     "Monthly MIS": "Last month vs the month before per channel: order value, units, cancel % (Telegram)",
     "Morning report": "Yesterday's sale in units per channel vs the same day last week, cancels (Telegram)",
-    "Myntra SPF master": "Myntra SPF master (MAIN / DBCC / FMCC returns, claims) updated from the portal reports",
-    "Myntra SPF report request": "Asks the Myntra portal for the SPF reports (returns, return delivery) for the 9 AM master",
+    "Myntra SPF master": "Myntra SPF master (MAIN / DBCC / FMCC returns, claims) updated from the portal reports the 9:30 AM run asked for",
     "Myntra VMS report": "Myntra orders vs VMS packing scans per SLA date, ERP vs VMS sheets in the VMS workbook",
     "Myntra colour grouping": "Colour groups of the GROUPING SHEET checked on myntra.com in every account; MYNTRA GROUPING MASTER.xlsx and the pending groups' upload files in AGENT WORK/MYNTRA/LISTING GROUPING",
     "Myntra grouping status": "Status of the grouping jobs uploaded by hand, on the sheets of the MYNTRA GROUPING MASTER",
@@ -160,7 +159,7 @@ WORK = {
     "Myntra courier OTP": "Today's Myntra courier pickup / return OTPs of the warehouses (Telegram)",
     "Myntra courier OTP retry": "OTPs again for couriers that had no trip at 11 AM (sent only when a new code came)",
     "Myntra courier scorecard": "Myntra pickups on time per account and courier, last 7 days (Telegram)",
-    "Myntra daily reports": "Myntra orders, returns, return delivery and listings reports saved in MYNTRA DAILY REPORTS; return delivery workbook (PPMP only)",
+    "Myntra daily reports": "The day's Myntra reports made on the portal (orders, returns, return delivery, listings, inventory), used by the other workings, not saved to Drive; return delivery workbook (PPMP only)",
     "Myntra zero TD 10 AM": "The fixed daily (Sunday too) Myntra zero TD run: styles of the ZERO TD sheet live on myntra.com at MRP",
     "Myntra zero TD": "Styles of the ZERO TD sheet live on myntra.com with stock and selling at MRP; sheet on Telegram and in MYNTRA ZERO TD SHEETS",
     "OMSGuru inventory push": "Pushes the inventory to every channel with inventory sync on in OMSGuru",
@@ -168,7 +167,6 @@ WORK = {
     "Return analysis report request": "Asks Myntra and Flipkart for the reports the 2 PM return analysis needs",
     "Return analysis fresh report request": "Asks Myntra and Flipkart for new reports (not the 10th's) for the 2 PM second try",
     "Return analysis second try": "The return analysis again with the fresh reports (returns to the 14th); its return reports replace the 10th's in PORTAL REPORTS",
-    "SJIT report request": "Asks Myntra for the SJIT orders report used by the 3:30 PM daily sale",
     "SLA warning": "Orders due today or past their SLA and still not ready to ship, per channel (Telegram)",
     "Stock-out alert": "SKUs out of stock or running out within 3 days at the last 14 days' sale (Telegram)",
     "Weekly review": "This week vs last week per channel, top / falling styles, packers' label prints (Telegram)",

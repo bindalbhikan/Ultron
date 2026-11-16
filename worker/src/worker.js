@@ -180,23 +180,23 @@ function monthArg(args) {
 // runs late or not at all (25 Oct 2026: morning, stock-out and listings never ran from it).
 // Cloudflare cron is UTC (IST = UTC + 5:30); each `cron` below ("minute hour") must be one of the
 // times the [triggers] in wrangler.toml fire at. One trigger lists many hours (the free plan allows
-// 5): ":30" past the hours, ":00" past the hours, 4:45 UTC (Monday) and 6:15 UTC.
+// 5): ":30" past the hours, ":00" past the hours, 4:45 UTC (Monday) and 6:10 UTC.
 const INV_PUSH_HOURS = [0, 3, 6, 9, 12, 15, 18, 21];   // UTC: 6 AM, 9 AM ... 3 AM IST
 const SCHEDULE = [
-  // 7 AM: Myntra report requests - they queue on the portal for a while. The same Myntra report
-  // twice within 15 minutes is refused, so the SPF request leaves the order report to 9 AM.
-  { ist: "7:00 AM daily", cron: "30 1 * * *", cmd: "sale", label: "SJIT report request", inputs: { sjit_request: "1" } },
-  { ist: "7:00 AM daily", cron: "30 1 * * *", cmd: "myntraspf", label: "Myntra SPF report request",
-    inputs: { request: "1" } },
+  // 9:30 AM is the one time of day the bots ask Myntra for their daily reports (owner, 16 Nov 2026):
+  // the Myntra daily reports run asks for orders (30 days), returns and return deliveries (the SPF
+  // master's 30 days), listings and inventory; the SPF master, morning, sale, portal sale, courier
+  // scorecard and grouping use those jobs and do not ask for the same report again.
   // return analysis: the 10th, then a second try on the 15th with fresh reports
   { ist: "7:00 AM on the 10th", cron: "30 1 * * *", day: 10, cmd: "returns", label: "Return analysis report request",
     inputs: { request: "1" } },
   { ist: "7:00 AM on the 15th", cron: "30 1 * * *", day: 15, cmd: "returns", label: "Return analysis fresh report request",
     inputs: { request: "1", fresh: "1" } },
-  // 9 AM: the SPF masters. AJIO tickets and replies on Wed + Sat; the other days the master and the
+  // 9 AM: the AJIO SPF master. AJIO tickets and replies on Wed + Sat; the other days the master and the
   // delivery disputes due (day 6: AJIO takes a dispute only within 7 days of the delivery).
-  { ist: "9:00 AM daily", cron: "30 3 * * *", cmd: "myntraspf" },
-  // the real sale report: reuses the Myntra order jobs the SPF working asked for this morning
+  // 10 AM: the Myntra SPF master, on the reports the 9:30 AM run asked for
+  { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "myntraspf" },
+  // the real sale report: reuses the Myntra order job the 9:30 AM run asked for
   { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "portalsale" },
   { ist: "9:00 AM Wed, Sat", cron: "30 3 * * *", weekdays: [3, 6], cmd: "ajiospf" },
   { ist: "9:00 AM other days", cron: "30 3 * * *", weekdays: [0, 1, 2, 4, 5], cmd: "ajiospf",
@@ -205,11 +205,11 @@ const SCHEDULE = [
   { ist: "9:00 AM on the 3rd", cron: "30 3 * * *", day: 3, cmd: "ajioads" },
   { ist: "9:00 AM on the 5th", cron: "30 3 * * *", day: 5, cmd: "ajioads", label: "AJIO Ads / TOT gap (if missed)",
     inputs: { if_missing: "1" } },
-  // 10 AM: yesterday's Myntra reports; 11 AM: Myntra courier OTPs; 11:45 AM: the OTPs again for
+  // 11 AM: Myntra courier OTPs; 11:40 AM: the OTPs again for
   // couriers that had no trip yet at 11 (sent only when a new code came)
   { ist: "11:00 AM daily", cron: "30 5 * * *", cmd: "myntraotp" },
-  { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "myntrareports" },
-  { ist: "11:45 AM daily", cron: "15 6 * * *", cmd: "myntraotp", label: "Myntra OTP retry", inputs: { retry: "1" } },
+  { ist: "9:30 AM daily", cron: "0 4 * * *", cmd: "myntrareports" },
+  { ist: "11:40 AM daily", cron: "10 6 * * *", cmd: "myntraotp", label: "Myntra OTP retry", inputs: { retry: "1" } },
   // Myntra zero TD: styles live at MRP on www.myntra.com, every 2 hours 7 AM - 7 PM, Monday to Saturday
   ...[["7:00 AM", 1], ["9:00 AM", 3], ["11:00 AM", 5], ["1:00 PM", 7], ["3:00 PM", 9], ["5:00 PM", 11],
       ["7:00 PM", 13]].map(([ist, h]) => (
@@ -230,6 +230,9 @@ const SCHEDULE = [
   // last month's order + payment reports of every portal into Drive AGENT WORK/PORTAL REPORTS
   // (return reports: the return analysis on the 10th / 15th)
   { ist: "11:00 AM on the 2nd", cron: "30 5 * * *", day: 2, cmd: "portalreports" },
+  // last month's reports again, asked for fresh (not the 2nd's jobs); business reporting follows
+  { ist: "11:00 AM on the 15th", cron: "30 5 * * *", day: 15, cmd: "portalreports", label: "Portal reports fresh",
+    inputs: { fresh: "1" } },
   { ist: "7:00 AM Monday", cron: "30 1 * * *", weekdays: [1], cmd: "fkcalc" },
   { ist: "8:00 AM daily", cron: "30 2 * * *", cmd: "fkprice" },
   { ist: "11:00 AM daily", cron: "30 5 * * *", cmd: "fklisting" },

@@ -1,6 +1,6 @@
 # Business reporting — `python run.py business-report`
 
-**When**: after every `portal-reports` run (the 2nd, back-fills) and every return analysis run (the
+**When**: after every `portal-reports` run (the 2nd, the fresh run on the 15th, back-fills) and every return analysis run (the
 10th / 15th), as `workflow_run` of `business-report.yml`. By hand: Menu > Reports & MIS > Business report,
 `/businessreport [PORTALS] [FROM [TO]]`, or the workflow (inputs `portals`, `from`, `to`, `no_upload`). A failed run goes to "AI fix on failure" (`ci-fix.yml`: Claude Code, else Gemini).
 

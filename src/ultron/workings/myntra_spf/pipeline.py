@@ -1,4 +1,4 @@
-"""Myntra SPF master, every day at 9 AM (reports asked for at 7 AM with --request): returns of Myntra MAIN / DBCC / FMCC with claim aging, tickets,
+"""Myntra SPF master, every day at 10 AM (on the report jobs the 9:30 AM myntra-reports run asks for): returns of Myntra MAIN / DBCC / FMCC with claim aging, tickets,
 payouts and ERP receipts, in Drive SPF/MYNTRA/MYNTRA SPF MASTER.xlsx.
 
 The rules are those of the hand-run tool (engine.py, unchanged). The bot builds its input/
@@ -179,8 +179,8 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
 
 
 def request_reports(today: date) -> list[str]:
-    """7 AM step: ask every account for its returns and delivery reports, so the 9 AM run finds
-    them done. The order reports are left to the 9 AM run: at 7 AM the SJIT request asks MAIN
+    """By hand only (--request; the 7 AM run was dropped on 16 Nov 2026, the 9:30 AM myntra-reports
+    run asks for these jobs): ask every account for its returns and delivery reports. The order reports are left to the 9 AM run: at 7 AM the SJIT request asks MAIN
     for an order report, and the same report twice within 15 minutes is refused."""
     from ..return_analysis.sources import myntra_portal
     from ..portals import myntra as mp

@@ -26,8 +26,8 @@ A line of any other status is still sold (Delivered, In Transit, Flipkart's REJE
 **Nothing is fetched twice**
 * Back-fill: only PORTAL REPORTS month files; a month without a complete Myntra or AJIO file is read
   from the job on the portal / AJIO's direct download; Flipkart uses PARTIAL files up to their last day.
-* Daily: the last 60 days. Myntra: the order jobs `myntra-spf` asks for every morning (`_windows`), only
-  downloaded. AJIO and OMSGuru answer at once. **Flipkart is the one new request**: no other working fetches
+* Daily: the last 60 days. Myntra: a job on the portal that covers the days (`covering_job`: the 9:30 AM
+  `myntra-reports` 30-day orders job, cut to the days by `created on`), else the exact job; only downloaded. AJIO and OMSGuru answer at once. **Flipkart is the one new request**: no other working fetches
   its Orders report, so it is asked for once a day with a `PORTAL_SALE_FLIPKART_WAIT` (20) minute wait.
 
 **Reading the numbers**

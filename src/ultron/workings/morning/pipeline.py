@@ -113,7 +113,8 @@ def run(args) -> int:
         notes.append(f"FBF not read ({str(exc)[:60]})")
     try:
         alerts: list[str] = []
-        sg, sc, covered = sjit_source([before, day], notes, alerts)
+        # never asks Myntra itself: the 9:30 AM daily reports run asks for the order report (owner, 16 Nov 2026)
+        sg, sc, covered = sjit_source([before, day], notes, alerts, ask=False)
         if day in covered and before in covered:    # a day not covered is not a 0: it would show as a false drop
             gross["SJIT"] = {before: sg[before], day: sg[day]}
             canc["SJIT"] = {before: sc[before], day: sc[day]}

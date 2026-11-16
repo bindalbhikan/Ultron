@@ -66,11 +66,12 @@ def fbf_source(days):
     return fk.fbf_units(days, locations)
 
 
-def sjit_source(days: list[date], notes: list[str], alerts: list[str]):
+def sjit_source(days: list[date], notes: list[str], alerts: list[str], ask: bool = True):
     """Myntra SJIT: the Seller_Orders_Report fetched from the partner portal with the saved
     session (MYNTRA_SESSION_JSON), plus any report dropped by hand into the SJIT Drive folder.
     The portal report wins for the lines it holds; every day it was requested for counts as
-    covered. Session trouble goes into `alerts` (sent on Telegram as its own message)."""
+    covered. Session trouble goes into `alerts` (sent on Telegram as its own message).
+    ask=False: no report is asked for, the one the 9:30 AM daily reports run asks for is waited for."""
     from ..portals import myntra as mp
     from . import sjit
     files: list[tuple[str, bytes]] = []
@@ -79,7 +80,7 @@ def sjit_source(days: list[date], notes: list[str], alerts: list[str]):
     if portal and days[-1] < date.today():
         try:
             extra_from = days[-1] - timedelta(days=num("SJIT_FETCH_DAYS", 30) - 1)
-            files, fetched = portal.reports(days, extra_from, wait_minutes=num("SJIT_WAIT_MINUTES", 20))
+            files, fetched = portal.reports(days, extra_from, wait_minutes=num("SJIT_WAIT_MINUTES", 20), ask=ask)
             for name, data in files:
                 (output_dir("sale") / name).write_bytes(data)
             mp.save_to_worker(env, portal.cookies())
@@ -131,8 +132,9 @@ def myntra_portal(alerts: list[str]):
 
 
 def run_sjit_request(args) -> int:
-    """Morning run: ask the partner portal for the Seller_Orders_Report of the coming sale
-    run's days, so it is ready by then. Reports already there are not asked for again.
+    """By hand only (the 7 AM run was dropped on 16 Nov 2026: the 9:30 AM daily reports run asks for
+    the 30-day order report the sale reads): ask the partner portal for the Seller_Orders_Report of
+    the coming sale run's days, so it is ready by then. Reports already there are not asked for again.
     Telegram only hears about session trouble."""
     from ..portals import myntra as mp
     days = report_days(args)

@@ -1,12 +1,12 @@
 name: Myntra SPF master
 
 on:
-  # Started by the Telegram bot's Cloudflare cron (worker/src/worker.js): 7 AM IST with request=1,
-  # 9 AM IST for the master.
+  # Started by the Telegram bot's Cloudflare cron (worker/src/worker.js) at 10 AM IST for the master, on
+  # the report jobs the 9:30 AM Myntra daily reports run asks for.
   workflow_dispatch:
     inputs:
       request:
-        description: "1 = only ask Myntra for the returns and delivery reports (the 7 AM run)"
+        description: "1 = only ask Myntra for the returns and delivery reports (by hand)"
         default: ""
       no_upload:
         description: "1 = test run: master only as the run's artifact, Drive not changed"

@@ -14,7 +14,8 @@ starts it with `runner=cloud` and the styles are looked up by Ultron Phone (the 
   separate NOT GROUPED), and the one-existing-group rule of the upload files below.
 * Inputs: Drive `AGENT WORK/MYNTRA/LISTING GROUPING/GROUPING SHEET.xlsx` (kept by the owner: one tab
   per category, column A = MY SKUs, a blank row between groups) and `portal template.xlsx`; the
-  newest listings report of each account (`MYNTRA DAILY REPORTS`, myntra-reports); MasterSheet
+  newest Seller_Listings_Report (14) of each account on the partner portal, made today or yesterday
+  (the 9:30 AM `myntra-reports` run; `MYNTRA_GROUPING_LISTINGS_DAYS`, 1), else one asked for (since 16 Nov 2026); MasterSheet
   (`BUSINESS REPORTING`); sales = order lines delivered (C) or on the way (SH) in the last 3 months'
   order reports (`PORTAL REPORTS`, `GROUPING_SALE_MONTHS`; HIGH SALES = 20+); INV = OMSGuru's
   inventory of every warehouse per FINAL SKU (left blank, and said so, when OMSGuru cannot be read).

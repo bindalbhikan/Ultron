@@ -46,7 +46,7 @@ def test_myntra_reports_second_round_for_a_refused_or_killed_report(monkeypatch,
         def collect(self, job, wait):
             if job["id"] == 84 and job["n"] == 1:
                 raise RuntimeError("Query killed because the cluster is out of memory")
-            return "x.csv", b"type,created on\nReturn,2026-11-15 10:00\n"
+            return "x.csv", b"type,created on\nReturn,2026-11-16 10:00:00\n"
 
         def cookies(self):
             return []

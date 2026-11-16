@@ -19,7 +19,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 85   # the 9:30 AM order report waited for; a new one asked when it is short
     env:
       TZ: Asia/Kolkata
       RUN_MODE: github-actions
@@ -39,7 +39,7 @@ jobs:
       SJIT_DRIVE_FOLDER_ID: ${{ secrets.SJIT_DRIVE_FOLDER_ID }}
       MYNTRA_SESSION_JSON: ${{ secrets.MYNTRA_SESSION_JSON }}
       # the SJIT report asked for at 7 AM: waited for 5 minutes at most, the report goes out anyway
-      SJIT_WAIT_MINUTES: "5"
+      SJIT_WAIT_MINUTES: "35"   # waits for the order report the 9:30 AM daily reports run asks for
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}

@@ -196,6 +196,25 @@ def exact_job(jobs: list[dict], report_id: int, start: date, end: date) -> dict 
     return max(fit, key=lambda j: j.get("createdOn") or 0) if fit else None
 
 
+def covering_job(jobs: list[dict], report_id: int, start: date, end: date) -> dict | None:
+    """Newest usable job of that report whose dates hold all of start..end (done or still running):
+    a longer job (the 9:30 AM daily reports run's 30 days) serves a shorter range, cut to it."""
+    fit = [j for j in jobs if (r := job_range(j, report_id)) and r[0] <= start and r[1] >= end]
+    return max(fit, key=lambda j: j.get("createdOn") or 0) if fit else None
+
+
+def cut_orders(data: bytes, start: date, end: date) -> bytes:
+    """The order lines of an orders report created from start to end (its "created on" column)."""
+    import io
+    import pandas as pd
+    df = pd.read_csv(io.BytesIO(data), dtype=str, low_memory=False)
+    col = next((c for c in df.columns if str(c).strip().lower() == "created on"), None)
+    if col is None:
+        return data
+    day = df[col].astype(str).str[:10]
+    return df[(day >= f"{start}") & (day <= f"{end}")].to_csv(index=False).encode("utf-8")
+
+
 def _days(first: date, last: date) -> set[date]:
     return {first + timedelta(days=i) for i in range((last - first).days + 1)}
 
@@ -449,13 +468,23 @@ class MyntraPortal:
         return self.schedule(missing[0], missing[-1]) if missing else None
 
     def reports(self, days: list[date], extra_from: date | None = None, wait_minutes: int = 20,
-                poll_seconds: int = 30) -> tuple[list[tuple[str, bytes]], set[date]]:
+                poll_seconds: int = 30, ask: bool = True) -> tuple[list[tuple[str, bytes]], set[date]]:
         """(report files newest first, days they cover) for `days`. Reports already on the
         portal are used first; a report that cannot be downloaded, or days no report covers,
         get a new report, which is waited for. Completed reports from extra_from on are read
-        too (cancellations of older orders), but never requested for."""
+        too (cancellations of older orders), but never requested for.
+        ask=False: days no report covers first wait (within wait_minutes) for the job another run
+        asks for (the 9:30 AM myntra-reports run) instead of asking at once. A new report is asked for
+        all the same when none came, or when the one used holds the days only in part (owner, 16 Nov
+        2026: wrong or short data gets a new report)."""
+        deadline = time.time() + wait_minutes * 60
         jobs = self.jobs()
         done, running, missing = plan(jobs, days)
+        while missing and not ask and not running and time.time() < deadline:
+            log.info("No report covers %s yet: waiting for the one the daily reports run asks for", missing[0])
+            time.sleep(poll_seconds)
+            jobs = self.jobs()
+            done, running, missing = plan(jobs, days)
         got: list[tuple[dict, tuple[str, bytes]]] = []
         stamps: dict[object, datetime | None] = {}
 
@@ -480,16 +509,18 @@ class MyntraPortal:
         waiting = set().union(*(_days(*job_range(j)) for j in running)) if running else set()
         missing = sorted(set(days) - covered - waiting)
         asked = bool(missing)
-        if missing:
+        if asked:
+            if not ask:
+                log.warning("No report from the daily reports run covers %s..%s: asking for a new one", missing[0], missing[-1])
             running.append(self.schedule(missing[0], missing[-1]))
-        deadline = time.time() + wait_minutes * 60
+        deadline = max(deadline, time.time() + 60) if not ask and not asked else time.time() + wait_minutes * 60
         for job in running:
             job = self._wait(job, deadline, poll_seconds)
             got.append((job, self.download(job)))
             covered |= full_days(*got[-1])
         missing = sorted(set(days) - covered)
         if missing and not asked:
-            # a report that was still running turned out to hold old data: one new request
+            # a report reused turned out to hold old or short data: one new request
             job = self._wait(self.schedule(missing[0], missing[-1]), time.time() + wait_minutes * 60, poll_seconds)
             got.append((job, self.download(job)))
             covered |= full_days(*got[-1])

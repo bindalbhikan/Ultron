@@ -13,6 +13,8 @@ return analysis, when the month's returns have come in.
     (Payment Reports) of the month.
 
 A part that fails is named on Telegram and the others are saved; a run again replaces the files.
+--fresh (the 15th, owner, 16 Nov 2026): last month again with reports made today, not the 2nd's
+(Myntra / Flipkart jobs from before today are not reused); business reporting follows the run.
 """
 from __future__ import annotations
 
@@ -33,6 +35,21 @@ from ..core.config import env, num
 log = logging.getLogger("bindal.portal_reports")
 
 MYNTRA_ACCOUNTS = ("MAIN", "DBCC", "FMCC")
+FRESH_FROM: date | None = None     # --fresh: only report jobs made from this day on are reused
+
+
+def myntra_job(portal, report_id: int, first: date, last: date) -> dict:
+    """A job of the report for exactly first..last: any one on the portal, or with --fresh only one
+    made today (the return analysis's fresh 7 AM request on the 15th), else a new request."""
+    from ..portals import myntra as mp
+    if not FRESH_FROM:
+        return portal.ensure(report_id, first, last)
+    jobs = [j for j in portal.jobs(100) if (mp._ts(j.get("createdOn")) or date.min) >= FRESH_FROM]
+    job = mp.exact_job(jobs, report_id, first, last)
+    if job:
+        log.info("Report %s %s..%s made today: job %s", report_id, first, last, job.get("id"))
+        return job
+    return portal.schedule(first, last, report_id)
 
 
 def report_month(value: str, today: date) -> date:
@@ -47,7 +64,7 @@ def myntra_orders(account: str, first: date, last: date, dest: Path) -> Path:
     from ..portals import myntra as mp
     from ..return_analysis.sources import myntra_portal
     portal = myntra_portal(account)
-    job = portal.ensure(mp.REPORT_ID, first, last)
+    job = myntra_job(portal, mp.REPORT_ID, first, last)
     name, data = portal.collect_or_regenerate(job, int(num("RETURNS_WAIT_MINUTES", 45)))
     mp.save_to_worker(env, portal.cookies(), account)
     path = dest / f"{account}_orders{Path(name).suffix or '.csv'}"
@@ -105,7 +122,7 @@ def flipkart_report(report: str, first: date, last: date, dest: Path) -> Path:
     fk = flipkart_client()
     # A closed month's request from before its last day had settled is not reused: the one made at
     # 10:31 PM on 1 Nov 2026 still had no order of 31 Oct.
-    name, data = fk.report(report, first, last, int(num("RETURNS_WAIT_MINUTES", 45)), made_from=last + timedelta(days=2))
+    name, data = fk.report(report, first, last, int(num("RETURNS_WAIT_MINUTES", 45)), made_from=FRESH_FROM or last + timedelta(days=2))
     path = dest / f"flipkart_{report.lower().replace(' ', '_')}{Path(name).suffix or '.xlsx'}"
     path.write_bytes(data)
     if report == "Orders":
@@ -141,7 +158,7 @@ def flipkart_orders_in_parts(fk, first: date, last: date, dest: Path, path: Path
     wait = int(num("RETURNS_WAIT_MINUTES", 45))
     frames = []
     for i, (a, b) in enumerate(month_parts(first, last)):
-        _, data = fk.report("Orders", a, b, wait, made_from=last + timedelta(days=2))
+        _, data = fk.report("Orders", a, b, wait, made_from=FRESH_FROM or last + timedelta(days=2))
         part = dest / f"flipkart_orders_part{i}.xlsx"
         part.write_bytes(data)
         frames.append(pd.read_excel(part, sheet_name="Orders", dtype=str, engine="calamine"))
@@ -160,7 +177,7 @@ def myntra_returns(account: str, first: date, last: date, dest: Path) -> Path:
     from ..portals import myntra as mp
     from ..return_analysis.sources import myntra_portal
     portal = myntra_portal(account)
-    job = portal.ensure(mp.RETURNS_REPORT_ID, first, last)
+    job = myntra_job(portal, mp.RETURNS_REPORT_ID, first, last)
     name, data = portal.collect_or_regenerate(job, int(num("RETURNS_WAIT_MINUTES", 45)))
     mp.save_to_worker(env, portal.cookies(), account)
     path = dest / f"{account}_returns{Path(name).suffix or '.csv'}"
@@ -271,7 +288,9 @@ def flipkart_sales(first: date, last: date, dest: Path) -> Path:
 
 
 def run(args) -> int:
+    global FRESH_FROM
     today = date.today()
+    FRESH_FROM = today if args.fresh else None
     months = months_of(args, today)
     only = {p.strip().upper() for p in (args.portals or "").split(",") if p.strip()}
     kinds = {k.strip().lower() for k in (args.kinds or "").split(",") if k.strip()}
@@ -312,7 +331,7 @@ def run(args) -> int:
             lines.append(f"<b>{pr.label(month)}</b>: {len(saved)} saved" + (f", no data: {', '.join(empty)}" if empty else "")
                          + "".join(f"\n❌ {telegram.esc(n)}: {telegram.esc(why)}" for n, why in failed))
         else:
-            lines += [f"🗂 <b>Portal reports {pr.label(month)}</b>",
+            lines += [f"🗂 <b>Portal reports {pr.label(month)}</b>" + (" · fresh" if args.fresh else ""),
                       f"<i>{first:%d %b} to {last:%d %b %Y}, Drive AGENT WORK/PORTAL REPORTS</i>", ""]
             lines += [f"✅ {telegram.esc(n)}" for n in saved]
             lines += [f"⚪ {telegram.esc(n)}: no data in the report" for n in empty]
@@ -336,5 +355,7 @@ def main(argv=None) -> int:
     p.add_argument("--to", dest="to_month", default="", metavar="YYYY-MM", help="back-fill: the last month")
     p.add_argument("--portals", default="", help="only these, e.g. MYNTRA,AJIO (default: all)")
     p.add_argument("--kinds", default="", help="only these reports: sale, return, payment, sales (default: all)")
+    p.add_argument("--fresh", action="store_true",
+                   help="reports made today only (the 15th): the 2nd's Myntra / Flipkart jobs are not reused")
     p.add_argument("--no-upload", action="store_true", help="download only, Drive not changed (test run)")
     return run_bot("Portal reports", p, run, argv)

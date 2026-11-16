@@ -15,7 +15,7 @@ on:
         description: "1 = today so far, channel-wise, Telegram only (workbook not touched)"
         default: ""
       sjit_request:
-        description: "1 = only ask the Myntra portal for the SJIT report (morning run)"
+        description: "1 = only ask the Myntra portal for the SJIT report (by hand; the 9:30 AM daily reports run asks for it)"
         default: ""
       snapshot:
         description: "Picture of a month sheet instead of the report (current or YYYY-MM)"

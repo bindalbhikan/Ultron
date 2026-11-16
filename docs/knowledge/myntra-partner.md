@@ -75,7 +75,7 @@ working uses it. The official API for orders, returns, stock and payments: `mynt
 
 | Page | What is there |
 |---|---|
-| `/Reports/ops-reports` | Operational Reports. Besides the three the bots use: `Seller_Listings_Report`, `Seller_Inventory_Report`, `SJIT_Inward_Items`, `SJIT_Inwards_Summary`, `SJIT_Returns_To_Vendor_Report`, `SJIT_Inventory_Report`, and `MDirect_*` (Orders, Returns, Cancellation, Inventory, Listings). The list depends on store / partner type. History from 1 Jan 2024; older ones only through Partner Support. Report ids for the new names: still to capture. |
+| `/Reports/ops-reports` | Operational Reports. Besides the three the bots use: `Seller_Listings_Report`, `Seller_Inventory_Report`, `SJIT_Inward_Items`, `SJIT_Inwards_Summary`, `SJIT_Returns_To_Vendor_Report`, `SJIT_Inventory_Report`, and `MDirect_*` (Orders, Returns, Cancellation, Inventory, Listings). The list depends on store / partner type. History from 1 Jan 2024; older ones only through Partner Support. Report ids: see the table below (16 Nov 2026). |
 | `/Reports/seller-reports` | Financial Reports: Monthly / Event / One Time, month picker, categories Others / Commission / Logistics. Rows seen: sales revenue, non-order settlement, restocked B2C, GSTR RTO / Packed / RT, unsettled deductions, royalty, SPF, settled / unsettled revamped reports, B2C, PnL, order flow, invoices, credit notes (M2; the list call is `sellerreports/all-new` above). |
 | `/ReturnInsights` | return reasons grouped by style, filters month range / style / brand / category, "View Reasons", Return Tracking, downloads. Could feed a per-style return-cause report. |
 | `/Pricing/manage` | discount overrides (DO id, status, start date, source), Discounts / Pricing / Upload History, Auto Approval Setup (calls: `filterDos`, `jobtracker` above). |
@@ -84,3 +84,17 @@ working uses it. The official API for orders, returns, stock and payments: `mynt
 
 Left out as noise: `seller-activation/seller-achievements`, `actions-cards/card-event` (click
 tracking), `delighted/people` (survey, 403).
+
+### Report ids of `/report/jobs/schedule` (from the jobs list, `reportEntry.name`, 16 Nov 2026)
+
+Dated (reportStartDate / reportEndDate): 4 Seller_Orders_Report, 12 Seller_Returns_Report, 30 MDirect_Returns_Report,
+32 MDirect_Orders_Report, 50 SJIT_Inward_Items, 52 SJIT_Inwards_Summary, 54 SJIT_Returns_To_Vendor_Report,
+68 SJIT_Orders_Report, 70 SJIT_Customer_Returns_Report, 76 Seller_WPR_Report, 80 SJIT_Inv_recon,
+84 Return_Delivery_Report, 104 seller_notif_first_inv_push, 105 seller_notif_pmr_not_addressed, 109 Test_Whole_WPR,
+116 SJIT_Inwarded_Inventory_Report.
+Snapshots (no dates): 14 Seller_Listings_Report, **16 Seller_Inventory_Report** (made daily by `myntra-reports`, not
+downloaded), 24 MDirect_Inventory_Report, 26 MDirect_Listings_Report, 64 SJIT_Inventory_Report, 66 SJIT_Listings_Report,
+86 OMNI_Listing, 87 OMNI_SIM, 99 CatalogSnapshot00, 107 CatalogSnapshot_ITFAS_2026, 108 Style_Visibility_Report,
+110 Out_of_stock_High_selling, 117 SJIT_Stock_Snapshot_Report. 78 Rebate_Event_Level_Report takes eventId / sellerId.
+A dated job's rows: orders by `created on`, returns by `return_created_date` (RTO lines: `order_rto_date`),
+return deliveries by `deliver_to_seller_date`.

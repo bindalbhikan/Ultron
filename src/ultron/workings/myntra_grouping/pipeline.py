@@ -4,8 +4,8 @@ Inputs:
   Drive AGENT WORK/MYNTRA/LISTING GROUPING/GROUPING SHEET.xlsx  the groups the owner wants (one tab per
         category, column A = MY SKUs, a blank row between groups) - kept by the owner
   .../LISTING GROUPING/portal template.xlsx                     Myntra's grouping upload template
-  AGENT WORK/MYNTRA/MYNTRA DAILY REPORTS/<day>/<ACC> Listings <day>.csv   the newest listings report of
-        every account (myntra-reports, 10 AM daily)
+  Myntra partner portal Seller_Listings_Report of every account: the newest of today / yesterday (the
+        9:30 AM myntra-reports run makes it there), else one asked for
   AGENT WORK/BUSINESS REPORTING/MasterSheet.xlsx               the SKU master
   AGENT WORK/PORTAL REPORTS/MYNTRA (ORDER REPORTs)              sales: the last SALE_MONTHS (3) months'
         order lines delivered (C) or on the way (SH), per account and style
@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import re
 import shutil
 import tempfile
 from datetime import date, datetime, timedelta
@@ -51,7 +50,6 @@ from ..core.config import agent_work_id
 log = logging.getLogger("bindal.myntra_grouping")
 
 FOLDER = ("MYNTRA", "LISTING GROUPING")
-DAILY = ("MYNTRA", "MYNTRA DAILY REPORTS")
 SELLER_OF = {"MAIN": "19170", "DBCC": "32207", "FMCC": "35426"}
 ACCOUNT_OF = {v: k for k, v in SELLER_OF.items()}
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -70,24 +68,55 @@ def subfolder(root: DriveFolder, names, create: bool = False) -> DriveFolder | N
     return f
 
 
+LISTINGS_REPORT_ID = 14   # Seller_Listings_Report (a snapshot, no dates)
+
+
+def newest_listings_job(jobs: list[dict], since: date) -> dict | None:
+    """The newest completed Seller_Listings_Report job created on or after `since`."""
+    from ..portals import myntra as mp
+    done = [j for j in jobs if j.get("reportId") == LISTINGS_REPORT_ID and str(j.get("status")).upper() == "COMPLETED"
+            and j.get("successFile") and (mp._ts(j.get("createdOn")) or date.min) >= since]
+    return max(done, key=lambda j: j.get("createdOn") or 0, default=None)
+
+
 def latest_listings(dest: Path) -> dict[str, Path]:
-    """The newest day folder of MYNTRA DAILY REPORTS holding a listings report, per account."""
-    daily = subfolder(agent_work(), DAILY)
-    if not daily:
-        raise RuntimeError("AGENT WORK/MYNTRA/MYNTRA DAILY REPORTS not found")
-    days = sorted((n for n in daily.children() if re.fullmatch(r"\d{4}-\d{2}-\d{2}", n)), reverse=True)
+    """Each account's newest Seller_Listings_Report from the partner portal (since 16 Nov 2026 the
+    9:30 AM myntra-reports run makes it there and no longer saves it to Drive): one of the last
+    MYNTRA_GROUPING_LISTINGS_DAYS (1 = today or yesterday) is reused, else one is asked for and waited for."""
+    from ..portals import myntra as mp
+    from ..return_analysis.sources import myntra_portal
+    since = date.today() - timedelta(days=int(num("MYNTRA_GROUPING_LISTINGS_DAYS", 1)))
     found: dict[str, Path] = {}
-    for day in days[:10]:
-        folder = daily.subfolder(day)
-        for name in folder.children():
-            m = re.match(r"^(MAIN|DBCC|FMCC) Listings (\d{4}-\d{2}-\d{2})\.csv$", name)
-            if m and m.group(1) not in found:
-                # engine.py reads *Seller_Listings_Report_<seller id>.csv
-                found[m.group(1)] = folder.download(name, dest / f"{m.group(2)}_Seller_Listings_Report_{SELLER_OF[m.group(1)]}.csv")
-        if len(found) == len(SELLER_OF):
-            break
+    errors = []
+    for account, seller in SELLER_OF.items():
+        try:
+            portal = myntra_portal(account)
+            job = newest_listings_job(portal.jobs(100), since)
+            data = None
+            if job:
+                _, data = portal.download(job)
+                made = mp._ts(job.get("createdOn")) or date.today()
+                if len([ln for ln in data.splitlines() if ln.strip()]) < 2:
+                    # an empty listings report is wrong data (owner, 16 Nov 2026): a new one
+                    log.warning("%s listings job %s has no rows: asking for a new one", account, job.get("id"))
+                    data = None
+            if data is None:
+                log.info("%s: no listings report since %s on the portal, asking for one", account, since)
+                _, data = portal.collect(portal.schedule(None, None, LISTINGS_REPORT_ID), int(num("MYNTRA_REPORT_WAIT_MINUTES", 40)))
+                made = date.today()
+            mp.save_to_worker(env, portal.cookies(), account)
+            # engine.py reads *Seller_Listings_Report_<seller id>.csv
+            path = dest / f"{made}_Seller_Listings_Report_{seller}.csv"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            found[account] = path
+        except Exception as exc:  # noqa: BLE001 - the other accounts are still checked
+            if isinstance(exc, mp.SessionExpired):
+                raise
+            log.warning("%s listings report not got: %s", account, exc)
+            errors.append(f"{account}: {str(exc)[:100]}")
     if not found:
-        raise RuntimeError("no listings report in MYNTRA DAILY REPORTS (myntra-reports, 10 AM)")
+        raise RuntimeError("no Myntra listings report got: " + "; ".join(errors))
     return found
 
 

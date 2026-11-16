@@ -1,6 +1,6 @@
 # Project context — BINDAL EXPORTS report bots
 
-<!-- AUTO:synced -->Last synced with the code: 2026-11-14.<!-- /AUTO:synced -->
+<!-- AUTO:synced -->Last synced with the code: 2026-11-16.<!-- /AUTO:synced -->
 Owner: Bhikan (GitHub `bindalbhikan`, commit author
 `bhikan.serein@gmail.com`). Every bot reports to Telegram **@bindal_exports_bot**.
 
@@ -38,15 +38,15 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 | morning | `python run.py morning` | Morning report | `morning.yml` Morning report | 9:30 AM daily | `docs/bots/morning.md` |
 | myntra-grouping | `python run.py myntra-grouping` | Myntra colour grouping | `myntra-grouping.yml` Myntra colour grouping | 12:00 PM every 3 days; 8:00 PM daily | `docs/bots/myntra-grouping.md` |
 | myntra-history | `python run.py myntra-history` | Myntra order + return history | `myntra-history.yml` Myntra order + return history | by hand only: Menu > Myntra > Order + return history | `docs/bots/myntra-history.md` |
-| myntra-otp | `python run.py myntra-otp` | Myntra courier OTP | `myntra-otp.yml` Myntra courier OTP | 11:00 AM daily; 11:45 AM daily | `docs/bots/myntra-otp.md` |
-| myntra-reports | `python run.py myntra-reports` | Myntra daily reports | `myntra-reports.yml` Myntra daily reports | 10:00 AM daily | `docs/bots/myntra-reports.md` |
-| myntra-spf | `python run.py myntra-spf` | Myntra SPF master | `myntra-spf.yml` Myntra SPF master | 7:00 AM daily; 9:00 AM daily | `docs/bots/myntra-spf.md` |
+| myntra-otp | `python run.py myntra-otp` | Myntra courier OTP | `myntra-otp.yml` Myntra courier OTP | 11:00 AM daily; 11:40 AM daily | `docs/bots/myntra-otp.md` |
+| myntra-reports | `python run.py myntra-reports` | Myntra daily reports | `myntra-reports.yml` Myntra daily reports | 9:30 AM daily | `docs/bots/myntra-reports.md` |
+| myntra-spf | `python run.py myntra-spf` | Myntra SPF master | `myntra-spf.yml` Myntra SPF master | 10:00 AM daily | `docs/bots/myntra-spf.md` |
 | myntra-tat | `python run.py myntra-tat` | Myntra courier scorecard | `myntra-tat.yml` Myntra courier scorecard | 6:30 PM daily | `docs/bots/myntra-tat.md` |
 | myntra-zero-td | `python run.py myntra-zero-td` | Myntra zero TD | `myntra-zero-td.yml` Myntra zero TD | 7:00 AM mon-sat; 9:00 AM mon-sat; 10:00 AM daily; 11:00 AM mon-sat; 1:00 PM mon-sat; 3:00 PM mon-sat; 5:00 PM mon-sat; 7:00 PM mon-sat | `docs/bots/myntra-zero-td.md` |
-| portal-reports | `python run.py portal-reports` | Portal reports | `portal-reports.yml` Portal reports | 11:00 AM monthly (2nd) | `docs/bots/portal-reports.md` |
+| portal-reports | `python run.py portal-reports` | Portal reports | `portal-reports.yml` Portal reports | 11:00 AM monthly (2nd); 11:00 AM monthly (15th) | `docs/bots/portal-reports.md` |
 | portal-sale | `python run.py portal-sale` | Portal sale report (real sale) | `portal-sale.yml` Portal sale report | 5:30 PM daily | `docs/bots/portal-sale.md` |
 | returns | `python run.py returns` | Return analysis (monthly + yearly) | `returns.yml` Return analysis | 7:00 AM monthly (15th); 7:00 AM monthly (10th); 2:00 PM monthly (10th); 2:00 PM monthly (15th) | `docs/bots/returns.md` |
-| sale | `python run.py sale` | Daily sale | `sale.yml` Daily sale report | 7:00 AM daily; 3:30 PM daily | `docs/bots/sale.md` |
+| sale | `python run.py sale` | Daily sale | `sale.yml` Daily sale report | 3:30 PM daily | `docs/bots/sale.md` |
 | sla | `python run.py sla` | SLA warning | `sla.yml` SLA warning | 12:00 PM daily; 3:00 PM daily | `docs/bots/sla.md` |
 | stock | `python run.py stock` | Stock-out alert | `stock.yml` Stock-out alert | 10:00 AM daily | `docs/bots/stock.md` |
 | ticket-followup | `python run.py ticket-followup` | Ticket follow-up | `ticket-followup.yml` Ticket follow-up | 8:00 PM daily | `docs/bots/ticket-followup.md` |
@@ -70,13 +70,13 @@ and folder kept its Drive id):
 AGENT WORK/
   AGENT REPORT WORK SCHEDULE REPORT.xlsx   the agent's reporting sheet (below)
   AGENT LOGS/<OCT-26>/<29-10-26>/          every run's hyper log
-  MYNTRA/   MYNTRA DAILY REPORTS/, MYNTRA DAILY RETURN DELIVERY REPORT.xlsx, MYNTRA ZERO TD UPDATE SHEET.xlsx,
+  MYNTRA/   MYNTRA DAILY REPORTS/ (up to 15 Nov 2026 only), MYNTRA DAILY RETURN DELIVERY REPORT.xlsx, MYNTRA ZERO TD UPDATE SHEET.xlsx,
             MYNTRA ZERO TD SHEETS/, MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../
   AJIO/     Ajio Daily Order Tat Check Working/ (TAT master), Ajio Ads Gap Working/
   DAILY REPORTING/   DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx, PORTAL SALE REPORT.xlsx), VMS/ (the daily reports in one place)
   PORTAL REPORTS/    <MYNTRA|AJIO|FLIPKART>/<YYYY>/<Mon-YY>/<PORTAL> [<ACCOUNT>] ORDER|RETURN|PAYMENT REPORT <MON-YY>
                      every portal's monthly reports, one calendar month each, no sub folders (the name says
-                     what it is; PARTIAL = days missing): order + payment reports on the 2nd (portal-reports),
+                     what it is; PARTIAL = days missing): order + payment reports on the 2nd (portal-reports, made anew on the 15th),
                      return reports by the return analysis on the 10th (replaced by the 15th's fresh second
                      try); the business reporting reads them (core/portal_reports.py)
   BUSINESS REPORTING/ the owner's Myntra sale / return / payment analysis (CONTEXT.md and scripts in it)

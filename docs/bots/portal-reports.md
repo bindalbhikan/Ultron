@@ -1,7 +1,10 @@
 # Portal reports — `python run.py portal-reports`
 
-**When**: the 2nd of every month, 11 AM IST (`portal-reports.yml`, started by the worker's cron,
-`SCHEDULE` in `worker/src/worker.js`). By hand: Menu > Reports & MIS > Portal reports (asks first), `/portalreports [YYYY-MM]`, or run the workflow
+**When**: the 2nd of every month, 11 AM IST, and again on the 15th, 11 AM IST, with `fresh` = 1 (`portal-reports.yml`,
+started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). **Fresh** (owner, 16 Nov 2026): last month's
+reports made anew, not the 2nd's: a Myntra / Flipkart job made before today is not reused (`--fresh`; the return
+analysis's 7 AM fresh request of the same day is), the files on Drive are replaced, and business reporting
+runs after it on them. By hand: Menu > Reports & MIS > Portal reports (asks first), `/portalreports [YYYY-MM]`, or run the workflow
 (inputs `month`, `portals` e.g. `MYNTRA,AJIO`, `kinds` e.g. `payment`, `no_upload`).
 **Back-fill**: inputs `from` / `to` (YYYY-MM): every month in between, one after the other, Myntra's return report
 too; a report with no rows (the portal no longer keeps

@@ -1,6 +1,8 @@
 # Myntra SPF master — `python run.py myntra-spf`
 
-**When**: 7:00 AM `--request` (returns 12 + delivery 84 per account), 9:00 AM the master.
+**When**: 10:00 AM the master, on the report jobs the 9:30 AM `myntra-reports` run asks for (the 30-day orders,
+returns 12 and delivery 84 jobs are the same; since 16 Nov 2026 the 7 AM `--request` run is dropped, by hand only).
+The older order window (31-60 days) is still asked for by the master itself.
 On demand: `/myntraspf`.
 
 **Result**: `SPF/MYNTRA/MYNTRA SPF MASTER.xlsx` (`MYNTRA_SPF_FOLDER_ID`), sheets MAIN / DBCC / FMCC
