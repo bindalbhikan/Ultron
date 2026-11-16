@@ -126,15 +126,17 @@ def build_myntra(files: list[dict], master: pd.DataFrame, missing: list[str] = (
     o, r, p = (pd.concat(get(k), ignore_index=True) if get(k) else pd.DataFrame() for k in ("ORDER", "RETURN", "PAYMENT"))
     if not len(o):
         raise RuntimeError("no Myntra order report in PORTAL REPORTS")
-    p = myntra.payments(p)
-    raw = myntra.raw_data(o, r, master, p)
+    from ..core.tables import to_pandas
+    # Polars (docs/libraries/06-polars.md); raw goes on to the workbook as pandas until that moves too
+    p = myntra.payments_pl(p)
+    raw = to_pandas(myntra.raw_data_pl(o, r, master, p))
     lg = log_rows(files, frames, {"ORDER": ("created on", myntra.dt), "RETURN": ("return_created_date", myntra.dt),
                                   "PAYMENT": ("Payment_Date", myntra.dt)})
     lg.append(["Orders used", "ALL", "one row per order line", len(raw), "Order date", raw["ORDER DATE"].min(), raw["ORDER DATE"].max(), ""])
     lg.append(["SKU master", "ALL", "BUSINESS REPORTING/MasterSheet.xlsx (sheet Master)", len(master), "-", pd.NaT, pd.NaT, ""])
     for gap in missing:
         lg.append(["Report missing", "-", gap, "-", "-", pd.NaT, pd.NaT, "not in PORTAL REPORTS: the figures of these months are low"])
-    return myntra.report(raw, p, pd.DataFrame(lg, columns=LOG_COLS)), o
+    return myntra.report_pl(raw, p, pd.DataFrame(lg, columns=LOG_COLS)), o
 
 
 def category_map(myntra_orders: pd.DataFrame, master: pd.DataFrame) -> dict[str, str]:

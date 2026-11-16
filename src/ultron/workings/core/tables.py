@@ -44,6 +44,13 @@ def to_polars(df) -> "pl.DataFrame":
                         schema={c: pl.Utf8 for c in cols})
 
 
+def to_pandas(df: "pl.DataFrame") -> "pd.DataFrame":
+    """Polars -> pandas for the code not moved yet (the bridge; no pyarrow needed): every value as it is,
+    missing values as NaN / NaT / None."""
+    import pandas as pd
+    return pd.DataFrame({c: df[c].to_list() for c in df.columns}, columns=list(df.columns))
+
+
 def pcol(df: "pl.DataFrame", name: str) -> "pl.Expr":
     """Polars: the column `name` (matched without case / outer spaces) as stripped text; nulls when missing."""
     import polars as pl

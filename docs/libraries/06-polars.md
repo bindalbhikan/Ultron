@@ -36,6 +36,17 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   13,146 / 4,084 / 1,424, AJIO 3,544 gross / 180 cancel / 852 return. The reports are still read by pandas
   (`read_report`): moving the xlsx reading is its own step (number cells must come out as the same text).
 
-**Next, one by one, each with a parity test on real files**: business report, return analysis,
+* Business report, Myntra (`business_report/myntra.py`: `payments_pl`, `raw_data_pl`, `pay_months_pl`,
+  `report_pl`; `build_myntra` uses them, the RAW DATA goes on to the workbook as a pandas table through
+  `tables.to_pandas` until the workbook moves too — no pyarrow). Checked with a golden run of the whole business
+  report on real Sep–Oct 2026 PORTAL REPORTS files (Myntra 28,611 rows, 38,149 payment lines; Flipkart 19,104;
+  AJIO 4,317), every table and cell compared: all the same **except 39 COMMISSION cells, now 1 paisa right**.
+  Myntra writes commissions like `13.145000000000001`; pandas' fast text-to-number reader took it as 13.145 and
+  rounded to 13.14; Polars reads the text exactly, 13.15. In all 39 cells the new value is the exact reading
+  (checked one by one), the old one in none. Rounding is numpy's (`round2`: x × 100, half to even, / 100), as
+  before. Dates: the three ISO shapes of these reports, before 2000 (the 1970 of RTO lines) empty, as before.
+
+**Next, one by one, each with a parity test on real files**: business report Flipkart and AJIO, then its
+workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
 owner's OK. With it: a row-quality check of the OMSGuru order list (fields left at their defaults).
