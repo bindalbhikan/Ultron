@@ -26,7 +26,7 @@
   flipkart-listing-file 11 AM Flipkart listing file (price, settlement, stock) to Drive  python run.py flipkart-listing-file --help
   myntra-tat 6:30 PM Myntra courier pickups   python run.py myntra-tat --help
   mis        monthly MIS and plan           python run.py mis --help
-  myntra-reports 9:30 AM Myntra daily reports made on the portal (+ inventory)  python run.py myntra-reports --help
+  myntra-reports 9:30 AM Myntra daily reports made on the portal only (+ inventory)  python run.py myntra-reports --help
   business-report sale / return / payment analysis per portal  python run.py business-report --help
   myntra-grouping Myntra colour grouping master + upload templates  python run.py myntra-grouping --help
   ticket-followup 8 PM: ticket master + daily follow-up  python run.py ticket-followup --help

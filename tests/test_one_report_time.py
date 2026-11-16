@@ -15,19 +15,6 @@ def _job(rid, first, last, made, status="COMPLETED", jid=1):
             "queryParams": {**mp.QUERY, "reportStartDate": f"{first}", "reportEndDate": f"{last}"}}
 
 
-def test_day_rows_cut_by_the_dates_the_portal_filters_on():
-    from ultron.workings.myntra_reports.pipeline import day_rows
-    day = date(2026, 11, 15)
-    returns = pd.DataFrame({"return_created_date": ["2026-11-15 10:00", "1970-01-01 05:30", "2026-11-14 09:00", "1970-01-01"],
-                            "order_rto_date": ["", "2026-11-15 11:00", "", "2026-11-13"]})
-    assert len(day_rows("Returns", returns, day)) == 2
-    delivery = pd.DataFrame({"deliver_to_seller_date": ["2026-11-15 12:00", "2026-11-10 12:00"]})
-    assert len(day_rows("Return Delivery", delivery, day)) == 1
-    orders = pd.DataFrame({"created on": ["2026-11-15 01:00", "2026-11-01 01:00"]})
-    assert len(day_rows("Orders", orders, day)) == 1
-    assert len(day_rows("Returns", pd.DataFrame({"x": [1]}), day)) == 0
-
-
 def test_daily_returns_jobs_are_the_spf_masters_30_days():
     from ultron.workings.myntra_reports import pipeline
     from ultron.workings.myntra_spf.pipeline import _windows
@@ -109,10 +96,10 @@ def test_portal_reports_fresh_reuses_only_a_job_made_today(monkeypatch):
     assert pipeline.myntra_job(Portal([old]), 4, first, last)["id"] == 1
 
 
-def test_myntra_reports_asks_anew_when_the_orders_data_is_short(monkeypatch, tmp_path):
+def test_myntra_reports_asks_anew_when_the_orders_data_is_short(monkeypatch):
     from ultron.workings.myntra_reports import pipeline
     from ultron.workings.return_analysis import sources
-    fresh_asks = []
+    fresh_asks, downloads = [], []
 
     class Portal:
         def ensure(self, rid, start, end, fresh=False):
@@ -126,7 +113,11 @@ def test_myntra_reports_asks_anew_when_the_orders_data_is_short(monkeypatch, tmp
         def jobs(self, size=50):
             return []
 
-        def collect(self, job, wait):
+        def _wait(self, job, deadline, poll):
+            return job
+
+        def download(self, job):
+            downloads.append(job["id"])
             stamp = "2026-11-16 10:00:00" if job["fresh"] else "2026-11-15 03:00:00"
             return "x.csv", f"type,created on\nReturn,{stamp}\n".encode()
 
@@ -134,6 +125,7 @@ def test_myntra_reports_asks_anew_when_the_orders_data_is_short(monkeypatch, tmp
             return []
     monkeypatch.setattr(sources, "myntra_portal", lambda a: Portal())
     monkeypatch.setattr(mp, "save_to_worker", lambda *a: True)
-    got, _, notes = pipeline.fetch_account("MAIN", date(2026, 11, 15), tmp_path, 1)
-    assert notes == [] and set(got) == set(pipeline.REPORTS)
+    made, notes = pipeline.make_account("MAIN", date(2026, 11, 15), 1)
+    assert notes == [] and set(made) == set(pipeline.REPORTS)
     assert sorted(fresh_asks) == sorted(pipeline.REPORTS[k] for k in pipeline.RANGE_DAYS)
+    assert set(downloads) == {4}      # only the orders data time is read; nothing else is downloaded

@@ -24,7 +24,7 @@ def test_zero_td_asks_the_phone_again_for_styles_without_an_answer(monkeypatch):
     assert got == {1: {"id": 1}, 2: {"id": 2}, 3: "NOT FOUND"}
 
 
-def test_myntra_reports_second_round_for_a_refused_or_killed_report(monkeypatch, tmp_path):
+def test_myntra_reports_second_round_for_a_refused_or_killed_report(monkeypatch):
     from ultron.workings.myntra_reports import pipeline
     from ultron.workings.portals import myntra as mp
     from ultron.workings.return_analysis import sources
@@ -43,17 +43,20 @@ def test_myntra_reports_second_round_for_a_refused_or_killed_report(monkeypatch,
         def jobs(self, size=50):
             return []
 
-        def collect(self, job, wait):
+        def _wait(self, job, deadline, poll):
             if job["id"] == 84 and job["n"] == 1:
-                raise RuntimeError("Query killed because the cluster is out of memory")
+                raise RuntimeError("Myntra report job INTERRUPTED: cluster is out of memory")
+            return job
+
+        def download(self, job):
             return "x.csv", b"type,created on\nReturn,2026-11-16 10:00:00\n"
 
         def cookies(self):
             return []
     monkeypatch.setattr(sources, "myntra_portal", lambda a: Portal())
     monkeypatch.setattr(mp, "save_to_worker", lambda *a: True)
-    got, _, notes = pipeline.fetch_account("MAIN", date(2026, 11, 15), tmp_path, 1)
-    assert set(got) == set(pipeline.REPORTS) and notes == []
+    made, notes = pipeline.make_account("MAIN", date(2026, 11, 15), 1)
+    assert set(made) == set(pipeline.REPORTS) and notes == []
     assert asked.count(12) == 2 and asked.count(84) == 2 and asked.count(4) == 1
 
 

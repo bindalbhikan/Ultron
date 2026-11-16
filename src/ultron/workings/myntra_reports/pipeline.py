@@ -1,17 +1,17 @@
 """Myntra daily reports (9:30 AM, the one time of day the bots ask Myntra for their daily reports):
-yesterday's Seller_Orders_Report, Seller_Returns_Report and Return_Delivery_Report, and today's
-Seller_Listings_Report and Seller_Inventory_Report, of each account (MAIN / DBCC / FMCC).
+of each account (MAIN / DBCC / FMCC) Seller_Orders_Report, Seller_Returns_Report and
+Return_Delivery_Report for the 30 days up to yesterday (the very jobs the SPF master reads at 10 AM),
+and Seller_Listings_Report and Seller_Inventory_Report, snapshots of today.
 
-The five are different reports, so they are asked for together (the 15-minute cooldown is per
-report); a job already on the portal for the same dates (or a snapshot of today) is reused.
-The orders report is asked for the last 30 days (the same job the SPF master and the daily sale
-read later in the day): the Orders file keeps only yesterday's lines, the rest tells the return deliveries of type
-RTO_or_Cancel apart by order status (RTO = RTO, F = cancelled; an order older than 30 days counts as RTO).
-Nothing is saved to Drive (owner, 16 Nov 2026): the reports stay on the portal for the other workings
-(the listings report: myntra-grouping), the inventory report is only asked for. Each account's return
-deliveries to its PPMP warehouses (not FBM / SJIT) become a row of AGENT WORK/MYNTRA/MYNTRA DAILY RETURN DELIVERY REPORT.xlsx
-(DATE, PORTAL, CUSTOMER RETURN, RTO, CANCELLED, TOTAL; a day run again replaces its rows), and
-Telegram gets one message: the total return delivery and per account the rows of each report.
+Only made on the portal (owner, 16 Nov 2026): nothing is downloaded or saved, not even the return
+delivery workbook; the other workings (SPF master, morning, sale, portal sale, courier scorecard,
+grouping) use these jobs and never ask for the same report again. The five are different reports,
+so they are asked for together (the 15-minute cooldown is per report); a job already on the portal
+for the same dates (or a snapshot of today) is reused. Each job is waited for until it is done;
+one refused or killed ("Internal server error while scheduling", INTERRUPTED) is asked for again in a
+second round, and so is every dated report when the orders job holds yesterday only in part (its
+data time is read in memory, nothing kept). Telegram: per account each report made, or why not.
+--backfill-from (by hand): the old return delivery workbook's rows from jobs on the portal.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ import pandas as pd
 
 from ..core import telegram
 from ..core.app import run_bot
-from ..core.config import csv_list, env, num, output_dir
+from ..core.config import csv_list, env, num
 from ..core.config import agent_work_id
 
 log = logging.getLogger("bindal.myntra_reports")
@@ -42,10 +42,9 @@ PPMP_WAREHOUSES = {"46148", "24504", "50829", "56765"}
 # label -> report id
 REPORTS = {"Orders": 4, "Returns": 12, "Return Delivery": 84, "Listings": 14, "Inventory": 16}
 SNAPSHOT = {"Listings", "Inventory"}
-ASK_ONLY = {"Inventory"}   # made on the portal, not downloaded (owner, 16 Nov 2026)
 ORDER_DAYS = 30
 # returns and return deliveries are asked for the 30 days up to yesterday: the very job the SPF master
-# (10 AM) reads, so no working asks Myntra for the same report again; the day's rows are cut from it
+# (10 AM) reads, so no working asks Myntra for the same report again
 RANGE_DAYS = {"Orders": ORDER_DAYS, "Returns": 30, "Return Delivery": 30}
 
 
@@ -66,45 +65,12 @@ def _job(portal, label: str, rid: int, day: date, fresh: bool = False) -> dict:
     return portal.schedule(None, None, rid)
 
 
-def day_rows(label: str, df: pd.DataFrame, day: date) -> pd.DataFrame:
-    """The day's rows of a report asked for a longer range, by the date the portal itself filters on
-    (checked on single-day jobs, Nov 2026): orders by created on, return deliveries by
-    deliver_to_seller_date, returns by return_created_date (RTO lines have 1970 there: order_rto_date)."""
-    if label == "Orders":
-        when = _col(df, "created on").fillna("")
-    elif label == "Return Delivery":
-        when = _col(df, "deliver_to_seller_date").fillna("")
-    elif label == "Returns":
-        created = _col(df, "return_created_date").fillna("")
-        when = created.where(~created.str.startswith("1970") & (created != "") & (created != "nan"),
-                             _col(df, "order_rto_date").fillna(""))
-    else:
-        return df
-    return df[when.str.startswith(f"{day}")]
-
-
 def _col(df: pd.DataFrame, name: str) -> pd.Series:
     """The column, whatever its case in the CSV; empty when the report has no such column."""
     for c in df.columns:
         if str(c).strip().lower() == name:
             return df[c].astype(str).str.strip()
     return pd.Series(dtype=str, index=df.index)
-
-
-def summary(label: str, df: pd.DataFrame) -> str:
-    """One short line about a report's rows."""
-    n = len(df)
-    if label == "Orders":
-        amount = pd.to_numeric(_col(df, "final amount"), errors="coerce").sum()
-        cancelled = int((_col(df, "order status") == "F").sum())
-        return f"{n} lines, ₹{amount:,.0f}, {cancelled} cancelled"
-    if label in ("Returns", "Return Delivery"):
-        kinds = _col(df, "type").value_counts()
-        return f"{n} rows" + (" (" + ", ".join(f"{k} {v}" for k, v in kinds.items()) + ")" if len(kinds) else "")
-    if label == "Listings":
-        active = int((_col(df, "listing status") == "A").sum())
-        return f"{n} SKUs, {active} active"
-    return f"{n} rows"
 
 
 def ppmp_only(delivery: pd.DataFrame) -> pd.DataFrame:
@@ -130,24 +96,22 @@ def delivery_split(delivery: pd.DataFrame, orders: pd.DataFrame | None) -> dict[
             "CANCELLED": cancelled, "TOTAL": len(delivery)}
 
 
-def fetch_account(account: str, day: date, dest: Path, wait_minutes: int) -> tuple[dict, dict | None, list[str]]:
-    """The account's four reports into dest: ({label: (file, summary)}, its return delivery split
-    or None, notes for reports not got)."""
+def make_account(account: str, day: date, wait_minutes: int) -> tuple[dict[str, str], list[str]]:
+    """The account's five reports made on the portal and waited for (nothing downloaded or saved):
+    ({label: what was made}, notes for reports not made)."""
+    import time
     from ..portals import myntra as mp
     from ..return_analysis.sources import myntra_portal
     portal = myntra_portal(account)
-    got, frames = {}, {}
+    made: dict[str, str] = {}
     errors: dict[str, str] = {}
-    stale: set[str] = set()     # reports whose reused job held wrong / short data: asked for anew
-    # Myntra refuses a request now and then ("Internal server error while scheduling") or kills a
-    # job ("cluster is out of memory", INTERRUPTED): a report not got is asked for again in a
-    # second round, once the others are in (its cooldown has passed by then)
+    stale: set[str] = set()     # reports whose job held wrong / short data: asked for anew
     for attempt in range(1, int(num("MYNTRA_REPORT_ROUNDS", 2)) + 1):
-        pending = [label for label in REPORTS if label not in got]
+        pending = [label for label in REPORTS if label not in made]
         if not pending:
             break
         if attempt > 1:
-            log.warning("%s: %s not got, asking again (round %d)", account, ", ".join(pending), attempt)
+            log.warning("%s: %s not made, asking again (round %d)", account, ", ".join(pending), attempt)
         jobs = {}
         for label in pending:
             try:
@@ -157,49 +121,32 @@ def fetch_account(account: str, day: date, dest: Path, wait_minutes: int) -> tup
                     raise
                 log.warning("%s %s not asked for: %s", account, label, exc)
                 errors[label] = str(exc)
+        deadline = time.time() + wait_minutes * 60
         for label, job in jobs.items():
-            if label in ASK_ONLY:
-                got[label] = (None, f"made on the portal (job {job.get('id')}, {str(job.get('status') or 'asked').lower()})")
-                errors.pop(label, None)
-                continue
             if attempt == 1 and label != "Orders" and label in stale:
                 errors[label] = "asked for anew with the orders report (its data was short)"
                 continue
             try:
-                _, data = portal.collect(job, wait_minutes)
-                df = pd.read_csv(io.BytesIO(data), low_memory=False)
+                job = portal._wait(job, deadline, 30)
                 if label == "Orders":
+                    # the data time is read in memory only: a job short of yesterday is no use to anyone
+                    _, data = portal.download(job)
                     through = mp.data_through(mp.data_stamp(data.decode("utf-8-sig", "replace")))
                     if not through or through < day:
-                        # the job holds the day only in part: every dated report of it is asked for anew
                         stale |= set(RANGE_DAYS)
                         for other in RANGE_DAYS:
-                            got.pop(other, None)
+                            made.pop(other, None)
                         raise RuntimeError(f"orders job {job.get('id')} holds data only up to {through}, a new report is asked for")
-                path = dest / f"{account} {label} {date.today() if label in SNAPSHOT else day}.csv"
-                if label == "Orders":
-                    frames["orders_all"] = df
-                if label in RANGE_DAYS:
-                    df = day_rows(label, df, day)
-                    df.to_csv(path, index=False)
-                else:
-                    path.write_bytes(data)
-                frames[label] = df
-                got[label] = (path, summary(label, df))
+                rng = mp.job_range(job, REPORTS[label])
+                made[label] = f"job {job.get('id')}" + (f" ({rng[0]:%d %b} to {rng[1]:%d %b})" if rng else " (today)")
                 errors.pop(label, None)
             except Exception as exc:  # noqa: BLE001
                 if isinstance(exc, mp.SessionExpired):
                     raise
-                log.warning("%s %s not downloaded: %s", account, label, exc)
+                log.warning("%s %s not made: %s", account, label, exc)
                 errors[label] = str(exc)
-    notes = [f"{account} {label}: {e[:100]}" for label, e in errors.items()]
     mp.save_to_worker(env, portal.cookies(), account)
-    split = None
-    if "Return Delivery" in frames:
-        split = delivery_split(frames["Return Delivery"], frames.get("orders_all"))
-        if "orders_all" not in frames and split["RTO"]:
-            notes.append(f"{account}: no orders report, RTO and cancelled not told apart (all counted as RTO)")
-    return got, split, notes
+    return made, [f"{account} {label}: {e[:100]}" for label, e in errors.items()]
 
 
 def update_workbook(root, rows: list[tuple[date, str, dict]], work: Path) -> str:
@@ -220,7 +167,7 @@ def update_workbook(root, rows: list[tuple[date, str, dict]], work: Path) -> str
 
 def backfill(args) -> int:
     """The workbook's rows for --backfill-from .. --backfill-to (default the day before yesterday), from report jobs already on
-    the portal (the 7 AM SPF run keeps a 30-day Return_Delivery_Report and 60 days of orders):
+    the portal (the 9:30 AM run keeps a 30-day Return_Delivery_Report and 60 days of orders):
     each delivery counted on its deliver_to_seller_date. A missing range is asked for (one job per
     report, waited for)."""
     import tempfile
@@ -270,78 +217,44 @@ def backfill(args) -> int:
 
 
 def run(args) -> int:
-    import tempfile
     if args.backfill_from:
         return backfill(args)
     day = date.fromisoformat(args.date) if args.date else date.today() - timedelta(days=1)
     accounts = csv_list("MYNTRA_REPORT_ACCOUNTS") or ACCOUNTS
-    dest = output_dir("myntra-reports") / f"{day}"
-    dest.mkdir(parents=True, exist_ok=True)
     wait = num("MYNTRA_REPORT_WAIT_MINUTES", 40)
     results: dict[str, dict] = {}
-    splits: dict[str, dict] = {}
     notes: list[str] = []
     with ThreadPoolExecutor(len(accounts)) as pool:
-        futures = {a: pool.submit(fetch_account, a, day, dest, wait) for a in accounts}
+        futures = {a: pool.submit(make_account, a, day, wait) for a in accounts}
         for a, f in futures.items():
             try:
-                results[a], split, more = f.result()
-                if split:
-                    splits[a] = split
+                results[a], more = f.result()
                 notes += more
             except Exception as exc:  # noqa: BLE001 - the other accounts still go out
                 log.exception("%s reports failed", a)
                 results[a] = {}
                 notes.append(f"{a}: {str(exc)[:150]}")
-    files = [p for got in results.values() for p, _ in got.values() if p]
-    if not files:
-        raise RuntimeError("no Myntra report downloaded: " + "; ".join(notes))
-
-    book = ""
-    if args.no_upload:
-        notes.append(f"workbook not updated (test run): {dest}")
-    else:
-        from ..core.drive import DriveFolder
-        root = DriveFolder(agent_work_id()).subfolder(AREA, create=True)
-        if splits:
-            try:
-                book = update_workbook(root, [(day, a, sp) for a, sp in splits.items()],
-                                       Path(tempfile.mkdtemp(prefix="myntra_rd_")))
-            except Exception as exc:  # noqa: BLE001 - the message still goes out
-                log.exception("%s not updated", WORKBOOK)
-                notes.append(f"{WORKBOOK} not updated: {str(exc)[:150]}")
-
-    out = [f"📊 <b>Myntra daily reports · {day:%d %b %Y}</b>"]
-    if splits:
-        total = {k: sum(s[k] for s in splits.values()) for k in DELIVERY_COLUMNS}
-        out += ["", f"📦 <b>Total return delivery: {total['TOTAL']}</b>",
-                f"Customer return {total['CUSTOMER RETURN']} · RTO {total['RTO']} · Cancelled {total['CANCELLED']}"]
+    if not any(results.values()):
+        raise RuntimeError("no Myntra report made: " + "; ".join(notes))
+    out = [f"📊 <b>Myntra daily reports · {day:%d %b %Y}</b>", "<i>made on the partner portal, not saved</i>"]
     for a in accounts:
         out += ["", f"<b>{telegram.esc(a)}</b>"]
-        for label, (_, s) in results[a].items():
-            if label == "Return Delivery" and a in splits:
-                sp = splits[a]
-                s = f"{sp['TOTAL']} (customer return {sp['CUSTOMER RETURN']}, RTO {sp['RTO']}, cancelled {sp['CANCELLED']})"
-            out.append(f"• {telegram.esc(label)}: {telegram.esc(s)}")
+        out += [f"✅ {telegram.esc(label)}: {telegram.esc(s)}" for label, s in results[a].items()]
         if not results[a]:
             out.append("• no report")
-    if book:
-        out += [""]
-        out.append(f'📗 <a href="{book}">{WORKBOOK}</a>')
     if notes:
         out += [""] + ["⚠️ " + telegram.esc(n) for n in notes]
     msg = "\n".join(out)
     print(msg) if args.no_telegram else telegram.send(msg)
-    return 1 if notes and not args.no_upload else 0
+    return 1 if notes else 0
 
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="run.py myntra-reports",
-                                description="Myntra orders / returns / return delivery / listings reports, daily")
+                                description="Myntra daily reports made on the portal (orders, returns, return delivery, listings, inventory)")
     p.add_argument("--date", help="report day YYYY-MM-DD (default yesterday)")
     p.add_argument("--backfill-from", help="YYYY-MM-DD: only fill the return delivery workbook from that day"
                    " to the day before yesterday")
     p.add_argument("--backfill-to", help="YYYY-MM-DD: the last day --backfill-from fills (default the day before yesterday)")
-    p.add_argument("--no-upload", action="store_true", help="test run: the return delivery workbook is not updated")
     p.add_argument("--no-telegram", action="store_true", help="print the summary instead of sending it")
     return run_bot("Myntra daily reports", p, run, argv)
