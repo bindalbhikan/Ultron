@@ -1,7 +1,6 @@
 # 4. tenacity — one retry helper
 
-**Status**: 🔧 in progress — helper + first user (OMSGuru `get()`) in (16 Nov 2026, tenacity 9.2.1 in `uv.lock`);
-the other loops follow one by one.
+**Status**: ✅ 16 Nov 2026 — every plain retry loop is on `ultron/core/retry.py` (tenacity 9.2.1 in `uv.lock`).
 
 **Why**: retries are written by hand in many places, each a bit different (OMSGuru `get()` 7 tries,
 Myntra `schedule()` one cooldown wait, the SPF master's 3 tries, Telegram re-send, zero TD phone retries,
@@ -36,5 +35,11 @@ backoff, stop after N tries, retry only on chosen errors. Pure Python, so the co
   * The agent's Telegram (`integrations/telegram.py`) had **no retry at all**: it now is the one sender of the
     agent and the bots (the bots' `_post` calls it), with the bots' rule — `tests/test_telegram_post.py`.
 
-**To do, one by one (each keeping its tries and waits exactly)**: the SPF master's report queue, zero TD's phone retries, the AWB tracker's http
-client, the phone's collect loop.
+**Kept on purpose (not a plain retry; tenacity would add nothing but risk)**
+* AWB tracker `http_client.request`: its own rate limiter, jitter, `Retry-After`, a 429 that slows every worker of
+  that courier, a fresh session after a network error — traffic control, not a retry.
+* The SPF master's report queue: a scheduler over several reports and the 15-minute cooldown of each.
+* `core/phone.run_job`'s collect loop: polling a job until it is done, not a retry.
+* Zero TD's phone rounds: only the styles still without an answer are sent again.
+
+New code: a retry is `retry_call` (rule in AGENTS.md "Centralise, do not copy").
