@@ -22,7 +22,7 @@ import pandas as pd
 from ..core import portal_reports as pr
 from ..core import telegram
 from ..core.app import run_bot
-from ..core.config import env, output_dir
+from ..core.config import output_dir
 from ..core.drive import API, DriveFolder
 from . import ajio, flipkart, myntra, oms
 from .workbook import build
@@ -309,7 +309,7 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: d
     part_status = raw["FINAL STATUS"].where(raw["FINAL STATUS"].ne("Delivered"), "Return Type Pending")
     raw, split = split_part(raw, part, part_status, flipkart.MONEY, flipkart.RETURN_COLS)
     frames = {}
-    for df, kind in ((o, "ORDER"), (r, "RETURN"), (s, "PAYMENT"), (tax, "SALES"), (monthly, "MONTHLY"), (lines, "OMSGURU")):
+    for df, _kind in ((o, "ORDER"), (r, "RETURN"), (s, "PAYMENT"), (tax, "SALES"), (monthly, "MONTHLY"), (lines, "OMSGURU")):
         if len(df):
             for name, g in df.groupby("_file"):
                 frames[name] = g

@@ -380,7 +380,7 @@ class Writer:
                 ws.write_datetime(r, 0, m.to_pydatetime(), self.mon)
             crit = [] if last else [self.crit_month(m)]
             v, cell = {}, {}
-            for j, (h, key) in enumerate(cols, start=1):
+            for j, (_h, key) in enumerate(cols, start=1):
                 cell[key] = self.cell(r, j)
                 if last:
                     fm, v[key] = f"=SUM({self.cell(first, j)}:{self.cell(r - 1, j)})", totals.get(key, 0.0)

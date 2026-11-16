@@ -84,7 +84,7 @@ def summary_text(rows: list[list], start: date, end: date, n: int) -> str:
             f"{pct:.1f}" if isinstance(pct, (int, float)) else "-")
         label = f"{month:%b-%y}" if hasattr(month, "strftime") else str(month)[:6]
         lines.append(f"{label:<7}{g4 / 1e5:>7.2f}L{mkt:>8}{p:>5}")
-    return "\n".join([f"📣 <b>AJIO ads / TOT gap</b>",
+    return "\n".join(["📣 <b>AJIO ads / TOT gap</b>",
                       f"<i>SRM statement {start:%d %b %Y} - {end:%d %b %Y}, {n} lines</i>", "",
                       "<pre>" + telegram.esc("\n".join(lines)) + "</pre>", "",
                       "📁 Drive: AGENT WORK / AJIO / Ajio Ads Gap Working / output"])

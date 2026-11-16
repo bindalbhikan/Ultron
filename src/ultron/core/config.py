@@ -170,5 +170,5 @@ def load_tools(names: tuple[str, ...]) -> list[Callable]:
     the owner's approval."""
     out = []
     for name in names:
-        out += list(getattr(importlib.import_module(BUILTIN_TOOLS.get(name, name)), "TOOLS"))
+        out += list(importlib.import_module(BUILTIN_TOOLS.get(name, name)).TOOLS)
     return out

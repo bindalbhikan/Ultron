@@ -45,3 +45,14 @@ version = { attr = "ultron.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+# docs/libraries/01-ruff.md: lint gate for bugs only (style is left alone); run: python -m ruff check
+line-length = 130
+target-version = "py312"
+extend-exclude = ["scripts/legacy", "netcap", "output", ".claude"]
+
+[tool.ruff.lint]
+select = ["F", "E9", "B"]
+# B905 (zip strict) and B023 (loop variable in a closure) are reviewed one by one, not gated yet
+ignore = ["B905", "B023"]

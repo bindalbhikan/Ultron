@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import logging
 from datetime import datetime
-from pathlib import Path
 
 import pandas as pd
 

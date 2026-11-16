@@ -33,7 +33,7 @@ import xlsxwriter
 
 from ..core import telegram
 from ..core.app import run_bot
-from ..core.config import env, num, output_dir
+from ..core.config import env, output_dir
 from ..portals.flipkart import FlipkartClient
 from .pipeline import fetch_target_file, read_targets
 
@@ -318,7 +318,7 @@ def write_workbook(out: Path, started, tier, params, rate_cards, checks, tp_rows
     head = wb.add_format({"bold": True, "bg_color": "#DDEBF7", "border": 1, "text_wrap": True, "valign": "top"})
     inp = wb.add_format({"bg_color": "#FFF2CC"})
     pct = wb.add_format({"num_format": "0.0%"})
-    num0 = wb.add_format({"num_format": "#,##0"})
+    _num0 = wb.add_format({"num_format": "#,##0"})
     num2 = wb.add_format({"num_format": "#,##0.00"})
     sheets = {name: wb.add_worksheet(name) for name in
               ("Summary", "TP TO SP", "SP TO TP", "Parameter", "Parameter1", "Parameter Rate Card", "_Calc_Config")}

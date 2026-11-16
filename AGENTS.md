@@ -5,7 +5,7 @@ for BINDAL EXPORTS on GitHub Actions, a Cloudflare Telegram worker + dashboard, 
 (`src/ultron/`, seller-neutral, sellable). Any coding agent (Claude Code, Gemini CLI, the "AI fix on failure"
 workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 
-<!-- AUTO:synced -->Last synced with the code: 2026-11-03.<!-- /AUTO:synced -->
+<!-- AUTO:synced -->Last synced with the code: 2026-11-16.<!-- /AUTO:synced -->
 
 ## Read next
 
@@ -42,6 +42,7 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
   Tables: **Polars** for new code (pandas is being moved out working by working, `docs/plan.md`); Excel read
   with calamine, new files written with xlsxwriter, openpyxl only to edit an existing workbook in place.
   A switch never changes a number: the old and new code give the same output on the same input first.
+  One page per library change, in order, with its status: `docs/libraries/` (run `python -m ruff check src tests run.py` before a commit).
 - `netcap/` (raw browser captures) is local only: it holds cookies and customer data. Only names
   (paths, field names, meanings) go into `docs/knowledge/`, never values.
 
@@ -70,7 +71,8 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 ## Gaps the sync found (fix them)
 
 <!-- AUTO:gaps -->
-- none: every bot has its page and its workflow is watched
+- `lint.yml` (Lint) belongs to no bot of `run.py`
+- `lint.yml` (Lint) has no Telegram command (`COMMANDS` in `worker/src/worker.js`)
 <!-- /AUTO:gaps -->
 
 ## Working on this machine (owner's Windows PC)

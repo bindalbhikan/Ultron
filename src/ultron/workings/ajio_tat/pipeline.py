@@ -163,7 +163,7 @@ def save_master_xlsx(df, path: Path, note: str, as_of, **summary) -> None:
     try:
         os.replace(tmp, path)
     except PermissionError:
-        raise RuntimeError(f"Master file is open in Excel - close it and run again: {path}")
+        raise RuntimeError(f"Master file is open in Excel - close it and run again: {path}") from None
     # in a Google Drive for desktop folder (a local run from G:) the swapped-in file came out
     # broken once (bad CRC in docProps/core.xml): never upload such a file
     try:

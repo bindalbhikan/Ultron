@@ -25,7 +25,7 @@ from ..ajio_tat.tat_engine import (apply_status, apply_tracking, build_report, m
                                    normalize_master, parse_oms, summarize)
 from ..core import telegram
 from ..core.app import run_bot
-from ..core.config import csv_list, env, num, output_dir
+from ..core.config import csv_list, num, output_dir
 from ..portals.omsguru import OmsGuruClient
 from ..core.config import agent_work_id
 

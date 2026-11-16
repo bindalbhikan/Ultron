@@ -22,10 +22,9 @@ import pandas as pd
 
 from ultron.portals.omsguru import OmsGuruClient
 
-from ..core import portal_reports as pr
 from ..core import telegram
 from ..core.app import run_bot
-from ..core.config import env, num, output_dir
+from ..core.config import num, output_dir
 from ..core.drive import DriveFolder
 from ..portals.erp import Erp
 from .accept import accept

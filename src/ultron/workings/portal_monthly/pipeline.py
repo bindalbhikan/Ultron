@@ -18,6 +18,11 @@ A part that fails is named on Telegram and the others are saved; a run again rep
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
+
 import argparse
 import calendar
 import logging

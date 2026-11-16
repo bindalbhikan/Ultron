@@ -18,7 +18,6 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-from .config import env
 from .drive import API, DriveFolder
 from .config import agent_work_id
 

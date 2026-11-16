@@ -24,7 +24,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from ..core import portal_reports as pr
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import env, num
