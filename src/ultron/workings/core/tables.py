@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, overload
 
 if TYPE_CHECKING:
     import pandas as pd
+    import polars as pl
 
 
 def col(df: "pd.DataFrame", name: str) -> "pd.Series":
@@ -22,6 +23,40 @@ def col(df: "pd.DataFrame", name: str) -> "pd.Series":
         if str(c).strip().lower() == want:
             return df[c].astype(str).str.strip()
     return pd.Series(dtype=str, index=df.index)
+
+
+def read_text_csv(data: bytes) -> "pl.DataFrame":
+    """A report's CSV as Polars, every column text (ids keep their leading zeros, nothing guessed)."""
+    import io
+
+    import polars as pl
+    return pl.read_csv(io.BytesIO(data), infer_schema=False)
+
+
+def to_polars(df) -> "pl.DataFrame":
+    """A pandas frame (the bridge while both live side by side) or a Polars one, as Polars text columns."""
+    import pandas as pd
+    import polars as pl
+    if isinstance(df, pl.DataFrame):
+        return df
+    cols = [str(c) for c in df.columns]
+    return pl.DataFrame({c: [None if pd.isna(v) else str(v) for v in df[orig]] for c, orig in zip(cols, df.columns)},
+                        schema={c: pl.Utf8 for c in cols})
+
+
+def pcol(df: "pl.DataFrame", name: str) -> "pl.Expr":
+    """Polars: the column `name` (matched without case / outer spaces) as stripped text; nulls when missing."""
+    import polars as pl
+    want = name.strip().lower()
+    for c in df.columns:
+        if str(c).strip().lower() == want:
+            return pl.col(c).cast(pl.Utf8).str.strip_chars()
+    return pl.lit(None, dtype=pl.Utf8)
+
+
+def pclean_id(expr: "pl.Expr") -> "pl.Expr":
+    """Polars: an id column without the ".0" a number read from a sheet gets; nulls stay null."""
+    return expr.str.replace(r"\.0$", "")
 
 
 @overload

@@ -1,19 +1,35 @@
 # 6. Polars — tables instead of pandas
 
-**Status**: ⏳
+**Status**: 🔧 16 Nov 2026 — in (`polars>=1.30`, 2.1.0 in `uv.lock`); first working moved.
 
-**Why**: 5-20x faster than pandas with far less memory, multi-core, lazy queries, strict types (ids stay
-text: no more `46148.0`). For Bindal's files (a few MB) the gain is seconds; for a seller with 100x the orders
-it is the difference between a run that finishes and one that runs out of memory.
+**Why**: faster than pandas, multi-core, lazy queries, strict types (ids stay text: no more `46148.0`). For
+Bindal's files the gain is seconds; for a seller with 100x the orders it decides whether a run finishes.
+
+**Benchmark** (16 Nov 2026, the office PC): a real 30-day Myntra orders report (3.6 MB, 6,500 lines), the
+sale report's work — read with ids as text, keep a date range, lines and amount per day and status:
+
+| rows | pandas | Polars | |
+|---|---|---|---|
+| 6,500 (x1) | 0.45 s | 0.07 s | 6x |
+| 65,000 (x10) | 2.50 s | 0.14 s | 17x |
+| 650,000 (x100) | 21.9 s | 6.6 s | 3x |
+
+The totals were the same both ways at every size. (Python's memory tracer does not see Polars' Rust
+allocations, so no memory figure is claimed.)
 
 **Where pandas is now**: ~38 files, ~900 calls (business report 6, return analysis 4, AJIO TAT 4, grouping 3,
-VMS 2, portal sale 2, Flipkart price 2, and one each in the other workings).
+VMS 2, portal sale 2, Flipkart price 2, one each in the other workings).
 
-**Plan**
-1. `ultron/core/frames.py`: read CSV / xlsx (calamine) into Polars with id columns as text; write xlsx with
-   xlsxwriter; a `to_pandas()` bridge while both live side by side.
-2. Benchmark: Bindal's real reports and the same x10 / x100, time and memory, pandas vs Polars.
-3. Working by working, the heaviest and seller-neutral first: business report, return analysis, portal sale,
-   Myntra history, then the daily ones. Each with a **parity test**: old and new code on the same input
-   files give the same output, cell by cell, before the switch.
-4. The owner's own engines (SPF `engine.py`, grouping engine: "rules unchanged") only with the owner's OK.
+**Shared helpers** (`workings/core/tables.py`): `read_text_csv(bytes)` (every column text), `to_polars(df)` (the
+pandas bridge while both live side by side), `pcol(df, name)` (a column by name whatever its case),
+`pclean_id(expr)` (no ".0"; nulls stay null).
+
+**Moved**
+* Myntra daily reports' return delivery counts (`ppmp_only`, `order_status`, `delivery_split`, `delivery_day`,
+  `window_rows`; the 30-day jobs read straight into Polars; the orders' statuses worked out once, not per day).
+  Parity on real data before the switch: the 30-day jobs of MAIN, DBCC and FMCC gave the same split for every
+  day, old pandas vs new Polars, and with pandas frames given to the new code too (1,705 / 1,308 / 74 deliveries).
+
+**Next, one by one, each with a parity test on real files**: portal sale, business report, return analysis,
+Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
+owner's OK. With it: a row-quality check of the OMSGuru order list (fields left at their defaults).

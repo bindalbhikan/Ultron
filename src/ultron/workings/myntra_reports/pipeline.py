@@ -28,13 +28,16 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
 
+from typing import TYPE_CHECKING
+
 import pandas as pd
 
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import csv_list, env, num
-from ..core.tables import clean_id
-from ..core.tables import col as _col
+
+if TYPE_CHECKING:
+    import polars as pl
 
 log = logging.getLogger("bindal.myntra_reports")
 
@@ -73,27 +76,45 @@ def _job(portal, label: str, rid: int, day: date, fresh: bool = False) -> dict:
 
 
 
-def ppmp_only(delivery: pd.DataFrame) -> pd.DataFrame:
-    """The rows delivered to our own (PPMP) warehouses; FBM / SJIT returns go to Myntra's warehouses."""
+def ppmp_only(delivery) -> "pl.DataFrame":
+    """The rows delivered to our own (PPMP) warehouses; FBM / SJIT returns go to Myntra's warehouses.
+    Polars (a pandas frame is taken too, docs/libraries/06-polars.md)."""
+    from ..core.tables import pclean_id, pcol, to_polars
+    delivery = to_polars(delivery)
     ours = set(csv_list("MYNTRA_PPMP_WAREHOUSES")) or PPMP_WAREHOUSES
-    return delivery[clean_id(_col(delivery, "warehouse_id")).isin(ours)]
+    return delivery.filter(pclean_id(pcol(delivery, "warehouse_id")).is_in(sorted(ours)))
 
 
-def delivery_split(delivery: pd.DataFrame, orders: pd.DataFrame | None) -> dict[str, int]:
+def order_status(orders) -> "pl.DataFrame | None":
+    """(_id, _status) per order release id of an orders report, the first line's status; None without one."""
+    import polars as pl
+
+    from ..core.tables import pclean_id, pcol, to_polars
+    if orders is None or len(orders) == 0:
+        return None
+    o = to_polars(orders)
+    return (o.select(pclean_id(pcol(o, "order release id")).alias("_id"), pcol(o, "order status").alias("_status"))
+             .group_by("_id", maintain_order=True).agg(pl.col("_status").first()))
+
+
+def delivery_split(delivery, orders=None, status: "pl.DataFrame | None" = None) -> dict[str, int]:
     """CUSTOMER RETURN / RTO / CANCELLED / TOTAL of a Return_Delivery_Report, PPMP warehouses only.
-    RTO_or_Cancel rows are cancelled when the order's status in the orders report is F, else RTO."""
-    delivery = ppmp_only(delivery)
-    kind = _col(delivery, "type")
-    status = pd.Series(dtype=str)
-    if orders is not None and len(orders):
-        status = pd.Series(_col(orders, "order status").values,
-                           index=clean_id(_col(orders, "order release id")).values
-                           ).groupby(level=0).first()
-    rto_or_cancel = kind == "RTO_or_Cancel"
-    cancelled = int((rto_or_cancel & (clean_id(_col(delivery, "order_id"))
-                                      .map(status) == "F")).sum())
-    return {"CUSTOMER RETURN": int((kind == "Return").sum()), "RTO": int(rto_or_cancel.sum()) - cancelled,
-            "CANCELLED": cancelled, "TOTAL": len(delivery)}
+    RTO_or_Cancel rows are cancelled when the order's status in the orders report is F, else RTO.
+    status: order_status(orders) worked out once (window_rows); else from orders."""
+    import polars as pl
+
+    from ..core.tables import pclean_id, pcol
+    ours = ppmp_only(delivery)
+    kind = pcol(ours, "type")
+    returns = ours.filter(kind == "Return").height
+    rto_or_cancel = ours.filter(kind == "RTO_or_Cancel")
+    status = order_status(orders) if status is None else status
+    cancelled = 0
+    if status is not None and rto_or_cancel.height:
+        cancelled = (rto_or_cancel.select(pclean_id(pcol(rto_or_cancel, "order_id")).alias("_id"))
+                     .join(status, on="_id", how="left").filter(pl.col("_status") == "F").height)
+    return {"CUSTOMER RETURN": returns, "RTO": rto_or_cancel.height - cancelled,
+            "CANCELLED": cancelled, "TOTAL": ours.height}
 
 
 def make_account(account: str, day: date, wait_minutes: int) -> tuple[dict[str, str], list[str], dict[str, dict]]:
@@ -151,28 +172,38 @@ def make_account(account: str, day: date, wait_minutes: int) -> tuple[dict[str, 
     return made, [f"{account} {label}: {e[:100]}" for label, e in errors.items()], done
 
 
-def delivery_day(delivery: pd.DataFrame) -> pd.Series:
+def delivery_day(delivery: "pl.DataFrame") -> "pl.Expr":
     """The day each return reached us (deliver_to_seller_date, else gatepass_lastmodified)."""
-    when = pd.to_datetime(_col(delivery, "deliver_to_seller_date"), errors="coerce")
-    return when.fillna(pd.to_datetime(_col(delivery, "gatepass_lastmodified"), errors="coerce")).dt.date
+    import polars as pl
+
+    from ..core.tables import pcol
+
+    def day(name: str) -> pl.Expr:
+        return pcol(delivery, name).str.slice(0, 10).str.to_date("%Y-%m-%d", strict=False)
+    return pl.coalesce(day("deliver_to_seller_date"), day("gatepass_lastmodified"))
 
 
-def window_rows(delivery: pd.DataFrame, orders: pd.DataFrame | None, first: date, last: date
+def window_rows(delivery, orders, first: date, last: date
                 ) -> tuple[dict[date, dict], list[date], date | None]:
     """({day: split} for the days first..last Myntra's data holds, [days after it: left blank],
-    the last day with a PPMP delivery). A day before that last one with no delivery is a real 0."""
+    the last day with a PPMP delivery). A day before that last one with no delivery is a real 0.
+    Polars (pandas frames are taken too)."""
+    import polars as pl
+
+    from ..core.tables import to_polars
     from ..portals import myntra as mp
-    delivery = delivery.assign(_day=delivery_day(delivery))
+    delivery = to_polars(delivery)
+    delivery = delivery.with_columns(delivery_day(delivery).alias("_day"))
     ours = ppmp_only(delivery)
-    through = ours["_day"].dropna().max() if len(ours) else None
-    through = None if pd.isna(through) else through
+    through = ours["_day"].drop_nulls().max() if ours.height else None
+    status = order_status(orders)
     rows, blank = {}, []
     for d in sorted(mp._days(first, last)):
         if through and d <= through:
-            rows[d] = delivery_split(delivery[delivery["_day"] == d], orders)
+            rows[d] = delivery_split(delivery.filter(pl.col("_day") == d), status=status)
         else:
             blank.append(d)
-    return rows, blank, through
+    return rows, blank, through  # type: ignore[return-value]
 
 
 def account_rows(account: str, done: dict[str, dict]) -> tuple[dict[date, dict], list[date], date | None]:
@@ -181,10 +212,9 @@ def account_rows(account: str, done: dict[str, dict]) -> tuple[dict[date, dict],
     from ..return_analysis.sources import myntra_portal
     portal = myntra_portal(account)
     job = done["Return Delivery"]
-    delivery = pd.read_csv(io.BytesIO(portal.download(job)[1]), dtype=str, low_memory=False)
-    orders = None
-    if "Orders" in done:
-        orders = pd.read_csv(io.BytesIO(portal.download(done["Orders"])[1]), dtype=str, low_memory=False)
+    from ..core.tables import read_text_csv
+    delivery = read_text_csv(portal.download(job)[1])
+    orders = read_text_csv(portal.download(done["Orders"])[1]) if "Orders" in done else None
     first, last = mp.job_range(job, REPORTS["Return Delivery"])
     return window_rows(delivery, orders, first, last)
 
@@ -243,7 +273,8 @@ def backfill(args) -> int:
         delivery = pd.concat(frames(84, start, end), ignore_index=True)
         orders = pd.concat(frames(mp.REPORT_ID, start - timedelta(days=60), end), ignore_index=True)
         mp.save_to_worker(env, portal.cookies(), account)
-        got, blank, through = window_rows(delivery.drop_duplicates(), orders, start, end)
+        from ..core.tables import to_polars
+        got, blank, through = window_rows(to_polars(delivery).unique(maintain_order=True), orders, start, end)
         rows += [(d, account, s) for d, s in got.items()]
         drop |= {(d, PORTALS.get(account, account)) for d in blank}
         log.info("%s: %d days written, %d left blank (data up to %s)", account, len(got), len(blank), through)
