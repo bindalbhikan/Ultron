@@ -23,9 +23,9 @@ from ..core.app import run_bot
 from ..core.config import ROOT, csv_list, env, num, output_dir
 from ..core.drive import DriveFile
 from ..core.files import replace_atomically
-from ..portals.omsguru import OmsGuruClient
 from .oms_sales import OMS_BLOCKS, gross_by_day
 from .workbook import SaleWorkbook
+from ..core import clients
 
 BOOK_NAME = "SALE REPORT.xlsx"
 REPORT_ORDER = ["AZ/FX/FBA", "COCOBLU", "MEESHO", "AJIO B2C", "FLIPKART", "FBF", "MYNTRA", "SJIT", "NYKAA"]
@@ -50,18 +50,13 @@ def report_days(args) -> list[date]:
 # ------------------------------------------------------------------ sources
 
 def oms_source(days):
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     return gross_by_day(client, days)
 
 
 def fbf_source(days):
-    from ..portals.flipkart import DEFAULT_FBF_LOCATIONS, FlipkartClient
-    user, pwd = env("FLIPKART_EMAIL"), env("FLIPKART_PASSWORD")
-    if not user or not pwd:
-        raise RuntimeError("FLIPKART_EMAIL / FLIPKART_PASSWORD not set")
-    fk = FlipkartClient(user, pwd)
-    fk.login()
+    from ..portals.flipkart import DEFAULT_FBF_LOCATIONS
+    fk = clients.flipkart()
     locations = csv_list("FBF_LOCATIONS") or DEFAULT_FBF_LOCATIONS
     return fk.fbf_units(days, locations)
 

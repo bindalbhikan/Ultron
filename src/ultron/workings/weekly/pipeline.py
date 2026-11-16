@@ -20,9 +20,9 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..morning.pipeline import channel_line, change
 from ..portals.erp import DISPATCH_HEADERS, DISPATCH_REPORT, Erp
-from ..portals.omsguru import OmsGuruClient
 from ..sale.oms_sales import CANCELLED, order_lines
 from ..stock.pipeline import style_size
+from ..core import clients
 
 log = logging.getLogger("bindal.weekly")
 
@@ -126,8 +126,7 @@ def message(ch: list, top: list, fell: list, pk: list, this: list[date], last: l
 def run(args) -> int:
     today = date.today()
     this, last = weeks(today)
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     lines, names = order_lines(client, this + last)
     ch = by_channel(lines, names, this, last)
     top, fell = by_style(lines, this, last)

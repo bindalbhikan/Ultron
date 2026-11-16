@@ -33,9 +33,10 @@ import xlsxwriter
 
 from ..core import telegram
 from ..core.app import run_bot
-from ..core.config import env, output_dir
+from ..core.config import output_dir
 from ..portals.flipkart import FlipkartClient
 from .pipeline import fetch_target_file, read_targets
+from ..core import clients
 
 log = logging.getLogger("bindal.flipkart_calc")
 
@@ -154,8 +155,7 @@ class Scanner:
 
 def run(args) -> int:
     started = datetime.now()
-    client = FlipkartClient(env("FLIPKART_EMAIL"), env("FLIPKART_PASSWORD"))
-    client.login()
+    client = clients.flipkart()
     tier = client.tier()
     listings = client.listings("ACTIVE")
     groups: dict[str, list[dict]] = defaultdict(list)

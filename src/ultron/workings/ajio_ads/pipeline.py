@@ -20,6 +20,7 @@ from ..core import dashboard, telegram
 from ..core.app import run_bot
 from ..core.config import env, output_dir
 from ..core.drive import DriveFolder
+from ..core import clients
 
 log = logging.getLogger("bindal.ajio_ads")
 
@@ -39,9 +40,8 @@ def done_this_month(out: DriveFolder | None, today: date) -> bool:
 def fetch_statement(work: Path, start: date, end: date) -> int:
     """The SRM statement as the StatementOfAccount*.xlsx the tool reads; rows written."""
     from ..ajio_spf.inputs import write_xlsx
-    from ..portals.srm import PAYMENT_COLUMNS, Srm, payment_rows
-    srm = Srm(env("SRM_USERNAME"), env("SRM_PASSWORD"))
-    srm.login()
+    from ..portals.srm import PAYMENT_COLUMNS, payment_rows
+    srm = clients.srm()
     rows = payment_rows(srm.statement(start, end))
     if not rows:
         raise RuntimeError(f"SRM statement {start}..{end} has no lines")

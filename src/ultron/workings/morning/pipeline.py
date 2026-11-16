@@ -17,9 +17,9 @@ from ultron.integrations import whatsapp
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import num
-from ..portals.omsguru import OmsGuruClient
 from ..sale.oms_sales import units_by_channel
 from ..sale.pipeline import fbf_source, sjit_source
+from ..core import clients
 
 log = logging.getLogger("bindal.morning")
 
@@ -35,8 +35,7 @@ Say only what the numbers show; do not guess causes you cannot see.""" + MOBILE
 
 def oms_counts(days: list[date]) -> tuple[dict, dict]:
     """{line: {day: units}}, {line: {day: cancelled units}} for the OMSGuru channels."""
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     units, cancel, names = units_by_channel(client, days)
     gross: dict = {}
     canc: dict = {}

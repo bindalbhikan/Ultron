@@ -16,8 +16,8 @@ import pandas as pd
 
 from ..core import telegram
 from ..core.app import run_bot
-from ..core.config import env, output_dir
-from ..portals.flipkart import FlipkartClient
+from ..core.config import output_dir
+from ..core import clients
 
 log = logging.getLogger("bindal.flipkart_listing_file")
 
@@ -57,8 +57,7 @@ def rows_of(listings: list[dict], stock: dict[str, dict]) -> list[dict]:
 
 def run(args) -> int:
     now = datetime.now()
-    client = FlipkartClient(env("FLIPKART_EMAIL"), env("FLIPKART_PASSWORD"))
-    client.login()
+    client = clients.flipkart()
     listings, short = [], []
     for state in STATES:
         got = client.listings(state, complete=False)

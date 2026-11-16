@@ -35,6 +35,7 @@ from ..core.files import replace_atomically
 from ..sale.oms_sales import block_for
 from ..sale.workbook import SaleWorkbook
 from . import numbers as n
+from ..core import clients
 
 BOOK_NAME = "PORTAL SALE REPORT.xlsx"
 ACCOUNTS = ("MAIN", "DBCC", "FMCC")
@@ -159,7 +160,6 @@ def myntra_source(chunks, work: Path) -> Numbers:
 
 def ajio_source(chunks, returns_to: date, work: Path) -> Numbers:
     """The RTV files run on to the latest day: the returns of an order come after it."""
-    from ..portals.ajio import AjioClient
     out = Numbers()
     dest = work / "ajio"
     dest.mkdir(parents=True, exist_ok=True)
@@ -171,8 +171,7 @@ def ajio_source(chunks, returns_to: date, work: Path) -> Numbers:
         if have:
             return have
         if client is None:
-            client = AjioClient(env("AJIO_USERNAME"), env("AJIO_PASSWORD"))
-            client.login()
+            client = clients.ajio()
         path = dest / f"{kind}_{first}.xlsx"
         path.write_bytes(getattr(client, fetch)(first, last))
         return path
@@ -228,12 +227,9 @@ def flipkart_source(chunks, work: Path, live: bool) -> Numbers:
 
 
 def oms_source(days: list[date]) -> Numbers:
-    from ultron.portals.omsguru import OmsGuruClient
     from ultron.portals.omsguru_orders import channel_names, order_lines_range
     out = Numbers()
-    client = OmsGuruClient.from_env()
-    client.login()
-    client.set_warehouse(next(iter(client.warehouses())))       # the channel list needs a warehouse chosen
+    client = clients.omsguru(warehouse=True)
     names = channel_names(client)
     wanted = [cid for cid, name in names.items() if block_for(name) in OMS_BLOCKS]
     keep = set(days)

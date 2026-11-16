@@ -23,9 +23,9 @@ from ..core.app import run_bot
 from ..core.config import num
 from ..morning.pipeline import channel_line
 from ..portals.erp import DISPATCH_HEADERS, DISPATCH_REPORT, Erp
-from ..portals.omsguru import OmsGuruClient
 from ..sale.oms_sales import order_lines
 from ..sla.pipeline import OPEN
+from ..core import clients
 
 log = logging.getLogger("bindal.labels")
 
@@ -110,8 +110,7 @@ def run(args) -> int:
     erp.login()
     rows = erp.report(DISPATCH_REPORT, DISPATCH_HEADERS, where=[("TRANS_DATE", ">=", f"{window:%Y-%m-%d}T00:00:00")])
     prints = first_prints(rows)
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     lines, names = order_lines(client, [today - timedelta(days=i) for i in range(int(num("LABEL_ORDER_DAYS", 12)))])
     res = check(prints, lines, since, rts_from)
     log.info("Labels: %d prints since %s, %d matched, %d cancelled, %d not RTS, %d RTS without label",

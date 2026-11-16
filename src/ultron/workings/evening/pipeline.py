@@ -16,9 +16,9 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import num
 from ..morning.pipeline import channel_line, change
-from ..portals.omsguru import OmsGuruClient
 from ..sale.oms_sales import CANCELLED, order_lines
 from ..sla.pipeline import at_risk
+from ..core import clients
 
 log = logging.getLogger("bindal.evening")
 
@@ -89,8 +89,7 @@ def sale_table(lines: list[dict], names: dict[str, str], today: date, before: da
 def run(args) -> int:
     now = datetime.now()
     today, before = now.date(), now.date() - timedelta(days=7)
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     days = sorted({today - timedelta(days=i) for i in range(int(num("SLA_ORDER_DAYS", 8)))} | {before})
     lines, names = order_lines(client, days)
     table, total, cancel = sale_table(lines, names, today, before, now)

@@ -17,8 +17,8 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import num
 from ..morning.pipeline import channel_line
-from ..portals.omsguru import OmsGuruClient
 from ..sale.oms_sales import order_lines
+from ..core import clients
 
 log = logging.getLogger("bindal.sla")
 
@@ -55,8 +55,7 @@ def message(risk: list[dict], names: dict[str, str], now: datetime) -> list:
 def run(args) -> int:
     now = datetime.now()
     days = [now.date() - timedelta(days=i) for i in range(int(num("SLA_ORDER_DAYS", 8)))]
-    client = OmsGuruClient.from_env()
-    client.login()
+    client = clients.omsguru()
     lines, names = order_lines(client, days)
     risk = at_risk(lines, now)
     log.info("SLA: %d order lines read, %d due today or overdue and not ready to ship", len(lines), len(risk))

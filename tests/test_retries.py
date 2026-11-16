@@ -95,3 +95,55 @@ def test_omsguru_get_retries_a_dropped_connection(monkeypatch):
         return SimpleNamespace(status_code=200, url=url)
     client = SimpleNamespace(timeout=5, s=SimpleNamespace(get=get))
     assert omsguru.OmsGuruClient.get(client, "https://x/page").status_code == 200
+
+
+def test_omsguru_get_same_tries_and_waits_as_before_tenacity(monkeypatch):
+    """docs/libraries/04-tenacity.md: 7 tries, waits 3, 6, 12, 24, 48, 60 s on a lasting HTTP 500."""
+    from ultron.portals import omsguru
+    waits, seen = [], []
+    monkeypatch.setattr(omsguru.time, "sleep", waits.append)
+
+    def get(url, timeout, **kw):
+        seen.append(1)
+        return SimpleNamespace(status_code=500, url=url)
+    client = SimpleNamespace(timeout=5, s=SimpleNamespace(get=get))
+    with pytest.raises(omsguru.OmsGuruError, match="GET failed after retries"):
+        omsguru.OmsGuruClient.get(client, "https://x/login")
+    assert len(seen) == 7 and waits == [3, 6, 12, 24, 48, 60]
+
+
+def test_omsguru_get_session_expired_is_not_tried_again(monkeypatch):
+    from ultron.portals import omsguru
+    monkeypatch.setattr(omsguru.time, "sleep", lambda s: None)
+    seen = []
+
+    def get(url, timeout, **kw):
+        seen.append(1)
+        return SimpleNamespace(status_code=200, url="https://x/login")
+    client = SimpleNamespace(timeout=5, s=SimpleNamespace(get=get))
+    with pytest.raises(omsguru.OmsGuruError, match="Session expired"):
+        omsguru.OmsGuruClient.get(client, "https://x/orders")
+    assert len(seen) == 1
+
+
+def test_retry_call_logs_each_try_and_raises_the_last_error():
+    import logging
+    from ultron.core.retry import backoff, retry_call
+    records, waits = [], []
+
+    class Grab(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+    log = logging.getLogger("test.retry")
+    log.addHandler(Grab())
+    calls = []
+
+    def fn():
+        calls.append(1)
+        raise ValueError(f"boom {len(calls)}")
+    with pytest.raises(ValueError, match="boom 3"):
+        retry_call(fn, tries=3, wait=backoff(2, 5), on=(ValueError,), log=log, what="X", sleep=waits.append)
+    assert waits == [2, 4] and records == ["X failed: boom 1 (attempt 1)", "X failed: boom 2 (attempt 2)",
+                                          "X failed: boom 3 (attempt 3)"]
+    with pytest.raises(KeyError):           # not in `on`: no second try
+        retry_call(lambda: {}["k"], tries=3, wait=backoff(1, 1), on=(ValueError,), sleep=waits.append)
