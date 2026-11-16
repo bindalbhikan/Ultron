@@ -153,7 +153,9 @@ class FlipkartClient:
                 except FlipkartError as exc:
                     log.warning("Flipkart report list of %s not read: %s", group, str(exc)[:120])
                     break
-                out += data.get("report_requests") or []
+                from ..core.shapes import FlipkartReportRequest, check_rows
+                out += check_rows(data.get("report_requests") or [], FlipkartReportRequest,
+                                  "Flipkart report request", key="request_id")
                 if not data.get("has_more"):
                     break
         once = {q.get("request_id"): q for q in out}               # a request can come in more than one group

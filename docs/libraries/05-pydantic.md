@@ -30,7 +30,10 @@ at once, with the field named. Rust core: fast enough for every row of a big sel
   `SrmLedgerLine` — every field text, `DOC_DATE` DD.MM.YYYY, `amount` a plain number ("1,234.00" or another
   date shape would stop the run, named); all 17,640 lines of the last 400 days fitted.
 
-**Next, one by one (each checked on real answers first)**: Myntra SPF claim detail, Flipkart report centre,
-AJIO JSON answers. Not pydantic: the OMSGuru order list is HTML the code turns into rows
+* Flipkart report centre (`report_requests`, every monthly / return / sales report): `FlipkartReportRequest` —
+  `request_id`, `report_name`, `created_at` (the download name is made of these two), `status`, `filters`;
+  all 172 requests listed fitted.
+
+**Next, one by one (each checked on real answers first)**: Myntra SPF claim detail, AJIO JSON answers. Not pydantic: the OMSGuru order list is HTML the code turns into rows
 itself; there the risk is a layout change that leaves fields at their defaults (order "", value 0.0) — a
 row-quality check, planned with the Polars move.

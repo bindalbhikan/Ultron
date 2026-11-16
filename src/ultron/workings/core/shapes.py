@@ -81,6 +81,16 @@ class SrmLedgerLine(_Row):
     INV_REF: str
 
 
+class FlipkartReportRequest(_Row):
+    """Seller Hub report centre report/getReportsV2 report_requests; all 172 requests listed on 16 Nov 2026
+    fitted (the download name is request_id + created_at, so both must be there)."""
+    request_id: str
+    report_name: str
+    created_at: int
+    status: str
+    filters: list[dict]
+
+
 def check_rows(rows: list, model: type[BaseModel], what: str, key: str = "id") -> list:
     """rows unchanged, each checked against model; PortalChanged naming the row (its `key`) and the fields."""
     for row in rows:

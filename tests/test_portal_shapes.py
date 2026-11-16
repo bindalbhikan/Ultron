@@ -64,3 +64,15 @@ def test_srm_ledger_lines_checked():
         check_rows([{**SRM, "amount": "1,234.00"}], SrmLedgerLine, "SRM ledger line", key="DOC_NO")
     with pytest.raises(PortalChanged, match="DOC_DATE"):
         check_rows([{**SRM, "DOC_DATE": "2026-11-05"}], SrmLedgerLine, "SRM ledger line", key="DOC_NO")
+
+
+FK = {"request_id": "abc", "report_group_name": "Fulfilment Reports", "report_name": "Orders", "created_at": 1763270000,
+      "updated_at": 1763270100, "status": "FILE_STORED", "filters": [{"name": "date", "value": ["2026-10-01", "2026-10-31"]}]}
+
+
+def test_flipkart_report_requests_checked():
+    from ultron.workings.core.shapes import FlipkartReportRequest, PortalChanged, check_rows
+    assert check_rows([dict(FK)], FlipkartReportRequest, "Flipkart report request", key="request_id")[0] == FK
+    with pytest.raises(PortalChanged, match="created_at"):
+        check_rows([{k: v for k, v in FK.items() if k != "created_at"}], FlipkartReportRequest, "Flipkart report request",
+                   key="request_id")
