@@ -20,3 +20,13 @@ jobs:
           python-version: "3.12"
       - run: pip install "ruff==0.17.5"
       - run: ruff check src tests run.py
+
+  # docs/libraries/03-pyright.md: type check of the seller-neutral core ([tool.pyright] in pyproject.toml)
+  pyright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: uv pip install --system "pyright==1.1.414"
+      - run: pyright

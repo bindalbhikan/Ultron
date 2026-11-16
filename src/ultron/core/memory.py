@@ -31,7 +31,9 @@ import threading
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TypeVar
+
+T = TypeVar("T")
 
 import requests
 
@@ -133,7 +135,7 @@ class Memory:
         data.setdefault("chats", {})
         return data
 
-    def change(self, fn: Callable[[dict], object]):
+    def change(self, fn: Callable[[dict], T]) -> T:
         """Read, apply fn, write back; done again (3 times) when another writer came first."""
         with self.store.lock:
             for _ in range(3):

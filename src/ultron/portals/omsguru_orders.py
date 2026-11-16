@@ -35,6 +35,18 @@ def channel_names(client: OmsGuruClient) -> dict[str, str]:
     return json.loads(m.group(1))
 
 
+def channel_id(link) -> str:
+    """The channel id of an order line's channel link ("" when the line has none). A link in another
+    shape stops the read with a clear error: a line put under no channel would count wrong."""
+    if not link:
+        return ""
+    m = re.search(r"edit/(\d+)", str(link.get("href") or ""))
+    if not m:
+        raise RuntimeError(f"OMSGuru order list: channel link {str(link.get('href'))[:80]!r} has no channel id "
+                           "(page layout changed?)")
+    return m.group(1)
+
+
 def _row(tr, sla_col: int) -> dict | None:
     """One order list line: day, time, channel id, order id, units, status, AWB, [(SKU, qty)],
     order value (the line's Total, Rs), SLA; None for others."""
@@ -52,7 +64,7 @@ def _row(tr, sla_col: int) -> dict | None:
     skus = [(s.upper(), int(q)) for s, q in re.findall(r"SkuCode\s+(\S+).*?Qty\s+(\d+)", text_of(tds[3]))]
     total = re.search(r"Total\s+([\d,]+(?:\.\d+)?)", text_of(tds[2]))
     return {"day": ordered.date(), "ordered": ordered,
-            "channel": re.search(r"edit/(\d+)", ch["href"]).group(1) if ch else "",
+            "channel": channel_id(ch),
             "order": order.group(1) if order else "",
             "qty": sum(int(q) for q in re.findall(r"Qty\s+(\d+)", text_of(tds[3]))) or 1,
             "status": text_of(tds[4]), "awb": awb.group(1).upper() if awb else "", "skus": skus,

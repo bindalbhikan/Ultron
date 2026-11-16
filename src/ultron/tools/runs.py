@@ -107,9 +107,9 @@ def sheet_summary(run_id: int, path: str, sheet: str = "", group_by: str = "", m
     name = sheet or xl.sheet_names[0]
     if name not in xl.sheet_names:
         return f"no sheet {name!r}; sheets: {xl.sheet_names}"
-    df = xl.parse(name)
+    df: pd.DataFrame = xl.parse(name)  # pyright: ignore[reportAssignmentType] - one sheet: a DataFrame
     parts = [f"sheets: {xl.sheet_names}", f"sheet {name!r}: {len(df)} rows, {len(df.columns)} columns",
-             "filled per column: " + ", ".join(f"{c}={int(df[c].notna().sum())}" for c in df.columns),
+             "filled per column: " + ", ".join(f"{c}={int(df[c].notna().to_numpy().sum())}" for c in df.columns),
              "first rows:\n" + df.head(5).to_string(max_colwidth=40)]
     if month_of and month_of in df:
         month = pd.to_datetime(df[month_of], errors="coerce").dt.to_period("M").astype(str)

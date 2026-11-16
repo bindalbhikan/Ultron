@@ -13,6 +13,7 @@ import inspect
 import json
 import logging
 import re
+from collections.abc import Sequence
 from typing import Callable, get_type_hints
 
 import requests
@@ -53,7 +54,7 @@ def endpoint() -> tuple[str, str]:
     return (f"{url}/api/ai" if url else ""), token
 
 
-def chat(messages: list[dict], tools: list[Callable] = (), model: str = "", max_tokens: int = 4000) -> dict:
+def chat(messages: list[dict], tools: Sequence[Callable] = (), model: str = "", max_tokens: int = 4000) -> dict:
     url, token = endpoint()
     if not url or not token:
         cfg = config.get()
@@ -89,7 +90,7 @@ def _run_tool(fns: dict[str, Callable], call: dict) -> str:
 
 
 def agent_loop(system: str, task: str, tools: list[Callable], max_steps: int = 8,
-               model: str = "", history: list[dict] = ()) -> tuple[str, dict]:
+               model: str = "", history: Sequence[dict] = ()) -> tuple[str, dict]:
     """(final answer text, usage) after letting the model call the tools up to max_steps times.
     `history`: earlier user / assistant messages of the conversation, oldest first."""
     model = model or config.get().model_name()
@@ -119,5 +120,5 @@ def agent_loop(system: str, task: str, tools: list[Callable], max_steps: int = 8
 def cost(usage: dict) -> float:
     """What the call costs in US$ at the model's list price ([model.prices] in agent.toml);
     on the Workers AI free allocation it is within the day's free amount."""
-    pin, pout = config.get().prices.get(usage.get("model"), (0.35, 0.75))
+    pin, pout = config.get().prices.get(usage.get("model") or "", (0.35, 0.75))
     return round((usage["input"] * pin + usage["output"] * pout) / 1e6, 4)
