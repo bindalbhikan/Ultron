@@ -58,7 +58,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 Gaps the sync found:
 
 <!-- AUTO:gaps -->
-- none: every bot has its page and its workflow is watched
+- `tests.yml` (Tests) has no Telegram command (`COMMANDS` in `worker/src/worker.js`)
 <!-- /AUTO:gaps -->
 
 ## The agent's folder: Drive `BINDAL EXPORTS/AGENT WORK`

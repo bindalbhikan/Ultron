@@ -71,7 +71,7 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 ## Gaps the sync found (fix them)
 
 <!-- AUTO:gaps -->
-- none: every bot has its page and its workflow is watched
+- `tests.yml` (Tests) has no Telegram command (`COMMANDS` in `worker/src/worker.js`)
 <!-- /AUTO:gaps -->
 
 ## Working on this machine (owner's Windows PC)
