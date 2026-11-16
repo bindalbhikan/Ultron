@@ -12,7 +12,7 @@ seller-neutral core (`src/ultron/`, not `workings/`) still installs on Android (
 |---|---|---|---|
 | 1 | [01-ruff.md](01-ruff.md) | lint gate for bugs: **ruff** | ✅ 16 Nov 2026 |
 | 2 | [02-uv.md](02-uv.md) | installs and a lock file: **uv** | ✅ 16 Nov 2026 (cloud runners) |
-| 3 | [03-pyright.md](03-pyright.md) | type check: **pyright** | 🔧 config written |
+| 3 | [03-pyright.md](03-pyright.md) | type check: **pyright** | ✅ 16 Nov 2026 core (workings next) |
 | 4 | [04-tenacity.md](04-tenacity.md) | one retry helper: **tenacity** (hand-written loops out) | 🔧 helper + OMSGuru in |
 | 5 | [05-pydantic.md](05-pydantic.md) | portal answers checked: **pydantic v2** | ⏳ |
 | 6 | [06-polars.md](06-polars.md) | tables: **Polars** instead of pandas, working by working | ⏳ |

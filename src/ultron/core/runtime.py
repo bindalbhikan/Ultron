@@ -26,7 +26,7 @@ def load_dotenv() -> None:
 def setup_logging() -> None:
     for stream in (sys.stdout, sys.stderr):  # Windows consoles default to cp1252; keep emoji printable
         try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
+            stream.reconfigure(encoding="utf-8", errors="replace")  # pyright: ignore[reportAttributeAccessIssue]
         except (AttributeError, ValueError):
             pass
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",

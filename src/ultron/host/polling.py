@@ -145,7 +145,7 @@ def serve(args) -> int:
             elif cb and cb.get("message") and str(cb["message"]["chat"]["id"]) in owners:
                 pool.submit(on_tap, cb)
             elif msg or cb:
-                log.info("Ignored an update from chat %s (not an owner chat)", ((msg or cb.get("message") or {}).get("chat") or {}).get("id"))
+                log.info("Ignored an update from chat %s (not an owner chat)", ((msg or (cb or {}).get("message") or {}).get("chat") or {}).get("id"))
         if not batch:
             time.sleep(0.2)
     log.info("Stopping: finishing the answers in progress")

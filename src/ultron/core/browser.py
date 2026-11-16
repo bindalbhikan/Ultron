@@ -39,7 +39,7 @@ def _is_public_host(host: str) -> bool:
         infos = socket.getaddrinfo(host, None)
     except OSError:
         return False
-    return bool(infos) and all(ipaddress.ip_address(i[4][0].split("%")[0]).is_global for i in infos)
+    return bool(infos) and all(ipaddress.ip_address(str(i[4][0]).split("%")[0]).is_global for i in infos)
 
 
 def check_url(url: str) -> str:

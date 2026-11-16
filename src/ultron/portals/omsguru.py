@@ -179,8 +179,8 @@ class OmsGuruClient:
         soup = BeautifulSoup(self.get(f"{BASE_URL}/orders").text, "html.parser")
         sel = (soup.select_one("#forceWarehouseSelector")
                or soup.select_one('select[id*="arehouse" i], select[name*="arehouse" i]'))
-        found = {o.get("value"): text_of(o) for o in (sel.find_all("option") if sel else [])
-                 if re.fullmatch(r"\d+", o.get("value") or "")}
+        found = {str(o.get("value")): text_of(o) for o in (sel.find_all("option") if sel else [])
+                 if re.fullmatch(r"\d+", str(o.get("value") or ""))}
         log.info("Warehouses: %s", found or "none listed (using the current one)")
         return found
 
@@ -197,7 +197,7 @@ class OmsGuruClient:
         form = soup.select_one(form_css)
         if form is None:
             raise OmsGuruError(f"No {what} export form on {page} - layout changed?")
-        before = {a["href"] for a in soup.select('a[href*="/orders/download/"]')}
+        before = {str(a["href"]) for a in soup.select('a[href*="/orders/download/"]')}
         data = {i["name"]: i.get("value", "") for i in form.select("input[name]")}
         r = self.s.post(f"{BASE_URL}{form['action']}", data=data, timeout=self.timeout,
                         headers={"Referer": page, "Origin": BASE_URL})
@@ -209,8 +209,8 @@ class OmsGuruClient:
             soup = BeautifulSoup(self.get(page).text, "html.parser")
             for a in soup.select('a[href*="/orders/download/"]'):
                 item = a.find_parent("li") or a
-                if a["href"] not in before and re.search(link_text, item.get_text(" "), re.I):
-                    blob = self.get(a["href"]).content
+                if str(a["href"]) not in before and re.search(link_text, item.get_text(" "), re.I):
+                    blob = self.get(str(a["href"])).content
                     with zipfile.ZipFile(io.BytesIO(blob)) as z:
                         return z.read(next(n for n in z.namelist() if n.lower().endswith(".csv")))
         raise OmsGuruError(f"{what} export not ready after {wait_minutes} minutes")
@@ -259,7 +259,7 @@ class OmsGuruClient:
         out = []
         for tr in soup.select("table tbody tr"):
             a = tr.select_one('a[href*="/channel_companies/edit/"]')
-            m = VIEW_CHANNEL.search(a["href"]) if a else None
+            m = VIEW_CHANNEL.search(str(a["href"])) if a else None
             if not m:
                 continue
             cells = [text_of(td) for td in tr.select("td")]
@@ -347,7 +347,7 @@ class OmsGuruClient:
             before = len(ids)
             for tr in table.select("tr"):
                 a = tr.select_one('a[href*="/orders/view/"]')
-                m = VIEW_ID.search(a["href"]) if a else None
+                m = VIEW_ID.search(str(a["href"])) if a else None
                 if not m:
                     continue
                 co = re.search(r"OrderID\s+(\S+)", text_of(tr))
@@ -381,7 +381,7 @@ class OmsGuruClient:
                 if err:
                     errors.append(f"{oid}: {err}")
                     log.warning("Order %s failed: %s", oid, err)
-                else:
+                elif res is not None:          # one() gives a result whenever it gives no error
                     orders += res[0]
                     hist += res[1]
                 if n % 50 == 0:

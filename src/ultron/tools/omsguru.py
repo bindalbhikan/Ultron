@@ -74,8 +74,8 @@ def sale_by_channel(day: str = "yesterday") -> str:
     units, cancel, names = units_by_channel(_oms(), [d])
     per, canc = Counter(), Counter()
     for (_, ch), q in units.items():
-        per[channel_line(names.get(ch, ch))] += q
-        canc[channel_line(names.get(ch, ch))] += cancel[(d, ch)]
+        per[channel_line(names.get(ch) or ch)] += q
+        canc[channel_line(names.get(ch) or ch)] += cancel[(d, ch)]
     rows = [f"{c}: {n} units ({canc[c]} cancelled)" for c, n in per.most_common()]
     return f"Orders of {d:%a %d %b %Y}" + (" so far" if d == date.today() else "") + ":\n" + "\n".join(
         rows + [f"Total: {sum(per.values())} units ({sum(canc.values())} cancelled)"])
@@ -89,7 +89,7 @@ def due_today() -> str:
     now = datetime.now()
     lines, names = order_lines(_oms(), [now.date() - timedelta(days=i) for i in range(8)])
     risk = at_risk(lines, now)
-    per = Counter(channel_line(names.get(r["channel"], r["channel"])) for r in risk)
+    per = Counter(channel_line(names.get(r["channel"]) or r["channel"]) for r in risk)
     head = f"{len(risk)} orders due today or overdue, not ready to ship ({sum(1 for r in risk if r['sla'] < now)} overdue)"
     return "\n".join([head, *(f"{c}: {n}" for c, n in per.most_common()),
                       *(f"{r['order']} {r['status']} SLA {r['sla']:%d %b %H:%M}" for r in risk[:20])])
