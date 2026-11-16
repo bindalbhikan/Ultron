@@ -178,6 +178,18 @@ def credit_notes(rtv: pd.DataFrame) -> pd.Series:
     return num(lines["Credit Note Value"]).fillna(0).clip(lower=0).groupby(keys).sum()
 
 
+def windowed_rtv(rtv: pd.DataFrame, month_of_key: pd.Series) -> pd.DataFrame:
+    """The RTV (return sheet) lines dated (Return Created Date) from their order line's order month's 1st to the next
+    month's 14th (owner, 16 Nov 2026: a month's returns and RTO come from the return sheet, within that window).
+    month_of_key: "Cust Order No|Seller SKU" -> order month. A line of no known order line is left out."""
+    if not len(rtv):
+        return rtv
+    key = rtv["Cust Order No"].str.strip() + "|" + rtv["SELLER SKU"].str.strip()
+    start = key.map(month_of_key[~month_of_key.index.duplicated(keep="last")])
+    created = adate(rtv["Return Created Date"])
+    return rtv[(created >= start) & (created < start + pd.offsets.MonthBegin(1) + pd.Timedelta(days=14))]
+
+
 def raw_data(orders: pd.DataFrame, rtv: pd.DataFrame, ledger: pd.DataFrame, master: pd.DataFrame,
              category_of_design: dict[str, str] | None = None, monthly: pd.DataFrame | None = None) -> pd.DataFrame:
     o = orders.copy()
@@ -193,6 +205,8 @@ def raw_data(orders: pd.DataFrame, rtv: pd.DataFrame, ledger: pd.DataFrame, mast
         extra["Description"] = extra["Seller Style Code"].map(names)
         extra["_source"] = "Monthly file"
         o = pd.concat([o, extra], ignore_index=True)
+    month_of_key = pd.Series(adate(o["Cust Order Date"]).dt.to_period("M").dt.to_timestamp().values, index=o["key"].values)
+    rtv = windowed_rtv(rtv, month_of_key)
     all_returns = rtv
     if len(rtv):
         r = rtv.copy()
@@ -287,6 +301,7 @@ def _line_key(raw: pd.DataFrame) -> pd.Series:
 def returned_units(raw: pd.DataFrame, rtv: pd.DataFrame) -> pd.Series:
     """Units returned per row of raw: the Return QTY of the line's return orders, each once; no more than the row holds
     (a replacement can come back again)."""
+    rtv = windowed_rtv(rtv, pd.Series(raw["ORDER MONTH"].values, index=_line_key(raw).values))
     if not len(rtv):
         return pd.Series(0.0, index=raw.index)
     r = rtv[num(rtv["Return QTY"]).fillna(0) > 0].drop_duplicates(["RETURN ORDER NUMBER", "SELLER SKU"], keep="last")

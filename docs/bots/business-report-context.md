@@ -63,10 +63,12 @@ scripts/
 
 * **Sale value** = `final amount` (what the customer paid). MRP and seller price are in RAW DATA.
 * **FINAL STATUS** per order line:
+  * Since 16 Nov 2026 (owner): Customer Return and RTO only from a returns report line dated from the order
+    month's 1st to the next month's 14th; the order report's RTO status alone no longer makes an RTO
   * Customer Return = returns report line of type Return (exchanges included; no separate Exchange status)
   * Cancelled = portal status F (SUB STATUS splits "before dispatch" and "after dispatch, came back as RTO" -
     a post-pack cancellation shows up in the returns report as RTO)
-  * RTO = portal status RTO, or an RTO line in the returns report
+  * RTO = an RTO line in the returns report (in the window above)
   * Delivered = portal status C and no return line
   * In Transit = SH / PK / WP
 * **Exchange replacement orders** (order release id = some `exchange_id`) are flagged in RAW DATA but counted

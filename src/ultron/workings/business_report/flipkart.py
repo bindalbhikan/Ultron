@@ -11,7 +11,7 @@ FINAL STATUS of an order item:
   RTO                 a return line of type courier_return
   Cancelled           portal status CANCELLED / REJECTED
   Delivered           portal status DELIVERED, no return line
-  Return Type Pending portal status RETURNED / RETURN_REQUESTED without a return line: the type is
+  (Return Type Pending: dropped 16 Nov 2026 - returns only from the Returns report, in the window) The old rule was:
                       taken from the order's own return reason when that reason is only ever one
                       type, otherwise it waits for the returns report (never guessed)
   In Transit          anything else (READY_TO_SHIP, APPROVED, ...)
@@ -251,6 +251,20 @@ def settlement(st: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def windowed_returns(returns: pd.DataFrame, month_of_item: pd.Series) -> pd.DataFrame:
+    """The returns report lines (cancelled returns out) dated from their item's order month's 1st to the next month's
+    14th (owner, 16 Nov 2026: a month's returns and RTO come from the returns report only, and only within that
+    window). month_of_item: order item id -> order month. A line of an item with no order month is left out."""
+    if not len(returns):
+        return returns.iloc[0:0]
+    r = returns.copy()
+    r["oi"] = oi(r["order_item_id"])
+    r["_d"] = dt(r["return_approval_date"]).fillna(dt(r.get("return_requested_date", r["return_approval_date"])))
+    r = r[r["return_status"].astype(str).str.lower() != "cancelled"]      # a cancelled return: the item stayed sold
+    start = r["oi"].map(month_of_item[~month_of_item.index.duplicated(keep="last")])
+    return r[(r["_d"] >= start) & (r["_d"] < start + pd.offsets.MonthBegin(1) + pd.Timedelta(days=14))]
+
+
 def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, settled: pd.DataFrame,
              category_of_design: dict[str, str] | None = None, sales: pd.DataFrame | None = None,
              monthly: pd.DataFrame | None = None) -> pd.DataFrame:
@@ -271,11 +285,9 @@ def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, 
         extra["oi"] = extra["order_item_id"]
         extra["_source"] = "Monthly file"
         o = pd.concat([o, extra], ignore_index=True)
-    if len(returns):
-        r = returns.copy()
-        r["oi"] = oi(r["order_item_id"])
-        r["_d"] = dt(r["return_approval_date"]).fillna(dt(r.get("return_requested_date", r["return_approval_date"])))
-        r = r[r["return_status"].str.lower() != "cancelled"]          # a cancelled return: the item stayed sold
+    month_of_item = pd.Series(dt(o["order_date"]).dt.to_period("M").dt.to_timestamp().values, index=o["oi"].values)
+    r = windowed_returns(returns, month_of_item)
+    if len(r):
         r = r.sort_values("_d").drop_duplicates("oi", keep="last").set_index("oi")
     else:
         r = pd.DataFrame(columns=["return_type", "return_id", "return_status", "return_result", "return_reason",
@@ -301,20 +313,16 @@ def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, 
 
     key = d["ORDER ITEM ID"]
     rtype = key.map(r["return_type"])
-    st = o["order_item_status"].str.upper().values
-    known = pd.DataFrame({"reason": o["return_reason"].values, "type": rtype.values}).dropna()
-    one_type = known.groupby("reason")["type"].agg(lambda x: x.iloc[0] if x.nunique() == 1 else None).dropna()
-    by_reason = pd.Series(o["return_reason"].values).map(one_type)
-    pending = np.isin(st, ["RETURNED", "RETURN_REQUESTED"]) & rtype.isna().values
-    rtype = rtype.where(~pending, by_reason.values)
+    st = o["order_item_status"].astype(str).str.upper().values
+    # returned / RTO only by a returns report line in the window; the order report's own RETURNED status is not
+    # kept up to date (owner), so an item it calls returned without such a line was delivered
     final = np.select([rtype.eq("customer_return").values, rtype.eq("courier_return").values,
-                       np.isin(st, ["CANCELLED", "REJECTED"]), st == "DELIVERED",
-                       np.isin(st, ["RETURNED", "RETURN_REQUESTED"])],
-                      ["Customer Return", "RTO", "Cancelled", "Delivered", "Return Type Pending"], default="In Transit")
+                       np.isin(st, ["CANCELLED", "REJECTED"]),
+                       np.isin(st, ["DELIVERED", "RETURNED", "RETURN_REQUESTED"])],
+                      ["Customer Return", "RTO", "Cancelled", "Delivered"], default="In Transit")
     d["FINAL STATUS"] = final
-    d["RETURN TYPE SOURCE"] = np.where(key.isin(r.index), "Returns report",
-                                       np.where(pending & by_reason.notna().values, "Order return reason", ""))
-    ret = np.isin(final, ["Customer Return", "RTO", "Return Type Pending"])
+    d["RETURN TYPE SOURCE"] = np.where(key.isin(r.index), "Returns report", "")
+    ret = np.isin(final, ["Customer Return", "RTO"])
     d["REASON"] = np.where(ret, key.map(r["return_reason"]).fillna(pd.Series(o["return_reason"].values)), "")
     d["SUB REASON"] = np.where(ret, key.map(r["return_sub_reason"]).fillna(pd.Series(o["return_sub_reason"].values)), "")
     d["RETURN ID"] = key.map(r["return_id"]).fillna(pd.Series(o["return_id"].values)).values
@@ -339,25 +347,15 @@ def raw_data(orders: pd.DataFrame, returns: pd.DataFrame, master: pd.DataFrame, 
     return d.sort_values(["ORDER DATE", "ORDER ITEM ID"]).reset_index(drop=True)
 
 
-def returned_units(raw: pd.DataFrame, returns: pd.DataFrame, sales: pd.DataFrame) -> pd.Series:
-    """Units returned per row of raw: the larger of the Sales Report's Return less Return Cancellation quantity and the
-    Returns report's quantity (a line's returns are not always in both); a line can return no more than it holds."""
-    found = []
-    if len(sales):
-        s = sales.copy()
-        s["oi"] = oi(s["Order Item ID"])
-        s["sub"] = s["Event Sub Type"].astype(str).str.strip()
-        s["q"] = pd.to_numeric(s["Item Quantity"], errors="coerce").fillna(0)
-        s = s[s["sub"].isin(["Return", "Return Cancellation"])].drop_duplicates(["oi", "sub", "Order Date", "Buyer Invoice ID", "q"])
-        found.append((s["q"] * s["sub"].map({"Return": 1, "Return Cancellation": -1})).groupby(s["oi"]).sum().clip(lower=0))
-    if len(returns):
-        r = returns[returns["return_status"].str.lower() != "cancelled"].copy()
-        r["oi"] = oi(r["order_item_id"])
-        r = r.drop_duplicates(["oi", "return_id"])
-        found.append(pd.to_numeric(r["quantity"], errors="coerce").fillna(1).groupby(r["oi"]).sum())
-    if not found:
+def returned_units(raw: pd.DataFrame, returns: pd.DataFrame) -> pd.Series:
+    """Units returned per row of raw: the returns report quantity of the item's lines in its window (windowed_returns),
+    each return once; a line can return no more than it holds. The returns report only (owner, 16 Nov 2026)."""
+    month_of_item = pd.Series(raw["ORDER MONTH"].values, index=raw["ORDER ITEM ID"].values)
+    r = windowed_returns(returns, month_of_item)
+    if not len(r):
         return pd.Series(0.0, index=raw.index)
-    units = pd.concat(found, axis=1).max(axis=1)
+    r = r.drop_duplicates(["oi", "return_id"])
+    units = pd.to_numeric(r["quantity"], errors="coerce").fillna(1).groupby(r["oi"]).sum()
     return raw["ORDER ITEM ID"].map(units).fillna(0).clip(upper=raw["QTY"])
 
 

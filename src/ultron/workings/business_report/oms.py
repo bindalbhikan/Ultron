@@ -83,7 +83,8 @@ def corrected(current: pd.Series, final: pd.Series, keep: pd.Series) -> pd.Serie
     Type Pending; its Delivered replaces In Transit. keep: lines a return report has settled are not touched."""
     out = current.copy()
     open_line = current.isin(["Delivered", "In Transit", "Return Type Pending"]) & ~keep
-    hit = open_line & final.isin(["Customer Return", "RTO", "Cancelled"])
+    # a return or an RTO only from the portal's returns report (owner, 16 Nov 2026), never from OMSGuru
+    hit = open_line & final.eq("Cancelled")
     out.loc[hit] = final[hit]
     done = current.eq("In Transit") & final.eq("Delivered")
     out.loc[done] = "Delivered"

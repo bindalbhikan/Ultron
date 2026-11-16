@@ -313,8 +313,8 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: d
     lacking = raw[~raw["ORDER MONTH"].isin(have) & (raw["ORDER MONTH"] >= pd.Timestamp(first))]
     raw = raw[raw["ORDER MONTH"].isin(have) & (raw["ORDER MONTH"] >= pd.Timestamp(first))].reset_index(drop=True)
     raw["QTY"] = pd.to_numeric(raw["QTY"], errors="coerce").fillna(1)
-    part = flipkart.returned_units(raw, r, tax).where(raw["FINAL STATUS"].ne("Cancelled"), 0)
-    part_status = raw["FINAL STATUS"].where(raw["FINAL STATUS"].ne("Delivered"), "Return Type Pending")
+    part = flipkart.returned_units(raw, r).where(raw["FINAL STATUS"].isin(["Customer Return", "RTO"]), 0)
+    part_status = raw["FINAL STATUS"]
     raw, split = split_part(raw, part, part_status, flipkart.MONEY, flipkart.RETURN_COLS)
     frames = {}
     for df, _kind in ((o, "ORDER"), (r, "RETURN"), (s, "PAYMENT"), (tax, "SALES"), (monthly, "MONTHLY"), (lines, "OMSGURU")):

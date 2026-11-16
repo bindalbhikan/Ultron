@@ -7,6 +7,17 @@
 * **Windows** (owner, 16 Nov 2026): sale = each month 1st to 30th / 31st; returns = that + the next month's 1st to
   14th: for the last month the next month's PARTIAL return report (kept by the 15th's return analysis) is read
   too (`portal_files`); for older months the next month's whole return report holds them.
+* **Return and RTO from the return sheet only** (owner, 16 Nov 2026: the order report's return / RTO status is not
+  kept up to date): an order line is Customer Return / RTO only by a return sheet line dated from its order month's
+  1st to the next month's 14th (Myntra `raw_data_pl`, Flipkart `windowed_returns`, AJIO `windowed_rtv`; the units
+  returned the same lines). A later return does not count for that month. Cancelled stays the order report's (a
+  return sheet has no cancellation). No status from the order report's RETURNED / RTO, no type guessed from its
+  return reason (Flipkart's Return Type Pending is gone: such an item was Delivered), and OMSGuru never makes a
+  line returned or RTO (it still tells a cancellation and a delivery). Flipkart's months with no Orders report
+  (Nov-25, Dec-25) still take the status of OMSGuru's own added lines. Effect on Sep-Oct 2026 (16 Nov): October's
+  orders gained their 1-14 Nov returns (Myntra customer returns 3,370 -> 3,940 units, Flipkart 2,486 -> 2,950, AJIO
+  750 -> 909); September lost the returns after 14 Oct and the RTO the order report alone gave (a few units);
+  no return / RTO of any portal dated outside its window.
 * The owner's sale / return / payment analysis (Drive `AGENT WORK/BUSINESS REPORTING`, the rules in
   `docs/bots/business-report-context.md`, taken over from the hand-run scripts on 1 Nov 2026; the old
   Myntra script is kept in `scripts/legacy/myntra_build_workbook.py`), one workbook per portal:

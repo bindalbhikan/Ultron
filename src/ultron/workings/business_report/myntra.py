@@ -242,9 +242,18 @@ def raw_data_pl(o, r, m, p) -> "pl.DataFrame":
 
     r = r.with_columns(*(pids(pl.col(c)).alias(c) for c in ["order_line_id", "exchange_id", "return_id", "order_id"]))
     r = r.with_columns(pl.coalesce(pdt(pl.col("return_created_date")), pdt(pl.col("order_rto_date"))).alias("EVENT DATE"))
+    exchange_release_ids = r["exchange_id"].drop_nulls().unique().to_list()
+    # Returns and RTO come from the returns report only, and only its lines dated from the order's month's 1st to
+    # the next month's 14th (owner, 16 Nov 2026: the order report's return / RTO status is not kept up to date;
+    # a return after that window does not count for that month). The newest line in the window wins.
+    order_month = o.select(pl.col("order line id").alias("_oli"),
+                           pdt(pl.col("created on")).dt.truncate("1mo").alias("_om"))
+    r = (r.join(order_month, left_on="order_line_id", right_on="_oli", how="inner")
+          .filter((pl.col("EVENT DATE") >= pl.col("_om"))
+                  & (pl.col("EVENT DATE") < pl.col("_om").dt.offset_by("1mo").dt.offset_by("14d")))
+          .drop("_om"))
     r = (r.with_row_index("_row").sort(["_order", "EVENT DATE", "_row"], nulls_last=False)
           .unique(subset=["order_line_id"], keep="last", maintain_order=True))
-    exchange_release_ids = r["exchange_id"].drop_nulls().unique().to_list()
     ret = r.select(pl.col("order_line_id").alias("_oli"), pl.col("type").alias("_rtype"),
                    pl.col("return_reason").alias("_rreason"), pl.col("order_rto_date").alias("_rrto"),
                    pl.col("return_created_date").alias("_rcreated"), pl.col("return_id").alias("_rid"),
@@ -290,7 +299,7 @@ def raw_data_pl(o, r, m, p) -> "pl.DataFrame":
     rtype, st = pl.col("_rtype"), pl.col("_st")
     final = (pl.when(rtype == "Return").then(pl.lit("Customer Return"))
                .when(st == "F").then(pl.lit("Cancelled"))
-               .when((rtype == "RTO") | (st == "RTO")).then(pl.lit("RTO"))
+               .when(rtype == "RTO").then(pl.lit("RTO"))          # the returns report only, not the order status
                .when(st == "C").then(pl.lit("Delivered")).otherwise(pl.lit("In Transit")))
     d = d.with_columns(final.alias("FINAL STATUS"))
     fs = pl.col("FINAL STATUS")
