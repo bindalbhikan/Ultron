@@ -1,6 +1,6 @@
 # 6. Polars — tables instead of pandas
 
-**Status**: 🔧 16 Nov 2026 — in (`polars>=1.30`, 2.1.0 in `uv.lock`); first working moved.
+**Status**: 🔧 17 Nov 2026 — in (`polars>=1.30`, 2.1.0 in `uv.lock`); the business report's logic moved (all three portals).
 
 **Why**: faster than pandas, multi-core, lazy queries, strict types (ids stay text: no more `46148.0`). For
 Bindal's files the gain is seconds; for a seller with 100x the orders it decides whether a run finishes.
@@ -54,7 +54,18 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   `bank_paid`), repeated headers ".1". Checked on all 100 sheets of the real Sep–Oct 2026 Flipkart / AJIO files
   (with and without a header row): every cell the same; then the golden business report run: ALL OUTPUTS THE SAME.
 
-**Next, one by one, each with a parity test on real files**: the business report's Flipkart / AJIO logic and
+* Business report, Flipkart and AJIO logic (`business_report/flipkart.py`: `sales_items`, `monthly_items`,
+  `settlement`, `windowed_returns`, `raw_data`, `returned_units`; `business_report/ajio.py`: `windowed_rtv`,
+  `credit_notes`, `ledger`, `raw_data` with the G4 / IC shares by invoice, `returned_units`). The old pandas code
+  kept beside the new one on the same real files, every column compared: Flipkart Sep–Oct 2026 19,461 rows, AJIO
+  4,314 rows, returned units 6,866 / 1,487 — all the same **except one Flipkart item** whose two return lines carry
+  the same second: pandas' unstable sort took either line, Polars always takes the later one in the file (its
+  RETURN ID and SUB REASON; its status and every number the same). Then the golden business report run: every
+  table and number the same. Kept as the old code had them (each a pandas habit, checked): an empty invoice number
+  is the text "nan" when invoices are shared out (`_text`), Description's title case is Python's own `str.title`,
+  a tie in the RAW DATA order keeps the file order.
+
+**Next, one by one, each with a parity test on real files**: the business report's readers and
 its workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
 owner's OK. With it: a row-quality check of the OMSGuru order list (fields left at their defaults).
