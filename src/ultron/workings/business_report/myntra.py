@@ -26,7 +26,6 @@ import pandas as pd
 from typing import TYPE_CHECKING
 
 from .workbook import Report
-from ..core.tables import clean_id
 
 if TYPE_CHECKING:
     import polars as pl
@@ -42,33 +41,6 @@ from ..core.tables import pnum  # noqa: E402 - one number reader (docs/CENTRALIS
 def dt(s):
     d = pd.to_datetime(s, errors="coerce", format="mixed")
     return d.where(d > "2000-01-01")
-
-
-def num(s):
-    return pd.to_numeric(s, errors="coerce")
-
-
-def ids(s: pd.Series) -> pd.Series:
-    return clean_id(s.astype(str)).str.lstrip("'").replace({"nan": None, "None": None})
-
-
-def payments(p: pd.DataFrame) -> pd.DataFrame:
-    """The payment lines once each (the monthly files and the old dumps overlap)."""
-    if not len(p):
-        return p
-    p = p.copy()
-    for c in ["return_id", "NOD_Comment", "Logistics_Commission", "IGST_TCS", "CGST_TCS", "SGST_TCS", "TDS", "Commission"]:
-        if c not in p.columns:
-            p[c] = None
-    p["Payment_Date"] = dt(p["Payment_Date"]).dt.normalize()
-    for c in ["Settled_Amount", "Commission", "Logistics_Commission", "TDS", "IGST_TCS", "CGST_TCS", "SGST_TCS"]:
-        p[c] = num(p[c]).fillna(0).round(2)
-    p["Order_Type"] = p["Order_Type"].astype(str).str.strip().str.title()
-    p["order_line_id"] = ids(p["order_line_id"])
-    p = p.drop_duplicates(["Payment_Date", "utrNumber", "Order_Type", "order_line_id", "return_id", "Settled_Amount"])
-    p["TAX"] = p["TDS"] + p["IGST_TCS"] + p["CGST_TCS"] + p["SGST_TCS"]
-    p["ACCOUNT"] = ids(p["Seller_Id"]).map(ACCOUNT_OF)
-    return p
 
 
 def pdt(e: "pl.Expr") -> "pl.Expr":
@@ -262,29 +234,6 @@ MONEY = {"MRP", "DISCOUNT", V, "SELLER PRICE", "FWD SETTLED AMT", "COMMISSION", 
          "REVERSE SETTLED AMT", "RETURN LOGISTICS FEE", "SPF / NOD AMT", "NET SETTLEMENT"}
 
 
-def pay_months(p: pd.DataFrame, start: pd.Timestamp) -> pd.DataFrame | None:
-    """Cash received by payment month (the second PAYMENT table, values)."""
-    if not len(p):
-        return None
-    pp = p[p["Payment_Date"] >= start].copy()
-    pp["M"] = pp["Payment_Date"].dt.to_period("M").dt.to_timestamp()
-    t = pp.pivot_table(index="M", columns="Order_Type", values="Settled_Amount", aggfunc="sum", fill_value=0)
-    t = t.reindex(columns=["Forward", "Reverse", "Nod"], fill_value=0)
-    t.columns = ["Forward Settled", "Reverse Debit", "SPF / NOD"]
-    t["Net Payout"] = t.sum(axis=1)
-    f = pp[pp.Order_Type == "Forward"].groupby("M")
-    t["Forward Lines"] = f.size()
-    t["Reverse Lines"] = pp[pp.Order_Type == "Reverse"].groupby("M").size()
-    t["Commission"] = f["Commission"].sum()
-    t["Forward Logistics"] = f["Logistics_Commission"].sum()
-    t["Return Logistics"] = pp[pp.Order_Type == "Reverse"].groupby("M")["Logistics_Commission"].sum()
-    t["TCS + TDS"] = f["TAX"].sum()
-    t = t.fillna(0)
-    t["MoM %"] = t["Net Payout"].pct_change()
-    t.iloc[0, t.columns.get_loc("MoM %")] = float("nan")
-    return t
-
-
 def pay_months_pl(p: "pl.DataFrame", start) -> pd.DataFrame | None:
     """Cash received by payment month (the second PAYMENT table, values), from Polars payment lines; a pandas
     table for the workbook (index M)."""
@@ -333,15 +282,3 @@ def report_pl(raw: pd.DataFrame, p: "pl.DataFrame", input_log: pd.DataFrame) -> 
                    ("Forward Logistics", "FWD LOGISTICS"), ("Return Logistics", "RETURN LOGISTICS FEE"),
                    ("TCS + TDS", "TCS + TDS")],
         pay_months=pay_months_pl(p, raw["ORDER MONTH"].min()), input_log=input_log, min_orders=500)
-
-
-def report(raw: pd.DataFrame, p: pd.DataFrame, input_log: pd.DataFrame) -> Report:
-    have_pay = raw["NET SETTLEMENT"].notna().any()
-    return Report(
-        portal="MYNTRA", raw=raw, raw_cols=RAW_COLS, value=V, settle="NET SETTLEMENT" if have_pay else None,
-        money_cols=MONEY,
-        pay_table=[("Forward Settled", "FWD SETTLED AMT"), ("Reverse Debit", "REVERSE SETTLED AMT"),
-                   ("SPF / NOD", "SPF / NOD AMT"), ("Net Settlement", "NET SETTLEMENT"), ("Commission", "COMMISSION"),
-                   ("Forward Logistics", "FWD LOGISTICS"), ("Return Logistics", "RETURN LOGISTICS FEE"),
-                   ("TCS + TDS", "TCS + TDS")],
-        pay_months=pay_months(p, raw["ORDER MONTH"].min()), input_log=input_log, min_orders=500)
