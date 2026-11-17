@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
@@ -183,7 +183,10 @@ def ajio_source(chunks, returns_to: date, work: Path) -> Numbers:
         path = report(kind, fetch, a, b)
         return n.read_report(path, column) if path.stat().st_size else None
 
-    rtv = pd.concat([read("return", "rtv_report", a, b, "return created date") for a, b in whole])
+    parts = [x for x in (read("return", "rtv_report", a, b, "return created date") for a, b in whole) if x is not None]
+    if not parts:
+        raise ValueError("no AJIO return report in the window")     # as pandas' concat of nothing stopped it
+    rtv = pl.concat(parts, how="diagonal_relaxed")
     days = []
     for first, last in chunks:
         orders = read("sale", "order_report_or_empty", first, last, "cancelled qty")

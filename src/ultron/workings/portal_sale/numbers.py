@@ -16,7 +16,6 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pandas as pd
 
 if TYPE_CHECKING:
     import polars as pl
@@ -27,18 +26,31 @@ OMS_CANCEL = {"cancelled", "cancelled before shipping", "removed before shipping
               "cancelled return received", "partial cancelled return received"}
 
 
-def read_report(path: Path, needed: str) -> pd.DataFrame:
-    """A report's rows as text, headers in lower case; for a workbook the first sheet with column
-    `needed` (Flipkart's start with a Help sheet). Raises when no sheet has it: the report changed."""
+def read_report(path: Path, needed: str) -> "pl.DataFrame":
+    """A report's rows as text (Polars), headers in lower case; for a workbook the first sheet with column
+    `needed` (Flipkart's start with a Help sheet). Raises when no sheet has it: the report changed. Read as pandas
+    read them: pandas' missing texts empty, a workbook by openpyxl (AJIO's texts keep their outer spaces)."""
+    from ..core.tables import read_excel_text, read_text_csv, sheet_names
     if path.suffix.lower() == ".csv":
-        frames = [pd.read_csv(path, dtype=str, low_memory=False)]
+        sheets = [lambda: read_text_csv(path, pandas_na=True)]
     else:
-        frames = list(pd.read_excel(path, sheet_name=None, dtype=str).values())
-    for df in frames:
-        df = df.rename(columns=lambda c: str(c).strip().casefold())
-        if needed.casefold() in df.columns:
-            return df
+        sheets = [lambda s=s: read_excel_text(path, s, engine="openpyxl") for s in sheet_names(path)]
+    for read in sheets:
+        df = read()
+        names = [str(c).strip().casefold() for c in df.columns]
+        if needed.casefold() in names:
+            return df.rename(dict(zip(df.columns, _unique(names))))
     raise ValueError(f"{path.name}: no column {needed!r}")
+
+
+def _unique(names: list[str]) -> list[str]:
+    """Column names made unique (a repeated name: the later one ".1")."""
+    seen: dict[str, int] = {}
+    out = []
+    for n in names:
+        out.append(n if n not in seen else f"{n}.{seen[n]}")
+        seen[n] = seen.get(n, 0) + 1
+    return out
 
 
 # The counting is Polars (docs/libraries/06-polars.md); the reports may come as pandas or Polars frames.
