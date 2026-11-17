@@ -5,6 +5,8 @@ summarised, never sent whole.
 """
 from __future__ import annotations
 
+from collections import Counter
+
 import json
 import re
 from pathlib import Path
@@ -83,6 +85,44 @@ def run_files(run_id: int) -> str:
     return _cut("\n".join(files) or "no files")
 
 
+
+def _short(v) -> str:
+    s = "" if v is None else str(v)
+    return s if len(s) <= 40 else s[:37] + "..."
+
+
+def _label(v) -> str:
+    return "(blank)" if v is None or v == "" else str(v)
+
+
+def _month(v) -> str:
+    """YYYY-MM of a date cell or a date text (ISO or "16 Nov 2026"); "NaT" when none (as before)."""
+    from datetime import date, datetime
+    if isinstance(v, (datetime, date)):
+        return f"{v:%Y-%m}"
+    s = str(v or "").strip()
+    for text in dict.fromkeys((s, s[:19], s[:10])):
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d", "%d-%m-%Y", "%d %b %Y", "%d-%b-%Y", "%d/%m/%Y"):
+            try:
+                return f"{datetime.strptime(text, fmt):%Y-%m}"
+            except ValueError:
+                continue
+    return "NaT"
+
+
+def _crosstab(rows: list[str], cols: list[str]) -> str:
+    """Rows x columns counts with an All row and column (as pandas' crosstab with margins)."""
+    keys_r, keys_c = sorted(set(rows)), sorted(set(cols))
+    n = Counter(zip(rows, cols))
+    lines = ["  ".join(["month"] + keys_c + ["All"])]
+    for r in keys_r:
+        cells = [n[(r, c)] for c in keys_c]
+        lines.append("  ".join([r] + [str(x) for x in cells] + [str(sum(cells))]))
+    totals = [sum(n[(r, c)] for r in keys_r) for c in keys_c]
+    lines.append("  ".join(["All"] + [str(x) for x in totals] + [str(sum(totals))]))
+    return "\n".join(lines)
+
+
 @tool
 def sheet_summary(run_id: int, path: str, sheet: str = "", group_by: str = "", month_of: str = "") -> str:
     """Summary of one sheet of an xlsx the run wrote: its sheets, row count, every column with how
@@ -100,29 +140,43 @@ def sheet_summary(run_id: int, path: str, sheet: str = "", group_by: str = "", m
     if not f.is_file() or _out(run_id).resolve() not in f.parents:
         return f"no file {path!r} in run {run_id}"
     try:
-        import pandas as pd
+        from openpyxl import load_workbook
     except ImportError:
-        return "pandas is not installed here (pip install 'ultron[full]'): xlsx files cannot be read"
-    xl = pd.ExcelFile(f)
-    name = sheet or xl.sheet_names[0]
-    if name not in xl.sheet_names:
-        return f"no sheet {name!r}; sheets: {xl.sheet_names}"
-    df: pd.DataFrame = xl.parse(name)  # pyright: ignore[reportAssignmentType] - one sheet: a DataFrame
-    parts = [f"sheets: {xl.sheet_names}", f"sheet {name!r}: {len(df)} rows, {len(df.columns)} columns",
-             "filled per column: " + ", ".join(f"{c}={int(df[c].notna().to_numpy().sum())}" for c in df.columns),
-             "first rows:\n" + df.head(5).to_string(max_colwidth=40)]
-    if month_of and month_of in df:
-        month = pd.to_datetime(df[month_of], errors="coerce").dt.to_period("M").astype(str)
-        if group_by and group_by in df:
-            parts.append(f"rows per month of {month_of} x {group_by}:\n"
-                         + pd.crosstab(month, df[group_by].fillna("(blank)"), margins=True).to_string())
+        return "openpyxl is not installed here (pip install 'ultron[full]'): xlsx files cannot be read"
+    wb = load_workbook(f, read_only=True, data_only=True)
+    names = wb.sheetnames
+    name = sheet or names[0]
+    if name not in names:
+        return f"no sheet {name!r}; sheets: {names}"
+    from openpyxl.worksheet._read_only import ReadOnlyWorksheet
+    ws = wb[name]
+    if not isinstance(ws, ReadOnlyWorksheet):
+        return f"sheet {name!r} is a chart, not rows; sheets: {names}"
+    rows = [list(r) for r in ws.iter_rows(values_only=True)]
+    wb.close()
+    head = [str(h) if h is not None else f"Unnamed: {i}" for i, h in enumerate(rows[0])] if rows else []
+    body = [r + [None] * (len(head) - len(r)) for r in rows[1:]]
+    col = {h: i for i, h in enumerate(head)}
+
+    def filled(v) -> bool:
+        return v is not None and not (isinstance(v, str) and v == "")
+    parts = [f"sheets: {names}", f"sheet {name!r}: {len(body)} rows, {len(head)} columns",
+             "filled per column: " + ", ".join(f"{h}={sum(filled(r[i]) for r in body)}" for h, i in col.items()),
+             "first rows:\n" + "\n".join(" | ".join(_short(r[i]) for i in range(len(head))) for r in [head] + body[:5])]
+    if month_of and month_of in col:
+        months = [_month(r[col[month_of]]) for r in body]
+        if group_by and group_by in col:
+            groups = [_label(r[col[group_by]]) for r in body]
+            parts.append(f"rows per month of {month_of} x {group_by}:\n" + _crosstab(months, groups))
         else:
-            parts.append(f"rows per month of {month_of}:\n" + month.value_counts().sort_index().to_string())
-    elif group_by and group_by in df:
-        parts.append(f"{group_by} counts:\n" + df[group_by].fillna("(blank)").value_counts().head(25).to_string())
-    for col in (group_by, month_of):
-        if col and col not in df:
-            parts.append(f"(no column {col!r})")
+            counts = Counter(m for m in months)
+            parts.append(f"rows per month of {month_of}:\n" + "\n".join(f"{m}  {n}" for m, n in sorted(counts.items())))
+    elif group_by and group_by in col:
+        counts = Counter(_label(r[col[group_by]]) for r in body)
+        parts.append(f"{group_by} counts:\n" + "\n".join(f"{k}  {n}" for k, n in counts.most_common(25)))
+    for c in (group_by, month_of):
+        if c and c not in col:
+            parts.append(f"(no column {c!r})")
     return _cut("\n\n".join(parts))
 
 
