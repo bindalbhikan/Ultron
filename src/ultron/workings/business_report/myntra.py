@@ -9,8 +9,9 @@ scripts/3_build_workbook.py, the inputs from PORTAL REPORTS. The three accounts 
 
 FINAL STATUS per order line (CONTEXT.md):
   Customer Return = a returns line of type Return (exchanges included)
-  Cancelled       = portal status F (SUB STATUS: before dispatch / after dispatch, came back as RTO)
-  RTO             = portal status RTO, or an RTO line in the returns report
+  RTO             = an RTO line in the returns report (in the window), even when the order report says F
+                    (SUB STATUS "RTO (order report: cancelled)": Myntra marks a returned RTO order cancelled)
+  Cancelled       = portal status F and no returns line (SUB STATUS "Cancelled before dispatch")
   Delivered       = portal status C and no return line
   In Transit      = SH / PK / WP
 Sale value = final amount. NET SETTLEMENT = forward + reverse + NOD of the order line. Returns: the
@@ -20,7 +21,6 @@ from __future__ import annotations
 
 import logging
 
-import numpy as np
 import pandas as pd
 
 from typing import TYPE_CHECKING
@@ -68,108 +68,6 @@ def payments(p: pd.DataFrame) -> pd.DataFrame:
     p["ACCOUNT"] = ids(p["Seller_Id"]).map(ACCOUNT_OF)
     return p
 
-
-def raw_data(o: pd.DataFrame, r: pd.DataFrame, m: pd.DataFrame, p: pd.DataFrame) -> pd.DataFrame:
-    o = o.copy()
-    o["order line id"] = ids(o["order line id"])
-    o = o.drop_duplicates("order line id", keep="last")
-    mm = m[m["Channel Name"].str.startswith("MYNTRA", na=False)]
-    by_code = mm.dropna(subset=["MYNTRA SKU CODE"]).drop_duplicates("MYNTRA SKU CODE").set_index("MYNTRA SKU CODE")[MCOLS]
-    by_sku = m.drop_duplicates("Channel Listing SKU Code").set_index("Channel Listing SKU Code")[MCOLS]
-
-    r = r.copy()
-    for c in ["order_line_id", "exchange_id", "return_id", "order_id"]:
-        r[c] = ids(r[c])
-    r["EVENT DATE"] = dt(r["return_created_date"]).fillna(dt(r["order_rto_date"]))
-    r = r.sort_values(["_order", "EVENT DATE"], na_position="first").drop_duplicates("order_line_id", keep="last")
-    ret = r.set_index("order_line_id")
-    exchange_release_ids = set(r["exchange_id"].dropna())
-
-    fwd = rev = nod = pd.DataFrame()
-    if len(p):
-        fwd = p[p.Order_Type == "Forward"].groupby("order_line_id").agg(
-            FWD_SETTLED=("Settled_Amount", "sum"), FWD_DATE=("Payment_Date", "max"), UTR=("utrNumber", "last"),
-            COMMISSION=("Commission", "sum"), FWD_LOGISTICS=("Logistics_Commission", "sum"), TAX=("TAX", "sum"))
-        rev = p[p.Order_Type == "Reverse"].groupby("order_line_id").agg(
-            REV_SETTLED=("Settled_Amount", "sum"), REV_DATE=("Payment_Date", "max"),
-            REV_LOGISTICS=("Logistics_Commission", "sum"))
-        nod = p[p.Order_Type == "Nod"].groupby("order_line_id").agg(NOD=("Settled_Amount", "sum"))
-
-    d = pd.DataFrame({
-        "ACCOUNT": o["ACCOUNT"].values,
-        "ORDER DATE": dt(o["created on"]).dt.normalize().values,
-        "STORE ORDER ID": o["store order id"].astype(str).str.lstrip("'").values,
-        "ORDER RELEASE ID": ids(o["order release id"]).values,
-        "ORDER LINE ID": o["order line id"].values,
-        "STYLE ID": ids(o["style id"]).values,
-        "MYNTRA SKU CODE": o["myntra sku code"].values,
-        "SELLER SKU CODE": o["seller sku code"].values,
-    })
-    d["ORDER MONTH"] = d["ORDER DATE"].dt.to_period("M").dt.to_timestamp()
-    for c in MCOLS:
-        d[c] = d["MYNTRA SKU CODE"].map(by_code[c]).fillna(d["SELLER SKU CODE"].map(by_sku[c]))
-    d["BRAND"] = o["brand"].values
-    d["CATEGORY"] = o["article type"].values
-    d["SIZE"] = o["size"].values
-    d["QTY"] = 1
-    d["PO TYPE"] = o["po_type"].values
-    d["MRP"] = num(o["total mrp"]).values
-    d["DISCOUNT"] = num(o["discount"]).values
-    d["SALE PRICE (FINAL AMOUNT)"] = num(o["final amount"]).values
-    d["SELLER PRICE"] = num(o["seller price"]).values
-    d["PORTAL ORDER STATUS"] = o["order status"].map(
-        {"C": "Complete", "F": "Cancelled", "RTO": "RTO", "SH": "Shipped", "PK": "Packed", "WP": "WP"}).values
-
-    oli = d["ORDER LINE ID"]
-    rtype = oli.map(ret["type"])
-    st = o["order status"].values
-    final = np.select([rtype.eq("Return"), st == "F", rtype.eq("RTO") | (st == "RTO"), st == "C"],
-                      ["Customer Return", "Cancelled", "RTO", "Delivered"], default="In Transit")
-    d["FINAL STATUS"] = final
-    sub = pd.Series(final, index=d.index)
-    sub[(final == "Cancelled") & rtype.eq("RTO")] = "Cancelled after dispatch (came back as RTO)"
-    sub[(final == "Cancelled") & rtype.isna()] = "Cancelled before dispatch"
-    d["SUB STATUS"] = sub.values
-    d["IS EXCHANGE REPLACEMENT ORDER"] = np.where(d["ORDER RELEASE ID"].isin(exchange_release_ids), "Yes", "No")
-    canc_reason = o["cancellation reason"].values
-    ret_reason = oli.map(ret["return_reason"])
-    d["REASON"] = np.where(final == "Customer Return", ret_reason,
-                           np.where(final == "RTO", pd.Series(canc_reason).fillna("RTO").values, canc_reason))
-    d["DELIVERED DATE"] = dt(o["delivered on"]).dt.normalize().values
-    d["CANCELLED DATE"] = dt(o["cancelled on"]).dt.normalize().values
-    d["RTO DATE"] = dt(pd.Series(o["rto creation date"].values)).fillna(dt(oli.map(ret["order_rto_date"]))).dt.normalize().values
-    d["RETURN CREATED DATE"] = dt(oli.map(ret["return_created_date"])).where(rtype.eq("Return")).values
-    d["RETURN MONTH"] = pd.Series(d["RETURN CREATED DATE"]).dt.to_period("M").dt.to_timestamp().values
-    d["RETURN ID"] = oli.map(ret["return_id"]).values
-    d["RETURN PORTAL STATUS"] = oli.map(ret["status"]).values
-    d["REFUNDED DATE"] = dt(oli.map(ret["refunded_date"])).values
-    d["COURIER"] = o["courier code"].values
-    d["CITY"] = o["city"].values
-    d["STATE"] = o["state"].values
-    for frame in (fwd, rev, nod):
-        for c in frame.columns:
-            d[c] = oli.map(frame[c]).values
-    for c in ["FWD_SETTLED", "FWD_DATE", "UTR", "COMMISSION", "FWD_LOGISTICS", "TAX", "REV_SETTLED", "REV_DATE",
-              "REV_LOGISTICS", "NOD"]:
-        if c not in d.columns:
-            d[c] = np.nan
-    d = d.rename(columns={"FWD_SETTLED": "FWD SETTLED AMT", "FWD_DATE": "FWD PAYMENT DATE", "UTR": "FWD UTR",
-                          "FWD_LOGISTICS": "FWD LOGISTICS", "TAX": "TCS + TDS", "REV_SETTLED": "REVERSE SETTLED AMT",
-                          "REV_DATE": "REVERSE PAYMENT DATE", "REV_LOGISTICS": "RETURN LOGISTICS FEE", "NOD": "SPF / NOD AMT"})
-    money = ["FWD SETTLED AMT", "REVERSE SETTLED AMT", "SPF / NOD AMT"]
-    d["NET SETTLEMENT"] = d[money].fillna(0).sum(axis=1).where(d[money].notna().any(axis=1))
-    hf, hr, fs = d["FWD SETTLED AMT"].notna(), d["REVERSE SETTLED AMT"].notna(), d["FINAL STATUS"]
-    d["PAYMENT STATUS"] = np.select(
-        [hf & hr, hf & fs.eq("Customer Return"), hf, hr, fs.eq("Delivered"), fs.eq("Customer Return")],
-        ["Settled & Reversed", "Settled - Reverse Pending", "Settled", "Reverse Only", "Payment Pending",
-         "No Payment (Returned)"], default="Not Applicable")
-    return d.sort_values(["ORDER DATE", "ACCOUNT"]).reset_index(drop=True)
-
-
-
-# ------------------------------------------------------------------ Polars (docs/libraries/06-polars.md)
-# The same rules as the pandas code above, checked against it on real files (the golden business report run)
-# before the switch. Dates in these reports are ISO: "2026-10-05", "... 12:34:56", "... 12:34:56.000".
 
 def pdt(e: "pl.Expr") -> "pl.Expr":
     """A date column (ISO text) as a datetime; empty, unreadable or before 2000 (the 1970 of RTO lines) -> null."""
@@ -298,8 +196,11 @@ def raw_data_pl(o, r, m, p) -> "pl.DataFrame":
         d = d.join(f, left_on="ORDER LINE ID", right_on="_oli", how="left", nulls_equal=False)
     rtype, st = pl.col("_rtype"), pl.col("_st")
     final = (pl.when(rtype == "Return").then(pl.lit("Customer Return"))
+               # an RTO line in the returns report is an RTO, whatever the order report says: Myntra turns an RTO
+               # order's status to F (cancelled) once it comes back (owner, 17 Nov 2026: RTO and cancelled must
+               # match the return sheet; 21,965 RTO lines Apr-25..Oct-26 had been counted as cancelled)
+               .when(rtype == "RTO").then(pl.lit("RTO"))
                .when(st == "F").then(pl.lit("Cancelled"))
-               .when(rtype == "RTO").then(pl.lit("RTO"))          # the returns report only, not the order status
                .when(st == "C").then(pl.lit("Delivered")).otherwise(pl.lit("In Transit")))
     d = d.with_columns(final.alias("FINAL STATUS"))
     fs = pl.col("FINAL STATUS")
@@ -307,7 +208,7 @@ def raw_data_pl(o, r, m, p) -> "pl.DataFrame":
         *(pl.coalesce(pl.col(f"_c_{c}"), pl.col(f"_s_{c}")).alias(c) for c in MCOLS),
         pl.lit(1).alias("QTY"),
         st.replace_strict(status_names, default=None).alias("PORTAL ORDER STATUS"),
-        pl.when((fs == "Cancelled") & (rtype == "RTO").fill_null(False)).then(pl.lit("Cancelled after dispatch (came back as RTO)"))
+        pl.when((fs == "RTO") & (st == "F").fill_null(False)).then(pl.lit("RTO (order report: cancelled)"))
           .when((fs == "Cancelled") & rtype.is_null()).then(pl.lit("Cancelled before dispatch")).otherwise(fs).alias("SUB STATUS"),
         pl.when(pl.col("ORDER RELEASE ID").is_in(exchange_release_ids).fill_null(False)).then(pl.lit("Yes"))
           .otherwise(pl.lit("No")).alias("IS EXCHANGE REPLACEMENT ORDER"),

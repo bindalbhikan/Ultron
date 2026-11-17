@@ -13,8 +13,17 @@
   returned the same lines). A later return does not count for that month. Cancelled stays the order report's (a
   return sheet has no cancellation). No status from the order report's RETURNED / RTO, no type guessed from its
   return reason (Flipkart's Return Type Pending is gone: such an item was Delivered), and OMSGuru never makes a
-  line returned or RTO (it still tells a cancellation and a delivery). Flipkart's months with no Orders report
-  (Nov-25, Dec-25) still take the status of OMSGuru's own added lines. Effect on Sep-Oct 2026 (16 Nov): October's
+  line returned or RTO (it still tells a cancellation and a delivery). **The return sheet comes first, every portal**
+  (owner, 17 Nov 2026: "return, RTO, cancelled status from the return sheet"): a line the return sheet calls RTO is RTO
+  even when the order report says cancelled (Myntra sets a returned RTO order to F: 21,965 Myntra lines Apr-25..Oct-26
+  had been counted Cancelled, e.g. all about you RTO 3,209 -> 10,143, Cancelled 16,722 -> 9,788; SUB STATUS
+  "RTO (order report: cancelled)"); Cancelled = the order report's cancel with no return sheet line. Checked on
+  Apr-25..Oct-26 by a separate VLOOKUP of every line in the return sheets: Myntra the same on every line; Flipkart and
+  AJIO the same but for lines returned in part (two rows of one item). Flipkart's OMSGuru-only lines (no order item
+  id, so nothing to look up) are never RTO / returned: OMSGuru's RTO -> Cancelled, its return -> Delivered (23 units).
+  **A month without its return reports is "-"**: an order month needs its own and the next month's return report
+  (every account with orders), else RTO, customer return and net sale are "-", never 0 (`returns_not_known`;
+  Flipkart Apr-25..Jun-25: Flipkart keeps returns about 4 months, they can no longer be fetched). Effect on Sep-Oct 2026 (16 Nov): October's
   orders gained their 1-14 Nov returns (Myntra customer returns 3,370 -> 3,940 units, Flipkart 2,486 -> 2,950, AJIO
   750 -> 909); September lost the returns after 14 Oct and the RTO the order report alone gave (a few units);
   no return / RTO of any portal dated outside its window.

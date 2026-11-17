@@ -231,10 +231,15 @@ class Writer:
                     ws.write_string(r, col["rp"], "-", self.dash)
                 else:
                     ws.write_formula(r, col["rp"], f'=IF({c["gq"]}-N({c["cq"]})=0,"-",N({c["rq"]})/({c["gq"]}-N({c["cq"]})))', pct, v["rq"] / d if d else "-")
-            if "tp" in col:
+            unknown_at = lambda *keys: isinstance(label, pd.Timestamp) and any(label in self.r.unknown.get(k, ()) for k in keys)  # noqa: E731
+            if "tp" in col and unknown_at("tq", "nq"):
+                ws.write_string(r, col["tp"], "-", self.dash)
+            elif "tp" in col:
                 d = v["nq"] + v["tq"]
                 ws.write_formula(r, col["tp"], f'=IF({c["nq"]}+{c["tq"]}=0,"-",{c["tq"]}/({c["nq"]}+{c["tq"]}))', pct, v["tq"] / d if d else "-")
-            if "asp" in col:
+            if "asp" in col and unknown_at("nq", "nv"):
+                ws.write_string(r, col["asp"], "-", self.dash)
+            elif "asp" in col:
                 ws.write_formula(r, col["asp"], f'=IF(OR({c["nq"]}=0,N({c["nv"]})=0),"-",{c["nv"]}/{c["nq"]})', num, v["nv"] / v["nq"] if v["nq"] and v["nv"] else "-")
             net = self.net
             if "mom" in col:

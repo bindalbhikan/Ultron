@@ -66,9 +66,11 @@ scripts/
   * Since 16 Nov 2026 (owner): Customer Return and RTO only from a returns report line dated from the order
     month's 1st to the next month's 14th; the order report's RTO status alone no longer makes an RTO
   * Customer Return = returns report line of type Return (exchanges included; no separate Exchange status)
-  * Cancelled = portal status F (SUB STATUS splits "before dispatch" and "after dispatch, came back as RTO" -
-    a post-pack cancellation shows up in the returns report as RTO)
-  * RTO = an RTO line in the returns report (in the window above)
+  * RTO = an RTO line in the returns report (in the window above), even when the order report says F: Myntra
+    marks an RTO order cancelled once it comes back (owner, 17 Nov 2026: RTO and cancelled must match the return
+    sheet; before, 21,965 such lines Apr-25..Oct-26 were counted as cancelled). SUB STATUS "RTO (order report:
+    cancelled)"
+  * Cancelled = portal status F with no returns line (SUB STATUS "Cancelled before dispatch")
   * Delivered = portal status C and no return line
   * In Transit = SH / PK / WP
 * **Exchange replacement orders** (order release id = some `exchange_id`) are flagged in RAW DATA but counted

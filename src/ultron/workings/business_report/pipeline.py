@@ -143,7 +143,10 @@ def build_myntra(files: list[dict], master: pd.DataFrame, missing: list[str] = (
     lg.append(["SKU master", "ALL", "BUSINESS REPORTING/MasterSheet.xlsx (sheet Master)", len(master), "-", pd.NaT, pd.NaT, ""])
     for gap in missing:
         lg.append(["Report missing", "-", gap, "-", "-", pd.NaT, pd.NaT, "not in PORTAL REPORTS: the figures of these months are low"])
-    return myntra.report_pl(raw, p, pd.DataFrame(lg, columns=LOG_COLS)), o
+    unknown = mark_returns_not_known({}, files, set(raw["ORDER MONTH"].dropna()), lg)
+    rep = myntra.report_pl(raw, p, pd.DataFrame(lg, columns=LOG_COLS))
+    rep.unknown = {k: set(rep.unknown.get(k, set())) | v for k, v in unknown.items()} if rep.unknown else unknown
+    return rep, o
 
 
 def category_map(myntra_orders: pd.DataFrame, master: pd.DataFrame) -> dict[str, str]:
@@ -156,6 +159,35 @@ def category_map(myntra_orders: pd.DataFrame, master: pd.DataFrame) -> dict[str,
     design = myntra_orders["myntra sku code"].map(by_code).fillna(myntra_orders["seller sku code"].map(by_sku))
     t = pd.DataFrame({"d": design, "a": myntra_orders["article type"]}).dropna()
     return t.groupby("d")["a"].agg(lambda x: x.value_counts().index[0]).to_dict()
+
+
+RETURN_KEYS = ("rq", "tq", "tv", "nq", "nv")     # RTO, customer return, and the net (delivered) that rests on them
+
+
+def returns_not_known(files: list[dict], months: set) -> set:
+    """Order months whose returns are not all in PORTAL REPORTS (owner, 17 Nov 2026: returns / RTO only from the return
+    sheet): a month's orders come back in its own and the next month's return report (to the 14th), for every account
+    with orders that month. Their RTO, returns and net are "-", never 0 (Flipkart keeps returns about 4 months)."""
+    have = {(f["account"], pd.Timestamp(f["month"])) for f in files if f["kind"] == "RETURN"}
+    every = {a for a, _ in have} or {""}
+    out = set()
+    for m in months:
+        m = pd.Timestamp(m)
+        accounts = {f["account"] for f in files if f["kind"] == "ORDER" and pd.Timestamp(f["month"]) == m} or every
+        if any((a, m) not in have or (a, m + pd.DateOffset(months=1)) not in have for a in accounts):
+            out.add(m)
+    return out
+
+
+def mark_returns_not_known(unknown: dict, files: list[dict], months: set, lg: list) -> dict:
+    gap = returns_not_known(files, months)
+    for k in RETURN_KEYS:
+        unknown[k] = set(unknown.get(k, set())) | gap
+    if gap:
+        lg.append(["Not known: Returns", "-", month_names(gap), "-", "-", pd.NaT, pd.NaT,
+                   "shown as -: the return report of these months or of the month after them is not in PORTAL REPORTS, and "
+                   "returns / RTO come from the return sheet only; the brand / category tables still hold these months' lines"])
+    return unknown
 
 
 def month_names(months) -> str:
@@ -247,8 +279,10 @@ def flipkart_with_oms(raw: pd.DataFrame, lines: pd.DataFrame, master: pd.DataFra
     new = pd.DataFrame({"ORDER DATE": extra["DAY"].values, "ORDER MONTH": extra["month"].values, "ORDER ID": extra["ORDER"].values,
                         "SOURCE": "OMSGuru", "OMS STATUS": extra["STATUS"].values, "SKU": extra["SKU"].values, "FINAL SKU": extra["SKU"].values,
                         "QTY": extra["QTY"].values, "SALE VALUE": extra["VALUE"].values, "PORTAL ORDER STATUS": extra["STATUS"].values,
-                        "FINAL STATUS": extra["FINAL"].values})
-    new["RETURN TYPE SOURCE"] = new["FINAL STATUS"].isin(["Customer Return", "RTO"]).map({True: "OMSGuru", False: ""})
+                        "FINAL STATUS": extra["FINAL"].replace({"RTO": "Cancelled", "Customer Return": "Delivered"}).values})
+    # returns / RTO only from the return sheet (owner, 17 Nov 2026); these lines have no order item id to look up there:
+    # OMSGuru's "returned" is not taken (RTO -> Cancelled: never reached the buyer; a return -> Delivered)
+    new["RETURN TYPE SOURCE"] = ""
     for c in ["MY SKU", "FINAL MY SKU", "DESIGN-NO"]:
         new[c] = new["SKU"].map(fm[c])
     new["BRAND"] = new["SKU"].map(fm["Brand"]).fillna("Not Mapped")
@@ -338,6 +372,7 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: d
     with_sales = {pd.Timestamp(f["month"]) for f in files if f["kind"] == "SALES"}
     unknown = {"cq": months - with_orders - with_sales, "rq": set() if len(lines) else months - with_orders - with_sales,
                "recv": no_payment_months(raw, "NET SETTLEMENT", 0.10)}     # a few stray settlements are not a month's payment
+    mark_returns_not_known(unknown, files, months, lg)
     partly = no_payment_months(raw, "NET SETTLEMENT", 0.90) - unknown["recv"]
     mark_no_payment(raw, unknown["recv"])
     if unknown["cq"]:
@@ -429,6 +464,7 @@ def build_ajio(files: list[dict], master: pd.DataFrame, cats: dict, first: date)
     no_value = set(value_seen[~value_seen].index)
     unknown = {"cq": set(from_file["ORDER MONTH"].dropna()) | set(from_oms["ORDER MONTH"].dropna()), "recv": set(),
                "gv": no_value, "tv": no_value, "nv": no_value}
+    mark_returns_not_known(unknown, files, set(raw["ORDER MONTH"].dropna()), lg)
     if len(from_oms):
         lg.append(["Lines from OMSGuru", "-", f"{month_names(set(from_oms['ORDER MONTH'].dropna()))}: days with no order report or monthly file", int(from_oms["QTY"].sum()), "-",
                    from_oms["ORDER DATE"].min(), from_oms["ORDER DATE"].max(), "order id, SKU, qty, status; no selling price, so a month with only these shows its values as -"])

@@ -21,3 +21,19 @@ def test_ajio_window():
     month = pd.Series([pd.Timestamp("2026-10-01")] * 3, index=["A|s", "B|s", "C|s"])
     got = ajio.windowed_rtv(rtv, month)
     assert got["Cust Order No"].tolist() == ["B"]    # before the order month and after the 14th are out
+
+
+def test_months_without_their_return_reports_are_not_known():
+    """A month's returns need its own and the next month's return report, per account with orders: else "-"."""
+    from datetime import date
+
+    from ultron.workings.business_report.pipeline import returns_not_known
+    f = lambda kind, m, acc="": {"kind": kind, "month": m, "account": acc}  # noqa: E731
+    files = [f("RETURN", date(2025, 7, 1)), f("RETURN", date(2025, 8, 1)), f("RETURN", date(2025, 9, 1))]
+    months = {pd.Timestamp(2025, m, 1) for m in (6, 7, 8, 9)}
+    assert returns_not_known(files, months) == {pd.Timestamp(2025, 6, 1), pd.Timestamp(2025, 9, 1)}
+    my = [f("ORDER", date(2026, 10, 1), "MAIN"), f("ORDER", date(2026, 10, 1), "DBCC"),
+          f("RETURN", date(2026, 10, 1), "MAIN"), f("RETURN", date(2026, 11, 1), "MAIN"), f("RETURN", date(2026, 10, 1), "DBCC")]
+    assert returns_not_known(my, {pd.Timestamp(2026, 10, 1)}) == {pd.Timestamp(2026, 10, 1)}   # DBCC's Nov partial missing
+    my.append(f("RETURN", date(2026, 11, 1), "DBCC"))
+    assert returns_not_known(my, {pd.Timestamp(2026, 10, 1)}) == set()
