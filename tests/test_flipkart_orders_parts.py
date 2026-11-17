@@ -4,7 +4,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ultron.workings.portal_monthly import pipeline as p
@@ -13,7 +13,7 @@ FIRST, LAST = date(2026, 10, 1), date(2026, 10, 31)
 
 
 def lines(*rows):
-    return pd.DataFrame(rows, columns=["order_item_id", "order_date"])
+    return pl.DataFrame(rows, schema=["order_item_id", "order_date"], orient="row")
 
 
 class Parts(unittest.TestCase):
@@ -29,12 +29,12 @@ class Parts(unittest.TestCase):
         parts = [lines(("a", "2026-10-30 10:00:00"), ("b", "2026-10-31 11:00:00")),
                  lines(("b", "2026-10-31 11:00:00"), ("c", "2026-11-01 09:00:00"))]
         merged = p.merge_order_parts(month, parts, FIRST, LAST)
-        self.assertEqual(list(merged["order_item_id"]), ["a", "b"])
+        self.assertEqual(merged["order_item_id"].to_list(), ["a", "b"])
 
     def test_month_file_is_kept_when_parts_hold_fewer(self):
         month = lines(("a", "2026-10-29 10:00:00"), ("b", "2026-10-30 10:00:00"))
         merged = p.merge_order_parts(month, [lines(("a", "2026-10-29 10:00:00"))], FIRST, LAST)
-        self.assertEqual(len(merged), 2)
+        self.assertEqual(merged.height, 2)
 
 
 if __name__ == "__main__":
