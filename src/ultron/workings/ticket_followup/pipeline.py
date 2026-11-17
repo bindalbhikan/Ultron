@@ -22,8 +22,6 @@ import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
-
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import env, num
@@ -96,19 +94,45 @@ def ajio_rows(client, today: date) -> list[dict]:
     return out
 
 
-def follow_up(client, master: pd.DataFrame, today: date, dry: bool) -> tuple[list[str], list[str]]:
+Row = dict
+
+
+def _s(v) -> str:
+    """A value as pandas' astype(str) showed it: an empty one is "nan"."""
+    return "nan" if v is None else str(v)
+
+
+def _number(v) -> float | None:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _key(r: Row) -> str:
+    return f"{_s(r.get('PORTAL'))}|{_s(r.get('TICKET ID'))}"
+
+
+def _rows(path: Path, sheet, cols: list[str]) -> list[Row]:
+    """A sheet's rows as dicts of text (an empty cell None), only `cols`."""
+    from ..core.tables import read_excel_text
+    df = read_excel_text(path, sheet, engine="openpyxl")
+    return [{c: r.get(c) for c in cols} for r in df.iter_rows(named=True)]
+
+
+def follow_up(client, master: list[Row], today: date, dry: bool) -> tuple[list[str], list[str]]:
     """The fixed comment on the AJIO tickets read open today whose last word from us is old enough; (done ids, problems).
     A ticket not read today (kept from an earlier run) may have closed since: a comment would re-open it. Its detail is read
     first for the same reason; TICKET_OTHER_CAP counts comments, not tickets read."""
     from ..ajio_tat.pipeline import due_followup
-    todo = master[(master["PORTAL"] == "AJIO") & (master["OPEN"] == "YES") & (master["FOLLOWED UP BY"] == BY_THIS)
-                  & (master["CHECKED ON"] == f"{today}")]
+    most = num("TICKET_OTHER_MAX_DAYS", 90)
     # a ticket left open for longer is for the owner to look at, not for a comment every day (2 Nov 2026: two from Nov 2024)
-    todo = todo[pd.to_numeric(todo["AGE DAYS"], errors="coerce") <= num("TICKET_OTHER_MAX_DAYS", 90)]
+    todo = [r for r in master if r["PORTAL"] == "AJIO" and r["OPEN"] == "YES" and r["FOLLOWED UP BY"] == BY_THIS
+            and r["CHECKED ON"] == f"{today}" and (age := _number(r["AGE DAYS"])) is not None and age <= most]
     done, problems = [], []
-    now = pd.Timestamp(datetime.now())
+    now = datetime.now()
     cap = int(num("TICKET_OTHER_CAP", 10))
-    for tid in todo["TICKET ID"].astype(str):
+    for tid in (_s(r["TICKET ID"]) for r in todo):
         if len(done) >= cap:
             break
         try:
@@ -126,62 +150,81 @@ def follow_up(client, master: pd.DataFrame, today: date, dry: bool) -> tuple[lis
     return done, problems
 
 
-def merge(old: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
-    """The newest read of every ticket, a ticket not read today as it was; LAST FOLLOW-UP stays."""
-    key = lambda d: d["PORTAL"].astype(str) + "|" + d["TICKET ID"].astype(str)  # noqa: E731
-    last = dict(zip(key(old), old["LAST FOLLOW-UP"])) if len(old) else {}
-    if len(new):
-        new = new.assign(**{"LAST FOLLOW-UP": key(new).map(last)})
-    kept = old[~key(old).isin(set(key(new)))] if len(old) and len(new) else old
-    both = [d for d in (new, kept) if len(d)]
-    if not both:
-        return pd.DataFrame(columns=COLS, dtype=object)
-    # object: with no follow-up recorded yet the column is all empty (float), which refuses a date (2 Nov 2026)
-    return pd.concat(both, ignore_index=True).reindex(columns=COLS).astype({"LAST FOLLOW-UP": object})
+def merge(old: list[Row], new: list[Row]) -> list[Row]:
+    """The newest read of every ticket, a ticket not read today as it was; LAST FOLLOW-UP stays. Each value keeps its
+    own kind (a number read today stays a number, a kept row's text stays text), as the sheet always had them."""
+    last = {_key(r): r.get("LAST FOLLOW-UP") for r in old}
+    new = [{**r, "LAST FOLLOW-UP": last.get(_key(r))} for r in new]
+    fresh = {_key(r) for r in new}
+    kept = [r for r in old if _key(r) not in fresh] if old and new else old
+    return [{c: r.get(c) for c in COLS} for r in new + kept]
 
 
-def sheet_rows(hand: pd.DataFrame, master: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+def sheet_rows(hand: list[Row], master: list[Row]) -> tuple[list[Row], int]:
     """The owner's sheet: every open ticket, a ticket already on it with its status now, hand rows as written;
     open ones first, oldest first. Also the number of hand rows still open."""
-    known = master.set_index(master["TICKET ID"].astype(str))
-    ids = set(hand["TICKET ID"].astype(str)) if len(hand) else set()
-    keep = master[(master["OPEN"] == "YES") | master["TICKET ID"].astype(str).isin(ids)]
-    rows = [{"DATE": r["RAISED ON"], "PORTAL": f"{r['PORTAL']} {r['ACCOUNT']}".strip() if pd.notna(r["ACCOUNT"]) else r["PORTAL"],
-             "PARTICULAR": r["PARTICULAR"], "TICKET ID": str(r["TICKET ID"]), "STATUS": r["STATUS"], "_open": r["OPEN"] == "YES"}
-            for _, r in keep.iterrows()]
-    own, still = hand[~hand["TICKET ID"].astype(str).isin(set(known.index))] if len(hand) else hand, 0
-    for _, r in own.iterrows():
-        is_open = str(r["STATUS"]).strip().upper() not in HAND_CLOSED
+    known = {_s(r["TICKET ID"]) for r in master}
+    ids = {_s(r["TICKET ID"]) for r in hand}
+    rows = [{"DATE": r["RAISED ON"], "PORTAL": f"{r['PORTAL']} {r['ACCOUNT']}".strip() if r["ACCOUNT"] is not None else r["PORTAL"],
+             "PARTICULAR": r["PARTICULAR"], "TICKET ID": _s(r["TICKET ID"]), "STATUS": r["STATUS"], "_open": r["OPEN"] == "YES"}
+            for r in master if r["OPEN"] == "YES" or _s(r["TICKET ID"]) in ids]
+    still = 0
+    for r in hand:
+        if _s(r["TICKET ID"]) in known:
+            continue
+        is_open = _s(r["STATUS"]).strip().upper() not in HAND_CLOSED
         still += is_open
-        rows.append({**{c: (None if pd.isna(r[c]) else r[c]) for c in SHEET_COLS}, "_open": is_open})
-    out = pd.DataFrame(rows, columns=[*SHEET_COLS, "_open"])
-    out = out.assign(_d=out["DATE"].astype(str)).sort_values(["_open", "_d"], ascending=[False, True], kind="stable")
-    return out[SHEET_COLS], still
+        rows.append({**{c: r.get(c) for c in SHEET_COLS}, "_open": is_open})
+    rows.sort(key=lambda r: (not r["_open"], _s(r["DATE"])))          # open first, then by date; ties as they came
+    return [{c: r[c] for c in SHEET_COLS} for r in rows], still
 
 
-def _format(xw) -> None:
-    from openpyxl.styles import Font, PatternFill
-    from openpyxl.utils import get_column_letter
-    for ws in xw.book.worksheets:
-        for c in ws[1]:
-            c.font, c.fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1F4E78")
-        ws.freeze_panes = "A2"
-        ws.auto_filter.ref = ws.dimensions
-        for i, col in enumerate(ws.iter_cols(max_row=200), start=1):
-            width = max((len(str(c.value)) for c in col if c.value is not None), default=0)
-            ws.column_dimensions[get_column_letter(i)].width = min(max(width + 2, 10), 60)
+def _write(path: Path, sheets: list[tuple[str, list[str], list[Row]]]) -> None:
+    """The sheets the way the master always looked: white bold header on dark blue, header row frozen, a filter,
+    widths from the first 200 rows (10 to 60)."""
+    import xlsxwriter
+    wb = xlsxwriter.Workbook(str(path), {"strings_to_numbers": False, "strings_to_formulas": False, "strings_to_urls": False})
+    head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#1F4E78", "pattern": 1})
+    for name, cols, rows in sheets:
+        ws = wb.add_worksheet(name)
+        for c, h in enumerate(cols):
+            ws.write_string(0, c, h, head)
+        for r, row in enumerate(rows, 1):
+            for c, h in enumerate(cols):
+                v = row.get(h)
+                if v is None or v == "" or (isinstance(v, float) and v != v):
+                    continue                      # an empty text stays a blank cell, as pandas wrote it
+                if isinstance(v, bool):
+                    ws.write_boolean(r, c, v)
+                elif isinstance(v, (int, float)):
+                    ws.write_number(r, c, v)
+                else:
+                    ws.write_string(r, c, str(v))
+        ws.freeze_panes(1, 0)
+        ws.autofilter(0, 0, max(len(rows), 0), max(len(cols) - 1, 0))
+        for c, h in enumerate(cols):
+            seen = [h] + [row.get(h) for row in rows[:199]]
+            width = max((len(str(v)) for v in seen if v is not None and not (isinstance(v, float) and v != v)), default=0)
+            ws.set_column(c, c, min(max(width + 2, 10), 60))
+    wb.close()
 
 
-def write_master(master: pd.DataFrame, path: Path) -> pd.DataFrame:
-    rows = master.assign(_d=master["RAISED ON"].astype(str)).sort_values("_d", ascending=False, kind="stable").drop(columns="_d")
-    who = rows.assign(ACCOUNT=rows["ACCOUNT"].fillna(""))
-    summary = (who.groupby(["PORTAL", "ACCOUNT", "TYPE", "FOLLOWED UP BY"], dropna=False)
-               .agg(TICKETS=("TICKET ID", "size"), OPEN=("OPEN", lambda x: int((x == "YES").sum())), **{"CHECKED ON": ("CHECKED ON", "max")}).reset_index())
-    with pd.ExcelWriter(path, engine="openpyxl") as xw:
-        summary.to_excel(xw, sheet_name="SUMMARY", index=False)
-        rows[rows["OPEN"] == "YES"].to_excel(xw, sheet_name="OPEN", index=False)
-        rows.to_excel(xw, sheet_name="ALL", index=False)
-        _format(xw)
+SUMMARY_COLS = ["PORTAL", "ACCOUNT", "TYPE", "FOLLOWED UP BY", "TICKETS", "OPEN", "CHECKED ON"]
+
+
+def write_master(master: list[Row], path: Path) -> list[Row]:
+    rows = sorted(master, key=lambda r: _s(r["RAISED ON"]), reverse=True)     # newest first; ties keep their order
+    groups: dict[tuple, list[Row]] = {}
+    for r in rows:
+        groups.setdefault((r["PORTAL"], r["ACCOUNT"] if r["ACCOUNT"] is not None else "", r["TYPE"], r["FOLLOWED UP BY"]), []).append(r)
+    last = lambda v: (v is None, "" if v is None else str(v))  # noqa: E731 - an empty key last, as pandas sorted groups
+    summary = []
+    for k in sorted(groups, key=lambda k: tuple(last(v) for v in k)):
+        g = groups[k]
+        checked = [r["CHECKED ON"] for r in g if r["CHECKED ON"] is not None]
+        summary.append(dict(zip(SUMMARY_COLS, (*k, len(g), sum(1 for r in g if r["OPEN"] == "YES"),
+                                               max(checked) if checked else None))))
+    _write(path, [("SUMMARY", SUMMARY_COLS, summary), ("OPEN", COLS, [r for r in rows if r["OPEN"] == "YES"]), ("ALL", COLS, rows)])
     return summary
 
 
@@ -190,7 +233,7 @@ def run(args) -> int:
     work = Path(tempfile.mkdtemp(prefix="ticket_followup_"))
     root = agent_folder()
     got = root.download(MASTER, work / "old_master.xlsx")
-    old = pd.read_excel(got, sheet_name="ALL", dtype=str).reindex(columns=COLS) if got else pd.DataFrame(columns=COLS, dtype=object)
+    old = _rows(got, "ALL", COLS) if got else []
 
     fresh, problems, client = [], [], None
     for account in ACCOUNTS:
@@ -206,28 +249,29 @@ def run(args) -> int:
         problems.append(f"AJIO: not read, last known rows kept ({str(exc).splitlines()[0][:90]})")
     if not fresh:
         raise RuntimeError("no portal could be read: " + "; ".join(problems))
-    master = merge(old, pd.DataFrame(fresh, columns=COLS))
+    master = merge(old, fresh)
 
     done, bad = follow_up(client, master, today, args.dry_run or args.no_upload) if client else ([], [])
     problems += bad
     if not (args.dry_run or args.no_upload):
-        master.loc[master["TICKET ID"].astype(str).isin(done) & (master["PORTAL"] == "AJIO"), "LAST FOLLOW-UP"] = f"{today}"
+        for r in master:
+            if r["PORTAL"] == "AJIO" and _s(r["TICKET ID"]) in done:
+                r["LAST FOLLOW-UP"] = f"{today}"
 
     # read last, as the portals take minutes: a row the owner adds meanwhile is kept. A row with no ticket id is the owner's too.
     got = root.download(SHEET, work / "old_sheet.xlsx")
-    hand = pd.read_excel(got, dtype=str).reindex(columns=SHEET_COLS).dropna(how="all") if got else pd.DataFrame(columns=SHEET_COLS, dtype=object)
+    hand = [r for r in _rows(got, 0, SHEET_COLS) if any(v is not None for v in r.values())] if got else []
     sheet, hand_open = sheet_rows(hand, master)
     master_file, sheet_file = work / MASTER, work / SHEET
     summary = write_master(master, master_file)
-    with pd.ExcelWriter(sheet_file, engine="openpyxl") as xw:
-        sheet.to_excel(xw, sheet_name="Sheet1", index=False)
-        _format(xw)
+    _write(sheet_file, [("Sheet1", SHEET_COLS, sheet)])
 
     lines = [f"🎫 <b>Ticket follow-up</b> {today}", ""]
-    for _, r in summary[summary["OPEN"] > 0].iterrows():
-        name = f"{r['PORTAL']} {r['ACCOUNT']}".strip()
-        lines.append(f"<b>{telegram.esc(name)}</b> {telegram.esc(r['TYPE'])}: {r['OPEN']} open · {telegram.esc(r['FOLLOWED UP BY'])}")
-    lines.append(f"\nTotal open: <b>{int((master['OPEN'] == 'YES').sum())}</b>" + (f" + {hand_open} added by hand" if hand_open else ""))
+    for r in summary:
+        if r["OPEN"] > 0:
+            name = f"{r['PORTAL']} {r['ACCOUNT']}".strip()
+            lines.append(f"<b>{telegram.esc(name)}</b> {telegram.esc(r['TYPE'])}: {r['OPEN']} open · {telegram.esc(r['FOLLOWED UP BY'])}")
+    lines.append(f"\nTotal open: <b>{sum(1 for r in master if r['OPEN'] == 'YES')}</b>" + (f" + {hand_open} added by hand" if hand_open else ""))
     lines.append(f"Followed up in this run: <b>{len(done)}</b>" + (" (dry run, nothing posted)" if args.dry_run or args.no_upload else ""))
     lines += [f"❌ {telegram.esc(x)}" for x in problems[:12]]
     if args.no_upload:
