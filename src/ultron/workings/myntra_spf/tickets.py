@@ -276,18 +276,28 @@ def open_disputes(portal, account: str, ids: list[str], live: bool) -> list[str]
     """Dispute every one of them (live; owner's rule, no cap), or count them. Lines for the report."""
     if not live:
         return [f"{account} SPF disputes: {len(ids)} due, none opened (MYNTRA_SPF_DISPUTE is off)"]
-    done, failed = 0, 0
+    done, failed, again = 0, 0, []
     for tid in ids:
         try:
             claim = portal.spf_claim(tid)
-            if claim.get("status") == "REJECT":
-                portal.spf_dispute(claim, DISPUTE_TEXT)
-                done += 1
-                time.sleep(1.2)
+            if claim.get("status") != "REJECT":
+                continue
+            if claim.get("fwTicketId"):
+                # disputed once already (its Seller Support ticket) and rejected again: the portal takes no second
+                # dispute (createFwTicket fails, 17 Nov 2026); named for the owner, the claim stays alive
+                again.append(str(tid))
+                continue
+            portal.spf_dispute(claim, DISPUTE_TEXT)
+            done += 1
+            time.sleep(1.2)
         except Exception as exc:  # noqa: BLE001 - the next ticket still goes
             log.warning("%s SPF %s dispute failed: %s", account, tid, exc)
             failed += 1
-    return [f"{account} SPF disputes: {done} opened of {len(ids)} due" + (f", {failed} failed" if failed else "")]
+    lines = [f"{account} SPF disputes: {done} opened of {len(ids)} due" + (f", {failed} failed" if failed else "")]
+    if again:
+        lines.append(f"{account} SPF: {len(again)} rejected again after a dispute (the portal takes no second one; "
+                     f"Partner Support): {', '.join(again[:20])}" + (" ..." if len(again) > 20 else ""))
+    return lines
 
 
 # ------------------------------------------------------------------ ticket details

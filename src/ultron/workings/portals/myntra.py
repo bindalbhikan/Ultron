@@ -352,9 +352,19 @@ class MyntraPortal:
         out: list[dict] = []
         page = 0
         while True:
-            d = self._call("GET", "/report/summary/payment-history",
-                           params={"fromDate": f"{start}", "toDate": f"{end}", "type": kind,
-                                   "pageNo": page, "pageSize": size}).get("data") or {}
+            from ultron.core.retry import retry_call
+
+            def one_page(page=page):
+                return self._call("GET", "/report/summary/payment-history",
+                                  params={"fromDate": f"{start}", "toDate": f"{end}", "type": kind,
+                                          "pageNo": page, "pageSize": size}).get("data") or {}
+
+            def tries(exc: BaseException) -> int:   # Myntra's own gateway timing out (504, 17 Nov 2026): again
+                passing = not isinstance(exc, SessionExpired) and re.search(r"status: 5\d\d|timed? ?out", str(exc), re.I)
+                return 3 if passing else 1
+
+            d = retry_call(one_page, tries=tries, wait=lambda n: 15 * n, on=(RuntimeError,), log=log,
+                           what=f"Myntra payment history page {page}", sleep=lambda s: time.sleep(s))
             from ..core.shapes import MyntraPayout, check_rows
             got = check_rows(d.get("payments") or [], MyntraPayout, "Myntra payout", key="utrNumber")
             out += got

@@ -40,6 +40,10 @@ On demand: `/myntraspf`.
   Dispute box: `api/spf/createFwTicket`, reason Others; the claim turns AWAITING_AGENT_RESPONSE. Every
   one due is opened (owner's rule, no cap), none when a source was not read. Live only with the
   repo variable `MYNTRA_SPF_DISPUTE=1`; otherwise the notes count them. The bot never closes a ticket.
+  A REJECT claim that already has a dispute (`fwTicketId`, rejected again after it) is not disputed again: the
+  portal takes no second one (createFwTicket failed on the same 3 FMCC claims daily until 17 Nov 2026); it is
+  named on Telegram for Partner Support and stays alive. Payment history pages are asked again on Myntra's
+  own 5xx / timeout (3 tries, waits 15, 30 s; DBCC's page 1 got a 504 on 17 Nov 2026).
   Delayed Returns claims are disputed at any age with `MYNTRA_SPF_DISPUTE_DELAYED=1` (owner's rule, 4 Nov 2026),
   also those rejected as under 120 days, which Myntra may reject again.
 * **Auto claims** (`tickets.py`), after the first engine run, on the SPF POLICY v5 timelines:
