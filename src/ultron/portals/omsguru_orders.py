@@ -12,7 +12,7 @@ import time
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-from bs4 import BeautifulSoup
+from ..core.html import parse
 
 from .omsguru import BASE_URL, OmsGuruClient, sla_column, text_of
 
@@ -40,9 +40,9 @@ def channel_id(link) -> str:
     shape stops the read with a clear error: a line put under no channel would count wrong."""
     if not link:
         return ""
-    m = re.search(r"edit/(\d+)", str(link.get("href") or ""))
+    m = re.search(r"edit/(\d+)", str(link.attr("href") or ""))
     if not m:
-        raise RuntimeError(f"OMSGuru order list: channel link {str(link.get('href'))[:80]!r} has no channel id "
+        raise RuntimeError(f"OMSGuru order list: channel link {str(link.attr('href'))[:80]!r} has no channel id "
                            "(page layout changed?)")
     return m.group(1)
 
@@ -50,7 +50,7 @@ def channel_id(link) -> str:
 def _row(tr, sla_col: int) -> dict | None:
     """One order list line: day, time, channel id, order id, units, status, AWB, [(SKU, qty)],
     order value (the line's Total, Rs), SLA; None for others."""
-    tds = tr.find_all("td", recursive=False)
+    tds = tr.children("td")
     if len(tds) <= max(sla_col, 6):
         return None
     m = ORDER_DATE_RE.search(text_of(tds[2]))
@@ -79,7 +79,7 @@ def _read_window(client: OmsGuruClient, start: datetime, end: datetime, max_page
     out, rows = [], 0
     for page in range(1, max_pages + 1):
         url = client.list_page_url(flt, page)
-        soup = BeautifulSoup(client.get(url).text, "html.parser")
+        soup = parse(client.get(url).text)
         table = soup.select_one("#order-table")
         if table is None:
             raise RuntimeError(f"Orders table not found on {url}")

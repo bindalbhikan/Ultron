@@ -10,7 +10,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from bs4 import BeautifulSoup
+from ...core.html import parse
 
 from ultron.portals.omsguru import BASE_URL, OmsGuruClient
 
@@ -54,10 +54,10 @@ def read_order(client: OmsGuruClient, order_id: str) -> tuple[str, list[str], st
 
 def details(res: Result, html: str) -> None:
     """The order's number, date and channel, as its page shows them."""
-    box = BeautifulSoup(html, "html.parser")
-    for dt in box.find_all("dt"):
-        label, dd = dt.get_text(" ", strip=True).rstrip(":").strip().lower(), dt.find_next_sibling("dd")
-        value = dd.get_text(" ", strip=True) if dd else ""
+    box = parse(html)
+    for dt in box.select("dt"):
+        label, dd = dt.text().rstrip(":").strip().lower(), dt.next_sibling("dd")
+        value = dd.text() if dd else ""
         if label == "order" and not res.order_no:
             res.order_no = value[:60]
         elif label == "order date" and not res.order_date:
@@ -79,38 +79,38 @@ def add_note(client: OmsGuruClient, order_id: str, html: str, note: str) -> bool
 def open_form(client: OmsGuruClient, awb: str):
     """The return forms Quick Returns opens for an AWB, in manual mode, Good: searching accepts nothing."""
     url = f"{BASE_URL}/orders/quickReturns"
-    page = BeautifulSoup(client.get(url).text, "html.parser")
-    form = next(f for f in page.find_all("form") if "quickReturns" in (f.get("action") or ""))
-    data = {i.get("name"): i.get("value") or "" for i in form.find_all("input") if i.get("name") and i.get("type") == "hidden"}
+    page = parse(client.get(url).text)
+    form = next(f for f in page.select("form") if "quickReturns" in (f.attr("action") or ""))
+    data = {i.attr("name"): i.attr("value") or "" for i in form.select("input") if i.attr("name") and i.attr("type") == "hidden"}
     data.update({"data[Invoice][search_value]": awb, "data[Invoice][is_manual]": "1", "data[Invoice][batch_process]": "0",
                  "data[Invoice][batch_return_type]": "good"})
-    s = BeautifulSoup(client.s.post(url, data=data, timeout=client.timeout).text, "html.parser")
-    return [f for f in s.find_all("form") if (f.get("id") or "").startswith("ReturnForm")]
+    s = parse(client.s.post(url, data=data, timeout=client.timeout).text)
+    return [f for f in s.select("form") if (f.attr("id") or "").startswith("ReturnForm")]
 
 
 def rows_of(form) -> dict[str, list[tuple[str, int | None]]]:
     """{SKU in capitals: [(its row on the form, the qty that row takes; None = the form sets no limit)]}"""
     rows: dict[str, list[tuple[str, int | None]]] = {}
-    for i in form.find_all("input"):
-        m = SKU_ROW.fullmatch(i.get("name") or "")
+    for i in form.select("input"):
+        m = SKU_ROW.fullmatch(i.attr("name") or "")
         if m:
-            good = form.find("input", attrs={"name": f"data[SkuQty][{m.group(1)}][good]"})
-            top = str((good.get("max") if good else "") or "").strip()
-            rows.setdefault((i.get("value") or "").strip().upper(), []).append((m.group(1), int(top) if top.isdigit() else None))
+            good = form.select_one(f'input[name="data[SkuQty][{m.group(1)}][good]"]')
+            top = str((good.attr("max") if good else "") or "").strip()
+            rows.setdefault((i.attr("value") or "").strip().upper(), []).append((m.group(1), int(top) if top.isdigit() else None))
     return rows
 
 
 def fill(form, wanted: dict[str, int], warehouses: dict[str, str], erp_type: str = "") -> tuple[dict | None, str]:
     """The fields to post for these SKU quantities, spread over the SKU's rows, or (None, why)."""
     body = {}
-    for i in form.find_all("input"):
-        n = i.get("name")
-        if n and i.get("type") not in ("radio", "checkbox", "file", "submit", "button"):
-            body[n] = i.get("value") or ""
-    for sel in form.find_all("select"):
-        if sel.get("name"):
-            chosen = sel.find("option", selected=True)
-            body[sel["name"]] = chosen.get("value") if chosen else ""
+    for i in form.select("input"):
+        n = i.attr("name")
+        if n and i.attr("type") not in ("radio", "checkbox", "file", "submit", "button"):
+            body[n] = i.attr("value") or ""
+    for sel in form.select("select"):
+        if sel.attr("name"):
+            chosen = sel.select_one("option[selected]")
+            body[sel["name"]] = chosen.attr("value") if chosen else ""
     rows = rows_of(form)
     if [s for s in wanted if s not in rows]:
         return None, "SKU not on the form"
@@ -123,14 +123,14 @@ def fill(form, wanted: dict[str, int], warehouses: dict[str, str], erp_type: str
             left -= take
         if left:
             return None, "Qty above sent"
-    text = re.sub(r"\s+", " ", form.get_text(" ", strip=True))
+    text = re.sub(r"\s+", " ", form.text())
     dispatch = re.search(r"Dispatch Warehouse\s+(Warehouse \d+)", text)
     warehouse = next((k for k, v in warehouses.items() if dispatch and v == dispatch.group(1)), "")
     if not warehouse:
         return None, "No dispatch warehouse on the form"
     body["data[Invoice][return_warehouse_id]"] = warehouse
     # an order OMSGuru has no return on yet (Ready to ship, Delivered ...) asks the type: as the ERP booked it
-    if form.find("select", attrs={"name": "data[Invoice][confirm_return_type]"}):
+    if form.select_one('select[name="data[Invoice][confirm_return_type]"]'):
         if not erp_type:
             return None, "Return type needed"
         body["data[Invoice][confirm_return_type]"] = "customer" if "customer" in erp_type.lower() else "courier"
@@ -214,7 +214,7 @@ def accept(client: OmsGuruClient, awb: str, wanted: dict[str, int], note: str, w
         return res
     refused, went, stuck = [], set(), set()
     for form, body, part in plan:
-        why = refusal(client.s.post(BASE_URL + form.get("action"), data=body, timeout=client.timeout))
+        why = refusal(client.s.post(BASE_URL + form.attr("action"), data=body, timeout=client.timeout))
         if why:
             refused.append(why)
             stuck |= set(part)

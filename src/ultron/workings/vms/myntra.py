@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import pandas as pd
-from bs4 import BeautifulSoup
+from ...core.html import parse
 
 from ..portals.omsguru import BASE_URL, VIEW_ID, OmsGuruClient, item_status, sla_column, text_of
 
@@ -42,7 +42,7 @@ def list_rows(client: OmsGuruClient, start: datetime, end: datetime, channel_ids
             flt = client.order_filter(piece, min(piece + timedelta(days=1), end), channel_ids)
             for page in range(1, max_pages + 1):
                 url = client.list_page_url(flt, page)
-                soup = BeautifulSoup(client.get(url).text, "html.parser")
+                soup = parse(client.get(url).text)
                 table = soup.select_one("#order-table")
                 if table is None:
                     raise RuntimeError(f"Orders table not found on {url}")
@@ -50,7 +50,7 @@ def list_rows(client: OmsGuruClient, start: datetime, end: datetime, channel_ids
                 trs = table.select("tbody > tr")
                 sla_col = sla_column(table) if trs else 0
                 for tr in trs:
-                    tds = tr.find_all("td", recursive=False)
+                    tds = tr.children("td")
                     link = tr.select_one('a[href*="/orders/view/"]')
                     if not link or len(tds) <= max(sla_col, 6):
                         continue
@@ -82,7 +82,7 @@ def _label_barcodes(client: OmsGuruClient, order_id: str) -> list[str]:
     import pypdfium2 as pdfium
     import zxingcpp
 
-    soup = BeautifulSoup(client.get(f"{BASE_URL}/orders/view/{order_id}").text, "html.parser")
+    soup = parse(client.get(f"{BASE_URL}/orders/view/{order_id}").text)
     hrefs = [a["href"] for a in soup.select('a[href*="/orders/download/"]')
              if re.fullmatch(r"(shipping|shipment|courier)\s*label", text_of(a), re.I)]
     if not hrefs:

@@ -17,7 +17,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-from bs4 import BeautifulSoup
+from ...core.html import parse
 
 from .omsguru import BASE_URL, OmsGuruClient, OmsGuruError, item_status, text_of
 from ..core import clients
@@ -50,29 +50,29 @@ def parse_order_page(html: str) -> tuple[list[dict], dict]:
     receipt, so an item counts as received only when it has one. The order's
     "Shipment Tracker" is the forward AWB.
     """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse(html)
     if soup.select_one("#ClientIndexForm"):
         raise OmsGuruError("Got the login page instead of the order page")
     info = {}
-    for dt in (soup.select_one("#tab-details") or soup).find_all("dt"):
-        dd = dt.find_next_sibling("dd")
+    for dt in (soup.select_one("#tab-details") or soup).select("dt"):
+        dd = dt.next_sibling("dd")
         info.setdefault(text_of(dt).rstrip(":").strip().lower(), text_of(dd))
     tracker = TRACKER.match(info.get("shipment tracker", "") or "")
     latest = ""
-    for table in soup.find_all("table"):
-        first = table.find("tr")
-        head = [text_of(c).lower() for c in first.find_all(["th", "td"], recursive=False)] if first else []
+    for table in soup.select("table"):
+        first = table.select_one("tr")
+        head = [text_of(c).lower() for c in first.children("th", "td")] if first else []
         if head[:2] == ["status", "timestamp"]:
-            row = table.find_all("tr")[1:2]
+            row = table.select("tr")[1:2]
             if row:
-                latest = text_of(row[0].find(["td", "th"]))
+                latest = text_of(row[0].select_one("td, th"))
             break
     order = {"forward_awb": tracker.group(1) if tracker else "",
              "carrier": (tracker.group(2) if tracker and tracker.group(2) else info.get("shipping company", "")),
              "latest": latest}
 
     items_box = soup.select_one("#order-items") or soup
-    text = re.sub(r"\s+", " ", items_box.get_text(" ", strip=True))
+    text = re.sub(r"\s+", " ", items_box.text())
     items = []
     for seg in re.split(r"Qty:\s*\d+\s+", text)[1:]:
         sku = seg.split(" - ")[0].strip().split(" ")[0]

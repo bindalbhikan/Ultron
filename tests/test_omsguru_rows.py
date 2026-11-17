@@ -1,12 +1,12 @@
 """OMSGuru order list: a line's channel id (found by pyright, 16 Nov 2026: a link in another shape crashed)."""
 import pytest
-from bs4 import BeautifulSoup
 
+from ultron.core.html import parse
 from ultron.portals.omsguru_orders import channel_id
 
 
 def _a(href):
-    return BeautifulSoup(f'<a href="{href}">x</a>', "html.parser").a
+    return parse(f'<a href="{href}">x</a>').select_one("a")
 
 
 def test_channel_id_from_the_edit_link():

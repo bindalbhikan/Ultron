@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 
 import requests
-from bs4 import BeautifulSoup
+from ..core.html import Node, parse, text_of  # noqa: F401 - text_of is read from here by the workings
 
 PENDING_PREFIX = "PENDING-"  # key for orders without an invoice number yet
 
@@ -76,10 +76,6 @@ class HttpStatus(Exception):
         super().__init__(f"HTTP {status}")
         self.status = status
         self.transient = status >= 500 or status == 429
-
-
-def text_of(el) -> str:
-    return re.sub(r"\s+", " ", el.get_text(" ", strip=True)).strip() if el else ""
 
 
 class OmsGuruClient:
@@ -132,7 +128,7 @@ class OmsGuruClient:
         r = self.s.post(f"{BASE_URL}/login", data=form, timeout=self.timeout,
                         headers={"Referer": f"{BASE_URL}/login", "Origin": BASE_URL})
         if r.status_code != 200 or "/login" in r.url or 'id="ClientIndexForm"' in r.text:
-            soup = BeautifulSoup(r.text, "html.parser")
+            soup = parse(r.text)
             msg = text_of(soup.select_one(".alert, .error-message, #flashMessage")) or "unknown reason"
             raise OmsGuruError(f"OMSGuru login failed: {msg}")
         token = re.search(r'name="csrf-token" content="([^"]+)"', r.text)
@@ -176,11 +172,11 @@ class OmsGuruClient:
     def warehouses(self) -> dict[str, str]:
         """Warehouse id -> name. A fresh login must pick one before any order page opens.
         The order list only shows the current warehouse, so every one is visited."""
-        soup = BeautifulSoup(self.get(f"{BASE_URL}/orders").text, "html.parser")
+        soup = parse(self.get(f"{BASE_URL}/orders").text)
         sel = (soup.select_one("#forceWarehouseSelector")
                or soup.select_one('select[id*="arehouse" i], select[name*="arehouse" i]'))
-        found = {str(o.get("value")): text_of(o) for o in (sel.find_all("option") if sel else [])
-                 if re.fullmatch(r"\d+", str(o.get("value") or ""))}
+        found = {str(o.attr("value")): text_of(o) for o in (sel.select("option") if sel else [])
+                 if re.fullmatch(r"\d+", str(o.attr("value") or ""))}
         log.info("Warehouses: %s", found or "none listed (using the current one)")
         return found
 
@@ -193,12 +189,12 @@ class OmsGuruClient:
         """Submit an export form; OMSGuru builds the file in the background and posts a download
         link (whose text matches link_text) in the notifications. The zip's CSV, as bytes."""
         page = f"{BASE_URL}{page}"
-        soup = BeautifulSoup(self.get(page).text, "html.parser")
+        soup = parse(self.get(page).text)
         form = soup.select_one(form_css)
         if form is None:
             raise OmsGuruError(f"No {what} export form on {page} - layout changed?")
         before = {str(a["href"]) for a in soup.select('a[href*="/orders/download/"]')}
-        data = {i["name"]: i.get("value", "") for i in form.select("input[name]")}
+        data = {i["name"]: i.attr("value", "") for i in form.select("input[name]")}
         r = self.s.post(f"{BASE_URL}{form['action']}", data=data, timeout=self.timeout,
                         headers={"Referer": page, "Origin": BASE_URL})
         if r.status_code != 200 or "queued" not in r.text.lower():
@@ -206,10 +202,10 @@ class OmsGuruClient:
         deadline = time.time() + wait_minutes * 60
         while time.time() < deadline:
             time.sleep(poll_seconds)
-            soup = BeautifulSoup(self.get(page).text, "html.parser")
+            soup = parse(self.get(page).text)
             for a in soup.select('a[href*="/orders/download/"]'):
-                item = a.find_parent("li") or a
-                if str(a["href"]) not in before and re.search(link_text, item.get_text(" "), re.I):
+                item = a.parent_of("li") or a
+                if str(a["href"]) not in before and re.search(link_text, item.text(), re.I):
                     blob = self.get(str(a["href"])).content
                     with zipfile.ZipFile(io.BytesIO(blob)) as z:
                         return z.read(next(n for n in z.namelist() if n.lower().endswith(".csv")))
@@ -233,10 +229,10 @@ class OmsGuruClient:
         out = []
         for page in range(1, 30):
             url = f"{BASE_URL}/channel_listings/index/2" + (f"/page:{page}" if page > 1 else "")
-            soup = BeautifulSoup(self.get(url).text, "html.parser")
+            soup = parse(self.get(url).text)
             rows = soup.select("table tbody > tr")
             for tr in rows:
-                tds = [text_of(td) for td in tr.find_all("td", recursive=False)]
+                tds = [text_of(td) for td in tr.children("td")]
                 if len(tds) >= 7:
                     out.append({"channel": tds[1], "listing": tds[2], "listing_sku": tds[3], "sku": tds[4],
                                 "qty": tds[5], "failure": tds[6]})
@@ -247,13 +243,13 @@ class OmsGuruClient:
     def unmanaged_count(self) -> int:
         """How many channel listings are not mapped to an OMSGuru SKU (Channel Listings > UnManaged)."""
         m = re.search(r"showing \d+ records out of (\d+)",
-                      BeautifulSoup(self.get(f"{BASE_URL}/channel_listings/index/0").text, "html.parser").get_text(" "))
+                      parse(self.get(f"{BASE_URL}/channel_listings/index/0").text).text())
         return int(m.group(1)) if m else 0
 
     # ------------------------------------------------------------ channels
     def channels(self) -> list[dict]:
         """Every channel (Channel > List Channels): id, name, channel, inventory sync on or off."""
-        soup = BeautifulSoup(self.get(f"{BASE_URL}/channel_companies").text, "html.parser")
+        soup = parse(self.get(f"{BASE_URL}/channel_companies").text)
         head = [text_of(th) for th in soup.select("table thead th")]
         col = {h: i for i, h in enumerate(head)}
         out = []
@@ -273,16 +269,16 @@ class OmsGuruClient:
         """Related Actions > Push Inventory on the channel's page (all its listings). Returns the
         message OMSGuru shows after it."""
         page = f"{BASE_URL}/channel_companies/edit/{channel_id}"
-        soup = BeautifulSoup(self.get(page).text, "html.parser")
+        soup = parse(self.get(page).text)
         form = soup.select_one(f'form[action$="/channel_companies/pushInventory/{channel_id}"]')
         if form is None:
             raise OmsGuruError(f"No Push Inventory form on channel {channel_id}'s page - layout changed?")
-        data = {i["name"]: i.get("value", "") for i in form.select("input[name]")}
+        data = {i["name"]: i.attr("value", "") for i in form.select("input[name]")}
         r = self.s.post(f"{BASE_URL}{form['action']}", data=data, timeout=self.timeout,
                         headers={"Referer": page, "Origin": BASE_URL})
         if r.status_code != 200 or "/login" in r.url:
             raise OmsGuruError(f"Push Inventory for channel {channel_id}: HTTP {r.status_code} ({r.url[:80]})")
-        res = BeautifulSoup(r.text, "html.parser")
+        res = parse(r.text)
         msg = text_of(res.select_one("#flashMessage, .alert, .message, .error-message"))
         if re.search(r"error|fail|not allowed|invalid", msg, re.I):
             raise OmsGuruError(f"Push Inventory for channel {channel_id}: {msg[:200]}")
@@ -338,7 +334,7 @@ class OmsGuruClient:
         ids: dict[str, str] = {}
         for page in range(1, MAX_PAGES + 1):
             url = self.list_page_url(flt, page)
-            soup = BeautifulSoup(self.get(url).text, "html.parser")
+            soup = parse(self.get(url).text)
             table = soup.select_one("#order-table")
             if table is None:
                 if soup.select_one("#forceWarehouseSelector"):
@@ -397,8 +393,8 @@ def _dl_map(container) -> dict[str, str]:
     out: dict[str, str] = {}
     if container is None:
         return out
-    for dt in container.find_all("dt"):
-        dd = dt.find_next_sibling("dd")
+    for dt in container.select("dt"):
+        dd = dt.next_sibling("dd")
         key = text_of(dt).rstrip(":").strip().lower()
         if key and key not in out:
             out[key] = text_of(dd)
@@ -422,7 +418,7 @@ def item_status(text: str) -> str:
 
 
 def parse_order_page(html: str, order_id: str) -> tuple[list[dict], list[dict]]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = parse(html)
     if soup.select_one("#ClientIndexForm"):
         raise OmsGuruError("Got the login page instead of the order page")
     details = soup.select_one("#tab-details") or soup
@@ -453,12 +449,12 @@ def parse_order_page(html: str, order_id: str) -> tuple[list[dict], list[dict]]:
 
     items = []
     for tr in soup.select("#order-items tbody tr[data-id]"):
-        cells = tr.find_all("td", recursive=False)
+        cells = tr.children("td")
         row_text = text_of(tr)
         qty = re.search(r"Qty:?\s*(\d+)", row_text)
         sku_text = text_of(cells[1]) if len(cells) > 1 else ""
         items.append({**base,
-                      "Sub-Order Internal ID": tr.get("data-id", ""),
+                      "Sub-Order Internal ID": tr.attr("data-id", ""),
                       "SKU Code": sku_text.split(" - ")[0].strip(),
                       "Qty": int(qty.group(1)) if qty else 1,
                       "Item Status": item_status(row_text)})
@@ -466,15 +462,15 @@ def parse_order_page(html: str, order_id: str) -> tuple[list[dict], list[dict]]:
         items.append({**base, "Sub-Order Internal ID": order_id, "SKU Code": "", "Qty": 1, "Item Status": ""})
 
     hist, seen = [], set()
-    for table in soup.find_all("table"):
-        first = table.find("tr")
+    for table in soup.select("table"):
+        first = table.select_one("tr")
         if not first:
             continue
-        head = [text_of(c).lower() for c in first.find_all(["th", "td"], recursive=False)]
+        head = [text_of(c).lower() for c in first.children("th", "td")]
         if head[:2] != ["status", "timestamp"]:
             continue
-        for tr in table.find_all("tr")[1:]:
-            c = [text_of(x) for x in tr.find_all(["td", "th"], recursive=False)]
+        for tr in table.select("tr")[1:]:
+            c = [text_of(x) for x in tr.children("td", "th")]
             if len(c) >= 2 and c[0] and (c[0], c[1]) not in seen:
                 seen.add((c[0], c[1]))
                 hist.append({"Internal Order ID": order_id, "Status": c[0], "Timestamp": c[1]})
