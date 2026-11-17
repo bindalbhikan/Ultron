@@ -214,14 +214,15 @@ def covering_job(jobs: list[dict], report_id: int, start: date, end: date) -> di
 
 def cut_orders(data: bytes, start: date, end: date) -> bytes:
     """The order lines of an orders report created from start to end (its "created on" column)."""
-    import io
-    import pandas as pd
-    df = pd.read_csv(io.BytesIO(data), dtype=str, low_memory=False)
+    import polars as pl
+
+    from ..core.tables import read_text_csv
+    df = read_text_csv(data, pandas_na=True)
     col = next((c for c in df.columns if str(c).strip().lower() == "created on"), None)
     if col is None:
         return data
-    day = df[col].astype(str).str[:10]
-    return df[(day >= f"{start}") & (day <= f"{end}")].to_csv(index=False).encode("utf-8")
+    day = pl.col(col).str.slice(0, 10)
+    return df.filter((day >= f"{start}") & (day <= f"{end}")).write_csv().encode("utf-8")
 
 
 def _days(first: date, last: date) -> set[date]:

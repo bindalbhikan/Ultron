@@ -8,13 +8,11 @@ that pace (0 included). Listed by style with the sizes at risk. Telegram only, n
 from __future__ import annotations
 
 import argparse
-import io
 import logging
 import re
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 
-import pandas as pd
 
 from ..core import telegram
 from ..core.app import run_bot
@@ -41,11 +39,16 @@ def style_size(sku: str) -> tuple[str, str]:
 
 def stock_of(csv_blobs: list[bytes]) -> Counter:
     """SKU -> units in stock, summed over the warehouses' inventory exports."""
+    import polars as pl
+
+    from ..core.tables import pnum, read_text_csv
     stock: Counter = Counter()
     for blob in csv_blobs:
-        df = pd.read_csv(io.BytesIO(blob), dtype={"Item SkuCode": str})
-        for sku, qty in zip(df["Item SkuCode"].astype(str).str.strip().str.upper(), pd.to_numeric(df["Qty"], errors="coerce")):
-            if sku and pd.notna(qty):
+        df = read_text_csv(blob, pandas_na=True)
+        # a line with no SKU is no SKU's stock (pandas kept it under NaN, looked up by no sold SKU); Qty cut to a whole number
+        rows = df.select(pl.col("Item SkuCode").str.strip_chars().str.to_uppercase(), pnum(pl.col("Qty")))
+        for sku, qty in rows.iter_rows():
+            if sku and qty is not None:
                 stock[sku] += int(qty)
     return stock
 

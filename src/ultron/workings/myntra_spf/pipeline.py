@@ -30,7 +30,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
 
-import pandas as pd
 
 from ..core import dashboard, telegram
 from ..core.app import run_bot
@@ -209,7 +208,9 @@ def fetch_erp(dest: Path) -> list[str]:
     dest.mkdir(parents=True, exist_ok=True)
     out = []
     for name, rows in [("GR GRN Report.xlsx", erp.grn()), ("Dispatch.xlsx", erp.dispatch())]:
-        pd.DataFrame(rows).to_excel(dest / name, index=False)
+        from ..core.xlsx import write_sheets
+        headers = list(dict.fromkeys(k for row in rows for k in row))     # every key, in the order first seen
+        write_sheets(dest / name, {"Sheet1": (headers, rows)}, bold_header=True)
         out.append(f"{name}: {len(rows)} rows")
     return out
 

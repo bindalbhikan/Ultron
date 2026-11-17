@@ -22,7 +22,6 @@ each report made, or why not.
 from __future__ import annotations
 
 import argparse
-import io
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
@@ -30,7 +29,6 @@ from pathlib import Path
 
 from typing import TYPE_CHECKING
 
-import pandas as pd
 
 from ..core import telegram
 from ..core.app import run_bot
@@ -287,7 +285,10 @@ def backfill(args) -> int:
     each delivery counted on its deliver_to_seller_date. A missing range is asked for (one job per
     report, waited for)."""
     import tempfile
+    import polars as pl
+
     from ..core.drive import agent_folder
+    from ..core.tables import read_text_csv
     from ..portals import myntra as mp
     from ..return_analysis.sources import myntra_portal
     start = date.fromisoformat(args.backfill_from)
@@ -297,7 +298,7 @@ def backfill(args) -> int:
         portal = myntra_portal(account)
         jobs = portal.jobs(200)
 
-        def frames(rid: int, first: date, last: date) -> list[pd.DataFrame]:
+        def frames(rid: int, first: date, last: date) -> list["pl.DataFrame"]:
             """Completed jobs of the report that together cover first..last (newest first), else one new job."""
             out, need = [], set(mp._days(first, last))
             for j in sorted(jobs, key=lambda j: j.get("createdOn") or 0, reverse=True):
@@ -305,7 +306,7 @@ def backfill(args) -> int:
                 if not rng or not need & mp._days(*rng) or str(j.get("status")).upper() != "COMPLETED":
                     continue
                 try:
-                    out.append(pd.read_csv(io.BytesIO(portal.download(j)[1]), low_memory=False))
+                    out.append(read_text_csv(portal.download(j)[1]))
                     need -= mp._days(*rng)
                 except Exception as exc:  # noqa: BLE001 - asked for again below
                     log.warning("%s job %s not downloaded: %s", account, j.get("id"), exc)
@@ -313,13 +314,13 @@ def backfill(args) -> int:
                     return out
             if need:
                 job = portal.schedule(min(need), max(need), rid)
-                out.append(pd.read_csv(io.BytesIO(portal.collect(job, 40)[1]), low_memory=False))
+                out.append(read_text_csv(portal.collect(job, 40)[1]))
             return out
-        delivery = pd.concat(frames(84, start, end), ignore_index=True)
-        orders = pd.concat(frames(mp.REPORT_ID, start - timedelta(days=60), end), ignore_index=True)
+        # read as text, the same way as the daily run (account_rows): ids never become floats
+        delivery = pl.concat(frames(84, start, end), how="diagonal_relaxed")
+        orders = pl.concat(frames(mp.REPORT_ID, start - timedelta(days=60), end), how="diagonal_relaxed")
         mp.save_to_worker(env, portal.cookies(), account)
-        from ..core.tables import to_polars
-        got, blank, through = window_rows(to_polars(delivery).unique(maintain_order=True), orders, start, end)
+        got, blank, through = window_rows(delivery.unique(maintain_order=True), orders, start, end)
         rows += [(d, account, s) for d, s in got.items()]
         drop |= {(d, PORTALS.get(account, account)) for d in blank}
         log.info("%s: %d days written, %d left blank (data up to %s)", account, len(got), len(blank), through)
