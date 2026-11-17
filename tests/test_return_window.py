@@ -24,7 +24,7 @@ def test_ajio_window():
     from datetime import datetime
     month = pl.DataFrame({"key": ["A|s", "B|s", "C|s"], "_om": [datetime(2026, 10, 1)] * 3})
     got = ajio.windowed_rtv(rtv, month)
-    assert got["Cust Order No"].tolist() == ["B"]    # before the order month and after the 14th are out
+    assert got["Cust Order No"].to_list() == ["B"]   # before the order month and after the 14th are out
 
 
 def test_months_without_their_return_reports_are_not_known():
@@ -41,9 +41,6 @@ def test_months_without_their_return_reports_are_not_known():
     assert returns_not_known(my, {pd.Timestamp(2026, 10, 1)}) == {pd.Timestamp(2026, 10, 1)}   # DBCC's Nov partial missing
     my.append(f("RETURN", date(2026, 11, 1), "DBCC"))
     assert returns_not_known(my, {pd.Timestamp(2026, 10, 1)}) == set()
-
-
-    assert got["Cust Order No"].to_list() == ["B"]   # before the order month and after the 14th are out
 
 
 def test_flipkart_raw_polars_small():
