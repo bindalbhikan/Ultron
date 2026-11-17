@@ -12,17 +12,18 @@ otherwise every one of them comes in an attached Excel.
 from __future__ import annotations
 
 import argparse
-import io
 import logging
 import re
 from collections import Counter
+from types import SimpleNamespace
 from datetime import datetime, timedelta
 
-import pandas as pd
+import polars as pl
 
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import num
+from ..core.tables import pnum, read_text_csv
 from ..morning.pipeline import channel_line
 from ..stock.pipeline import stock_of
 from ..core import clients
@@ -32,17 +33,18 @@ log = logging.getLogger("bindal.listings")
 FAIL_AT = re.compile(r"^([A-Z][a-z]+ \d{1,2}, \d{4} \d{1,2}:\d{2}:\d{2} [AP]M)")
 
 
-def table_of(blob: bytes) -> pd.DataFrame:
-    df = pd.read_csv(io.BytesIO(blob), dtype=str, low_memory=False)
-    out = pd.DataFrame({
-        "channel_id": df["Channel ID"].astype(str).str.strip(),
-        "channel": df["Channel Name"].map(lambda n: channel_line(str(n))),
-        "listing": df["Channel Listing SKU Code"].fillna(df["Channel Listing Id"]).astype(str),
-        "sku": df["Product SkuCode"].astype(str).str.strip().str.upper(),
-        "listed": pd.to_numeric(df["Channel Listed Qty"], errors="coerce").fillna(0).astype(int),
-        "max": pd.to_numeric(df["Channel Max Listed Qty"], errors="coerce").fillna(-1).astype(int),
-        "failure": df["Failure Reason"].fillna("").astype(str)})
-    return out
+def table_of(blob: bytes) -> "pl.DataFrame":
+    """The channel listing export as a Polars table (an empty text "nan", as pandas' astype(str) made it)."""
+    df = read_text_csv(blob, pandas_na=True)
+    names = {n: channel_line(n) for n in df["Channel Name"].fill_null("nan").unique().to_list()}
+    return df.select(
+        pl.col("Channel ID").fill_null("nan").str.strip_chars().alias("channel_id"),
+        pl.col("Channel Name").fill_null("nan").replace_strict(names, return_dtype=pl.Utf8).alias("channel"),
+        pl.coalesce(pl.col("Channel Listing SKU Code"), pl.col("Channel Listing Id")).fill_null("nan").alias("listing"),
+        pl.col("Product SkuCode").fill_null("nan").str.strip_chars().str.to_uppercase().alias("sku"),
+        pnum(pl.col("Channel Listed Qty")).fill_null(0).cast(pl.Int64).alias("listed"),
+        pnum(pl.col("Channel Max Listed Qty")).fill_null(-1).cast(pl.Int64).alias("max"),
+        pl.col("Failure Reason").fill_null("").alias("failure"))
 
 
 def failed_since(text: str, since: datetime) -> bool:
@@ -53,46 +55,50 @@ def failed_since(text: str, since: datetime) -> bool:
         return False
 
 
-def check(listings: pd.DataFrame, stock: Counter, active: set[str], since: datetime) -> dict:
-    df = listings[listings["channel_id"].isin(active)].copy()
-    df["stock"] = [max(stock.get(s, 0), 0) for s in df["sku"]]
-    instock = df["stock"] > 0
+def check(listings: "pl.DataFrame", stock: Counter, active: set[str], since: datetime) -> dict:
+    df = listings.filter(pl.col("channel_id").is_in(list(active)))
+    df = df.with_columns(pl.Series("stock", [max(stock.get(s, 0), 0) for s in df["sku"].to_list()], dtype=pl.Int64),
+                         pl.Series("_failed", [failed_since(f, since) for f in df["failure"].to_list()], dtype=pl.Boolean))
+    instock = pl.col("stock") > 0
     return {
-        "listings": len(df),
-        "not_listed": df[instock & (df["max"] != 0) & (df["listed"] == 0)],
-        "over": df[df["listed"] > df["stock"]],
-        "capped": df[instock & (df["max"] == 0)],
-        "failed": df[df["failure"].map(lambda f: failed_since(f, since))],
+        "listings": df.height,
+        "not_listed": df.filter(instock & (pl.col("max") != 0) & (pl.col("listed") == 0)).drop("_failed"),
+        "over": df.filter(pl.col("listed") > pl.col("stock")).drop("_failed"),
+        "capped": df.filter(instock & (pl.col("max") == 0)).drop("_failed"),
+        "failed": df.filter(pl.col("_failed")).drop("_failed"),
     }
 
 
 def message(res: dict, failed_tab: list[dict], unmanaged: int, now: datetime, days: int) -> list:
     """A telegram report: the SKU lists inline when the whole report fits in one message, else in an Excel."""
-    def per_channel(part: pd.DataFrame) -> str:
-        return " · ".join(f"{telegram.esc(c)} {n}" for c, n in part["channel"].value_counts().items())
+    def per_channel(part: "pl.DataFrame") -> str:
+        """Channel counts, the most first (ties in the order they first come)."""
+        return " · ".join(f"{telegram.esc(c)} {n}" for c, n in Counter(part["channel"].to_list()).most_common())
 
-    def listing(title: str, part: pd.DataFrame, show, sheet: str) -> telegram.Listing:
+    def listing(title: str, part: "pl.DataFrame", show, sheet: str) -> telegram.Listing:
         """One line per channel + SKU (a SKU can have several listings on one channel); the Excel
         has every listing."""
-        n = part.groupby(["channel", "sku"]).size()
-        uniq = part.drop_duplicates(["channel", "sku"])
+        recs = [SimpleNamespace(**r) for r in part.iter_rows(named=True)]
+        n = Counter((r.channel, r.sku) for r in recs)
+        uniq = list({(r.channel, r.sku): r for r in reversed(recs)}.values())[::-1]     # the first of each, in order
         lines = [f"• {telegram.esc(r.channel)} · {telegram.esc(r.sku)} · {show(r)}"
                  + (f" · {n[(r.channel, r.sku)]} listings" if n[(r.channel, r.sku)] > 1 else "")
-                 for r in uniq.itertuples()]
+                 for r in uniq]
         rows = [{"Channel": r.channel, "SKU": r.sku, "Listing": r.listing, "Stock": int(r.stock),
-                 "Listed": int(r.listed), "Max listed": int(r.max) if r.max >= 0 else None} for r in part.itertuples()]
+                 "Listed": int(r.listed), "Max listed": int(r.max) if r.max >= 0 else None} for r in recs]
         return telegram.Listing(title, lines, rows, sheet)
 
     out = [f"🏪 <b>Listing health · {now:%d %b}</b>",
            f"<i>{res['listings']:,} listings on channels with inventory sync on, against OMSGuru stock</i>"]
-    nl, ov = res["not_listed"].sort_values("stock", ascending=False), res["over"].sort_values("listed", ascending=False)
+    nl = res["not_listed"].sort("stock", descending=True, maintain_order=True)
+    ov = res["over"].sort("listed", descending=True, maintain_order=True)
     out += ["", listing(f"📭 <b>In stock, 0 on the channel: {len(nl)}</b>" + (f" ({per_channel(nl)})" if len(nl) else ""),
                         nl, lambda r: f"stock {r.stock}", "In stock not listed")]
     out += ["", listing(f"⚠️ <b>Listed more than in stock: {len(ov)}</b>" + (f" ({per_channel(ov)})" if len(ov) else ""),
                         ov, lambda r: f"listed {r.listed}, stock {r.stock}", "Listed over stock")]
     fl = res["failed"]
     out += ["", f"❌ <b>Sync failures in the last {days} days: {len(fl)}</b>" + (f" ({per_channel(fl)})" if len(fl) else "")]
-    reasons = Counter(re.sub(r"^.*?[AP]M:", "", f).strip()[:70] for f in fl["failure"])
+    reasons = Counter(re.sub(r"^.*?[AP]M:", "", f).strip()[:70] for f in fl["failure"].to_list())
     out += [f"• {telegram.esc(r)}: {n}" for r, n in reasons.most_common(5)]
     if failed_tab:
         out += ["", telegram.Listing(
@@ -124,7 +130,7 @@ def run(args) -> int:
     if warehouses[0]:
         client.set_warehouse(warehouses[0])     # the listing pages show the current warehouse's listings
     listings = table_of(client.export_listings(wait_minutes=num("LISTING_EXPORT_WAIT_MINUTES", 15)))
-    if listings.empty:
+    if not listings.height:
         raise RuntimeError("The channel listing export came back empty")
     res = check(listings, stock, active, now - timedelta(days=days))
     failed_tab, unmanaged = client.failed_listings(), client.unmanaged_count()
