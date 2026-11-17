@@ -1,6 +1,6 @@
 # 5. pydantic v2 — portal answers checked
 
-**Status**: 🔧 16 Nov 2026 — Myntra report jobs checked; the other answers one by one.
+**Status**: ✅ 17 Nov 2026 — every JSON answer the workings read is checked.
 
 **Why**: "data must never be wrong". A portal that renames a field or a column today gives empty or 0
 values far down the line (OMSGuru's new SLA column, 5 Nov 2026). A pydantic model per portal answer fails
@@ -38,6 +38,11 @@ at once, with the field named. Rust core: fast enough for every row of a big sel
   `eligibleForTagLoop` required (read with [] by the SPF master), the rest may be empty; 233 claims of every
   status across the three accounts' whole history fitted. No claim from the portal stays `{}`, as before.
 
-**Next (each checked on real answers first)**: AJIO JSON answers. Not pydantic: the OMSGuru order list is HTML the code turns into rows
+* AJIO Seller Central tickets (`ticket_list`, `ticket_detail`: AJIO SPF, pickup tickets, ticket follow-up):
+  `AjioTicket` (`ticketId`, `status`, `ticketType`, `orderId`, `createdDate`) and `AjioTicketDetail` (also
+  `comments` a list); all 1,132 tickets of the last 200 days and 142 details fitted.
+
+Every JSON answer the workings read is checked now. Not pydantic: the AJIO / Flipkart / Myntra report files
+(read by `tables.read_excel_text` / `read_text_csv`) and OMSGuru's HTML pages. Not pydantic: the OMSGuru order list is HTML the code turns into rows
 itself; there the risk is a layout change that leaves fields at their defaults (order "", value 0.0) — a
 row-quality check, planned with the Polars move.

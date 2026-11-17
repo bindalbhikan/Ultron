@@ -98,6 +98,31 @@ class MyntraSpfClaim(_Row):
     returnDeliveredDate: str | None = None
 
 
+class AjioTicket(_Row):
+    """AJIO Seller Central castellan/api/v1/tickets list (SPF, pickup, follow-up tickets); all 1,131 tickets of the
+    last 120 days fitted on 17 Nov 2026 (RESOLVED, IN_PROGRESS, CUSTOMER_REPLIED, APPROVED)."""
+    ticketId: str
+    status: str
+    ticketType: str
+    orderId: str
+    subCategory: str | None = None
+    createdDate: str
+    lastUpdatedOn: str | None = None
+
+
+class AjioTicketDetail(_Row):
+    """AJIO castellan/api/v1/tickets/<id> result; 45 tickets of every status fitted on 17 Nov 2026."""
+    ticketId: str
+    status: str
+    ticketType: str
+    createdDate: str
+    comments: list
+    resolution: str | None = None
+    resolvedDate: str | None = None
+    subIssueType: str | None = None
+    orderDetails: dict | None = None
+
+
 class FlipkartReportRequest(_Row):
     """Seller Hub report centre report/getReportsV2 report_requests; all 172 requests listed on 16 Nov 2026
     fitted (the download name is request_id + created_at, so both must be there)."""

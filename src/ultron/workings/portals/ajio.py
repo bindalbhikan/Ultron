@@ -191,7 +191,8 @@ class AjioClient:
             if r.status_code != 200:
                 raise AjioError(f"Ticket list failed: HTTP {r.status_code} {r.text[:200]}")
             j = r.json()
-            out += j.get("result") or []
+            from ..core.shapes import AjioTicket, check_rows
+            out += check_rows(j.get("result") or [], AjioTicket, "AJIO ticket", key="ticketId")
             pages = (j.get("page") or {}).get("totalPages") or 1
             page += 1
         return out
@@ -201,7 +202,11 @@ class AjioClient:
         if r.status_code != 200:
             log.warning("Ticket %s detail: HTTP %s", ticket_id, r.status_code)
             return None
-        return (r.json() or {}).get("result")
+        result = (r.json() or {}).get("result")
+        if result:
+            from ..core.shapes import AjioTicketDetail, check_rows
+            check_rows([result], AjioTicketDetail, "AJIO ticket detail", key="ticketId")
+        return result
 
     def ticket_details(self, ids: list[str], workers: int = 4) -> list[dict]:
         with ThreadPoolExecutor(max_workers=workers) as pool:

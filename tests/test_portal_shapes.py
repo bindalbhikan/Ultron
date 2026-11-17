@@ -92,3 +92,18 @@ def test_spf_claim_checked_and_empty_kept():
     p._call = lambda method, path, **kw: {"data": [{k: v for k, v in CLAIM.items() if k != "eligibleForTagLoop"}]}
     with pytest.raises(mp.PortalChanged, match="eligibleForTagLoop"):
         p.spf_claim(7)
+
+
+AJ = {"ticketId": "T1", "status": "RESOLVED", "ticketType": "SPF", "orderId": "FN1", "subCategory": "x",
+      "createdDate": "2026-11-01T10:00:00", "lastUpdatedOn": "2026-11-02T10:00:00"}
+
+
+def test_ajio_tickets_checked():
+    from ultron.workings.core.shapes import AjioTicket, AjioTicketDetail, PortalChanged, check_rows
+    assert check_rows([dict(AJ)], AjioTicket, "AJIO ticket", key="ticketId")[0] == AJ
+    with pytest.raises(PortalChanged, match="orderId"):
+        check_rows([{k: v for k, v in AJ.items() if k != "orderId"}], AjioTicket, "AJIO ticket", key="ticketId")
+    det = {"ticketId": "T1", "status": "IN_PROGRESS", "ticketType": "SPF", "createdDate": "x", "comments": []}
+    assert check_rows([det], AjioTicketDetail, "AJIO ticket detail", key="ticketId")
+    with pytest.raises(PortalChanged, match="comments"):
+        check_rows([{**det, "comments": None}], AjioTicketDetail, "AJIO ticket detail", key="ticketId")
