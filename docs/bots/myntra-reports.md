@@ -19,6 +19,11 @@ had only 23 of the day's 239 MAIN orders.) By hand: run the workflow (`date` = a
   before that last one with no delivery, e.g. a Sunday, is a real 0). 16 Nov 2026: Myntra's report held no PPMP
   delivery after 7 Nov (return_created_date up to 2 Nov), so 8-15 Nov, written as 0 before, were made blank.
   Myntra being late is not a run failure; a report not made or the workbook not written is (exit 1).
+* **Data gaps stay blank too** (owner, 17 Nov 2026): days of an account that usually has deliveries (10+ a day on
+  average: MAIN, DBCC) in a run of 2+ days without one, not closed days, are blank (Myntra's data has not come:
+  the warehouse worked 11-15 Nov 2026 while the report held none). Closed days are a real 0:
+  `MYNTRA_WAREHOUSE_CLOSED` (YYYY-MM-DD, comma separated; default Diwali 8-10 Nov 2026). FMCC (a few a day) is
+  left as it is: it has real empty days.
 * Each Myntra account (MAIN / DBCC / FMCC, `MYNTRA_REPORT_ACCOUNTS`), saved portal sessions:
   Seller_Orders_Report (4), Seller_Returns_Report (12) and Return_Delivery_Report (84) for the 30 days up to
   yesterday (the very jobs the SPF master reads), Seller_Listings_Report (14) and Seller_Inventory_Report (16),

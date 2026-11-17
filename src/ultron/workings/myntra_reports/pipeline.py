@@ -203,7 +203,52 @@ def window_rows(delivery, orders, first: date, last: date
             rows[d] = delivery_split(delivery.filter(pl.col("_day") == d), status=status)
         else:
             blank.append(d)
-    return rows, blank, through  # type: ignore[return-value]
+    for d in data_gaps(rows):
+        rows.pop(d)
+        blank.append(d)
+    return rows, sorted(blank), through  # type: ignore[return-value]
+
+
+def day_ranges(days: list[date]) -> str:
+    """"11 Nov to 15 Nov, 17 Nov" for a list of days."""
+    out, run = [], []
+    for d in sorted(days) + [None]:
+        if d is not None and run and (d - run[-1]).days == 1:
+            run.append(d)
+            continue
+        if run:
+            out.append(f"{run[0]:%d %b}" + (f" to {run[-1]:%d %b}" if len(run) > 1 else ""))
+        run = [d] if d is not None else []
+    return ", ".join(out)
+
+
+def closed_days() -> set[date]:
+    """Days our warehouse was closed (a real 0): MYNTRA_WAREHOUSE_CLOSED (YYYY-MM-DD, comma separated), else the
+    owner's list (Diwali 8-10 Nov 2026)."""
+    days = csv_list("MYNTRA_WAREHOUSE_CLOSED") or ["2026-11-08", "2026-11-09", "2026-11-10"]
+    return {date.fromisoformat(d) for d in days}
+
+
+def data_gaps(rows: dict[date, dict], min_daily: float = 10, min_run: int = 2) -> list[date]:
+    """Days of an account that usually has deliveries (on average min_daily or more a day) that sit in a run of
+    min_run or more days without one and were not closed days: Myntra's data has not come for them (owner, 17 Nov
+    2026: the warehouse worked 11-15 Nov 2026 while the report held none), so they stay blank, never 0.
+    A low-volume account (FMCC) can have real empty days and is left as it is."""
+    if not rows:
+        return []
+    totals = {d: s["TOTAL"] for d, s in rows.items()}
+    if sum(totals.values()) / len(totals) < min_daily:
+        return []
+    closed = closed_days()
+    gaps, run = [], []
+    for d in sorted(totals) + [None]:
+        if d is not None and totals[d] == 0 and d not in closed and (not run or (d - run[-1]).days == 1):
+            run.append(d)
+            continue
+        if len(run) >= min_run:
+            gaps += run
+        run = [d] if d is not None and totals[d] == 0 and d not in closed else []
+    return gaps
 
 
 def account_rows(account: str, done: dict[str, dict]) -> tuple[dict[date, dict], list[date], date | None]:
@@ -324,9 +369,8 @@ def run(args) -> int:
         rows += [(d, a, s) for d, s in got.items()]
         drop |= {(d, PORTALS.get(a, a)) for d in blank}
         if blank:
-            waiting.append(f"{a}: Myntra's data holds PPMP return deliveries only up to "
-                           f"{f'{through:%d %b}' if through else 'none in 30 days'}; "
-                           f"{blank[0]:%d %b} to {blank[-1]:%d %b} left blank, filled by a later run")
+            waiting.append(f"{a}: Myntra's data has no PPMP return deliveries for {day_ranges(blank)} (data up to "
+                           f"{f'{through:%d %b}' if through else 'none in 30 days'}); left blank, filled by a later run")
     book = ""
     if rows or drop:
         import tempfile

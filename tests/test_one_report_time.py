@@ -151,3 +151,19 @@ def test_workbook_drop_removes_wrong_rows():
     out = merged(existing, [(date(2026, 11, 7), "MYNTRA MAIN", {"CUSTOMER RETURN": 7, "RTO": 1, "CANCELLED": 0, "TOTAL": 8})],
                  {(date(2026, 11, 8), "MYNTRA MAIN")})
     assert out == [[date(2026, 11, 7), "MYNTRA MAIN", 7, 1, 0, 8]]
+
+
+def test_data_gap_days_blank_closed_days_zero_low_volume_untouched():
+    from datetime import date as d_
+
+    from ultron.workings.myntra_reports.pipeline import data_gaps, day_ranges
+
+    def rows(totals):
+        return {d_(2026, 11, i + 1): {"TOTAL": t} for i, t in enumerate(totals)}
+    #            1   2   3   4   5   6   7  8  9 10 11 12 13 14 15 16
+    main = [81, 45, 36, 33, 49, 70, 85, 0, 0, 0, 0, 0, 0, 0, 0, 5]
+    gaps = data_gaps(rows(main))
+    assert gaps == [d_(2026, 11, i) for i in range(11, 16)]          # 8-10 closed (Diwali): a real 0
+    assert day_ranges(gaps + [d_(2026, 11, 17)]) == "11 Nov to 15 Nov, 17 Nov"
+    assert data_gaps(rows([20, 0, 30, 25, 0, 40] * 2)) == []          # a single empty day: real
+    assert data_gaps(rows([5, 0, 5, 1, 3, 2, 4, 0, 0, 0, 0, 1])) == []  # FMCC-like low volume: left as is
