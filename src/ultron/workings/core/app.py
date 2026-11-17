@@ -28,6 +28,8 @@ def run_bot(title: str, parser: argparse.ArgumentParser, run: Callable[[argparse
     hl = hyperlog.start(title, list(argv) if argv is not None else sys.argv[1:])
     started, error, code, trace = time.time(), "", 1, ""
     try:
+        from .settings import check_settings
+        check_settings(getattr(run, "__module__", "") or "")       # a setting in a wrong shape stops it here, named
         code = run(args)
         return code
     except Exception as exc:  # noqa: BLE001 - the whole point is to report any failure

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import io
 import re
 import sys
 from datetime import datetime, timedelta
@@ -52,8 +51,10 @@ def pod(body: str) -> dict:
             if head.startswith(b"<") and b"html" in head:     # Shadowfax's HTML sheets: saved as a PDF by the script
                 return {"html": base64.b64encode(r.content).decode()}
             return {"pdferror": "link is not a PDF"}
-        import pypdf
-        text = "\n".join(p.extract_text() or "" for p in pypdf.PdfReader(io.BytesIO(r.content)).pages)
+        # PDFium (C++, already installed for the labels): parsePod gives the same AWBs on 13 real PODs as with pypdf
+        import pypdfium2 as pdfium
+        doc = pdfium.PdfDocument(r.content)
+        text = "\n".join(doc[i].get_textpage().get_text_range() for i in range(len(doc)))
         return {"pdf": base64.b64encode(r.content).decode(), "pdftext": text}
     except Exception as exc:  # noqa: BLE001 - noted on the row, the rest go on
         return {"pdferror": str(exc)[:80]}

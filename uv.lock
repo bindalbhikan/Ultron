@@ -1954,6 +1954,21 @@ wheels = [
 ]
 
 [[package]]
+name = "pydantic-settings"
+version = "2.16.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/59/28/227c843eedd29bd78e132e5aafa420d83154b10465c312f9c21ff2eaf77d/pydantic_settings-2.16.3.tar.gz", hash = "sha256:10e36f616623ebb586c05ca3d3cd22927146869db413d4f14c20c514442a1337", size = 311716, upload-time = "2026-11-13T11:18:30.102Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4c/26/3e68379ca313b6aa58e11fbd8b28d5c6f1b9f4428d70222ba021a76797ec/pydantic_settings-2.16.3-py3-none-any.whl", hash = "sha256:d1db16a2d34006323a1b42c0640898da58adfbad7ec30baaa9e2b18aafc08999", size = 82679, upload-time = "2026-11-13T11:18:28.73Z" },
+]
+
+[[package]]
 name = "pydispatcher"
 version = "2.0.7"
 source = { registry = "https://pypi.org/simple" }
@@ -1985,15 +2000,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3f/e8/7325d258199b159eb2c03fe32107533e2832e70e63f4fb88a6aa00023201/pyopenssl-26.4.0.tar.gz", hash = "sha256:28dfcce0162b9211413e26dfbfdf1d24317fbeba18fc93c12400a1856b2a0bc7", size = 182046, upload-time = "2026-08-01T19:50:50.512Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/51/ad/2cf6d3fa2fae5c79e1ed9960c0d42badd0f94d81dd12b50604cdc839e648/pyopenssl-26.4.0-py3-none-any.whl", hash = "sha256:f0eb0cb2d581d3ad2b9c489468485e7f2ab6727d08401bcf9d824c3caddf3c1c", size = 56026, upload-time = "2026-08-01T19:50:48.94Z" },
-]
-
-[[package]]
-name = "pypdf"
-version = "7.1.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/60/d3/367aa9baefaededd3321cde46bbcb9f008bb51cef3a6b745608352a99534/pypdf-7.1.0.tar.gz", hash = "sha256:ca3fa902369e98a6d2cb7b56396de902b72ef9bb3c1e8706c1bfc7d8bd0cf0d7", size = 7215190, upload-time = "2026-11-13T12:23:18.629Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/4c/d19f91b743c8579b67e3d8b001e095745dec5bb13a9b4b9eadc235a85d9e/pypdf-7.1.0-py3-none-any.whl", hash = "sha256:47cca6b24bdcf4c4d65b5f7b8b972535c61710a061261e737688777cfd9a7bfb", size = 418698, upload-time = "2026-11-13T12:23:16.777Z" },
 ]
 
 [[package]]
@@ -2408,7 +2414,7 @@ workings = [
     { name = "pillow" },
     { name = "polars" },
     { name = "pydantic" },
-    { name = "pypdf" },
+    { name = "pydantic-settings" },
     { name = "pypdfium2" },
     { name = "python-calamine" },
     { name = "scrapy" },
@@ -2433,7 +2439,7 @@ requires-dist = [
     { name = "pillow", marker = "extra == 'workings'", specifier = ">=10.0" },
     { name = "polars", marker = "extra == 'workings'", specifier = ">=1.30" },
     { name = "pydantic", marker = "extra == 'workings'", specifier = ">=2.9" },
-    { name = "pypdf", marker = "extra == 'workings'", specifier = ">=4.0" },
+    { name = "pydantic-settings", marker = "extra == 'workings'", specifier = ">=2.6" },
     { name = "pypdfium2", marker = "extra == 'workings'", specifier = ">=4.30" },
     { name = "python-calamine", marker = "extra == 'workings'", specifier = ">=0.2" },
     { name = "python-dotenv", specifier = ">=1.0" },

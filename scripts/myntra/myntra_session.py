@@ -148,7 +148,7 @@ def main(argv: list[str]) -> int:
         tried += 1
         done += save(account, text, where, push_it)
     if not tried:
-        print(f"Nothing to do: put the copied request headers in scripts/myntra/main.txt, dbcc.txt or fmcc.txt")
+        print("Nothing to do: put the copied request headers in scripts/myntra/main.txt, dbcc.txt or fmcc.txt")
         return 1
     print(f"{done} of {tried} account(s) saved." + (" Delete the .txt files now: they hold live logins." if done else ""))
     return 0 if done == tried else 1

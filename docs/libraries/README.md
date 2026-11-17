@@ -19,7 +19,7 @@ seller-neutral core (`src/ultron/`, not `workings/`) still installs on Android (
 | 7 | [07-duckdb-parquet.md](07-duckdb-parquet.md) | months / years of data: **DuckDB + Parquet** | ⏳ |
 | 8 | [08-httpx.md](08-httpx.md) | HTTP: **httpx** (curl_cffi kept where a bot check needs it) | ⏳ |
 | 9 | [09-selectolax.md](09-selectolax.md) | HTML: **selectolax** instead of BeautifulSoup | ⏳ |
-| 10 | [10-small.md](10-small.md) | **orjson**, **pypdfium2** text instead of pypdf, **pydantic-settings** | ⏳ |
+| 10 | [10-small.md](10-small.md) | **orjson**, **pypdfium2** text instead of pypdf, **pydantic-settings** | 🔧 17 Nov 2026: pypdfium2 ✅, pydantic-settings ✅, orjson with step 8 |
 
 Kept as they are (already the top choice, or a hard rule): Patchright (browser, rule), Scrapy (Myntra buyer
 site, rule), python-calamine (xlsx read), xlsxwriter (new xlsx), openpyxl (only to edit an existing workbook in
