@@ -100,6 +100,14 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   (every count the same, real May / Sep / Oct-26 files); the agent's `sheet_summary` tool in plain Python (the core
   stays installable on Termux; the same counts).
 
+* More workings, 17 Nov 2026, old vs new on real data: PORTAL REPORTS month slices (AJIO / Flipkart, Sep and Oct 26:
+  every cell the same) and the Flipkart returns coverage check (68 cases the same); Flipkart Orders in parts
+  (`portal_monthly`: merged lines and the rewritten workbook, Help sheet too, every cell the same); listing health
+  (138,734 listings, the four lists and the message the same; equal-stock lines keep the export's order where pandas'
+  quicksort left them in none); Myntra TAT (9,150 lines, 1,031 scored, the message the same); ticket follow-up without a
+  table library (each value keeps its kind; two full test runs: all 19,952 tickets, every sheet and the message the same;
+  column widths 0.7 of a character wider, as xlsxwriter stores widths the way Excel shows them).
+
 **Next, one by one, each with a parity test on real files**: the owner's monthly files and
 the business report workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
