@@ -15,7 +15,7 @@ import logging
 import re
 import shutil
 import tempfile
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from .drive import API, DriveFolder, agent_folder
@@ -115,29 +115,26 @@ def month_slice(files: list[Path], month: date, date_cols: list[str], out: Path,
     month (a returns window of the 1st to the next 14th, 30-day downloads), in one xlsx at out:
     the first filled column of date_cols decides a row's day; rows of the same key are kept once,
     the later file winning. None when the files hold no row of the month."""
-    import pandas as pd
-    frames = []
-    for f in files:
-        df = pd.read_excel(f, sheet_name=sheet or 0, dtype=str)
-        if not df.empty:
-            frames.append(df)
+    import polars as pl
+
+    from .tables import read_excel_text
+    from .xlsx import write_sheets
+    # read as pandas read them (openpyxl: AJIO's texts keep their outer spaces); Polars from here
+    frames = [df for f in files if (df := read_excel_text(f, sheet or 0, engine="openpyxl")).height]
     if not frames:
         return None
-    df = pd.concat(frames, ignore_index=True)
-    raw = None
-    for c in date_cols:
-        if c in df.columns:
-            raw = df[c] if raw is None else raw.fillna(df[c])
-    if raw is None:
+    df = pl.concat(frames, how="diagonal_relaxed")
+    cols = [c for c in date_cols if c in df.columns]
+    if not cols:
         raise ValueError(f"none of the date columns {date_cols} in {[f.name for f in files]}")
-    day = parse(raw) if parse else pd.to_datetime(raw.str[:10], errors="coerce")
-    first = pd.Timestamp(month.replace(day=1))
-    df = df[(day >= first) & (day < first + pd.offsets.MonthBegin(1))]
+    raw = pl.coalesce([pl.col(c) for c in cols])                  # the first filled one decides
+    day = parse(raw) if parse else raw.str.slice(0, 10).str.to_date("%Y-%m-%d", strict=False).cast(pl.Datetime("us"))
+    first = datetime(month.year, month.month, 1)
+    nxt = datetime(month.year + month.month // 12, month.month % 12 + 1, 1)
+    df = df.filter((day >= first) & (day < nxt))
     if key:
-        df = df.drop_duplicates([k for k in key if k in df.columns], keep="last")
-    if df.empty:
+        df = df.unique([k for k in key if k in df.columns], keep="last", maintain_order=True)
+    if not df.height:
         return None
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with pd.ExcelWriter(out) as xw:
-        df.to_excel(xw, sheet_name=sheet or "Sheet1", index=False)
-    return out, len(df)
+    write_sheets(out, {sheet or "Sheet1": (df.columns, df.rows())}, bold_header=True)
+    return out, df.height

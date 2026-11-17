@@ -70,7 +70,11 @@ def read_excel_text(path, sheet: str | int = 0, header: int | None = 0, engine: 
     ".1", ".2" ..., empty rows inside kept and trailing empty rows / columns left out. engine "calamine" (Rust, fast; checked the same as pandas on every Flipkart report sheet) or "openpyxl"
     (the engine pandas used): AJIO's files write texts with outer spaces without xml:space="preserve", which
     calamine trims and pandas kept ("TOP " / " "), so AJIO is read with openpyxl to stay the same."""
+    import io
+
     import polars as pl
+    if isinstance(path, (bytes, bytearray)):            # the file's bytes, as a portal answered them
+        path = io.BytesIO(path)
     if engine == "openpyxl":
         from openpyxl import load_workbook
         wb = load_workbook(path, read_only=True, data_only=True)
@@ -80,7 +84,7 @@ def read_excel_text(path, sheet: str | int = 0, header: int | None = 0, engine: 
         wb.close()
     else:
         from python_calamine import CalamineWorkbook
-        wb = CalamineWorkbook.from_path(str(path))
+        wb = CalamineWorkbook.from_filelike(path) if isinstance(path, io.BytesIO) else CalamineWorkbook.from_path(str(path))
         name = wb.sheet_names[sheet] if isinstance(sheet, int) else sheet
         rows = wb.get_sheet_by_name(name).to_python(skip_empty_area=False)
     cells = [[_cell_text(v) for v in r] for r in rows]
@@ -161,6 +165,13 @@ def pany_date(expr: "pl.Expr") -> "pl.Expr":
                        iso.str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False, time_unit="us"),
                        iso.str.to_datetime("%Y-%m-%dT%H:%M:%S", strict=False, time_unit="us"),
                        iso.str.to_date("%Y-%m-%d", strict=False).cast(pl.Datetime("us")))
+
+
+def pajio_date(expr: "pl.Expr") -> "pl.Expr":
+    """Polars: AJIO's "Wed Sep 30 23:21:44 IST 2026" as a datetime; anything else -> null."""
+    import polars as pl
+    return expr.cast(pl.Utf8).str.replace(" IST", "", literal=True).str.to_datetime(
+        "%a %b %d %H:%M:%S %Y", strict=False, time_unit="us")
 
 
 def unread_dates(df: "pl.DataFrame", text: str, parsed: str, what: str, log=None) -> int:

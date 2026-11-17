@@ -91,7 +91,7 @@ def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -
     A failure is only noted: the analysis goes on."""
     import tempfile
     from ..core import portal_reports as pr
-    from .engine import parse_ajio_date
+    from ..core.tables import pajio_date as parse_ajio_date   # Polars (month_slice is Polars)
     tmp = Path(tempfile.mkdtemp(prefix="portal_reports_"))
     for name, files in got.items():
         portal, _, account = name.partition(" ")

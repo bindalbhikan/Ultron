@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import pandas as pd
+    import polars as pl
 
 import argparse
 import calendar
@@ -139,34 +139,41 @@ def month_parts(first: date, last: date, days: int = 11) -> list[tuple[date, dat
     return parts
 
 
-def merge_order_parts(month: "pd.DataFrame", parts: list["pd.DataFrame"], first: date, last: date) -> "pd.DataFrame":
+def merge_order_parts(month: "pl.DataFrame", parts: list["pl.DataFrame"], first: date, last: date) -> "pl.DataFrame":
     """The parts' order lines of this month, each line once; the month's own file when the parts hold fewer."""
-    import pandas as pd
-    merged = pd.concat(parts, ignore_index=True).drop_duplicates()
-    day = pd.to_datetime(merged["order_date"], errors="coerce", format="mixed").dt.date
-    merged = merged[day.between(first, last)]
-    return merged.reset_index(drop=True) if len(merged) >= len(month) else month
+    import polars as pl
+    merged = pl.concat(parts, how="diagonal_relaxed").unique(keep="first", maintain_order=True)
+    day = _order_day(pl.col("order_date"))
+    merged = merged.filter(day.is_between(first, last))
+    return merged if merged.height >= month.height else month
+
+
+def _order_day(e: "pl.Expr") -> "pl.Expr":
+    """The day of Flipkart's order_date ("2026-10-31 23:10:05", or a date alone)."""
+    import polars as pl
+    s = e.str.strip_chars().str.slice(0, 19)
+    return pl.coalesce(s.str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False), s.str.to_datetime("%Y-%m-%dT%H:%M:%S", strict=False),
+                       s.str.to_date("%Y-%m-%d", strict=False).cast(pl.Datetime("us"))).dt.date()
 
 
 def flipkart_orders_in_parts(fk, first: date, last: date, dest: Path, path: Path) -> None:
     """A month's Orders file can stop short while the same days come whole in a smaller range, and Flipkart
     refuses the same range again while its link is active (4 Nov 2026: Oct-26 had no 31 Oct, a 10-day
     range had 300 orders of it). Ask for the month in parts and replace the file when that holds more."""
-    import pandas as pd
+    from ..core.tables import read_excel_text, sheet_names
+    from ..core.xlsx import write_sheets
     wait = int(num("RETURNS_WAIT_MINUTES", 45))
     frames = []
     for i, (a, b) in enumerate(month_parts(first, last)):
         _, data = fk.report("Orders", a, b, wait, made_from=FRESH_FROM or last + timedelta(days=2))
         part = dest / f"flipkart_orders_part{i}.xlsx"
         part.write_bytes(data)
-        frames.append(pd.read_excel(part, sheet_name="Orders", dtype=str, engine="calamine"))
-    book = pd.read_excel(path, sheet_name=None, dtype=str, engine="calamine")
+        frames.append(read_excel_text(part, "Orders"))
+    book = {s: read_excel_text(path, s) for s in sheet_names(path)}
     merged = merge_order_parts(book["Orders"], frames, first, last)
-    log.info("Flipkart Orders %s..%s: month file %d lines, in parts %d", first, last, len(book["Orders"]), len(merged))
+    log.info("Flipkart Orders %s..%s: month file %d lines, in parts %d", first, last, book["Orders"].height, merged.height)
     book["Orders"] = merged
-    with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        for sheet, df in book.items():
-            df.to_excel(writer, sheet_name=sheet, index=False)
+    write_sheets(path, [(s, df.columns, df.rows()) for s, df in book.items()], bold_header=True)
 
 
 def myntra_returns(account: str, first: date, last: date, dest: Path) -> Path:
@@ -231,12 +238,15 @@ def data_rows(path: Path) -> int:
 
 def flipkart_orders_end(path: Path) -> date | None:
     """The last order date in Flipkart's Orders report; None when it cannot be told."""
-    import pandas as pd
+    from ..core.tables import read_excel_text
     try:
-        d = pd.to_datetime(pd.read_excel(path, sheet_name="Orders", usecols=["order_date"], dtype=str)["order_date"], errors="coerce")
+        o = read_excel_text(path, "Orders")
     except ValueError:
         return None
-    return d.max().date() if d.notna().any() else None
+    if "order_date" not in o.columns:
+        return None
+    import polars as pl
+    return o.select(_order_day(pl.col("order_date")).max()).item() if o.height else None
 
 
 def months_of(args, today: date) -> list[date]:

@@ -107,31 +107,34 @@ def returns_complete(xlsx: bytes, start: date, slack_days: int = 7) -> tuple[boo
     """(complete, why not) for a Flipkart Returns report meant to start at `start`: it must have
     rows, and its earliest return request within slack_days of the start. Flipkart drops returns
     older than about four months, which leaves such a report empty or starting late."""
-    import io
+    from datetime import datetime
 
-    import pandas as pd
+    import polars as pl
+
+    from ..core.tables import read_excel_text
     try:
-        r = pd.read_excel(io.BytesIO(xlsx), sheet_name="Returns", dtype=str)
+        r = read_excel_text(xlsx, "Returns")
     except Exception as exc:  # noqa: BLE001
         return False, f"Returns sheet not readable ({exc})"
-    if r.empty:
+    if not r.height:
         return False, "Returns report is empty"
     # the date the engine uses: return_requested_date is blank in Flipkart's file
-    when = r.get("return_approval_date")
-    if when is None:
-        when = r.get("return_requested_date")
-    elif "return_requested_date" in r:
-        when = when.fillna(r["return_requested_date"])
-    dates = pd.to_datetime(when, errors="coerce").dropna()
-    first = dates.min() if len(dates) else pd.NaT
-    if pd.isna(first) or first.date() > start + timedelta(days=slack_days):
-        return False, f"Returns report starts {first:%d %b}" if not pd.isna(first) else "no return dates"
+    cols = [c for c in ("return_approval_date", "return_requested_date") if c in r.columns]
+    if not cols:
+        return False, "no return dates"
+    s = pl.coalesce([pl.col(c) for c in cols]).str.strip_chars()
+    when = pl.coalesce(s.str.to_datetime("%Y-%m-%d %H:%M:%S%.f", strict=False), s.str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False),
+                       s.str.to_datetime("%Y-%m-%dT%H:%M:%S%.f", strict=False), s.str.to_date("%Y-%m-%d", strict=False).cast(pl.Datetime("us")))
+    dates = r.select(when.alias("d")).drop_nulls()["d"].to_list()
+    first = min(dates) if dates else None
+    if first is None or first.date() > start + timedelta(days=slack_days):
+        return False, f"Returns report starts {first:%d %b}" if first is not None else "no return dates"
     # A few returns at the start are not enough: Flipkart's cut-off can fall inside the window
     # (Jun 2026: 47 June returns, then July in full). The first 14 days must hold at least
     # a third of an average 14 days of the window.
-    begin = pd.Timestamp(start)
-    days = max((dates.max() - begin).days + 1, 14)
-    early = int((dates < begin + pd.Timedelta(days=14)).sum())
+    begin = datetime(start.year, start.month, start.day)
+    days = max((max(dates) - begin).days + 1, 14)
+    early = sum(1 for d in dates if d < begin + timedelta(days=14))
     expected = len(dates) * 14 / days
     if early < expected / 3:
         return False, f"only {early} returns in its first 14 days (about {expected:.0f} expected)"
