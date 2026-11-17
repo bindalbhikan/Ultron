@@ -10,6 +10,11 @@ reports) - the business-report workflow follows those runs - or by hand.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import polars as pl
+
 import argparse
 import logging
 import re
@@ -107,12 +112,12 @@ def log_rows(files: list[dict], frames: dict[str, pd.DataFrame], date_col: dict[
 LOG_COLS = ["Input", "Account", "File", "Rows", "Date Used", "From", "To", "Note"]
 
 
-def read_any(path: Path, **kw) -> pd.DataFrame:
-    """A report file as text columns, read by Polars (core/tables: the same cells as pandas' readers gave)."""
-    from ..core.tables import read_excel_text, read_text_csv, to_pandas
+def read_any(path: Path, sheet: str | int = 0, header: int | None = 0) -> "pl.DataFrame":
+    """A report file as a Polars text table (core/tables: the same cells as pandas' readers gave)."""
+    from ..core.tables import read_excel_text, read_text_csv
     if path.suffix.lower() == ".csv":
-        return to_pandas(read_text_csv(path, pandas_na=True))
-    return to_pandas(read_excel_text(path, kw.get("sheet_name", 0), header=kw.get("header", 0)))
+        return read_text_csv(path, pandas_na=True)
+    return read_excel_text(path, sheet, header=header)
 
 
 # ------------------------------------------------------------------ portals
@@ -134,9 +139,11 @@ def missing_myntra_reports(files: list[dict], last: date) -> list[str]:
 
 
 def build_myntra(files: list[dict], master: pd.DataFrame, missing: list[str] = ()) -> tuple:
-    frames = {f["name"]: read_any(f["path"]).assign(ACCOUNT=f["account"]) for f in files}
-    get = lambda k: [frames[f["name"]].assign(_order=i) for i, f in enumerate(files) if f["kind"] == k]  # noqa: E731
-    o, r, p = (pd.concat(get(k), ignore_index=True) if get(k) else pd.DataFrame() for k in ("ORDER", "RETURN", "PAYMENT"))
+    import polars as pl
+    frames = {f["name"]: read_any(f["path"]).with_columns(ACCOUNT=pl.lit(f["account"])) for f in files}
+    # _order: the file's place (month, kind, account) as a number: a later file's line is newer
+    get = lambda k: [frames[f["name"]].with_columns(_order=pl.lit(i)) for i, f in enumerate(files) if f["kind"] == k]  # noqa: E731
+    o, r, p = (pl.concat(get(k), how="diagonal_relaxed") if get(k) else pl.DataFrame() for k in ("ORDER", "RETURN", "PAYMENT"))
     if not len(o):
         raise RuntimeError("no Myntra order report in PORTAL REPORTS")
     from ..core.tables import to_pandas
@@ -155,10 +162,13 @@ def build_myntra(files: list[dict], master: pd.DataFrame, missing: list[str] = (
     return rep, o
 
 
-def category_map(myntra_orders: pd.DataFrame, master: pd.DataFrame) -> dict[str, str]:
+def category_map(myntra_orders, master: pd.DataFrame) -> dict[str, str]:
     """DESIGN-NO -> the article type Myntra lists it under (the most common), for the other portals."""
     if myntra_orders is None or not len(myntra_orders):
         return {}
+    if not isinstance(myntra_orders, pd.DataFrame):             # a Polars table: only the three columns used
+        from ..core.tables import to_pandas
+        myntra_orders = to_pandas(myntra_orders.select("myntra sku code", "seller sku code", "article type"))
     mm = master[master["Channel Name"].str.startswith("MYNTRA", na=False)]
     by_code = mm.dropna(subset=["MYNTRA SKU CODE"]).drop_duplicates("MYNTRA SKU CODE").set_index("MYNTRA SKU CODE")["DESIGN-NO"]
     by_sku = master.drop_duplicates("Channel Listing SKU Code").set_index("Channel Listing SKU Code")["DESIGN-NO"]
@@ -523,10 +533,11 @@ def summary(rep, out: Path) -> str:
             if gross and disp and (net + ret) else f"✅ <b>{rep.portal}</b>: {out.name}")
 
 
-def myntra_orders_only(files: list[dict]) -> pd.DataFrame:
+def myntra_orders_only(files: list[dict]) -> "pl.DataFrame":
     """Myntra's order lines only (the category map of the other portals)."""
+    import polars as pl
     frames = [read_any(f["path"]) for f in files if f["kind"] == "ORDER"]
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
 
 
 def run(args) -> int:

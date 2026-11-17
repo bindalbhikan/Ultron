@@ -78,7 +78,12 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   `ledger_lines`, `forward_values`, `cancelled_units` work in Polars (handed on as pandas while RAW DATA is pandas).
   Whole-range golden: every AJIO table and cell the same.
 
-**Next, one by one, each with a parity test on real files**: Myntra's readers, the owner's monthly files and
+* Business report, Myntra's readers: `read_any` gives Polars tables straight to `payments_pl` / `raw_data_pl` (before,
+  every file went Polars -> pandas -> Polars, a Python loop over every cell of ~300,000 rows). `_order` (a file's place:
+  the later file's return line is the newer) stays a number: through pandas it had become text, so file 10 sorted
+  before file 9. Whole-range golden: every Myntra table and cell the same (no line of this data had hit it).
+
+**Next, one by one, each with a parity test on real files**: the owner's monthly files and
 the business report workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
 owner's OK. With it: a row-quality check of the OMSGuru order list (fields left at their defaults).
