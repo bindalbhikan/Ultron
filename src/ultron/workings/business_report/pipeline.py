@@ -350,9 +350,8 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: d
     # a monthly file is the payment only of a month with no Settled Transactions file: nothing counts twice
     import polars as pl
 
-    from ..core.tables import to_polars
     by_file = flipkart.monthly_settled(monthly, {pd.Timestamp(f["month"]) for f in files if f["kind"] == "PAYMENT"})
-    s = pl.concat([x for x in (s, to_polars(by_file)) if x.height], how="diagonal_relaxed") if len(by_file) else s
+    s = pl.concat([x for x in (s, by_file) if x.height], how="diagonal_relaxed") if by_file.height else s
     if not o.height and not tax.height:
         raise RuntimeError("no Flipkart order or sales report in PORTAL REPORTS")
     if not o.height:

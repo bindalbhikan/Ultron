@@ -141,6 +141,37 @@ def pcol(df: "pl.DataFrame", name: str) -> "pl.Expr":
     return pl.lit(None, dtype=pl.Utf8)
 
 
+def sheet_names(path) -> list[str]:
+    """The sheet names of an xlsx (python-calamine; no pandas)."""
+    from python_calamine import CalamineWorkbook
+    return list(CalamineWorkbook.from_path(str(path)).sheet_names)
+
+
+def pany_date(expr: "pl.Expr") -> "pl.Expr":
+    """Polars: a date of a hand-made file (the owner's monthly files): an Excel day number, AJIO's
+    "Wed Sep 30 23:21:44 IST 2026", or ISO text (YYYY-MM-DD [HH:MM:SS]); anything else -> null."""
+    import polars as pl
+    s = expr.cast(pl.Utf8).str.strip_chars()
+    n = s.cast(pl.Float64, strict=False)
+    serial = pl.datetime(1899, 12, 30, time_unit="us") + pl.duration(milliseconds=(n * 86_400_000).round(0).cast(pl.Int64))
+    txt = s.str.replace(" IST", "", literal=True)
+    iso = txt.str.slice(0, 19)
+    return pl.coalesce(pl.when(n.is_not_null()).then(serial),
+                       txt.str.to_datetime("%a %b %d %H:%M:%S %Y", strict=False, time_unit="us"),
+                       iso.str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False, time_unit="us"),
+                       iso.str.to_datetime("%Y-%m-%dT%H:%M:%S", strict=False, time_unit="us"),
+                       iso.str.to_date("%Y-%m-%d", strict=False).cast(pl.Datetime("us")))
+
+
+def unread_dates(df: "pl.DataFrame", text: str, parsed: str, what: str, log=None) -> int:
+    """How many rows have a date text that pany_date could not read (logged): never dropped silently."""
+    import polars as pl
+    bad = df.filter(pl.col(text).is_not_null() & (pl.col(text).str.strip_chars() != "") & pl.col(parsed).is_null())
+    if bad.height and log is not None:
+        log.warning("%s: %d dates not read (e.g. %s)", what, bad.height, bad[text].head(3).to_list())
+    return bad.height
+
+
 def pnum(expr: "pl.Expr") -> "pl.Expr":
     """Polars: a number from text (outer spaces out); anything else -> null (pandas' to_numeric(errors="coerce"))."""
     import polars as pl

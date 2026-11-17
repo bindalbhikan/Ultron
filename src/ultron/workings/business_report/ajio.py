@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from .workbook import Report, any_date
+from .workbook import Report
 
 if TYPE_CHECKING:
     import polars as pl
@@ -74,23 +74,26 @@ MONTHLY_COLUMNS = {"cust order no": "Cust Order No", "fwd seller order no": "FWD
                    "invoice value": "Invoice Value", "brand": "Brand", "fulfillment type": "Fulfillment Type"}
 
 
-def read_monthly(files: list[Path]) -> pd.DataFrame:
-    """The SALE sheet of the owner's monthly files in the order report's columns; a later file's line wins."""
+def read_monthly(files: list[Path]) -> "pl.DataFrame":
+    """The SALE sheet of the owner's monthly files in the order report's columns; a later file's line wins (Polars)."""
+    import polars as pl
+
+    from ..core.tables import pany_date, read_excel_text, sheet_names, unread_dates
     frames = []
     for f in files:                                                  # in month order
-        xl = pd.ExcelFile(f)
-        df = xl.parse(next(s for s in xl.sheet_names if s.strip().lower() == "sale"), dtype=str)
-        df.columns = [" ".join(str(c).split()).lower() for c in df.columns]
-        day = any_date(df["cust order date"])
-        df, day = df[df["cust order no"].notna() & day.notna()], day[df["cust order no"].notna() & day.notna()]   # no total row
-        out = df.reindex(columns=list(MONTHLY_COLUMNS)).rename(columns=MONTHLY_COLUMNS)
-        out["Cust Order Date"] = day.dt.strftime(AJIO_FMT)
-        frames.append(out.assign(_file=f.name))
+        sheet = next(s for s in sheet_names(f) if s.strip().lower() == "sale")
+        df = read_excel_text(f, sheet, engine="openpyxl")             # outer spaces kept, as pandas read them
+        df = df.rename({c: " ".join(str(c).split()).lower() for c in df.columns})
+        df = df.with_columns(_day=pany_date(pl.col("cust order date")))
+        unread_dates(df.filter(pl.col("cust order no").is_not_null()), "cust order date", "_day", f.name, log)
+        df = df.filter(pl.col("cust order no").is_not_null() & pl.col("_day").is_not_null())     # no total row
+        frames.append(df.select(*[(pl.col(c) if c in df.columns else pl.lit(None, dtype=pl.Utf8)).alias(name)
+                                  for c, name in MONTHLY_COLUMNS.items()],
+                                pl.col("_day").dt.strftime(AJIO_FMT).alias("Cust Order Date"), pl.lit(f.name).alias("_file")))
     if not frames:
-        return pd.DataFrame()
-    m = pd.concat(frames, ignore_index=True)
-    m["key"] = m["Cust Order No"].str.strip() + "|" + m["Seller SKU"].str.strip()
-    return m.drop_duplicates("key", keep="last").drop(columns="key")
+        return pl.DataFrame()
+    m = pl.concat(frames, how="diagonal_relaxed").with_columns(_key=_key("Cust Order No", "Seller SKU"))
+    return m.unique("_key", keep="last", maintain_order=True).drop("_key")
 
 
 def ledger_lines(ledger_) -> pd.DataFrame:
@@ -136,16 +139,18 @@ def file_payment(raw: pd.DataFrame, rtv: pd.DataFrame, months: set) -> pd.DataFr
 
 def monthly_expenses(files: list[tuple[Path, pd.Timestamp]]) -> pd.Series:
     """Month -> the charges on the EXP sheet of the owner's monthly file (money off, so negative)."""
+    import polars as pl
+
+    from ..core.tables import read_excel_text, sheet_names
     out = {}
     for f, month in files:
-        xl = pd.ExcelFile(f)
-        sheet = next((s for s in xl.sheet_names if s.strip().lower().startswith("exp")), None)
+        sheet = next((s for s in sheet_names(f) if s.strip().lower().startswith("exp")), None)
         if not sheet:
             continue
-        e = xl.parse(sheet, dtype=str)
-        e.columns = [str(c).strip().upper() for c in e.columns]
+        e = read_excel_text(f, sheet, engine="openpyxl")
+        e = e.rename({c: str(c).strip().upper() for c in e.columns})
         if "AMOUNT" in e.columns:
-            out[month] = -abs(num(e["AMOUNT"]).sum())
+            out[month] = -abs(float(e.select(pnum(pl.col("AMOUNT")).sum())[0, 0] or 0.0))
     return pd.Series(out, dtype=float)
 
 

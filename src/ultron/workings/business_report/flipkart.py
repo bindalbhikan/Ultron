@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from .workbook import Report, any_date
+from .workbook import Report
 
 if TYPE_CHECKING:
     import polars as pl
@@ -127,19 +127,24 @@ def read_sales(files: list[Path]) -> "pl.DataFrame":
     return _sheets(files, "Sales Report")
 
 
-def read_monthly(files: list[tuple[Path, pd.Timestamp]]) -> pd.DataFrame:
-    """The "Order Wise" sheet of the owner's monthly files; one row per order item settled that month."""
+def read_monthly(files: list[tuple[Path, pd.Timestamp]]) -> "pl.DataFrame":
+    """The "Order Wise" sheet of the owner's monthly files; one row per order item settled that month (Polars)."""
+    from ..core.tables import pany_date, read_excel_text, unread_dates
+    pl = _pl()
     frames = []
     for f, month in files:
-        df = _xlsx(f, "Order Wise")
-        df.columns = [re.sub(r"\s+", " ", str(c)).strip().lower() for c in df.columns]
-        df = df.rename(columns={"bank settlement value": "payout", "order item id": "oi"})
-        df = df[df["oi"].astype(str).str.match(r"^(OI:)?\d+")].copy()     # order lines only, no totals or non-order rows
-        df["oi"] = oi(df["oi"])
-        day = any_date(df["order date"])
-        df["order_date"] = day.where(day < month + pd.offsets.MonthBegin(1)).dt.strftime("%Y-%m-%d")   # a mistyped later date: no date
-        frames.append(df.assign(_file=f.name, _month=month))
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        df = read_excel_text(f, "Order Wise")
+        df = df.rename(dict(zip(df.columns, _unique([re.sub(r"\s+", " ", str(c)).strip().lower() for c in df.columns]))))
+        df = df.rename({"bank settlement value": "payout", "order item id": "oi"}, strict=False)
+        df = df.filter(pl.col("oi").str.contains(r"^(OI:)?\d+").fill_null(False))   # order lines only, no totals or non-order rows
+        start = pd.Timestamp(month).to_pydatetime()
+        nxt = (pd.Timestamp(month) + pd.offsets.MonthBegin(1)).to_pydatetime()
+        df = df.with_columns(oi=poi(pl.col("oi")), _day=pany_date(pl.col("order date")))
+        unread_dates(df, "order date", "_day", f.name, log)
+        df = df.with_columns(order_date=pl.when(pl.col("_day") < nxt).then(pl.col("_day").dt.strftime("%Y-%m-%d")),  # a mistyped later date: no date
+                             _file=pl.lit(f.name), _month=pl.lit(start).cast(pl.Datetime("us"))).drop("_day")
+        frames.append(df)
+    return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
 
 
 def _rupees(text) -> float:
@@ -180,19 +185,22 @@ def bank_paid(settled_files: list[tuple[Path, pd.Timestamp]], monthly_files: lis
     return pd.DataFrame.from_dict(rows, orient="index").sort_index() if rows else pd.DataFrame()
 
 
-def monthly_settled(monthly: pd.DataFrame, have: set) -> pd.DataFrame:
+def monthly_settled(monthly, have: set) -> "pl.DataFrame":
     """Rows in the shape of Settled Transactions, for the months in no Settled Transactions file (have).
-    The file gives no payment date or NEFT id: the month is known, the id names the file."""
-    m = monthly[~monthly["_month"].isin(have)] if len(monthly) else monthly
-    if not len(m):
-        return pd.DataFrame()
-    out = pd.DataFrame({"Order item ID": m["oi"].values, "NEFT ID": m["_month"].dt.strftime("Monthly file %b-%y").values,
-                        "Payment Date": None, "_month": m["_month"].values, "_file": m["_file"].values})
-    for src, name in (("Sale Amount (Rs.)", "sale amount"), ("Bank Settlement Value (Rs.)", "payout"), ("Marketplace Fee (Rs.)", "marketplace fee"),
-                      ("Commission (Rs.)", "commission"), ("Shipping Fee (Rs.)", "shipping fee"), ("Reverse Shipping Fee (Rs.)", "reverse shipping fee"),
-                      ("Refund (Rs.)", "refund"), ("TCS (Rs.)", "tcs"), ("TDS (Rs.)", "tds")):
-        out[src] = m[name].values if name in m.columns else None
-    return out
+    The file gives no payment date or NEFT id: the month is known, the id names the file. Polars."""
+    pl = _pl()
+    m = _frame(monthly)
+    if not m.height:
+        return pl.DataFrame()
+    m = m.filter(~pl.col("_month").is_in([pd.Timestamp(x).to_pydatetime() for x in have]))
+    if not m.height:
+        return pl.DataFrame()
+    money = (("Sale Amount (Rs.)", "sale amount"), ("Bank Settlement Value (Rs.)", "payout"), ("Marketplace Fee (Rs.)", "marketplace fee"),
+             ("Commission (Rs.)", "commission"), ("Shipping Fee (Rs.)", "shipping fee"), ("Reverse Shipping Fee (Rs.)", "reverse shipping fee"),
+             ("Refund (Rs.)", "refund"), ("TCS (Rs.)", "tcs"), ("TDS (Rs.)", "tds"))
+    return m.select(pl.col("oi").alias("Order item ID"), pl.col("_month").dt.strftime("Monthly file %b-%y").alias("NEFT ID"),
+                    pl.lit(None, dtype=pl.Utf8).alias("Payment Date"), "_month", "_file",
+                    *[(pl.col(name) if name in m.columns else pl.lit(None, dtype=pl.Utf8)).alias(src) for src, name in money])
 
 
 SETTLE_COLS = {"Sale Amount (Rs.)": "SALE AMOUNT", "Bank Settlement Value (Rs.)": "NET SETTLEMENT",
