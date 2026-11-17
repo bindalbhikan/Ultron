@@ -61,7 +61,11 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   4,314 rows, returned units 6,866 / 1,487 — all the same **except one Flipkart item** whose two return lines carry
   the same second: pandas' unstable sort took either line, Polars always takes the later one in the file (its
   RETURN ID and SUB REASON; its status and every number the same). Then the golden business report run: every
-  table and number the same. Kept as the old code had them (each a pandas habit, checked): an empty invoice number
+  table and number the same. Then the whole range, Apr-25..Oct-26 (Myntra 295,281 rows, Flipkart 182,590 with
+  the Sales Reports and monthly files, AJIO 31,126 with its monthly files): Myntra and AJIO every cell the same;
+  Flipkart the same but for **6 units now right**: the Returns report holds 26 lines with no return type (return id
+  "RI:" only) at the same second as an item's real RTO line, and pandas' unstable sort sometimes took the empty one
+  (the item showed Delivered); such a line is now no return (5 RTO, 1 customer return more). Kept as the old code had them (each a pandas habit, checked): an empty invoice number
   is the text "nan" when invoices are shared out (`_text`), Description's title case is Python's own `str.title`,
   a tie in the RAW DATA order keeps the file order.
 
