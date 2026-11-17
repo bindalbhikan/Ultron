@@ -3,7 +3,7 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
-import requests
+import httpx
 
 
 def test_zero_td_asks_the_phone_again_for_styles_without_an_answer(monkeypatch):
@@ -91,7 +91,7 @@ def test_omsguru_get_retries_a_dropped_connection(monkeypatch):
     def get(url, timeout, **kw):
         seen.append(1)
         if len(seen) < 5:
-            raise requests.ConnectionError("reset")
+            raise httpx.ReadError("reset")
         return SimpleNamespace(status_code=200, url=url)
     client = SimpleNamespace(timeout=5, s=SimpleNamespace(get=get))
     assert omsguru.OmsGuruClient.get(client, "https://x/page").status_code == 200

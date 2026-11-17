@@ -24,6 +24,8 @@ Response = httpx.Response
 FAILED: tuple[type[Exception], ...] = (httpx.HTTPError, httpx.InvalidURL)
 # what requests called ConnectionError / Timeout: a dropped or slow connection, worth trying again
 PASSING: tuple[type[Exception], ...] = (httpx.NetworkError, httpx.TimeoutException, httpx.RemoteProtocolError)
+# what requests called ConnectionError alone: no connection, or it dropped (a slow answer is not one)
+CONNECTION: tuple[type[Exception], ...] = (httpx.NetworkError, httpx.RemoteProtocolError, httpx.ConnectTimeout)
 
 
 def ok(r: Any) -> bool:

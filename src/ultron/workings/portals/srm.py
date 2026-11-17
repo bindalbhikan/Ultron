@@ -16,7 +16,7 @@ import re
 from datetime import date
 from urllib.parse import unquote, urljoin
 
-import requests
+from ultron.core import http
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class SrmError(RuntimeError):
 class Srm:
     def __init__(self, user: str, password: str, timeout: int = 300):
         self.user, self.password, self.timeout = user, password, timeout
-        self.s = requests.Session()
+        self.s = http.client()
         self.s.headers["User-Agent"] = UA
         self.token = ""
 
@@ -57,7 +57,7 @@ class Srm:
                        "sap-system-login-oninputprocessing": "onLogin", "sap-language": "EN"})
         fields.setdefault("sap-client", "421")
         action = re.search(r'action="([^"]*)"', form.group(0))
-        dash = self.s.post(urljoin(r.url, action.group(1)) if action else r.url, data=fields, timeout=60)
+        dash = self.s.post(urljoin(str(r.url), action.group(1)) if action else r.url, data=fields, timeout=60)
         if "Welcome" not in dash.text:
             msg = re.sub(r"\s+", " ", re.sub(r"<script.*?</script>|<[^>]+>", " ", dash.text, flags=re.S))
             raise SrmError(f"SRM login failed: {msg[:200]}")
@@ -67,12 +67,12 @@ class Srm:
         data.update(OnInputProcessing="SoaOpenSrcClick", ActionFlag="")
         soa = self.s.post(dash.url, data=data, timeout=60)
         link = re.search(r"""https://srm-rrscm\.ril\.com/[^"' ]*sap-params=([^&"' ]+)""",
-                         soa.url + " " + soa.text)
+                         str(soa.url) + " " + soa.text)
         if not link:
             raise SrmError("SRM did not hand over to the statement-of-accounts portal")
-        auth = self.s.post(f"{RRSCM}/srm/uaa/api/v1/authenticate",
-                           json={"authText": unquote(html.unescape(link.group(1)))}, timeout=60,
-                           headers=self._headers(referer=soa.url)).json()
+        auth = http.json_of(self.s.post(f"{RRSCM}/srm/uaa/api/v1/authenticate",
+                                        json={"authText": unquote(html.unescape(link.group(1)))}, timeout=60,
+                                        headers=self._headers(referer=str(soa.url))))
         if not auth.get("token"):
             raise SrmError(f"SRM authenticate failed: {auth.get('message')}")
         self.token = auth["token"]
@@ -90,7 +90,7 @@ class Srm:
                         headers=self._headers())
         if r.status_code != 200:
             raise SrmError(f"SRM statement failed: HTTP {r.status_code} {r.text[:200]}")
-        items = ((r.json() or {}).get("param") or {}).get("T_ITEMS") or []
+        items = ((http.json_of(r) or {}).get("param") or {}).get("T_ITEMS") or []
         from ..core.shapes import SrmLedgerLine, check_rows    # a ledger in another shape stops here, named
         check_rows(items, SrmLedgerLine, "SRM ledger line", key="DOC_NO")
         log.info("SRM statement %s..%s: %d ledger lines", start, end, len(items))

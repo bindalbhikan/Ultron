@@ -16,7 +16,7 @@ import re
 import time
 from datetime import date, datetime
 
-import requests
+from ultron.core import http
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
@@ -75,27 +75,27 @@ class Erp:
     def __init__(self, username: str, password: str, user_token: str, timeout: int = 300):
         self.body = {"Username": username, "Password": web_encrypt(password), "UserToken": user_token}
         self.timeout = timeout
-        self.s = requests.Session()
+        self.s = http.client()
         self.s.headers["User-Agent"] = UA
         self.user_id = None
 
     def login(self) -> None:
-        j = self.s.post(f"{API}/Login/Login", json=self.body, timeout=60).json()
+        j = http.json_of(self.s.post(f"{API}/Login/Login", json=self.body, timeout=60))
         if not j.get("IsAuthSuccessful"):
             raise ErpError(f"ERP login failed: {j.get('ErrorMessage')}")
         if j.get("isReqOtpVerification"):
             raise ErpError("ERP login now asks for an OTP - the bot cannot answer it")
         self.user_id = j["userId"]
         self.s.headers["Authorization"] = f"Bearer {j['Token']}"
-        t = self.s.post(f"{API}/Login/RefreshToken", json=COMPANY, timeout=60).json()
+        t = http.json_of(self.s.post(f"{API}/Login/RefreshToken", json=COMPANY, timeout=60))
         self.s.headers.update({"Authorization": f"Bearer {t['Token']}",
                                "UserToken": j.get("UserToken") or self.body["UserToken"],
                                "X-Requested-With": "XMLHttpRequest"})
         log.info("Logged in to DigiBizz ERP")
 
     def _fields(self, report_id: int) -> dict[str, str]:
-        v = self.s.get(f"{API}/TblRptReports/GetSingleReportPreviewBE", params={"reportId": report_id},
-                       timeout=60).json()
+        v = http.json_of(self.s.get(f"{API}/TblRptReports/GetSingleReportPreviewBE", params={"reportId": report_id},
+                                    timeout=60))
         sql = (v.get("objBE") or {}).get("sqlQueryData") or ""
         inner = sql[sql.find("FROM (") + 6:] if "FROM (" in sql else sql
         found = {}
@@ -138,7 +138,7 @@ class Erp:
             if r.status_code != 200:
                 raise ErpError(f"ERP report {report_id}: HTTP {r.status_code}")
             try:
-                v = r.json()
+                v = http.json_of(r)
                 data, total = v["data"], v["totalCount"]
             except (ValueError, KeyError, TypeError) as exc:
                 raise ErpError(f"ERP report {report_id}: no data in its answer") from exc

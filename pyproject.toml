@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 # pure-Python only, so it installs anywhere, Android (Termux) included
 dependencies = [
-    "requests>=2.31",
+    # HTTP (ultron.core.http, docs/libraries/08-httpx.md); pure Python
+    "httpx>=0.27",
+    # HTML fallback where selectolax (C) is not installed (ultron.core.html, docs/libraries/09-selectolax.md)
     "beautifulsoup4>=4.12",
     # one retry helper, ultron.core.retry (docs/libraries/04-tenacity.md); pure Python
     "tenacity>=9.0",
@@ -26,7 +28,10 @@ browser = ["patchright>=1.64,<2"]
 # the report workings (ultron.workings: sale, VMS, AJIO TAT / SPF, Myntra SPF, returns ...)
 workings = [
     "pandas>=2.2,<4", "openpyxl>=3.1", "cryptography>=42",
-    "google-auth>=2.23", "gspread>=6.0",
+    # google-auth's Drive transport and gspread run on requests (no httpx transport there)
+    "google-auth>=2.23", "gspread>=6.0", "requests>=2.31",
+    # big JSON answers read by orjson (ultron.core.jsonx; the core falls back to json)
+    "orjson>=3.10",
     "curl_cffi>=0.7", "selectolax>=0.3.21",
     # pypdfium2 renders shipping labels to PIL images (without Pillow every Shadowfax / Delhivery
     # label fails and those Myntra orders show as NO VMS) and reads the courier POD PDFs as text

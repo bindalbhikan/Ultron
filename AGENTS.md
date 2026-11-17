@@ -79,6 +79,10 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 
 ## Working on this machine (owner's Windows PC)
 
+- New control app: `apps/ultron_app/` (`docs/apps/ultron-app.md`). Its sign-in/data are demo-only until
+  a supported app backend is connected. The owner wants Phone agent/SMS/OTP/POD work consolidated here;
+  the existing `android app/` remains active until native migration and parity checks finish.
+
 - Project files sit on Google Drive (`G:\My Drive\...`), but Git metadata lives outside Drive at
   `%USERPROFILE%\.ultron\git\AGENT-ULTRON-BINDAL.git`. The project's `.git` is a pointer file.
   This prevents Drive's `desktop.ini` files from corrupting Git refs for any Git client; no cleanup

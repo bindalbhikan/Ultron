@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
-import requests
+from ..core import http
 from ..core.html import Node, parse, text_of  # noqa: F401 - text_of is read from here by the workings
 
 PENDING_PREFIX = "PENDING-"  # key for orders without an invoice number yet
@@ -83,7 +83,7 @@ class OmsGuruClient:
                  delay: float = 0.2, timeout: int = 60):
         self.email, self.password, self.otp = email, password, otp
         self.workers, self.delay, self.timeout = workers, delay, timeout
-        self.s = requests.Session()
+        self.s = http.client(timeout=timeout)
         self.s.headers.update({"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9",
                                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"})
         self.ajax: dict[str, str] = {}
@@ -97,16 +97,16 @@ class OmsGuruClient:
         return client
 
     # ------------------------------------------------------------ http
-    def get(self, url: str, **kw) -> requests.Response:
+    def get(self, url: str, **kw) -> "http.Response":
         """GET with retries (core/retry.py). A server error (5xx, 429) or a dropped connection is tried
         up to 7 times over about 3 minutes (OMSGuru answers HTTP 500 for a few minutes at times, Nov
         2026); any other refusal 3 times. Waits 3, 6, 12, 24, 48, 60 s."""
         from ..core.retry import backoff, retry_call
 
-        def once() -> requests.Response:
+        def once() -> "http.Response":
             r = self.s.get(url, timeout=self.timeout, **kw)
             if r.status_code == 200:
-                if "/login" in r.url and "/login" not in url:
+                if "/login" in str(r.url) and "/login" not in url:
                     raise OmsGuruError("Session expired / not logged in (redirected to /login)")
                 return r
             raise HttpStatus(r.status_code)
@@ -115,9 +115,9 @@ class OmsGuruClient:
             return 3 if isinstance(exc, HttpStatus) and not exc.transient else 7
 
         try:
-            return retry_call(once, tries=tries, wait=backoff(3, 60), on=(HttpStatus, requests.RequestException),
+            return retry_call(once, tries=tries, wait=backoff(3, 60), on=(HttpStatus, *http.FAILED),
                               log=log, what=f"GET {url[:120]}", sleep=lambda s: time.sleep(s))
-        except (HttpStatus, requests.RequestException):
+        except (HttpStatus, *http.FAILED):
             raise OmsGuruError(f"GET failed after retries: {url[:160]}") from None
 
     def login(self) -> None:
@@ -127,7 +127,7 @@ class OmsGuruClient:
                 "data[Client][remember_me]": "1"}
         r = self.s.post(f"{BASE_URL}/login", data=form, timeout=self.timeout,
                         headers={"Referer": f"{BASE_URL}/login", "Origin": BASE_URL})
-        if r.status_code != 200 or "/login" in r.url or 'id="ClientIndexForm"' in r.text:
+        if r.status_code != 200 or "/login" in str(r.url) or 'id="ClientIndexForm"' in r.text:
             soup = parse(r.text)
             msg = text_of(soup.select_one(".alert, .error-message, #flashMessage")) or "unknown reason"
             raise OmsGuruError(f"OMSGuru login failed: {msg}")
@@ -160,7 +160,7 @@ class OmsGuruClient:
         if not r.text.strip():      # OMSGuru's answer for no match: an empty body
             return []
         try:
-            hits = r.json()
+            hits = http.json_of(r)
         except ValueError as exc:   # the login or an error page is not "this order does not exist"
             raise RuntimeError(f"OMSGuru search answered no JSON (HTTP {r.status_code})") from exc
         hits = [h for h in hits if isinstance(h, dict) and h.get("id")] if isinstance(hits, list) else []
@@ -276,8 +276,8 @@ class OmsGuruClient:
         data = {i["name"]: i.attr("value", "") for i in form.select("input[name]")}
         r = self.s.post(f"{BASE_URL}{form['action']}", data=data, timeout=self.timeout,
                         headers={"Referer": page, "Origin": BASE_URL})
-        if r.status_code != 200 or "/login" in r.url:
-            raise OmsGuruError(f"Push Inventory for channel {channel_id}: HTTP {r.status_code} ({r.url[:80]})")
+        if r.status_code != 200 or "/login" in str(r.url):
+            raise OmsGuruError(f"Push Inventory for channel {channel_id}: HTTP {r.status_code} ({str(r.url)[:80]})")
         res = parse(r.text)
         msg = text_of(res.select_one("#flashMessage, .alert, .message, .error-message"))
         if re.search(r"error|fail|not allowed|invalid", msg, re.I):

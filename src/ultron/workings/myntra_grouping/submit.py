@@ -28,7 +28,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
-import requests
+from ultron.core import http
 from ..core.tables import clean_id
 
 log = logging.getLogger("bindal.myntra_grouping")
@@ -82,7 +82,7 @@ def _job_styles(job: dict) -> tuple[str, list[str]]:
     if not url:
         return "", []
     try:
-        r = requests.get(url, timeout=60)
+        r = http.get(url, timeout=60)
         r.raise_for_status()
         df = pd.read_excel(io.BytesIO(r.content), dtype=str)
         return str(df.iloc[0, 0]).strip(), [clean_id(x) for x in df.iloc[:, 2].dropna()]
@@ -141,7 +141,7 @@ def _report_rows(link: str) -> list[dict]:
     GroupId; a rejected job's uniqueId, styleId, groupingType, rejectReason. A long report repeats its header.
     When the portal could not read the upload at all, its error stands alone in the first column."""
     import zipfile
-    z = zipfile.ZipFile(io.BytesIO(requests.get(link, timeout=60).content))
+    z = zipfile.ZipFile(io.BytesIO(http.get(link, timeout=60).content))
     df = pd.read_csv(z.open(z.namelist()[0]), dtype=str)
     df.columns = [re.sub(r"[^a-z]", "", str(c).lower()) for c in df.columns]
     out = []

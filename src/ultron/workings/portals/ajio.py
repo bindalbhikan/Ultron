@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from urllib.parse import urljoin
 
-import requests
+from ultron.core import http
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class AjioError(RuntimeError):
 class AjioClient:
     def __init__(self, username: str, password: str, timeout: int = 120):
         self.username, self.password, self.timeout = username, password, timeout
-        self.s = requests.Session()
+        self.s = http.client(timeout=timeout)
         self.s.headers.update({"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9",
                                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"})
         self.seller_id = ""
@@ -47,7 +47,7 @@ class AjioClient:
         for attempt in range(1, attempts + 1):
             try:
                 return self._login()
-            except (AjioError, requests.RequestException) as exc:
+            except (AjioError, *http.FAILED) as exc:
                 if attempt == attempts:
                     raise
                 log.warning("AJIO login attempt %d failed: %s - retrying", attempt, exc)
@@ -60,25 +60,25 @@ class AjioClient:
                        timeout=self.timeout)
         form = re.search(r'<form id="loginForm".*?</form>', r.text, re.S)
         if not form:
-            raise AjioError(f"AJIO login page not found (landed on {r.url.split('?')[0]})")
-        action = urljoin(r.url, re.search(r'action="([^"]+)"', form.group(0)).group(1))
+            raise AjioError(f"AJIO login page not found (landed on {str(r.url).split('?')[0]})")
+        action = urljoin(str(r.url), re.search(r'action="([^"]+)"', form.group(0)).group(1))
         data = dict(re.findall(r'<input type="hidden" name="([^"]+)"\s+value="([^"]*)"', form.group(0)))
         data.update(username=self.username, password=self.password)
-        # Redirects are followed by hand: requests would carry the Reliance
+        # Redirects are followed by hand: following them would carry the Reliance
         # Origin header on to the AJIO callback, which then answers HTTP 500.
-        r2 = self.s.post(action, data=data, timeout=self.timeout, allow_redirects=False,
-                         headers={"Referer": r.url, "Origin": "https://sellers.relianceretail.com"})
+        r2 = self.s.post(action, data=data, timeout=self.timeout, follow_redirects=False,
+                         headers={"Referer": str(r.url), "Origin": "https://sellers.relianceretail.com"})
         callback = r2.headers.get("location", "")
         if r2.status_code not in (301, 302, 303) or "seller.ajio.com" not in callback:
             txt = re.sub(r"\s+", " ", re.sub(r"<script.*?</script>|<[^>]+>", " ", r2.text, flags=re.S))
             raise AjioError(f"AJIO login rejected: {txt[:200]}")
-        r3 = self.s.get(callback, timeout=self.timeout, allow_redirects=False,
+        r3 = self.s.get(callback, timeout=self.timeout, follow_redirects=False,
                         headers={"Referer": "https://sellers.relianceretail.com/"})
         if r3.status_code >= 400:
             raise AjioError(f"AJIO login callback answered HTTP {r3.status_code}")
         self.s.get(f"{BASE}/vmsui/?_uap_callback=1", timeout=self.timeout)
-        me = self.s.get(f"{BASE}/malekith/auth/me", timeout=self.timeout,
-                        headers={"X-Tenant": "AJIO", "Accept": "application/json"}).json()
+        me = http.json_of(self.s.get(f"{BASE}/malekith/auth/me", timeout=self.timeout,
+                                     headers={"X-Tenant": "AJIO", "Accept": "application/json"}))
         if not me.get("authenticated"):
             raise AjioError("AJIO login did not create a session (auth/me says not authenticated)")
         self.seller_id = me["data"]["id"]
@@ -89,7 +89,7 @@ class AjioClient:
         return {"Accept": "application/json, text/plain, */*", "X-Tenant": "AJIO",
                 "X-Tenant-Id": "AJIO", "x-seller-id": self.seller_id}
 
-    def _req(self, method: str, path: str, **kw) -> requests.Response:
+    def _req(self, method: str, path: str, **kw) -> "http.Response":
         """Three tries (ultron.core.retry, waits 3, 6 s) on a 5xx or a request error; the last 5xx answer is
         returned, a last request error raised; any other answer at once."""
         from ultron.core.retry import retry_call
@@ -99,14 +99,14 @@ class AjioClient:
                 super().__init__(f"HTTP {r.status_code}")
                 self.response = r
 
-        def once() -> requests.Response:
+        def once() -> "http.Response":
             r = self.s.request(method, BASE + path, timeout=self.timeout, **kw)
             if r.status_code >= 500:
                 raise ServerError(r)
             return r
 
         try:
-            return retry_call(once, tries=3, wait=lambda n: 3 * n, on=(ServerError, requests.RequestException),
+            return retry_call(once, tries=3, wait=lambda n: 3 * n, on=(ServerError, *http.FAILED),
                               log=log, what=f"{method} {path[:80]}", sleep=lambda s: time.sleep(s))
         except ServerError as last:
             return last.response
@@ -190,7 +190,7 @@ class AjioClient:
                           headers=self.castellan)
             if r.status_code != 200:
                 raise AjioError(f"Ticket list failed: HTTP {r.status_code} {r.text[:200]}")
-            j = r.json()
+            j = http.json_of(r)
             from ..core.shapes import AjioTicket, check_rows
             out += check_rows(j.get("result") or [], AjioTicket, "AJIO ticket", key="ticketId")
             pages = (j.get("page") or {}).get("totalPages") or 1
@@ -202,7 +202,7 @@ class AjioClient:
         if r.status_code != 200:
             log.warning("Ticket %s detail: HTTP %s", ticket_id, r.status_code)
             return None
-        result = (r.json() or {}).get("result")
+        result = (http.json_of(r) or {}).get("result")
         if result:
             from ..core.shapes import AjioTicketDetail, check_rows
             check_rows([result], AjioTicketDetail, "AJIO ticket detail", key="ticketId")
@@ -218,7 +218,7 @@ class AjioClient:
                       json={"comment": text}, headers=self.castellan)
         if r.status_code not in (200, 201):
             raise AjioError(f"Comment on {ticket_id} failed: HTTP {r.status_code} {r.text[:200]}")
-        return (r.json() or {}).get("result") or {}
+        return (http.json_of(r) or {}).get("result") or {}
 
     def attach(self, ticket_id: str, name: str, data: bytes, mime: str) -> list[dict]:
         """Add a file to a ticket (the Help Center's attach button: multipart "files", after the
@@ -228,7 +228,7 @@ class AjioClient:
                       headers=self.castellan)
         if r.status_code not in (200, 201):
             raise AjioError(f"Attachment on {ticket_id} failed: HTTP {r.status_code} {r.text[:200]}")
-        return ((r.json() or {}).get("result") or {}).get("attachments") or []
+        return ((http.json_of(r) or {}).get("result") or {}).get("attachments") or []
 
     def tickets_for_return(self, return_order: str) -> list[dict]:
         """Tickets already open for this return. 404 = none. Any other answer (session expired,
@@ -239,7 +239,7 @@ class AjioClient:
             return []
         if r.status_code != 200:
             raise AjioError(f"Ticket check for {return_order} failed: HTTP {r.status_code} {r.text[:200]}")
-        result = (r.json() or {}).get("result")
+        result = (http.json_of(r) or {}).get("result")
         if isinstance(result, list):
             return result or [{"ticketId": "?"}]
         return [result] if isinstance(result, dict) and result else [{"ticketId": "?"}]
@@ -250,20 +250,20 @@ class AjioClient:
                                "x-pob-id": pob_id, "x-integration-type": "VMS_OMSGURU"})
         if r.status_code != 200:
             return None
-        return (r.json() or {}).get("result")
+        return (http.json_of(r) or {}).get("result")
 
     def create_spf(self, payload: dict) -> str:
         r = self._req("POST", "/malekith/castellan/api/v1/tickets/spf", json=payload, headers=self.castellan)
         if r.status_code not in (200, 201):
             raise AjioError(f"SPF ticket create failed: HTTP {r.status_code} {r.text[:300]}")
-        return str(((r.json() or {}).get("result") or {}).get("ticketId") or "?")
+        return str(((http.json_of(r) or {}).get("result") or {}).get("ticketId") or "?")
 
     def create_ticket(self, payload: dict) -> str:
         """A GENERAL ticket (Help Center > Raise New Ticket)."""
         r = self._req("POST", "/malekith/castellan/api/v1/tickets", json=payload, headers=self.castellan)
         if r.status_code not in (200, 201):
             raise AjioError(f"Ticket create failed: HTTP {r.status_code} {r.text[:300]}")
-        return str(((r.json() or {}).get("result") or {}).get("ticketId") or "?")
+        return str(((http.json_of(r) or {}).get("result") or {}).get("ticketId") or "?")
 
 
 PICKUP_NOT_DONE = "PICKUP NOT DONE / SHIPMENT NOT SCANNING"

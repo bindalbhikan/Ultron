@@ -1,7 +1,9 @@
 """Flipkart client retries: login (3 tries on a dropped connection, waits 20, 40 s) and _post (3 tries on a
 5xx or a dropped connection, waits 5, 10 s; any other answer than 200 raised as FlipkartError)."""
 import pytest
-import requests
+import json
+
+import httpx
 
 from ultron.workings.portals import flipkart
 
@@ -12,6 +14,10 @@ class R:
 
     def json(self):
         return self._body
+
+    @property
+    def content(self):
+        return json.dumps(self._body).encode()
 
 
 def _client(monkeypatch):
@@ -29,7 +35,7 @@ def test_login_dropped_connection_tried_again(monkeypatch):
     def login():
         seen.append(1)
         if len(seen) < 3:
-            raise requests.ConnectionError("reset")
+            raise httpx.ConnectError("reset")
     c._login = login
     c.login()
     assert len(seen) == 3 and waits == [20, 40]
@@ -50,8 +56,8 @@ def test_login_refused_is_not_tried_again(monkeypatch):
 
 def test_login_dropped_every_time_raises(monkeypatch):
     c, waits = _client(monkeypatch)
-    c._login = lambda: (_ for _ in ()).throw(requests.ConnectionError("reset"))
-    with pytest.raises(requests.ConnectionError):
+    c._login = lambda: (_ for _ in ()).throw(httpx.ConnectError("reset"))
+    with pytest.raises(httpx.ConnectError):
         c.login()
     assert waits == [20, 40]
 
@@ -71,7 +77,7 @@ def _posting(c, answers):
 
 def test_post_5xx_and_drop_then_ok(monkeypatch):
     c, waits = _client(monkeypatch)
-    seen = _posting(c, [R(502), requests.ConnectionError("x"), R(200, {"ok": 1})])
+    seen = _posting(c, [R(502), httpx.ConnectError("x"), R(200, {"ok": 1})])
     assert c._post("/napi/x", {}) == {"ok": 1} and waits == [5, 10] and len(seen) == 3
 
 
@@ -89,7 +95,7 @@ def test_post_4xx_at_once_and_one_try(monkeypatch):
     with pytest.raises(flipkart.FlipkartError, match="HTTP 403"):
         c._post("/napi/x", {})
     assert len(seen) == 1 and waits == []
-    seen = _posting(c, [requests.ConnectionError("x")])
-    with pytest.raises(requests.ConnectionError):
+    seen = _posting(c, [httpx.ConnectError("x")])
+    with pytest.raises(httpx.ConnectError):
         c._post("/napi/x", {}, tries=1)
     assert waits == []

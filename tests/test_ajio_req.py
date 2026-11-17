@@ -1,7 +1,7 @@
 """AJIO client _req: three tries, waits 3 and 6 s, on a 5xx or a request error; the last 5xx answer is
 returned, a last request error raised; a 4xx answer at once."""
 import pytest
-import requests
+import httpx
 
 from ultron.workings.portals import ajio
 
@@ -39,8 +39,8 @@ def test_last_5xx_is_returned(monkeypatch):
 
 
 def test_last_request_error_is_raised(monkeypatch):
-    c, waits, seen = _client(monkeypatch, [requests.ConnectionError("a"), requests.Timeout("b"), requests.ConnectionError("c")])
-    with pytest.raises(requests.ConnectionError, match="c"):
+    c, waits, seen = _client(monkeypatch, [httpx.ConnectError("a"), httpx.ReadTimeout("b"), httpx.ConnectError("c")])
+    with pytest.raises(httpx.ConnectError, match="c"):
         c._req("GET", "/x")
     assert waits == [3, 6]
 

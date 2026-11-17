@@ -22,5 +22,5 @@ jobs:
       - uses: ./.github/actions/setup
       - run: uv pip install --system "pytest>=8"
       - name: Versions installed
-        run: python -c "import pandas, openpyxl, requests, scrapy; print('pandas', pandas.__version__, 'openpyxl', openpyxl.__version__, 'requests', requests.__version__, 'scrapy', scrapy.__version__)"
+        run: python -c "import pandas, openpyxl, httpx, orjson, scrapy; print('pandas', pandas.__version__, 'openpyxl', openpyxl.__version__, 'httpx', httpx.__version__, 'orjson', orjson.__version__, 'scrapy', scrapy.__version__)"
       - run: python -m pytest -q tests

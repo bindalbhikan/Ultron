@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-import requests
+from ultron.core import http
 
 from .inputs import is_seller, plain, sorted_comments
 
@@ -140,12 +140,12 @@ class Gemini:
                 continue
             for attempt in range(3):
                 try:
-                    r = requests.post(GEMINI_URL.format(model=model), timeout=120,
-                                      headers={"x-goog-api-key": self.key},
-                                      json={"contents": [{"parts": [{"text": prompt}]}],
-                                            "generationConfig": {"responseMimeType": "application/json",
-                                                                 "temperature": 0.4}})
-                except requests.RequestException as exc:
+                    r = http.post(GEMINI_URL.format(model=model), timeout=120,
+                                  headers={"x-goog-api-key": self.key},
+                                  json={"contents": [{"parts": [{"text": prompt}]}],
+                                        "generationConfig": {"responseMimeType": "application/json",
+                                                             "temperature": 0.4}})
+                except http.FAILED as exc:
                     log.warning("Gemini %s: %s", model, exc)
                     time.sleep(5)
                     continue
@@ -161,12 +161,12 @@ class Gemini:
                         continue
                     self.down_until[model] = time.time() + 900
                     break
-                if not r.ok:
+                if not http.ok(r):
                     log.warning("Gemini %s: HTTP %s %s", model, r.status_code, _message(r))
                     self.down_until[model] = time.time() + 3600
                     break
                 try:
-                    text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    text = http.json_of(r)["candidates"][0]["content"]["parts"][0]["text"]
                     out = json.loads(re.sub(r"^```(?:json)?|```$", "", text.strip()))
                     if out.get("action") in ("reply", "skip"):
                         return out, model
@@ -182,14 +182,14 @@ class Gemini:
 
 def _message(r) -> str:
     try:
-        return str(r.json().get("error", {}).get("message", ""))[:200]
+        return str(http.json_of(r).get("error", {}).get("message", ""))[:200]
     except ValueError:
         return r.text[:200]
 
 
 def _retry_delay(r) -> int | None:
     try:
-        for d in r.json().get("error", {}).get("details", []):
+        for d in http.json_of(r).get("error", {}).get("details", []):
             if "retryDelay" in d:
                 return int(float(str(d["retryDelay"]).rstrip("s"))) + 1
     except (ValueError, AttributeError):

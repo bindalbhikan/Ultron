@@ -133,11 +133,11 @@ def from_worker(env, account: str = "MAIN") -> str:
     url, token = env("DASHBOARD_URL"), env("DASHBOARD_TOKEN")
     if not url or not token:
         return ""
-    import requests
+    from ultron.core import http
     try:
-        r = requests.post(f"{url.rstrip('/')}/api/myntra-session/read", timeout=30, params={"account": account.lower()},
-                          headers={"Authorization": f"Bearer {token}"})
-    except requests.RequestException as exc:
+        r = http.post(f"{url.rstrip('/')}/api/myntra-session/read", timeout=30, params={"account": account.lower()},
+                      headers={"Authorization": f"Bearer {token}"})
+    except http.FAILED as exc:
         log.warning("Myntra session not read from the worker: %s", exc)
         return ""
     if r.status_code != 200:
@@ -151,18 +151,18 @@ def save_to_worker(env, cookies: list[dict], account: str = "MAIN") -> bool:
     url, token = env("DASHBOARD_URL"), env("DASHBOARD_TOKEN")
     if not url or not token or not cookies:
         return False
-    import requests
+    from ultron.core import http
     body = json.dumps({"savedAt": datetime.now().isoformat(timespec="seconds"), "source": "bot", "cookies": cookies})
     try:
-        r = requests.post(f"{url.rstrip('/')}/api/myntra-session", data=body, timeout=30,
-                          params={"account": account.lower()},
-                          headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-    except requests.RequestException as exc:
+        r = http.post(f"{url.rstrip('/')}/api/myntra-session", content=body, timeout=30,
+                      params={"account": account.lower()},
+                      headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    except http.FAILED as exc:
         log.warning("Renewed Myntra session not saved: %s", exc)
         return False
-    if not r.ok:
+    if not http.ok(r):
         log.warning("Renewed Myntra session not saved: HTTP %s", r.status_code)
-    return r.ok
+    return http.ok(r)
 
 
 def session_text(env, default_file: Path, account: str = "MAIN") -> str:
@@ -298,7 +298,8 @@ class MyntraPortal:
         if r.status_code in (401, 403):
             raise SessionExpired(f"portal answered HTTP {r.status_code}: logged out")
         try:
-            data = r.json()
+            from ultron.core.http import json_of
+            data = json_of(r)          # curl_cffi's answer, read by orjson
         except ValueError:
             # the login page comes back as HTML when the session has run out
             raise SessionExpired(f"portal answered HTTP {r.status_code} with a page, not data: logged out") from None

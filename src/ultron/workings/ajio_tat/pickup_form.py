@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pandas as pd
-import requests
+from ultron.core import http
 
 from ..core.config import env
 
@@ -70,7 +70,7 @@ def submit(courier: str, since) -> None:
     body = {"startDate": (now - pd.Timedelta(minutes=2)).isoformat().replace("+00:00", "Z"),
             "submitDate": now.isoformat().replace("+00:00", "Z"),
             "answers": json.dumps(answers), "submitLanguage": "en-US", "emailReceiptConsent": False}
-    r = requests.post(FORM_URL, json=body, timeout=60, headers={
+    r = http.post(FORM_URL, json=body, timeout=60, headers={
         "Accept": "application/json", "Content-Type": "application/json",
         "Origin": "https://forms.cloud.microsoft", "Referer": "https://forms.cloud.microsoft/",
         "x-ms-form-request-ring": "business", "x-ms-form-request-source": "ms-formweb",

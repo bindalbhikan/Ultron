@@ -1,4 +1,5 @@
 """ERP report(): asked again only while its count and rows disagree (6 Nov 2026: 522 rows of 521)."""
+import json
 import pytest
 
 from ultron.workings.portals import erp
@@ -12,6 +13,10 @@ class Resp:
         if self._body is None:
             raise ValueError("no json")
         return self._body
+
+    @property
+    def content(self):                      # read by ultron.core.http.json_of
+        return b"not json" if self._body is None else json.dumps(self._body).encode()
 
 
 def _client(answers):

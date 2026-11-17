@@ -1,6 +1,6 @@
 """One way to try a call again (docs/libraries/04-tenacity.md), on tenacity.
 
-    retry_call(fn, tries=7, wait=backoff(3, 60), on=(requests.RequestException,), log=log, what="GET ...")
+    retry_call(fn, tries=7, wait=backoff(3, 60), on=http.FAILED, log=log, what="GET ...")
 
 * tries: an int, or a function of the last error giving the tries allowed for that kind of error
   (e.g. a server error 7, a refusal 3).

@@ -23,7 +23,7 @@ from datetime import date
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-import requests
+from ultron.core import http
 
 log = logging.getLogger("bindal.myntra_spf.payments")
 
@@ -56,11 +56,11 @@ def blob(url: str) -> tuple[list[dict] | None, str]:
     code = ""
     for _ in range(3):
         try:
-            r = requests.get(url, timeout=120)
-        except requests.RequestException as exc:
+            r = http.get(url, timeout=120)
+        except http.FAILED as exc:
             code = str(exc)[:80]
             continue
-        if r.ok:
+        if http.ok(r):
             text = r.content.decode("utf-8-sig")
             return [row for row in csv.DictReader(io.StringIO(text)) if any(row.values())], ""
         code = (re.search(r"<Code>(.*?)</Code>", r.text) or [None, f"HTTP {r.status_code}"])[1]

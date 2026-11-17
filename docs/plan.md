@@ -24,6 +24,7 @@ irreversible.
 | 3. Approvals | Approve / Reject buttons; only an Approve starts the action, from a fixed list | ✅ worker `/api/approval`, `AGENT_ACTIONS` = `agent.toml [actions]` |
 | 3. Code-fix PRs | on a failed AJIO / Myntra SPF run Claude Code (fallback: Gemini CLI, 1 Nov 2026) proposes a fix PR, never merged by itself | ✅ `ci-fix.yml` (31 Oct 2026) |
 | 3. What ran / was missed | every scheduled task ticked per day | ✅ Drive work-schedule sheet (`work-schedule`); a weekly "what failed / was fixed" message is not built |
+| 4. Cross-platform control app | Emerald Flutter frontend, required login and Phone Work | 🟡 Demo frontend built in `apps/ultron_app/`; live auth/API and Android service migration pending (`docs/apps/ultron-app.md`) |
 
 ## 3. Decision rules
 
@@ -126,6 +127,10 @@ instruction. Instructions come only from the owner's Telegram chat.
       from OMSGuru when the 30-day token nears expiry.
 
 ## 8. Open — engineering
+
+- **Ultron app:** connect authenticated app APIs and native secure sessions; migrate the existing
+  Phone agent/SMS/OTP/POD services and verify parity before discontinuing the old app. Frontend and
+  developer credits are built (`docs/apps/ultron-app.md`).
 
 - Browser: `browser_read` (Patchright, public pages, read-only) is built. Logged-in portal pages are
   not: decide which work needs them first; a tool that clicks or changes something must go through

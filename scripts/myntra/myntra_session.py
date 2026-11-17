@@ -49,16 +49,17 @@ def clipboard() -> str:
 
 def push(text: str, account: str) -> bool:
     from dotenv import dotenv_values
-    import requests
+
+    from ultron.core import http
     cfg = {**dotenv_values(ROOT / ".env"), **os.environ}
     url, token = (cfg.get("DASHBOARD_URL") or "").rstrip("/"), cfg.get("DASHBOARD_TOKEN") or ""
     if not url or not token:
         print("Worker NOT updated: DASHBOARD_URL / DASHBOARD_TOKEN missing in .env")
         return False
-    w = requests.post(f"{url}/api/myntra-session", data=text, timeout=30, params={"account": account.lower()},
-                      headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-    print(f"Worker session {account} updated" if w.ok else f"Worker NOT updated: HTTP {w.status_code} {w.text[:100]}")
-    if not w.ok:
+    w = http.post(f"{url}/api/myntra-session", content=text, timeout=30, params={"account": account.lower()},
+                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    print(f"Worker session {account} updated" if http.ok(w) else f"Worker NOT updated: HTTP {w.status_code} {w.text[:100]}")
+    if not http.ok(w):
         return False
     if account == "MAIN":   # fallback copy for the sale run
         try:
@@ -75,7 +76,8 @@ def secret_by_api(name: str, value: str) -> tuple[bool, str]:
     """Set a repo secret without the GitHub CLI: token from `git credential fill`, value sealed
     with the repo's public key (PyNaCl)."""
     import base64
-    import requests
+
+    from ultron.core import http
     try:
         from nacl import encoding, public
     except ImportError:
@@ -87,14 +89,15 @@ def secret_by_api(name: str, value: str) -> tuple[bool, str]:
         return False, "no saved GitHub login in git"
     api = f"https://api.github.com/repos/{REPO}/actions/secrets"
     head = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-    k = requests.get(f"{api}/public-key", headers=head, timeout=30)
-    if not k.ok:
+    k = http.get(f"{api}/public-key", headers=head, timeout=30)
+    if not http.ok(k):
         return False, f"public key: HTTP {k.status_code}"
-    box = public.SealedBox(public.PublicKey(k.json()["key"].encode(), encoding.Base64Encoder()))
+    key = http.json_of(k)
+    box = public.SealedBox(public.PublicKey(key["key"].encode(), encoding.Base64Encoder()))
     sealed = base64.b64encode(box.encrypt(value.encode())).decode()
-    p = requests.put(f"{api}/{name}", headers=head, timeout=30,
-                     json={"encrypted_value": sealed, "key_id": k.json()["key_id"]})
-    return p.ok, f"HTTP {p.status_code}"
+    p = http.request("PUT", f"{api}/{name}", headers=head, timeout=30,
+                     json={"encrypted_value": sealed, "key_id": key["key_id"]})
+    return http.ok(p), f"HTTP {p.status_code}"
 
 
 def save(account: str, text: str, where: str, push_it: bool) -> bool:

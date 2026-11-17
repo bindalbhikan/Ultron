@@ -22,11 +22,10 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import requests
-
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
+from ultron.core import http  # noqa: E402
 from ultron.workings.core.config import env, load_dotenv, required  # noqa: E402
 
 COURIERS = re.compile(r"DLHVRY|SFX|XPBEES|EKART", re.I)
@@ -43,7 +42,7 @@ def pod(body: str) -> dict:
     if not link:
         return {}
     try:
-        r = requests.get(link.group(0).rstrip(".,)"), timeout=60, headers={"User-Agent": "Mozilla/5.0 UltronPhone"})
+        r = http.get(link.group(0).rstrip(".,)"), timeout=60, headers={"User-Agent": "Mozilla/5.0 UltronPhone"})
         if r.status_code != 200:
             return {"pdferror": f"HTTP {r.status_code}"}
         if not r.content.startswith(b"%PDF-"):
@@ -53,8 +52,17 @@ def pod(body: str) -> dict:
             return {"pdferror": "link is not a PDF"}
         # PDFium (C++, already installed for the labels): parsePod gives the same AWBs on 13 real PODs as with pypdf
         import pypdfium2 as pdfium
-        doc = pdfium.PdfDocument(r.content)
-        text = "\n".join(doc[i].get_textpage().get_text_range() for i in range(len(doc)))
+        doc, pieces = pdfium.PdfDocument(r.content), []
+        try:
+            for i in range(len(doc)):
+                page = doc[i]
+                tp = page.get_textpage()
+                pieces.append(tp.get_text_range())
+                tp.close()
+                page.close()
+        finally:
+            doc.close()
+        text = "\n".join(pieces)
         return {"pdf": base64.b64encode(r.content).decode(), "pdftext": text}
     except Exception as exc:  # noqa: BLE001 - noted on the row, the rest go on
         return {"pdferror": str(exc)[:80]}
@@ -99,8 +107,8 @@ def main() -> int:
         sender, body, time, sim = r[1], r[2], r[3], r[4]
         fields = {"key": key, "from": sender, "body": body, "time": time, "sim": sim, "rework": "1", **pod(body)}
         try:
-            answer = requests.post(url, data=fields, timeout=180).text.strip()[:60]
-        except requests.RequestException as exc:
+            answer = http.post(url, data=fields, timeout=180).text.strip()[:60]
+        except http.FAILED as exc:
             answer = f"error: {type(exc).__name__}"
         if answer != "ok":
             failed.append(f"{time} {sender}: {answer}")

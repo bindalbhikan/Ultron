@@ -17,9 +17,10 @@ seller-neutral core (`src/ultron/`, not `workings/`) still installs on Android (
 | 5 | [05-pydantic.md](05-pydantic.md) | portal answers checked: **pydantic v2** | ✅ 17 Nov 2026 |
 | 6 | [06-polars.md](06-polars.md) | tables: **Polars** instead of pandas, working by working | 🔧 in; benchmark; first working moved |
 | 7 | [07-duckdb-parquet.md](07-duckdb-parquet.md) | months / years of data: **DuckDB + Parquet** | ⏳ |
-| 8 | [08-httpx.md](08-httpx.md) | HTTP: **httpx** (curl_cffi kept where a bot check needs it) | ⏳ |
+| 8 | [08-httpx.md](08-httpx.md) | HTTP: **httpx** (curl_cffi kept where a bot check needs it) | ✅ 17 Nov 2026 |
 | 9 | [09-selectolax.md](09-selectolax.md) | HTML: **selectolax** instead of BeautifulSoup | ✅ 17 Nov 2026 |
-| 10 | [10-small.md](10-small.md) | **orjson**, **pypdfium2** text instead of pypdf, **pydantic-settings** | 🔧 17 Nov 2026: pypdfium2 ✅, pydantic-settings ✅, orjson with step 8 |
+| 10 | [10-small.md](10-small.md) | **orjson**, **pypdfium2** text instead of pypdf, **pydantic-settings** | ✅ 17 Nov 2026 |
+| 11 | [11-flutter-frontend.md](11-flutter-frontend.md) | New Flutter frontend: Material UI, Riverpod, GoRouter, Lucide and bundled DM Sans | ✅ frontend dependencies added; live API/native migration pending |
 
 Kept as they are (already the top choice, or a hard rule): Patchright (browser, rule), Scrapy (Myntra buyer
 site, rule), python-calamine (xlsx read), xlsxwriter (new xlsx), openpyxl (only to edit an existing workbook in

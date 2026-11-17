@@ -11,7 +11,9 @@ import time
 from collections import Counter
 from datetime import date, datetime
 
-import requests
+from urllib.parse import quote
+
+from ultron.core import http
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +34,7 @@ class FlipkartQuota(FlipkartError):
 class FlipkartClient:
     def __init__(self, username: str, password: str, timeout: int = 60):
         self.username, self.password, self.timeout = username, password, timeout
-        self.s = requests.Session()
+        self.s = http.client(timeout=timeout)
         self.s.headers.update({"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
         self.csrf = ""
         self.seller_id = ""
@@ -41,7 +43,7 @@ class FlipkartClient:
         """Log in; a dropped connection (Flipkart resets some, 18 Oct backfill) is tried again.
         A refused login is not retried. Waits 20, 40 s (ultron.core.retry)."""
         from ultron.core.retry import retry_call
-        retry_call(self._login, tries=tries, wait=lambda n: 20 * n, on=(requests.ConnectionError,), log=log,
+        retry_call(self._login, tries=tries, wait=lambda n: 20 * n, on=http.CONNECTION, log=log,
                    what="Flipkart login (connection dropped)", sleep=lambda s: time.sleep(s))
 
     def _login(self) -> None:
@@ -52,10 +54,10 @@ class FlipkartClient:
                         json={"authName": "flipkart", "username": self.username,
                               "password": self.password, "userNameType": "email"},
                         timeout=self.timeout)
-        body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+        body = http.json_of(r) if r.headers.get("content-type", "").startswith("application/json") else {}
         if r.status_code != 200 or body.get("code") != 1000:
             raise FlipkartError(f"Flipkart login failed: HTTP {r.status_code} {str(body)[:200] or r.text[:200]}")
-        f = self.s.get(f"{BASE}/getFeaturesForSeller", headers=xhr, timeout=self.timeout).json()
+        f = http.json_of(self.s.get(f"{BASE}/getFeaturesForSeller", headers=xhr, timeout=self.timeout))
         self.csrf, self.seller_id = f.get("csrfToken", ""), f.get("sellerId", "")
         if not self.csrf:
             raise FlipkartError("Flipkart CSRF token not found after login")
@@ -68,7 +70,7 @@ class FlipkartClient:
                                  "Referer": f"{BASE}/index.html"})
         if r.status_code != 200:
             raise FlipkartError(f"Flipkart metrics API failed: HTTP {r.status_code} {r.text[:200]}")
-        return r.json()
+        return http.json_of(r)
 
     def earn_more(self, first: date, last: date) -> dict[str, float]:
         """Seller Hub > NXT Insights > Earn More for first..last, every warehouse: gross, cancellation and return units and
@@ -126,7 +128,7 @@ class FlipkartClient:
         return gross, cancel
 
     # ------------------------------------------------------------ report centre
-    def _report_api(self, method: str, path: str, **kw) -> requests.Response:
+    def _report_api(self, method: str, path: str, **kw) -> "http.Response":
         r = self.s.request(method, f"{BASE}/napi/metrics/bizReport/{path}", timeout=self.timeout,
                            headers={"fk-csrf-token": self.csrf, "Content-Type": "application/json",
                                     "Origin": BASE, "Referer": f"{BASE}/index.html"}, **kw)
@@ -147,9 +149,9 @@ class FlipkartClient:
         for group in self.REPORT_GROUPS:
             for page in range(1, pages + 1):
                 try:
-                    data = self._report_api("POST", "report/getReportsV2", json={
+                    data = http.json_of(self._report_api("POST", "report/getReportsV2", json={
                         "reportGroup": group, "reportName": name, "enable": True, "status": None,
-                        "page_size": 50, "starting_page": page}).json()
+                        "page_size": 50, "starting_page": page}))
                 except FlipkartError as exc:
                     log.warning("Flipkart report list of %s not read: %s", group, str(exc)[:120])
                     break
@@ -181,8 +183,8 @@ class FlipkartClient:
             return req["request_id"]
         body = {"from_date": want[0], "to_date": want[1], "file_format": "EXCEL", "type": "ONETIME",
                 "filters": [{"values": want, "operator": "RANGE", "name": "date"}]}
-        rid = self._report_api("POST", f"submitReport?reportName={requests.utils.quote(name)}",
-                               json=body).json()["request_id"]["request_id"]
+        rid = http.json_of(self._report_api("POST", f"submitReport?reportName={quote(name)}",
+                                            json=body))["request_id"]["request_id"]
         log.info("Flipkart %s %s..%s requested (%s)", name, start, end, rid)
         return rid
 
@@ -196,7 +198,7 @@ class FlipkartClient:
                                 wait_minutes, poll_seconds)
         except FlipkartQuota:
             raise
-        except (FlipkartError, requests.RequestException) as exc:
+        except (FlipkartError, *http.FAILED) as exc:
             log.warning("Flipkart %s %s..%s not downloaded (%s): asking for it again", name, start, end, exc)
             rid = self.request_report(name, start, end, fresh=True)
             return self._report(name, start, end, rid, wait_minutes, poll_seconds)
@@ -258,20 +260,20 @@ class FlipkartClient:
             return r
 
         try:
-            r = retry_call(once, tries=tries, wait=lambda n: 5 * n, on=(ServerError, requests.ConnectionError), log=log,
+            r = retry_call(once, tries=tries, wait=lambda n: 5 * n, on=(ServerError, *http.CONNECTION), log=log,
                            what=f"Flipkart {path.split('?')[0]}", sleep=lambda s: time.sleep(s))
         except ServerError as last:
             r = last.response
         if r.status_code != 200:
             raise FlipkartError(f"Flipkart {path.split('?')[0]}: HTTP {r.status_code} {r.text[:200]}")
-        return r.json()
+        return http.json_of(r)
 
     def tier(self) -> str:
         """The seller's tier (bronze, silver ...): the calculator and the rate card depend on it."""
         r = self.s.get(f"{BASE}/napi/darwin/finalTier", headers=self._json_headers(), timeout=self.timeout)
         if r.status_code != 200:
             raise FlipkartError(f"Flipkart tier: HTTP {r.status_code}")
-        return r.json().get("tier") or "bronze"
+        return http.json_of(r).get("tier") or "bronze"
 
     def stock(self, listings: list[dict], chunk: int = 200) -> dict[str, dict]:
         """Stock by listing id: {"FBF": [{quantity, locationId}], "NON_FBF": [{quantity, reserved,
@@ -348,7 +350,7 @@ class FlipkartClient:
                        headers=self._json_headers(), timeout=self.timeout)
         if r.status_code != 200:
             raise FlipkartError(f"Flipkart price history: HTTP {r.status_code}")
-        return r.json() or []
+        return http.json_of(r) or []
 
     def update_settlement(self, sku: str, fsn: str, mrp: float, selling_price: int, esp: int,
                           user_name: str) -> dict:
@@ -356,7 +358,7 @@ class FlipkartClient:
         calculator gives for it, as Seller Hub's "Edit settlement" does. Answers {"status": "SUCCESS"}
         or {"status": "FAILURE", "errors": [{"code", "description"}]} (limits: +20% / -30% a time,
         2 increases a day, discount up to 90%, Rs 109 floor). Not retried."""
-        data = self._post(f"/napi/listing/updateSellingPrice?userName={requests.utils.quote(user_name)}", {
+        data = self._post(f"/napi/listing/updateSellingPrice?userName={quote(user_name)}", {
             "listingUpdate": {sku: {"product_id": fsn, "price": {
                 "mrp": mrp, "selling_price": int(selling_price), "currency": "INR", "esp": int(esp)}}},
             "priceRecoUpdate": {}}, tries=1)
@@ -364,6 +366,6 @@ class FlipkartClient:
 
     def seller_name(self) -> str:
         """The display name Seller Hub sends as userName on a price update."""
-        f = self.s.get(f"{BASE}/getFeaturesForSeller", headers={"X-Requested-With": "XMLHttpRequest"},
-                       timeout=self.timeout).json()
+        f = http.json_of(self.s.get(f"{BASE}/getFeaturesForSeller", headers={"X-Requested-With": "XMLHttpRequest"},
+                                    timeout=self.timeout))
         return (f.get("sellerDetails") or {}).get("displayName") or f.get("displayName") or ""
