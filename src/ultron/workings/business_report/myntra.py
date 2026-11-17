@@ -37,6 +37,8 @@ MCOLS = ["MY SKU", "FINAL SKU", "FINAL MY SKU", "DESIGN-NO"]
 V = "SALE PRICE (FINAL AMOUNT)"
 
 
+from ..core.tables import pnum  # noqa: E402 - one number reader (docs/CENTRALISE.md)
+
 def dt(s):
     d = pd.to_datetime(s, errors="coerce", format="mixed")
     return d.where(d > "2000-01-01")
@@ -77,11 +79,6 @@ def pdt(e: "pl.Expr") -> "pl.Expr":
                     s.str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False),
                     s.str.to_date("%Y-%m-%d", strict=False).cast(pl.Datetime("us")))
     return pl.when(d > pl.datetime(2000, 1, 1)).then(d).otherwise(None)
-
-
-def pnum(e: "pl.Expr") -> "pl.Expr":
-    import polars as pl
-    return e.cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
 
 
 def round2(e: "pl.Expr") -> "pl.Expr":

@@ -47,6 +47,8 @@ CUSTOMER = {"RVP", "REPL", "SELF_SHIP"}
 SHIPPED_DAYS = 60
 
 
+from ..core.tables import pnum  # noqa: E402 - one number reader (docs/CENTRALISE.md)
+
 def adate(s: pd.Series) -> pd.Series:
     return pd.to_datetime(s.astype(str).str.replace(" IST", "", regex=False), format=AJIO_FMT, errors="coerce")
 
@@ -184,11 +186,6 @@ def padate(e: "pl.Expr") -> "pl.Expr":
     """adate() in Polars: AJIO's "Wed Sep 30 23:21:44 IST 2026" as a datetime; anything else -> null."""
     pl = _pl()
     return e.cast(pl.Utf8).str.replace(" IST", "", literal=True).str.to_datetime(AJIO_FMT, strict=False, time_unit="us")
-
-
-def pnum(e: "pl.Expr") -> "pl.Expr":
-    pl = _pl()
-    return e.cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
 
 
 def _frame(df) -> "pl.DataFrame":

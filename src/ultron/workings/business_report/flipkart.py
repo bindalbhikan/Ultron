@@ -54,6 +54,8 @@ log = logging.getLogger("bindal.business_report")
 CATEGORY_WORDS = {"COORD": "Co-Ords", "DRESS": "Dresses", "TOP": "Tops", "JUMPSUIT": "Jumpsuit", "SHIRT": "Shirts"}
 
 
+from ..core.tables import pnum as _num  # noqa: E402 - one number reader (docs/CENTRALISE.md)
+
 def clean(s: pd.Series) -> pd.Series:
     return s.astype(str).str.replace('"', "", regex=False).str.replace("SKU:", "", regex=False).str.strip()
 
@@ -211,11 +213,6 @@ def pdt(e: "pl.Expr") -> "pl.Expr":
     return pl.coalesce(s.str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False),
                        s.str.to_datetime("%Y-%m-%dT%H:%M:%S", strict=False),
                        s.str.to_date("%Y-%m-%d", strict=False).cast(pl.Datetime("us")))
-
-
-def _num(e: "pl.Expr") -> "pl.Expr":
-    pl = _pl()
-    return e.cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
 
 
 def _frame(df) -> "pl.DataFrame":

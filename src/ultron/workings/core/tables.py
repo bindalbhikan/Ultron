@@ -141,6 +141,12 @@ def pcol(df: "pl.DataFrame", name: str) -> "pl.Expr":
     return pl.lit(None, dtype=pl.Utf8)
 
 
+def pnum(expr: "pl.Expr") -> "pl.Expr":
+    """Polars: a number from text (outer spaces out); anything else -> null (pandas' to_numeric(errors="coerce"))."""
+    import polars as pl
+    return expr.cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
+
+
 def pclean_id(expr: "pl.Expr") -> "pl.Expr":
     """Polars: an id column without the ".0" a number read from a sheet gets; nulls stay null."""
     return expr.str.replace(r"\.0$", "")
