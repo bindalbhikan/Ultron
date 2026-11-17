@@ -9,7 +9,7 @@ import logging
 import re
 import time
 
-import requests
+from ..core import http
 
 from ..core.config import env
 
@@ -109,27 +109,27 @@ def _plain(text: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", text))
 
 
-def _post(token: str, method: str, tries: int = 3, **kw) -> requests.Response | None:
+def _post(token: str, method: str, tries: int = 3, **kw) -> "http.Response | None":
     """POST to the Bot API, the one sender of the agent and the bots (docs/CENTRALISE.md step 3). A dropped
     connection or a timeout is tried again (14 Nov 2026: a GitHub runner's sendMessage got "Connection reset by
     peer" once and the report message was lost); waits 5, 10 s (ultron.core.retry); a file sent again starts
     from its first byte; any other request error is not tried again. None when not sent."""
     from ..core.retry import retry_call
 
-    def once() -> requests.Response:
+    def once() -> "http.Response":
         for f in (kw.get("files") or {}).values():
             fh = f[1] if isinstance(f, tuple) else f
             if hasattr(fh, "seek"):
                 fh.seek(0)
-        return requests.post(API.format(token=token, method=method), timeout=120, **kw)
+        return http.post(API.format(token=token, method=method), timeout=120, **kw)
 
     try:
-        return retry_call(once, tries=tries, wait=lambda n: 5 * n, on=(requests.ConnectionError, requests.Timeout),
+        return retry_call(once, tries=tries, wait=lambda n: 5 * n, on=http.PASSING,
                           log=log, what=f"Telegram {method}", sleep=lambda s: time.sleep(s))
-    except (requests.ConnectionError, requests.Timeout) as exc:
+    except http.PASSING as exc:
         log.error("Telegram %s failed after %d tries: %s", method, tries, exc)
         return None
-    except requests.RequestException as exc:
+    except http.FAILED as exc:
         log.error("Telegram %s failed: %s", method, exc)
         return None
 
@@ -152,7 +152,7 @@ def call(method: str, **payload) -> dict | None:
     r = _post(env("TELEGRAM_BOT_TOKEN"), method, json=payload)
     if r is None:
         return None
-    data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    data = http.json_of(r) if r.headers.get("content-type", "").startswith("application/json") else {}
     if not data.get("ok"):
         log.error("Telegram %s: %s %s", method, r.status_code, str(data or r.text)[:300])
         return None
@@ -170,9 +170,9 @@ def updates(offset: int, timeout: int = 50) -> list[dict]:
     e.g. 409 while the bot has a webhook (a worker) set: polling and a webhook cannot share a bot."""
     token = env("TELEGRAM_BOT_TOKEN")
     try:
-        r = requests.get(API.format(token=token, method="getUpdates"), timeout=timeout + 15,
+        r = http.get(API.format(token=token, method="getUpdates"), timeout=timeout + 15,
                          params={"offset": offset, "timeout": timeout, "allowed_updates": '["message","callback_query"]'})
-    except requests.RequestException as exc:
+    except http.FAILED as exc:
         log.warning("Telegram getUpdates: %s", exc)
         return []
     if r.status_code == 409 and "webhook" in r.text.lower():
@@ -180,9 +180,9 @@ def updates(offset: int, timeout: int = 50) -> list[dict]:
                          "ultron serve, or remove the webhook first")
     if r.status_code == 409:
         raise OtherInstance("another ultron serve is polling this bot")
-    if not r.ok:
+    if not http.ok(r):
         raise RuntimeError(f"Telegram getUpdates: {r.status_code} {r.text[:200]}")
-    return r.json().get("result", [])
+    return http.json_of(r).get("result", [])
 
 
 def send(text: str, chat: str | int | None = None) -> bool:
@@ -202,7 +202,7 @@ def send(text: str, chat: str | int | None = None) -> bool:
                 log.warning("Telegram refused the HTML (%s); sending as plain text", r.text[:200])
                 r = _post(token, "sendMessage", json={"chat_id": chat, "text": _plain(part)[:4096],
                                                       "disable_web_page_preview": True})
-            if r is None or not r.ok:
+            if not http.ok(r):
                 ok = False
                 if r is not None:
                     log.error("Telegram send to %s failed: %s %s", chat, r.status_code, r.text[:300])

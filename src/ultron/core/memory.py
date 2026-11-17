@@ -35,7 +35,7 @@ from typing import Callable, TypeVar
 
 T = TypeVar("T")
 
-import requests
+from . import http
 
 from . import config
 
@@ -109,15 +109,15 @@ class WorkerStore:
         self.lock = threading.Lock()
 
     def read(self) -> tuple[dict, str]:
-        r = requests.get(self.url, headers=self.headers, timeout=30)
+        r = http.get(self.url, headers=self.headers, timeout=30)
         if r.status_code == 404:
             return empty(), "0"
         r.raise_for_status()
-        body = r.json()
+        body = http.json_of(r)
         return body.get("data") or empty(), str(body.get("version", 0))
 
     def write(self, data: dict, version: str) -> bool:
-        r = requests.put(self.url, headers=self.headers, timeout=30, json={"version": int(version or 0), "data": data})
+        r = http.request("PUT", self.url, headers=self.headers, timeout=30, json={"version": int(version or 0), "data": data})
         if r.status_code == 409:
             return False
         r.raise_for_status()

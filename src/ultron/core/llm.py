@@ -16,7 +16,7 @@ import re
 from collections.abc import Sequence
 from typing import Callable, get_type_hints
 
-import requests
+from . import http
 
 from . import config
 from .config import env
@@ -63,11 +63,11 @@ def chat(messages: list[dict], tools: Sequence[Callable] = (), model: str = "", 
     if tools:
         body["tools"] = [t.schema for t in tools]
     try:
-        r = requests.post(url, json=body, headers={"Authorization": f"Bearer {token}"}, timeout=180)
-    except requests.RequestException as exc:
+        r = http.post(url, json=body, headers={"Authorization": f"Bearer {token}"}, timeout=180)
+    except http.FAILED as exc:
         raise LLMError(f"model not reached: {exc}") from exc
     try:
-        data = r.json()
+        data = http.json_of(r)
     except ValueError:
         raise LLMError(f"model: HTTP {r.status_code} {r.text[:200]}") from None
     if r.status_code != 200 or "error" in data or not data.get("choices"):

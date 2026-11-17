@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
-import requests
+from ultron.core import http
 
 from ..core.app import run_bot
 from ..core.config import env, num
@@ -185,7 +185,7 @@ def github():
         out = subprocess.run(["git", "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
                              capture_output=True, text=True).stdout
         token = next((x[9:] for x in out.splitlines() if x.startswith("password=")), "")
-    s = requests.Session()
+    s = http.client()
     s.headers.update({"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}"})
     return repo, s
 
@@ -200,7 +200,7 @@ def successful_runs(workflow: str, since: date, repo: str, s) -> list[datetime]:
             log.warning("No workflow %s on GitHub", workflow)
             return out
         r.raise_for_status()
-        runs = r.json().get("workflow_runs") or []
+        runs = http.json_of(r).get("workflow_runs") or []
         out += [datetime.fromisoformat((x.get("run_started_at") or x["created_at"]).replace("Z", "+00:00"))
                 .astimezone(IST).replace(tzinfo=None) for x in runs]
         if len(runs) < 100:

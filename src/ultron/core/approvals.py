@@ -22,7 +22,7 @@ import threading
 import time
 from pathlib import Path
 
-import requests
+from . import http
 
 from . import config
 from ..integrations import github, telegram
@@ -47,7 +47,7 @@ def propose(action: str, inputs: dict, summary: str, chat: str) -> str:
 
 def _propose_worker(action: str, inputs: dict, summary: str, chat: str) -> str:
     url, token = config.get().worker()
-    r = requests.post(f"{url}/api/approval", timeout=60, headers={"Authorization": f"Bearer {token}"},
+    r = http.post(f"{url}/api/approval", timeout=60, headers={"Authorization": f"Bearer {token}"},
                       json={"action": action, "inputs": inputs, "summary": summary, "chat_id": chat})
     if r.status_code != 200:
         return f"Error: approval not sent: {r.text[:200]}"

@@ -11,7 +11,7 @@ import json
 import logging
 from datetime import date, datetime
 
-import requests
+from ultron.core import http
 
 from .config import env
 
@@ -34,13 +34,13 @@ def publish(key: str, data: dict) -> bool:
     body = json.dumps({**data, "published_at": datetime.now().isoformat(timespec="seconds")},
                       default=_default, ensure_ascii=False)
     try:
-        r = requests.post(f"{url.rstrip('/')}/api/push/{key}", data=body.encode("utf-8"), timeout=30,
+        r = http.post(f"{url.rstrip('/')}/api/push/{key}", content=body.encode("utf-8"), timeout=30,
                           headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-        if not r.ok:
+        if not http.ok(r):
             log.warning("Dashboard push %s failed: HTTP %s %s", key, r.status_code, r.text[:200])
             return False
         log.info("Dashboard updated: %s (%d bytes)", key, len(body))
         return True
-    except requests.RequestException as exc:
+    except http.FAILED as exc:
         log.warning("Dashboard push %s failed: %s", key, exc)
         return False

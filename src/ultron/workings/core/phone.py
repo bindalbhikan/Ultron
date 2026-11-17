@@ -14,7 +14,7 @@ import logging
 import time
 import uuid
 
-import requests
+from ultron.core import http
 
 from .config import env
 
@@ -29,10 +29,10 @@ def _call(action: str, params: dict | None = None, body=None) -> dict:
     url, token = (env("DASHBOARD_URL") or "").rstrip("/"), env("DASHBOARD_TOKEN")
     if not url or not token:
         raise PhoneUnavailable("DASHBOARD_URL / DASHBOARD_TOKEN not set")
-    r = requests.post(f"{url}/api/phone/{action}", params=params, json=body, timeout=60,
+    r = http.post(f"{url}/api/phone/{action}", params=params, json=body, timeout=60,
                       headers={"Authorization": f"Bearer {token}"})
     r.raise_for_status()
-    return r.json()
+    return http.json_of(r)
 
 
 def status() -> dict:
@@ -59,7 +59,7 @@ def run_job(kind: str, items: list, wait_minutes: float = 40, poll_seconds: int 
         time.sleep(poll_seconds)
         try:
             got = _call("collect", {"job": job})
-        except (requests.RequestException, ValueError) as exc:   # the phone's work is not lost on one failed look
+        except (*http.FAILED, ValueError) as exc:   # the phone's work is not lost on one failed look
             log.warning("Phone job %s: collect failed (%s), trying again", job, type(exc).__name__)
             continue
         if got.get("missing"):

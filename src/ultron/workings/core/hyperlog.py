@@ -138,30 +138,35 @@ _patched = False
 
 
 def _log_http() -> None:
-    """Every requests call into the hyper log: method, host and path (no query string), status,
+    """Every HTTP call (httpx and requests) into the hyper log: method, host and path (no query string), status,
     seconds and size; a call that fails, its error."""
     global _patched
     if _patched:
         return
-    try:
-        import requests
+    def wrap(original, streamed):
+        def send(self, request, **kw):
+            t0 = time.time()
+            where = re.sub(r"[?#].*", "", str(request.url))
+            try:
+                r = original(self, request, **kw)
+            except Exception as exc:
+                _http.debug("HTTP %s %s -> %s (%.2f s)", request.method, where, type(exc).__name__, time.time() - t0)
+                raise
+            size = r.headers.get("Content-Length") or ("?" if streamed(kw) else len(r.content))
+            _http.debug("HTTP %s %s -> %s (%.2f s, %s bytes)", request.method, where, r.status_code, time.time() - t0, size)
+            return r
+        return send
+
+    try:                                     # httpx (ultron.core.http: every client but Drive's)
+        import httpx
+        httpx.Client.send = wrap(httpx.Client.send, lambda kw: kw.get("stream"))
     except ImportError:
-        return
-    original = requests.sessions.Session.send
-
-    def send(self, request, **kw):
-        t0 = time.time()
-        where = re.sub(r"[?#].*", "", str(request.url))
-        try:
-            r = original(self, request, **kw)
-        except Exception as exc:
-            _http.debug("HTTP %s %s -> %s (%.2f s)", request.method, where, type(exc).__name__, time.time() - t0)
-            raise
-        size = r.headers.get("Content-Length") or (len(r.content) if not kw.get("stream") else "?")
-        _http.debug("HTTP %s %s -> %s (%.2f s, %s bytes)", request.method, where, r.status_code, time.time() - t0, size)
-        return r
-
-    requests.sessions.Session.send = send
+        pass
+    try:                                     # requests (google-auth's Drive transport)
+        import requests
+        requests.sessions.Session.send = wrap(requests.sessions.Session.send, lambda kw: kw.get("stream"))
+    except ImportError:
+        pass
     _patched = True
 
 

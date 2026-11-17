@@ -13,7 +13,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-import requests
+from ..core import http
 
 from ..core import config
 from ..core.config import env
@@ -45,11 +45,11 @@ def token() -> str:
     return _token
 
 
-def get(path: str, **params) -> requests.Response:
+def get(path: str, **params) -> "http.Response":
     headers = {"Accept": "application/vnd.github+json"}
     if token():
         headers["Authorization"] = f"Bearer {token()}"
-    r = requests.get(path if path.startswith("http") else f"{api()}{path}", headers=headers,
+    r = http.get(path if path.startswith("http") else f"{api()}{path}", headers=headers,
                      params=params or None, timeout=60)
     r.raise_for_status()
     return r
@@ -74,21 +74,21 @@ def brief(run: dict) -> dict:
 
 def workflows() -> dict[str, str]:
     """Workflow file -> name."""
-    return {Path(w["path"]).name: w["name"] for w in get("/actions/workflows", per_page=100).json()["workflows"]}
+    return {Path(w["path"]).name: w["name"] for w in http.json_of(get("/actions/workflows", per_page=100))["workflows"]}
 
 
 def runs(workflow_file: str, count: int = 10) -> list[dict]:
-    data = get(f"/actions/workflows/{workflow_file}/runs", per_page=min(count, 100)).json()
+    data = http.json_of(get(f"/actions/workflows/{workflow_file}/runs", per_page=min(count, 100)))
     return [brief(r) for r in data.get("workflow_runs", [])]
 
 
 def run(run_id: int) -> dict:
-    r = get(f"/actions/runs/{run_id}").json()
+    r = http.json_of(get(f"/actions/runs/{run_id}"))
     return {**brief(r), "workflow_file": Path(r.get("path") or "").name}
 
 
 def jobs(run_id: int) -> list[dict]:
-    return get(f"/actions/runs/{run_id}/jobs").json().get("jobs", [])
+    return http.json_of(get(f"/actions/runs/{run_id}/jobs")).get("jobs", [])
 
 
 def dispatch(workflow_file: str, inputs: dict, ref: str = "main") -> None:
@@ -96,7 +96,7 @@ def dispatch(workflow_file: str, inputs: dict, ref: str = "main") -> None:
     GITHUB_TOKEN and ultron serve's GH_TOKEN can, an agent-chat run's GITHUB_TOKEN cannot."""
     if not token():
         raise RuntimeError("no GitHub token (GITHUB_TOKEN / GH_TOKEN) to start a workflow")
-    r = requests.post(f"{api()}/actions/workflows/{workflow_file}/dispatches", timeout=60,
+    r = http.post(f"{api()}/actions/workflows/{workflow_file}/dispatches", timeout=60,
                       headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token()}"},
                       json={"ref": ref, "inputs": {k: str(v) for k, v in inputs.items()}})
     if r.status_code != 204:
@@ -108,7 +108,7 @@ def rerun_failed(run_id: int) -> None:
     Actions: write (agent-watch.yml grants it to its GITHUB_TOKEN)."""
     if not token():
         raise RuntimeError("no GitHub token (GITHUB_TOKEN / GH_TOKEN) to rerun a workflow")
-    r = requests.post(f"{api()}/actions/runs/{run_id}/rerun-failed-jobs", timeout=60,
+    r = http.post(f"{api()}/actions/runs/{run_id}/rerun-failed-jobs", timeout=60,
                       headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token()}"})
     if r.status_code != 201:
         raise RuntimeError(f"GitHub said {r.status_code}: {r.text[:200]}")
@@ -120,7 +120,7 @@ def output(run_id: int) -> Path | None:
     dest = config.get().output / "agent" / "runs" / str(run_id)
     if (dest / "output").is_dir():
         return dest / "output"
-    arts = get(f"/actions/runs/{run_id}/artifacts").json().get("artifacts", [])
+    arts = http.json_of(get(f"/actions/runs/{run_id}/artifacts")).get("artifacts", [])
     if not arts:
         return None
     key = env("ARTIFACT_KEY")

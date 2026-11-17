@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-import requests
+from ultron.core import http
 
 from ultron.integrations.telegram import TAG, _plain, esc, md, split_html  # noqa: F401 - one place
 
@@ -36,7 +36,7 @@ def _config() -> tuple[str, list[str]]:
     return token, chats
 
 
-def _post(token: str, method: str, tries: int = 3, **kw) -> requests.Response | None:
+def _post(token: str, method: str, tries: int = 3, **kw) -> "http.Response | None":
     """The one Bot API sender, shared with the agent (ultron.integrations.telegram._post: tries again on a
     dropped connection or a timeout, waits 5, 10 s, rewinds files; None when not sent)."""
     from ultron.integrations.telegram import _post as post
@@ -58,7 +58,7 @@ def send(text: str) -> bool:
                 log.warning("Telegram refused the HTML (%s); sending as plain text", r.text[:200])
                 r = _post(token, "sendMessage", json={"chat_id": chat, "text": _plain(part)[:4096],
                                                       "disable_web_page_preview": True})
-            if r is None or not r.ok:
+            if not http.ok(r):
                 ok = False
                 if r is not None:
                     log.error("Telegram send to %s failed: %s %s", chat, r.status_code, r.text[:300])
@@ -82,7 +82,7 @@ def send_file(path, caption: str = "", as_document: bool = False) -> bool:
         except OSError as exc:
             log.error("Telegram %s: cannot read %s: %s", method, path, exc)
             return False
-        if r is None or not r.ok:
+        if not http.ok(r):
             ok = False
             if r is not None:
                 log.error("Telegram %s to %s failed: %s %s", method, chat, r.status_code, r.text[:300])

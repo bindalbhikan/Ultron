@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-import requests
+from ..core import http
 
 from ..core.config import env
 
@@ -25,11 +25,11 @@ def send(text: str) -> bool:
     if len(text) > MAX_LEN:
         text = text[:MAX_LEN - 20].rstrip() + "\n... (see Telegram)"
     try:
-        r = requests.get(API, params={"phone": phone, "text": text, "apikey": key}, timeout=30)
-    except requests.RequestException as exc:
+        r = http.get(API, params={"phone": phone, "text": text, "apikey": key}, timeout=30)
+    except http.FAILED as exc:
         log.warning("WhatsApp alert not sent: %s", type(exc).__name__)
         return False
-    if not r.ok or "invalid" in r.text.lower():
+    if not http.ok(r) or "invalid" in r.text.lower():
         log.warning("WhatsApp alert not sent: HTTP %s", r.status_code)
         return False
     return True
