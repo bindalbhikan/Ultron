@@ -442,8 +442,9 @@ def build_ajio(files: list[dict], master: pd.DataFrame, cats: dict, first: date)
     frames = {}
     for df in (o, r, p, monthly, lines):
         if len(df):
-            for name, g in df.groupby("_file"):
-                frames[name] = g
+            groups = df.partition_by("_file", as_dict=True).items() if not isinstance(df, pd.DataFrame) else df.groupby("_file")
+            for name, g in groups:
+                frames[name[0] if isinstance(name, tuple) else name] = g
     ledger_date = lambda s: pd.to_datetime(s, format="%d.%m.%Y", errors="coerce")  # noqa: E731
     lg = log_rows(files, frames, {"ORDER": ("Cust Order Date", ajio.adate), "RETURN": ("Return Created Date", ajio.adate),
                                   "PAYMENT": ("DOCDATE", ledger_date), "MONTHLY": ("Cust Order Date", ajio.adate),

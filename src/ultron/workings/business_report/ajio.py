@@ -57,12 +57,15 @@ def num(s) -> pd.Series:
     return pd.to_numeric(s, errors="coerce")
 
 
-def read(files: list[Path]) -> pd.DataFrame:
-    from ..core.tables import read_excel_text, to_pandas
+def read(files: list[Path]) -> "pl.DataFrame":
+    """Every file's first sheet as one Polars text table (`_file` = the file's name)."""
+    import polars as pl
+
+    from ..core.tables import read_excel_text
     # openpyxl engine: AJIO's texts keep their outer spaces, as pandas read them (core/tables.read_excel_text)
-    frames = [to_pandas(read_excel_text(f, 0, engine="openpyxl")).assign(_file=f.name) for f in files]
-    frames = [f for f in frames if len(f)]
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    frames = [read_excel_text(f, 0, engine="openpyxl").with_columns(_file=pl.lit(f.name)) for f in files]
+    frames = [f for f in frames if f.height]
+    return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
 
 
 MONTHLY_COLUMNS = {"cust order no": "Cust Order No", "fwd seller order no": "FWD Seller Order NO", "seller invoice no": "Seller Invoice No",
@@ -90,22 +93,25 @@ def read_monthly(files: list[Path]) -> pd.DataFrame:
     return m.drop_duplicates("key", keep="last").drop(columns="key")
 
 
-def ledger_lines(ledger: pd.DataFrame) -> pd.DataFrame:
-    """The ledger's lines once each; amt: money to us is positive; paid: the clearing date."""
-    lg = ledger.copy()
-    lg["amt"] = -num(lg["AMOUNT"]).fillna(0)
-    lg["paid"] = pd.to_datetime(lg["CLEARINGDOCUMENTDATE"], format="%d.%m.%Y", errors="coerce")
-    return lg.drop_duplicates(["DT", "REFERENCE", "DOCNO", "AMOUNT"])
+def ledger_lines(ledger_) -> pd.DataFrame:
+    """The ledger's lines once each; amt: money to us is positive; paid: the clearing date (worked out in Polars:
+    ledger(); handed on as pandas)."""
+    from ..core.tables import to_pandas
+    return to_pandas(ledger(ledger_))
 
 
-def forward_values(rtv: pd.DataFrame) -> pd.DataFrame:
+def forward_values(rtv) -> pd.DataFrame:
     """The return lines with qty, once each: key = order line, fwd = FWD B2B Invoice Amt (what a return takes back in the
-    owner's monthly files), created = Return Created Date."""
-    if not len(rtv):
+    owner's monthly files), created = Return Created Date. Polars inside."""
+    import polars as pl
+    r = _frame(rtv)
+    if not r.height:
         return pd.DataFrame(columns=["key", "fwd", "created"])
-    r = rtv[num(rtv["Return QTY"]).fillna(0) > 0].drop_duplicates(["RETURN ORDER NUMBER", "SELLER SKU"], keep="last")
-    return pd.DataFrame({"key": r["Cust Order No"].str.strip() + "|" + r["SELLER SKU"].str.strip(),
-                         "fwd": num(r["FWD B2B Invoice Amt"]).fillna(0).values, "created": adate(r["Return Created Date"]).values})
+    r = (r.filter(pnum(pl.col("Return QTY")).fill_null(0) > 0)
+          .unique(["RETURN ORDER NUMBER", "SELLER SKU"], keep="last", maintain_order=True))
+    k = r.select(_key("Cust Order No", "SELLER SKU").alias("key"), pnum(pl.col("FWD B2B Invoice Amt")).fill_null(0).alias("fwd"),
+                 padate(pl.col("Return Created Date")).alias("created"))
+    return pd.DataFrame({"key": k["key"].to_list(), "fwd": k["fwd"].to_list(), "created": pd.to_datetime(k["created"].to_list())})
 
 
 def file_payment(raw: pd.DataFrame, rtv: pd.DataFrame, months: set) -> pd.DataFrame:
@@ -387,12 +393,16 @@ def returned_units(raw: pd.DataFrame, rtv) -> pd.Series:
     return pd.Series(got, index=raw.index, dtype=float).clip(upper=raw["QTY"])
 
 
-def cancelled_units(raw: pd.DataFrame, orders: pd.DataFrame) -> pd.Series:
-    """Units cancelled per row of raw: Cancelled Qty of the order report (the newest file's line)."""
-    if not len(orders) or "Cancelled Qty" not in orders.columns:
+def cancelled_units(raw: pd.DataFrame, orders) -> pd.Series:
+    """Units cancelled per row of raw: Cancelled Qty of the order report (the newest file's line). Polars inside."""
+    import polars as pl
+    o = _frame(orders)
+    if not o.height or "Cancelled Qty" not in o.columns:
         return pd.Series(0.0, index=raw.index)
-    o = orders.assign(key=orders["Cust Order No"].str.strip() + "|" + orders["Seller SKU"].str.strip()).drop_duplicates("key", keep="last")
-    return _line_key(raw).map(num(o["Cancelled Qty"]).fillna(0).set_axis(o["key"])).fillna(0)
+    o = (o.with_columns(key=_key("Cust Order No", "Seller SKU")).unique("key", keep="last", maintain_order=True)
+          .filter(pl.col("key").is_not_null()))
+    qty = dict(zip(o["key"].to_list(), o.select(pnum(pl.col("Cancelled Qty")).fill_null(0))[:, 0].to_list()))
+    return _line_key(raw).map(qty).fillna(0).astype(float)
 
 
 RETURN_COLS = ["REASON", "RETURN TYPE", "RETURN ORDER NUMBER", "RETURN STATUS", "RETURN CREATED DATE", "RETURN MONTH", "CREDIT NOTE NUMBER"]

@@ -74,7 +74,11 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   `report()` are summed in Polars, the input log takes Polars tables. Whole-range golden (Apr-25..Oct-26): every
   table and cell the same; one payment-match total differs in the 10th decimal (sum order), the same to the paisa.
 
-**Next, one by one, each with a parity test on real files**: AJIO's and Myntra's readers, the owner's monthly files and
+* Business report, AJIO's readers: `ajio.read` gives one Polars table (order, RTV and SRM ledger files), and
+  `ledger_lines`, `forward_values`, `cancelled_units` work in Polars (handed on as pandas while RAW DATA is pandas).
+  Whole-range golden: every AJIO table and cell the same.
+
+**Next, one by one, each with a parity test on real files**: Myntra's readers, the owner's monthly files and
 the business report workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
 owner's OK. With it: a row-quality check of the OMSGuru order list (fields left at their defaults).
