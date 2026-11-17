@@ -76,41 +76,55 @@ def _xlsx(path: Path, sheet: str, header: int | None = 0) -> pd.DataFrame:
     return to_pandas(read_excel_text(path, sheet, header=header))
 
 
-def read_orders(files: list[Path]) -> pd.DataFrame:
-    frames = [_xlsx(f, "Orders").assign(_file=f.name) for f in files]
-    o = pd.concat([f for f in frames if len(f)], ignore_index=True) if frames else pd.DataFrame()
-    return o.drop_duplicates("order_item_id", keep="last") if len(o) else o
+def _sheets(files: list[Path], sheet: str, header: int | None = 0) -> "pl.DataFrame":
+    """The sheet of every file as one Polars text table (columns of all files, `_file` = the file's name)."""
+    from ..core.tables import read_excel_text
+    pl = _pl()
+    frames = [read_excel_text(f, sheet, header=header).with_columns(_file=pl.lit(f.name)) for f in files]
+    frames = [f for f in frames if f.height]
+    return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
 
 
-def read_returns(files: list[Path]) -> pd.DataFrame:
-    frames = [_xlsx(f, "Returns").assign(_file=f.name) for f in files]
-    return pd.concat([f for f in frames if len(f)], ignore_index=True) if frames else pd.DataFrame()
+def read_orders(files: list[Path]) -> "pl.DataFrame":
+    o = _sheets(files, "Orders")
+    return o.unique("order_item_id", keep="last", maintain_order=True) if o.height else o
+
+
+def read_returns(files: list[Path]) -> "pl.DataFrame":
+    return _sheets(files, "Returns")
 
 
 def _col(name: str) -> str:
     return re.sub(r"\s+", " ", str(name).split("\n")[0]).strip()
 
 
-def read_settled(files: list[Path]) -> pd.DataFrame:
+def read_settled(files: list[Path]) -> "pl.DataFrame":
     """The "Orders" sheet of Settled Transactions files (header on the 2nd row, a sub-header row below)."""
+    from ..core.tables import read_excel_text
+    pl = _pl()
     frames = []
     for f in files:
-        df = _xlsx(f, "Orders", header=1)
-        df.columns = [_col(c) for c in df.columns]
-        df = df[df["Order item ID"].notna() & df["NEFT ID"].notna()]
-        if len(df):
-            frames.append(df.assign(_file=f.name))
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        df = read_excel_text(f, "Orders", header=1)
+        df = df.rename(dict(zip(df.columns, _unique([_col(c) for c in df.columns]))))
+        df = df.filter(pl.col("Order item ID").is_not_null() & pl.col("NEFT ID").is_not_null())
+        if df.height:
+            frames.append(df.with_columns(_file=pl.lit(f.name)))
+    return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
 
 
-def read_sales(files: list[Path]) -> pd.DataFrame:
+def _unique(names: list[str]) -> list[str]:
+    """Column names made unique (a repeated name: the later one ".1")."""
+    seen: dict[str, int] = {}
+    out = []
+    for n in names:
+        out.append(n if n not in seen else f"{n}.{seen[n]}")
+        seen[n] = seen.get(n, 0) + 1
+    return out
+
+
+def read_sales(files: list[Path]) -> "pl.DataFrame":
     """The "Sales Report" sheet of tax Sales Report files (one row per sale / return / cancel event)."""
-    frames = []
-    for f in files:
-        df = _xlsx(f, "Sales Report")
-        if len(df):
-            frames.append(df.assign(_file=f.name))
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    return _sheets(files, "Sales Report")
 
 
 def read_monthly(files: list[tuple[Path, pd.Timestamp]]) -> pd.DataFrame:
@@ -451,15 +465,19 @@ def report(raw: pd.DataFrame, settled: pd.DataFrame, input_log: pd.DataFrame, ba
     have_pay = raw["NET SETTLEMENT"].notna().any()
     have_value = raw["SALE VALUE"].notna().any()
     pay_months = None
-    if len(settled):
-        s = settled.copy()
-        s["m"] = pd.to_datetime(s["Payment Date"], errors="coerce").dt.to_period("M").dt.to_timestamp()
+    s = _frame(settled)
+    if s.height:
+        pl = _pl()
+        month = pdt(pl.col("Payment Date")).dt.truncate("1mo")
         if "_month" in s.columns:                                    # a monthly file: its month
-            s["m"] = s["m"].fillna(s["_month"])
-        for src, dst in SETTLE_COLS.items():
-            s[dst] = pd.to_numeric(s.get(src), errors="coerce").fillna(0)
-        pay_months = s.groupby("m")[["SALE AMOUNT", "MARKETPLACE FEE", "REFUND", "TCS", "TDS", "NET SETTLEMENT"]].sum()
-        pay_months.columns = ["Sale Amount", "Marketplace Fee", "Refund", "TCS", "TDS", "Order Settlement"]
+            month = pl.coalesce(month, pdt(pl.col("_month")))
+        names = {"SALE AMOUNT": "Sale Amount", "MARKETPLACE FEE": "Marketplace Fee", "REFUND": "Refund", "TCS": "TCS",
+                 "TDS": "TDS", "NET SETTLEMENT": "Order Settlement"}
+        src_of = {dst: src for src, dst in SETTLE_COLS.items()}
+        g = (s.with_columns(_m=month, **{n: _num(_get(s, src_of[c])).fill_null(0) for c, n in names.items()})
+              .filter(pl.col("_m").is_not_null()).group_by("_m").agg(*[pl.col(n).sum() for n in names.values()]).sort("_m"))
+        pay_months = pd.DataFrame({n: g[n].to_list() for n in names.values()},
+                                  index=pd.DatetimeIndex(g["_m"].to_list(), name="m"))
         if bank is not None and len(bank):
             pay_months = pay_months.join(bank)
             pay_months.insert(6, "SPF, Ads, Storage", pay_months["Net Bank Paid"] - pay_months["Order Settlement"])

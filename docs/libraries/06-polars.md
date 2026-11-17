@@ -69,7 +69,12 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   is the text "nan" when invoices are shared out (`_text`), Description's title case is Python's own `str.title`,
   a tie in the RAW DATA order keeps the file order.
 
-**Next, one by one, each with a parity test on real files**: the business report's readers and
-its workbook (the last pandas there), return analysis,
+* Business report, Flipkart's readers and payment months: `read_orders`, `read_returns`, `read_settled`,
+  `read_sales` give Polars tables straight to `raw_data` (no pandas bridge on the way), the PAYMENT MONTHS of
+  `report()` are summed in Polars, the input log takes Polars tables. Whole-range golden (Apr-25..Oct-26): every
+  table and cell the same; one payment-match total differs in the 10th decimal (sum order), the same to the paisa.
+
+**Next, one by one, each with a parity test on real files**: AJIO's and Myntra's readers, the owner's monthly files and
+the business report workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
 owner's OK. With it: a row-quality check of the OMSGuru order list (fields left at their defaults).

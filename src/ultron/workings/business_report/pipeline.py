@@ -94,7 +94,10 @@ def log_rows(files: list[dict], frames: dict[str, pd.DataFrame], date_col: dict[
         df = frames.get(f["name"])
         n = len(df) if df is not None else 0
         col, parse = date_col.get(f["kind"], (None, None))
-        d = parse(df[col]) if df is not None and col in df.columns else pd.Series(dtype="datetime64[ns]")
+        values = None
+        if df is not None and col in df.columns:   # a pandas column, or a Polars one handed over as pandas
+            values = df[col] if isinstance(df, pd.DataFrame) else pd.Series(df[col].to_list(), dtype=object)
+        d = parse(values) if values is not None else pd.Series(dtype="datetime64[ns]")
         rows.append([f["kind"].title(), f["account"] or "-", f["name"], n, col or "-",
                      d.min() if len(d.dropna()) else pd.NaT, d.max() if len(d.dropna()) else pd.NaT,
                      "days missing (PARTIAL)" if f["partial"] else ""])
@@ -335,11 +338,15 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: d
     tax = flipkart.read_sales(paths("SALES"))
     monthly = flipkart.read_monthly([(f["path"], pd.Timestamp(f["month"])) for f in files if f["kind"] == "MONTHLY"])
     # a monthly file is the payment only of a month with no Settled Transactions file: nothing counts twice
-    s = pd.concat([s, flipkart.monthly_settled(monthly, {pd.Timestamp(f["month"]) for f in files if f["kind"] == "PAYMENT"})], ignore_index=True)
-    if not len(o) and not len(tax):
+    import polars as pl
+
+    from ..core.tables import to_polars
+    by_file = flipkart.monthly_settled(monthly, {pd.Timestamp(f["month"]) for f in files if f["kind"] == "PAYMENT"})
+    s = pl.concat([x for x in (s, to_polars(by_file)) if x.height], how="diagonal_relaxed") if len(by_file) else s
+    if not o.height and not tax.height:
         raise RuntimeError("no Flipkart order or sales report in PORTAL REPORTS")
-    if not len(o):
-        o = pd.DataFrame(columns=["order_item_id"])
+    if not o.height:
+        o = pl.DataFrame({"order_item_id": []}, schema={"order_item_id": pl.Utf8})
     raw = flipkart.raw_data(o, r, master, s, cats, tax, monthly)
     lines = oms.read(paths("OMSGURU"))
     no_orders = {pd.Timestamp(f["month"]) for f in files if f["kind"] in ("SALES", "MONTHLY")} - {pd.Timestamp(f["month"]) for f in files if f["kind"] == "ORDER"}
@@ -356,8 +363,9 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: d
     frames = {}
     for df, _kind in ((o, "ORDER"), (r, "RETURN"), (s, "PAYMENT"), (tax, "SALES"), (monthly, "MONTHLY"), (lines, "OMSGURU")):
         if len(df):
-            for name, g in df.groupby("_file"):
-                frames[name] = g
+            groups = df.partition_by("_file", as_dict=True).items() if isinstance(df, pl.DataFrame) else df.groupby("_file")
+            for name, g in groups:
+                frames[name[0] if isinstance(name, tuple) else name] = g
     lg = log_rows(files, frames, {"ORDER": ("order_date", flipkart.dt), "RETURN": ("return_approval_date", flipkart.dt),
                                   "PAYMENT": ("Payment Date", flipkart.dt), "SALES": ("Order Date", flipkart.dt),
                                   "MONTHLY": ("order_date", flipkart.dt), "OMSGURU": ("DAY", flipkart.dt)})
