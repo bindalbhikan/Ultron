@@ -314,6 +314,9 @@ def windowed_returns(returns, month_of_item: "pl.DataFrame") -> "pl.DataFrame":
     r = r.with_columns(oi=poi(pl.col("order_item_id")),
                        _d=pl.coalesce(asked, pdt(pl.col("return_requested_date"))) if "return_requested_date" in r.columns else asked)
     r = r.filter(pl.col("return_status").fill_null("nan").str.to_lowercase() != "cancelled")   # the item stayed sold
+    # a line with no return type (return id only "RI:", 26 in Apr-25..Oct-26) is no return: it sat at the same second as the
+    # item's real RTO line and took its place now and then (17 Nov 2026)
+    r = r.filter(pl.col("return_type").is_not_null()) if "return_type" in r.columns else r
     om = month_of_item.unique("oi", keep="last", maintain_order=True)
     return (r.join(om, on="oi", how="inner", maintain_order="left")
              .filter((pl.col("_d") >= pl.col("_om")) & (pl.col("_d") < pl.col("_om").dt.offset_by("1mo").dt.offset_by("14d")))
