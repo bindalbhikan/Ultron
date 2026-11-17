@@ -38,7 +38,10 @@
   Feb-26 on + the tax Sales Report (items before Feb-26 come from its events, SOURCE = Sales
   report; Sales Report Archived for Nov-25, Dec-25; payments May-26 on), AJIO orders from 13 Dec 2025 (Dec-25 PARTIAL, from the Ads Gap
   working's old download; the portal answers "No records found" before Jan-26; ledger from 28 Feb 2026).
-* **Flipkart and AJIO start at Apr-25** (`START` in `pipeline.py`; owner's rule, 3 Nov 2026). AJIO's order reports of Apr-25 to Aug-25
+* **Flipkart starts at Feb-26** (`START` in `pipeline.py`; owner, 17 Nov 2026): its Orders report starts there and every
+  month after has its own return reports, so every figure is the portal's own; each 15th adds the month before. The
+  Apr-25 to Jan-26 workbook (Sales Report + OMSGuru, Apr-Jun 25 returns lost) is kept in BUSINESS REPORTING/ARCHIVE.
+* **AJIO starts at Apr-25** (owner's rule, 3 Nov 2026; Flipkart did too until 17 Nov 2026). AJIO's order reports of Apr-25 to Aug-25
   and Dec-25 come from the Tuesday Working folders (weekly 30-day downloads, the newest line wins); days none reaches (Aug 30 to
   Sep-25) from OMSGuru, SOURCE = OMSGuru, their values `-`. Flipkart before Feb-26 is the Sales Report + OMSGuru's status. Flipkart has no
   payment before Oct-25: `-`. Later months before the portal's

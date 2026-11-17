@@ -31,7 +31,10 @@ log = logging.getLogger("bindal.business_report")
 
 FOLDER = "BUSINESS REPORTING"
 # Where Flipkart's and AJIO's reports start (owner's rule, 3 Nov 2026): Apr-25. What a month lacks shows "-".
-START = {"FLIPKART": date(2025, 4, 1), "AJIO": date(2025, 4, 1)}
+# Flipkart from Feb-26 (owner, 17 Nov 2026): its Orders report starts there and every month after has its own return
+# reports, so every figure is the portal's own; earlier months (Sales Report + OMSGuru, returns lost after ~4 months)
+# are kept only in BUSINESS REPORTING/ARCHIVE (FLIPKART ... APR-25 TO OCT-26.xlsx). Each 15th adds the month before.
+START = {"FLIPKART": date(2026, 2, 1), "AJIO": date(2025, 4, 1)}
 NAME = re.compile(r"^(?P<portal>[A-Z]+) (?:(?P<acc>MAIN|DBCC|FMCC) )?(?P<kind>ORDER|RETURN|PAYMENT|SALES|MONTHLY|OMSGURU) REPORT "
                   r"(?P<mon>[A-Z]{3}-\d\d)(?P<partial> PARTIAL)?\.")
 
