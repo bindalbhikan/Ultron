@@ -16,10 +16,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
-import pandas as pd
+from typing import TYPE_CHECKING
+
 from ...core.html import parse
 
 from ..portals.omsguru import BASE_URL, VIEW_ID, OmsGuruClient, item_status, sla_column, text_of
+
+if TYPE_CHECKING:
+    import polars as pl
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +34,7 @@ ROW_COLS = ["Order Id", "Channel Id", "Status", "Courier", "AWB", "SLA"]
 
 
 def list_rows(client: OmsGuruClient, start: datetime, end: datetime, channel_ids: list[str],
-              max_pages: int = 80) -> pd.DataFrame:
+              max_pages: int = 80) -> "pl.DataFrame":
     """One row per order in the order-date window, every warehouse, read from the list
     pages only (no order page is opened). Read a day at a time: the list stops near 3,000 orders."""
     rows: dict[str, dict] = {}
@@ -73,9 +77,11 @@ def list_rows(client: OmsGuruClient, start: datetime, end: datetime, channel_ids
                 if added == 0 or not soup.select_one(f'a[href*="page:{page + 1}"]'):
                     break
                 time.sleep(client.delay)
-    df = pd.DataFrame(list(rows.values()), columns=ROW_COLS)
-    df["SLA Date"] = pd.to_datetime(df["SLA"], format="%B %d, %Y %I:%M:%S %p", errors="coerce").dt.normalize()
-    return df
+    import polars as pl
+    df = pl.DataFrame(list(rows.values()), schema={c: pl.Utf8 for c in ROW_COLS}, orient="row") if rows else \
+        pl.DataFrame(schema={c: pl.Utf8 for c in ROW_COLS})
+    # the SLA's day (a date); unreadable -> empty
+    return df.with_columns(pl.col("SLA").str.to_datetime("%B %d, %Y %I:%M:%S %p", strict=False).dt.date().alias("SLA Date"))
 
 
 def _label_barcodes(client: OmsGuruClient, order_id: str) -> list[str]:

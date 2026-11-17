@@ -50,16 +50,17 @@ def channel_map(client: OmsGuruClient, start: date, end: date, chans: dict[str, 
     """(Myntra AWB -> code, new order -> Myntra AWB pairs for the cache, label warnings)."""
     rows = list_rows(client, datetime.combine(start, datetime.min.time()),
                      datetime.combine(end + timedelta(days=1), datetime.min.time()), list(chans))
-    rows = rows[rows["Channel Id"].isin(list(chans)) & (rows["AWB"] != "")]
-    code_of_order = dict(zip(rows["Order Id"], rows["Channel Id"].map(chans)))
-    out = {str(a).upper(): code_of_order[o] for o, a in zip(rows["Order Id"], rows["AWB"])}
-    other = rows[~rows["AWB"].str.match(MYNTRA_AWB.pattern)]
-    todo = [o for o in other["Order Id"] if o not in awb_cache]
+    import polars as pl
+    rows = rows.filter(pl.col("Channel Id").is_in(list(chans)) & (pl.col("AWB") != ""))
+    orders, awbs = rows["Order Id"].to_list(), rows["AWB"].to_list()
+    code_of_order = {o: chans.get(c) for o, c in zip(orders, rows["Channel Id"].to_list())}
+    out = {str(a).upper(): code_of_order[o] for o, a in zip(orders, awbs)}
+    todo = [o for o, a in zip(orders, awbs) if not MYNTRA_AWB.match(a) and o not in awb_cache]
     found, errors = myntra_awbs(client, todo) if todo else ({}, [])
     for oid, awb in {**awb_cache, **found}.items():
         if oid in code_of_order:
             out[str(awb).upper()] = code_of_order[oid]
-    awb_of = dict(zip(rows["Order Id"], rows["AWB"]))
+    awb_of = dict(zip(orders, awbs))
     new_pairs = [(oid, awb_of.get(oid, ""), awb) for oid, awb in found.items()]
     return out, new_pairs, errors
 

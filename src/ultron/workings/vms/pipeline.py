@@ -12,7 +12,7 @@ import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from ..core import dashboard, telegram
 from ..core.app import run_bot
@@ -58,31 +58,31 @@ def collect(dates: list[date], awb_cache: dict[str, str]):
     log.info("Listing Myntra orders with order date %s -> %s", start.date(), end.date())
     rows = list_rows(client, start, end, list(chans))
 
-    df = rows[rows["SLA Date"].isin([pd.Timestamp(d) for d in dates])
-              & rows["Channel Id"].isin(list(chans)) & (rows["AWB"] != "")].copy()
-    df["Code"] = df["Channel Id"].map(chans)
-    log.info("%d orders with an AWB on the report SLA dates", len(df))
+    df = rows.filter(pl.col("SLA Date").is_in(dates) & pl.col("Channel Id").is_in(list(chans)) & (pl.col("AWB") != ""))
+    df = df.with_columns(Code=pl.col("Channel Id").replace_strict(chans, default=None))
+    log.info("%d orders with an AWB on the report SLA dates", df.height)
 
     # Shadowfax / Delhivery orders: the Myntra AWB is only on the shipping label
-    other = df[~df["AWB"].str.match(MYNTRA_AWB.pattern)]
-    todo = [o for o in other["Order Id"] if o not in awb_cache]
+    awb_of = dict(zip(df["Order Id"].to_list(), df["AWB"].to_list()))
+    todo = [o for o, a in awb_of.items() if not MYNTRA_AWB.match(a) and o not in awb_cache]
     found, errors = myntra_awbs(client, todo) if todo else ({}, [])
-    new_pairs = [(oid, df.loc[df["Order Id"] == oid, "AWB"].iloc[0], awb) for oid, awb in found.items()]
+    new_pairs = [(oid, awb_of[oid], awb) for oid, awb in found.items()]
     mapped = {**awb_cache, **found}
-    df["Myntra AWB"] = [mapped.get(o, a) for o, a in zip(df["Order Id"], df["AWB"])]
+    df = df.with_columns(pl.Series("Myntra AWB", [mapped.get(o, a) for o, a in zip(df["Order Id"], df["AWB"])], dtype=pl.Utf8))
 
     vms = VmsClient(env("VMS_USERNAME"), env("VMS_PASSWORD"))
     if not vms.username or not vms.password:
         raise RuntimeError("VMS_USERNAME / VMS_PASSWORD not set")
     vms.login()
     scanned = vms.scanned_awbs(min(dates) - timedelta(days=lookback), date.today())
-    df["In VMS"] = df["Myntra AWB"].isin(scanned) | df["AWB"].isin(scanned)
+    df = df.with_columns((pl.col("Myntra AWB").is_in(list(scanned)) | pl.col("AWB").is_in(list(scanned))).alias("In VMS"))
     return df, new_pairs, errors
 
 
-def day_counts(df: pd.DataFrame, day: date) -> dict[str, tuple[int, int]]:
-    part = df[df["SLA Date"] == pd.Timestamp(day)]
-    return {c: (int((part["Code"] == c).sum()), int(((part["Code"] == c) & part["In VMS"]).sum())) for c in CODES}
+def day_counts(df: "pl.DataFrame", day: date) -> dict[str, tuple[int, int]]:
+    part = df.filter(pl.col("SLA Date") == day)
+    return {c: (part.filter(pl.col("Code") == c).height, part.filter((pl.col("Code") == c) & pl.col("In VMS")).height)
+            for c in CODES}
 
 
 # ------------------------------------------------------------------ telegram
@@ -195,7 +195,7 @@ def run(args) -> int:
         # ERP vs VMS needs no SLA date: this part failing must not stop it (it is reported at the end).
         try:
             df, new_pairs, errors = collect(dates, book.awb_cache())
-            if df.empty:
+            if df.height == 0:
                 # Never overwrite the sheet with zeros: no Myntra order at all means a listing problem.
                 raise RuntimeError(f"No Myntra orders found for SLA {dates[0]} - {dates[-1]}; month sheet left unchanged")
         except Exception as exc:  # noqa: BLE001
@@ -208,10 +208,9 @@ def run(args) -> int:
             for d, counts in per_day.items():
                 book.write_day(d, counts)
                 log.info("SLA %s: %s", d, counts)
-        missing = df[~df["In VMS"]].sort_values(["SLA Date", "Code", "Myntra AWB"])
-        book.write_no_vms(dates, [(t.date(), c, a) for t, c, a in
-                                  zip(missing["SLA Date"], missing["Code"], missing["Myntra AWB"])])
-        log.info("NO VMS: %d orders on %d SLA date(s)", len(missing), len(dates))
+        missing = df.filter(~pl.col("In VMS")).sort(["SLA Date", "Code", "Myntra AWB"], maintain_order=True)
+        book.write_no_vms(dates, list(missing.select("SLA Date", "Code", "Myntra AWB").iter_rows()))
+        log.info("NO VMS: %d orders on %d SLA date(s)", missing.height, len(dates))
         book.save_awb_cache(new_pairs)
 
     erp, erp_error = (None, "") if args.no_erp else run_erp(book)
