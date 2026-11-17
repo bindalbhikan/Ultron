@@ -89,6 +89,17 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   read is logged with its count (`tables.unread_dates`): 2 lines in all (Oct-25, Nov-25 Flipkart, typed "00:00:00"),
   without a date before and after. Whole-range golden: every table and cell the same.
 
+* Smaller workings, 17 Nov 2026, each checked old vs new on real data: stock totals (a line with no SKU left out:
+  pandas kept it under NaN, read by no SKU); the SPF master's ERP files (xlsxwriter through `core/xlsx.py`, every cell
+  of 30,349 GRN and 77,951 dispatch rows the same); Myntra `cut_orders` (the same table, MAIN / DBCC, three windows);
+  the return delivery back-fill (read as text like the daily run: the same day splits, 3 accounts); the Flipkart
+  listing file (no table library: sorted in Python, written by `write_sheets`, which gained autofilter / freeze /
+  column widths / links; every cell, link, filter, freeze and width the same on 3,000 edge-case rows); VMS (233 list
+  rows, the SLA-day orders, day counts, NO VMS list and ERP channel map the same on saved real pages); Myntra history
+  (row counts of 108 files, merged RETURNS 103,076 / ORDERS 279,912 every cell the same); portal sale's report reading
+  (every count the same, real May / Sep / Oct-26 files); the agent's `sheet_summary` tool in plain Python (the core
+  stays installable on Termux; the same counts).
+
 **Next, one by one, each with a parity test on real files**: the owner's monthly files and
 the business report workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
