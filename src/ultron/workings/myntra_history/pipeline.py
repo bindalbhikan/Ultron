@@ -16,7 +16,6 @@ run cut short (6 h limit) is simply run again.
 from __future__ import annotations
 
 import argparse
-import io
 import logging
 import tempfile
 import threading
@@ -25,11 +24,12 @@ import zipfile
 from datetime import date, timedelta
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import env, num
+from ..core.tables import read_text_csv
 
 log = logging.getLogger("bindal.myntra_history")
 
@@ -149,7 +149,7 @@ class Line(threading.Thread):
         path = self.work / self.label / self.account / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
-        rows = len(pd.read_csv(io.BytesIO(data), low_memory=False))
+        rows = read_text_csv(data).height
         with LOCK:
             self.folder.subfolder(self.label, create=True).subfolder(self.account, create=True).put(path, CSV)
         log.info("%s %s: %d rows saved", self.name, tag(start), rows)
@@ -171,23 +171,22 @@ def merge(folder, work: Path, label: str, wanted, first: date, last: date) -> tu
             if not path.exists() and acc:
                 acc.download(name, path)
             if path.exists():
-                df = pd.read_csv(path, dtype=str, low_memory=False)
-                df.insert(0, "MONTH", tag(start))
-                df.insert(0, "ACCOUNT", account)
-                frames.append(df)
+                # read as text, pandas' missing texts ("NA" ...) empty as before
+                df = read_text_csv(path, pandas_na=True)
+                frames.append(df.select(pl.lit(account).alias("ACCOUNT"), pl.lit(tag(start)).alias("MONTH"), pl.all()))
     if not frames:
         return None
-    df = pd.concat(frames, ignore_index=True)
+    df = pl.concat(frames, how="diagonal_relaxed")
     out = work / f"MYNTRA {label} ALL ACCOUNTS {tag(first)} TO {tag(last)}.csv"
-    df.to_csv(out, index=False)
+    df.write_csv(out)
     if out.stat().st_size > ZIP_OVER:
         z = out.with_suffix(".zip")
         with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as f:
             f.write(out, out.name)
         out = z
     folder.put(out, "application/zip" if out.suffix == ".zip" else CSV)
-    log.info("Merged %s: %d rows, %d files -> %s", label, len(df), len(frames), out.name)
-    return out.name, len(df)
+    log.info("Merged %s: %d rows, %d files -> %s", label, df.height, len(frames), out.name)
+    return out.name, df.height
 
 
 def run(args) -> int:
