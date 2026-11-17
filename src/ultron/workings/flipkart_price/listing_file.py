@@ -12,12 +12,12 @@ import argparse
 import logging
 from datetime import datetime
 
-import pandas as pd
 
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import output_dir
 from ..core import clients
+from ..core.xlsx import write_sheets
 
 log = logging.getLogger("bindal.flipkart_listing_file")
 
@@ -55,6 +55,15 @@ def rows_of(listings: list[dict], stock: dict[str, dict]) -> list[dict]:
     return out
 
 
+SORT = ("Listing Status", "Brand", "Category", "Seller SKU Id")
+
+
+def sorted_rows(rows: list[dict]) -> list[dict]:
+    """The rows by status, brand, category, SKU, an empty value last in each, ties kept in their order (as pandas'
+    sort_values sorted them)."""
+    return sorted(rows, key=lambda r: tuple((r.get(c) is None, "" if r.get(c) is None else r.get(c)) for c in SORT))
+
+
 def run(args) -> int:
     now = datetime.now()
     client = clients.flipkart()
@@ -66,18 +75,13 @@ def run(args) -> int:
             short.append(f"{state} {len(got):,} of {count:,}")
         listings += got
     stock = client.stock(listings)
-    rows = rows_of(listings, stock)
-    df = pd.DataFrame(rows).sort_values(["Listing Status", "Brand", "Category", "Seller SKU Id"])
+    rows = sorted_rows(rows_of(listings, stock))
     name = f"FLIPKART LISTING FILE {now:%d-%b-%y}".upper() + ".xlsx"
     out = output_dir("flipkart-listing-file") / name
-    with pd.ExcelWriter(out, engine="xlsxwriter") as xw:
-        df.to_excel(xw, sheet_name="Listings", index=False)
-        ws = xw.sheets["Listings"]
-        ws.autofilter(0, 0, len(df), len(df.columns) - 1)
-        ws.freeze_panes(1, 1)
-        ws.set_column(0, 3, 22)
-        ws.set_column(4, len(df.columns) - 1, 13)
-    log.info("Written %s (%d listings)", out, len(df))
+    headers = list(rows[0]) if rows else []
+    write_sheets(out, {"Listings": (headers, rows)}, bold_header=True, autofilter=True, freeze=(1, 1), links=True,
+                 column_widths=[(0, 3, 22), (4, max(len(headers) - 1, 4), 13)])
+    log.info("Written %s (%d listings)", out, len(rows))
 
     link = ""
     if not args.no_upload:
@@ -87,11 +91,12 @@ def run(args) -> int:
             folder = folder.subfolder(part, create=True)
         link = DriveFile(folder.put(out, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")).url
 
-    active = df[df["Listing Status"] == "ACTIVE"]
+    active = [r for r in rows if r["Listing Status"] == "ACTIVE"]
+    own = [r["Your Stock"] or 0 for r in active]
     msg = [f"📄 <b>Flipkart listing file · {now:%d %b %H:%M}</b>",
-           f"Active {len(active):,} · Inactive {len(df) - len(active):,}",
-           f"Your stock {int(active['Your Stock'].fillna(0).sum()):,} units · "
-           f"out of stock (active) {int((active['Your Stock'].fillna(0) <= 0).sum()):,}",
+           f"Active {len(active):,} · Inactive {len(rows) - len(active):,}",
+           f"Your stock {int(sum(own)):,} units · "
+           f"out of stock (active) {sum(1 for s in own if s <= 0):,}",
            *([f"⚠️ Not all listings read: {', '.join(short)}"] if short else []),
            *([f'<a href="{link}">{telegram.esc(name)}</a>'] if link else [])]
     text = "\n".join(msg)

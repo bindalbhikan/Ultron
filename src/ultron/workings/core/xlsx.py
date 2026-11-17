@@ -30,10 +30,15 @@ def _blank(v) -> bool:
     return v is None or (isinstance(v, float) and math.isnan(v)) or (type(v).__name__ in ("NaTType", "NAType"))
 
 
-def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze: bool = False,
-                 auto_width: bool = False, max_width: int = 60) -> Path:
+URL_LIMIT = 65_530                   # xlsxwriter's (Excel's) most links in one sheet; the rest stay text
+
+
+def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze: bool | tuple[int, int] = False,
+                 auto_width: bool = False, max_width: int = 60, autofilter: bool = False,
+                 column_widths: list[tuple[int, int, float]] | None = None, links: bool = False) -> Path:
     """{sheet: (headers, rows)} or [(sheet, headers, rows), ...] (a name may repeat) -> one xlsx at path (its
-    folder made); the path."""
+    folder made); the path. freeze: True = the header row, or (rows, columns); autofilter over the header and rows;
+    column_widths: (first column, last column, width) each; links: a text starting with http(s):// as a clickable link."""
     import xlsxwriter
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -51,7 +56,9 @@ def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze
         widths = [len(str(h)) for h in headers]
         for c, h in enumerate(headers):
             ws.write_string(0, c, str(h), head) if head else ws.write_string(0, c, str(h))
+        n_links, last = 0, 0
         for r, row in enumerate(rows, 1):
+            last = r
             values = [row.get(h) for h in headers] if isinstance(row, dict) else list(row)
             for c, v in enumerate(values):
                 if _blank(v):
@@ -64,14 +71,22 @@ def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze
                     ws.write_boolean(r, c, v)
                 elif isinstance(v, (int, float)) and not isinstance(v, bool):
                     ws.write_number(r, c, v)
+                elif links and isinstance(v, str) and v.startswith(("http://", "https://")) and n_links < URL_LIMIT \
+                        and len(v) <= 2079:
+                    ws.write_url(r, c, v)
+                    n_links += 1
                 else:
                     ws.write_string(r, c, str(v))
                 if auto_width and c < len(widths):
                     widths[c] = max(widths[c], len(str(v)))
         if freeze:
-            ws.freeze_panes(1, 0)
+            ws.freeze_panes(*(freeze if isinstance(freeze, tuple) else (1, 0)))
+        if autofilter and headers:
+            ws.autofilter(0, 0, last, len(headers) - 1)
         if auto_width:
             for c, w in enumerate(widths):
                 ws.set_column(c, c, min(w + 2, max_width))
+        for first, end, width in column_widths or ():
+            ws.set_column(first, end, width)
     wb.close()
     return path
