@@ -56,15 +56,6 @@ class Report:
     earn_more: pd.DataFrame | None = None     # EARN MORE: the portal's month figures, index = order month
 
 
-def any_date(s: pd.Series) -> pd.Series:
-    """Dates of a hand-made file: Excel day numbers or text (the portals' or ISO)."""
-    n = pd.to_numeric(s, errors="coerce")
-    out = pd.to_datetime(n, unit="D", origin="1899-12-30", errors="coerce")
-    txt = s.astype(str).str.replace(" IST", "", regex=False).where(n.isna())
-    return out.fillna(pd.to_datetime(txt, format="%a %b %d %H:%M:%S %Y", errors="coerce")) \
-        .fillna(pd.to_datetime(txt.str[:19], errors="coerce", format="mixed"))
-
-
 def one_spelling(s: pd.Series) -> np.ndarray:
     """Values that differ only in letter case or spaces become their most common spelling: Excel's
     SUMIFS does not tell "Customer requested" from "customer requested"."""

@@ -83,6 +83,12 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   the later file's return line is the newer) stays a number: through pandas it had become text, so file 10 sorted
   before file 9. Whole-range golden: every Myntra table and cell the same (no line of this data had hit it).
 
+* Business report, the owner's monthly files: Flipkart `read_monthly` / `monthly_settled`, AJIO `read_monthly` /
+  `monthly_expenses` in Polars; their hand-typed dates read by `tables.pany_date` (Excel day number, AJIO's text, ISO)
+  and sheet names by `tables.sheet_names` (python-calamine), so no `pd.ExcelFile` is left there. A date that cannot be
+  read is logged with its count (`tables.unread_dates`): 2 lines in all (Oct-25, Nov-25 Flipkart, typed "00:00:00"),
+  without a date before and after. Whole-range golden: every table and cell the same.
+
 **Next, one by one, each with a parity test on real files**: the owner's monthly files and
 the business report workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
