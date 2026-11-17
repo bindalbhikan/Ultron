@@ -15,11 +15,12 @@ import time
 import zipfile
 from datetime import date, datetime, timedelta
 
-import pandas as pd
+import polars as pl
 
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import csv_list, env, num
+from ..core.tables import read_text_csv
 from ..sale.oms_sales import order_lines
 from ..core import clients
 
@@ -28,56 +29,66 @@ log = logging.getLogger("bindal.myntra_tat")
 ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 
 
-def report_frame(files: list[tuple[str, bytes]], account: str) -> pd.DataFrame:
+def _when(c: str) -> "pl.Expr":
+    """A Myntra report date-time ("2026-10-28 16:37:23.000"); empty or unreadable -> null."""
+    s = pl.col(c).str.strip_chars()
+    return pl.coalesce(s.str.to_datetime("%Y-%m-%d %H:%M:%S%.f", strict=False), s.str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False),
+                       s.str.to_date("%Y-%m-%d", strict=False).cast(pl.Datetime("us")))
+
+
+def report_frame(files: list[tuple[str, bytes]], account: str) -> "pl.DataFrame":
     """One row per order line of the account's Seller_Orders_Report files (newest file wins)."""
     frames = []
     for _, data in files:
         if data[:2] == b"PK":
             with zipfile.ZipFile(io.BytesIO(data)) as z:
                 data = z.read(next(n for n in z.namelist() if n.lower().endswith(".csv")))
-        df = pd.read_csv(io.BytesIO(data), dtype=str, low_memory=False)
-        frames.append(df)
+        frames.append(read_text_csv(data, pandas_na=True))
     if not frames:
-        return pd.DataFrame()
-    df = pd.concat(frames, ignore_index=True).drop_duplicates("order line id", keep="first")
-    out = pd.DataFrame({
-        "account": account,
-        "awb": df["order tracking number"].fillna("").astype(str).str.strip().str.upper(),
-        "courier": df["courier code"].fillna("?").astype(str).str.strip().str.upper(),
-        "status": df["order status"].fillna("").astype(str),
-        "created": pd.to_datetime(df["created on"], errors="coerce"),
-        "packed": pd.to_datetime(df["packed on"], errors="coerce"),
-        "pickup": pd.to_datetime(df["fmpu date"], errors="coerce"),
-        "cancelled": pd.to_datetime(df["cancelled on"], errors="coerce")})
-    return out
+        return pl.DataFrame()
+    df = pl.concat(frames, how="diagonal_relaxed").unique("order line id", keep="first", maintain_order=True)
+    return df.select(
+        pl.lit(account).alias("account"),
+        pl.col("order tracking number").fill_null("").str.strip_chars().str.to_uppercase().alias("awb"),
+        pl.col("courier code").fill_null("?").str.strip_chars().str.to_uppercase().alias("courier"),
+        pl.col("order status").fill_null("").alias("status"),
+        _when("created on").alias("created"), _when("packed on").alias("packed"),
+        _when("fmpu date").alias("pickup"), _when("cancelled on").alias("cancelled"))
 
 
-def score(rep: pd.DataFrame, sla: dict[str, datetime], first: date, last: date, now: datetime) -> pd.DataFrame:
+def score(rep: "pl.DataFrame", sla: dict[str, datetime], first: date, last: date, now: datetime) -> "pl.DataFrame":
     """The orders of first..last with an SLA, each with on_time / late / ours (packed late)."""
-    df = rep[rep["created"].dt.date.between(first, last) & rep["cancelled"].isna() & (rep["awb"] != "")].copy()
-    df["sla"] = df["awb"].map(sla)
-    df = df.dropna(subset=["sla"]).drop_duplicates(["account", "awb"])
-    df["on_time"] = df["pickup"].notna() & (df["pickup"] <= df["sla"])
-    df["late"] = ~df["on_time"] & ((df["pickup"].notna()) | (df["sla"] < now))
-    df["ours"] = df["late"] & (df["packed"].isna() | (df["packed"] > df["sla"]))
-    return df
+    df = rep.filter(pl.col("created").dt.date().is_between(first, last) & pl.col("cancelled").is_null() & (pl.col("awb") != ""))
+    df = df.with_columns(pl.Series("sla", [sla.get(a) for a in df["awb"].to_list()], dtype=pl.Datetime("us")))
+    df = df.filter(pl.col("sla").is_not_null()).unique(["account", "awb"], keep="first", maintain_order=True)
+    on_time = pl.col("pickup").is_not_null() & (pl.col("pickup") <= pl.col("sla"))
+    df = df.with_columns(on_time.fill_null(False).alias("on_time"))
+    df = df.with_columns((~pl.col("on_time") & (pl.col("pickup").is_not_null() | (pl.col("sla") < now))).alias("late"))
+    return df.with_columns((pl.col("late") & (pl.col("packed").is_null() | (pl.col("packed") > pl.col("sla"))).fill_null(False))
+                           .alias("ours"))
 
 
-def message(df: pd.DataFrame, first: date, last: date, matched: int, total: int) -> str:
+def message(df: "pl.DataFrame", first: date, last: date, matched: int, total: int) -> str:
     lines = [f"🛍 <b>Myntra Courier Pickup · {first:%d %b} - {last:%d %b}</b>",
              "<i>pickup (fmpu) against the OMSGuru SLA, by account and courier</i>"]
     table = [f"{'Acct':<5}{'Courier':<8}{'Ord':>5}{'Late':>5}{'OnT%':>5}"]   # 28 wide: a phone
-    for (acct, courier), g in sorted(df.groupby(["account", "courier"]), key=lambda kv: (kv[0][0], -len(kv[1]))):
-        n = int(g["on_time"].sum() + g["late"].sum())
-        pct = f"{round(100 * g['on_time'].sum() / n)}%" if n else "-"
-        table.append(f"{acct:<5}{courier[:7]:<8}{len(g):>5}{int(g['late'].sum()):>5}{pct:>5}")
-    n = int(df["on_time"].sum() + df["late"].sum())
-    table.append(f"{'Total':<13}{len(df):>5}{int(df['late'].sum()):>5}"
-                 + (f"{round(100 * df['on_time'].sum() / n)}%" if n else "-").rjust(5))
-    late = df[df["late"]]
+    groups = (df.group_by(["account", "courier"])
+                .agg(pl.len().alias("n"), pl.col("on_time").sum().alias("on"), pl.col("late").sum().alias("late"))
+                .sort(["account", "courier"]))
+    # by account, the most orders first; equal ones in courier order (as pandas' sorted groups gave them)
+    for acct, courier, size, on, lt in sorted(groups.iter_rows(), key=lambda g: (g[0], -g[2])):
+        n = int(on + lt)
+        pct = f"{round(100 * on / n)}%" if n else "-"
+        table.append(f"{acct:<5}{courier[:7]:<8}{size:>5}{int(lt):>5}{pct:>5}")
+    on_all, late_all = int(df["on_time"].sum()), int(df["late"].sum())
+    n = on_all + late_all
+    table.append(f"{'Total':<13}{df.height:>5}{late_all:>5}"
+                 + (f"{round(100 * on_all / n)}%" if n else "-").rjust(5))
+    late = df.filter(pl.col("late"))
+    ours = int(late["ours"].sum())
     lines += ["<pre>" + telegram.esc("\n".join(table)) + "</pre>",
-              f"Late: <b>{len(late)}</b> · our side (packed after the SLA) {int(late['ours'].sum())} · "
-              f"courier side {len(late) - int(late['ours'].sum())}",
+              f"Late: <b>{late.height}</b> · our side (packed after the SLA) {ours} · "
+              f"courier side {late.height - ours}",
               f"<i>{matched} of {total} report orders found in OMSGuru with an SLA</i>"]
     return "\n".join(lines)
 
@@ -108,16 +119,16 @@ def run(args) -> int:
         except Exception as exc:  # noqa: BLE001 - the other accounts still count
             log.warning("Myntra %s report not read: %s", account, exc)
             notes.append(f"{account}: report not read ({str(exc)[:80]})")
-    rep = pd.concat([r for r in reps if not r.empty], ignore_index=True) if reps else pd.DataFrame()
-    if rep.empty:
+    rep = pl.concat([r for r in reps if r.height], how="diagonal_relaxed") if any(r.height for r in reps) else pl.DataFrame()
+    if not rep.height:
         raise RuntimeError("No Myntra order report could be read: " + "; ".join(notes))
     client = clients.omsguru()
     lines, _ = order_lines(client, [first - timedelta(days=1) + timedelta(days=i) for i in range(len(days) + 2)])
     sla = {l["awb"]: l["sla"] for l in lines if l["awb"] and l["sla"]}
-    total = int((rep["created"].dt.date.between(first, last) & rep["cancelled"].isna()).sum())
+    total = rep.filter(pl.col("created").dt.date().is_between(first, last) & pl.col("cancelled").is_null()).height
     df = score(rep, sla, first, last, now)
-    text = message(df, first, last, len(df), total) + ("\n\n⚠️ " + "\n⚠️ ".join(telegram.esc(n) for n in notes) if notes else "")
-    log.info("Myntra TAT: %d orders scored of %d, %d late", len(df), total, int(df["late"].sum()))
+    text = message(df, first, last, df.height, total) + ("\n\n⚠️ " + "\n⚠️ ".join(telegram.esc(n) for n in notes) if notes else "")
+    log.info("Myntra TAT: %d orders scored of %d, %d late", df.height, total, int(df["late"].sum()))
     print(text) if args.no_telegram else telegram.send(text)
     return 0
 
