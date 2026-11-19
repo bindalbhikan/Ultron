@@ -58,3 +58,5 @@ are named in the yearly notes. `--backfill-year 2026` now reuses archived PORTAL
 canonical lines once, and renders closed months without requesting new portal jobs. A portal without
 both return reports is excluded; the old live-download backfill's fixed Jan-Jun Flipkart exclusion
 does not apply when complete archived sources exist.
+The analysis bridge keeps only its required columns and reuses each portal's frame across accounts
+and yearly months, avoiding repeated copies of payment/history columns.

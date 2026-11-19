@@ -19,13 +19,22 @@ log = logging.getLogger(__name__)
 KINDS = {"ORDER", "RETURN", "SALES", "MONTHLY", "OMSGURU"}
 
 
-def template_rows(rep, month: date, account: str = "", cost_map=None):
+def template_source(rep):
+    """Bridge only the columns the analysis needs, once per portal, not per month/account."""
+    needed = {"ORDER MONTH", "FINAL STATUS", "QTY", "ACCOUNT", "FINAL SKU", "MY SKU", "BRAND", "CATEGORY",
+              "REASON", "STATE", "SELLER SKU CODE", "SKU", "SELLER SKU", "ORDER LINE ID", "ORDER ITEM ID", "CUST ORDER NO"}
+    if rep.value:
+        needed.add(rep.value)
+    return to_polars(rep.raw[[c for c in rep.raw.columns if c in needed]])
+
+
+def template_rows(rep, month: date, account: str = "", cost_map=None, *, source=None):
     """The same known customer-return lines and units, in the existing analysis layout."""
     import pandas as pd
 
     if pd.Timestamp(month) in rep.unknown.get("tq", set()):
         raise ValueError("the order month's or next month's return report is missing")
-    raw = to_polars(rep.raw)
+    raw = source if source is not None else template_source(rep)
     raw = raw.filter((pl.col("ORDER MONTH").str.slice(0, 10) == f"{month:%Y-%m-%d}")
                      & pl.col("FINAL STATUS").is_in(["Delivered", "Customer Return"]))
     if account:
@@ -109,11 +118,12 @@ def build_month(month: date, supporting: Path, out: Path, work: Path, *, files_b
     tag = f"{month:%b-%y}".upper()
     for portal, rep in reports_by_portal.items():
         names = [f"MYNTRA {a}" for a in engine.MYNTRA_ACCOUNTS] if portal == "MYNTRA" else [portal]
+        source = template_source(rep)
         for name in names:
             if allowed is not None and name not in allowed:
                 continue
             try:
-                frame = template_rows(rep, month, name.split()[-1] if portal == "MYNTRA" else "", cost_map)
+                frame = template_rows(rep, month, name.split()[-1] if portal == "MYNTRA" else "", cost_map, source=source)
             except ValueError as exc:
                 skipped.append((name, str(exc)))
                 continue

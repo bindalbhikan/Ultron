@@ -88,7 +88,7 @@ def rebuild_year(root: DriveFolder, year: int, supporting: Path, work: Path, upl
     Legacy monthly CSVs identify which months to include; their old return classifications
     are never copied into the year's totals.
     """
-    from .reconciled import load_context, load_reports, template_rows
+    from .reconciled import load_context, load_reports, template_rows, template_source
     folder = root.subfolder("Yearly")
     folder = folder.subfolder(f"{year}") if folder else None
     if not folder:
@@ -106,6 +106,7 @@ def rebuild_year(root: DriveFolder, year: int, supporting: Path, work: Path, upl
     reports, gaps = (load_reports(latest, context[0], work / "canonical") if reports_by_portal is None
                      else (reports_by_portal, []))
     frames, notes = {}, [f"{p} left out: {why}" for p, why in gaps]
+    sources = {portal: template_source(rep) for portal, rep in reports.items()}
     for portal, values in months.items():
         source, _, account = portal.partition(" ")
         rep = reports.get(source)
@@ -116,7 +117,7 @@ def rebuild_year(root: DriveFolder, year: int, supporting: Path, work: Path, upl
         parts = []
         for month in values:
             try:
-                parts.append(template_rows(rep, month, account, context[3]))
+                parts.append(template_rows(rep, month, account, context[3], source=sources[source]))
             except ValueError as exc:
                 notes.append(f"{portal} {tag(month)} left out: {exc}")
         if parts:
