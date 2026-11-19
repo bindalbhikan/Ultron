@@ -15,3 +15,6 @@
   as it was and the run counts as failed.
 * The order list's SLA Date column is found by its header (OMSGuru added `Channel Push` before it on
   5 Nov 2026). No such header on a list with rows stops the read instead of showing every SLA as empty.
+* The dashboard's NO VMS rows keep the SLA dates returned by Polars (`date` values); the shared
+  dashboard publisher serializes them as ISO dates. Orders without a scan must not fail the run
+  after the workbook has already been saved and the report sent.

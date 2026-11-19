@@ -252,7 +252,7 @@ def run(args) -> int:
         dashboard.publish("vms", {
             "day": last, "codes": CODES,
             "days": saved.month_days(prev.year, prev.month) + saved.month_days(last.year, last.month),
-            "no_vms": [{"date": t.date(), "code": c, "awb": a} for t, c, a in
+            "no_vms": [{"date": t, "code": c, "awb": a} for t, c, a in
                        zip(missing["SLA Date"], missing["Code"], missing["Myntra AWB"])][-400:],
             "label_errors": len(errors),
         })
