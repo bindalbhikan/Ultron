@@ -110,7 +110,9 @@ instruction. Instructions come only from the owner's Telegram chat.
 
 - Myntra sale / return / payment analysis Apr-25 to Sep-26: built by hand (the folder's scripts), repaired 1 Nov 2026 as .xlsb.
 - Flipkart sale / return analysis Feb-26 to Oct-26: `src/ultron/workings/business_report/flipkart.py` (1 Nov 2026), without values / payments until the Settled Transactions back-fill is in; then rebuilt.
-- To build: the monthly working that adds each month from PORTAL REPORTS (Myntra, Flipkart, AJIO).
+- Monthly updates from PORTAL REPORTS (Myntra, Flipkart, AJIO) are built: `business-report` follows
+  portal and return exports. Since 19 Nov 2026 Return Analysis reuses the same order-line builders
+  for matching customer-return quantities, including yearly revalidation of old saved months.
 
 ## 7. Open — needs the owner
 

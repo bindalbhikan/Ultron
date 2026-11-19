@@ -30,7 +30,8 @@ that month) is not saved and is listed as "no data".
   files), Myntra payments Apr-25 to Sep-26 (the SPF payment files + live downloads, de-duplicated),
   Flipkart orders Feb-26 to Oct-26 and returns Jul-25 to Sep-26 (the owner's files, re-split by
   calendar month).
-* The business reporting reads these files (one download serves every working).
+* Business Reporting and Return Analysis read the same saved snapshots and use the same business
+  builders for customer-return status, order month and returned quantities (19 Nov 2026).
 
 * Flipkart's report centre takes **20 new requests a day** (the refusal is HTTP 500 around a 429). The back-fill of 1 Nov 2026 used them up, so that day's run could not ask for Oct-26: a quota refusal is named on Telegram and not retried. A month has about 3 requests here (4 with the archive), so a long back-fill goes over several days.
 * A Flipkart request is reused for a closed month only if asked at least 2 days after its last day. An Orders file whose last order date is before the month's end is asked for again in ranges of up to 11 days (about 3 more requests) and merged, each line once, when that holds more lines; if it still stops short it is saved as `PARTIAL` and said so on Telegram (Oct-26 asked on 31 Oct and again at 10:31 PM on 1 Nov gave byte-identical files without 31 Oct). The Sales Report has no such check: 31 Oct orders are invoiced later, so its order dates end early and its invoice dates reach the month's end.

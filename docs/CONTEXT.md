@@ -134,5 +134,7 @@ detailed **hyper log** is kept on Drive in `AGENT WORK/AGENT LOGS/<month>/<date>
 
 ## Hand-run tools the workings came from (still in their Drive folders)
 
-`RETURN ANALYSIS/main.py` → returns · `SPF/MYNTRA/main.py` → myntra-spf · `SPF/AJIO/main.py` →
+`RETURN ANALYSIS/main.py` → returns renderer (since 19 Nov 2026 the active bot's customer-return
+counts come from Business Reporting's shared builders, using the same archived sources) ·
+`SPF/MYNTRA/main.py` → myntra-spf · `SPF/AJIO/main.py` →
 ajio-spf (`master_engine.py`) · `AGENT WORK/AJIO/Ajio Ads Gap Working/main.py` → ajio-ads.

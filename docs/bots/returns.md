@@ -6,20 +6,31 @@ Flipkart Sales Report + Returns), 2:00 PM the report. Second try on the 15th wit
 run takes the newest), 2:00 PM the report again (owner's rule, 1 Nov 2026). On demand:
 `/returns [YYYY-MM]`.
 
-**Windows**: sale = last month 1st to last day; returns = last month 1st to the day before the run
-(the 9th on the 10th, the 14th on the 15th).
+**Windows**: order month = 1st to last day; returns = that month's 1st through the next month's 14th.
+The 10th's fresh exports only reach the 9th; the 15th's exports reach the final cutoff. Reusing a
+saved month never counts returns after its next 14th, even when run later.
 **PORTAL REPORTS**: the month's return report (1st to last day) and, since 16 Nov 2026 (owner: returns of a month's
 orders = that month + the next 1st to 14th), the window's tail as the **next month's PARTIAL return report**
 (`pr.save_partial`: never over a whole report of that month; the month's own run replaces it later).
 
-**Rules**: the hand-run tool `RETURN ANALYSIS/main.py` as `engine.py` (unchanged; SEP-26 output
-identical file by file). Portals: Myntra MAIN / DBCC / FMCC, Ajio, Flipkart.
+**Rules** (19 Nov 2026): the active bot uses `reconciled.py` and Business Reporting's existing
+builders on the same saved PORTAL REPORTS snapshots. Order month, return-sheet status, deduplication,
+cancellations, RTO and partial-return quantities have one implementation. Myntra's order-report return
+flag is no longer used; Flipkart uses order month rather than invoice month. Customer Return Qty must
+equal Business Reporting for the same month and source snapshot. The legacy `engine.py` is retained
+for rendering the existing workbook layout; its standalone hand-run builders are not used by the bot.
+Portals: Myntra MAIN / DBCC / FMCC, AJIO, Flipkart.
+
+Analysis Sales Units = canonical Delivered + Customer Return units, excluding Cancelled, RTO and
+In Transit; it is not Business Reporting's Gross Qty. Values use the canonical business sale value
+(per unit in the template). Myntra template ORDER ID is now order-line id, Flipkart order-item id,
+AJIO customer-order number plus SELLER SKU CODE; a partially returned line can appear twice.
 
 | Input | Source |
 |---|---|
-| Myntra orders / returns | reports 4 / 12 per account (two returns jobs 15 min apart, or reused) |
-| Ajio orders / RTV | dropship order + RTV downloads (31 days each at most) |
-| Flipkart sales / returns | Tax `Sales Report` + Fulfilment `Returns` |
+| Myntra orders / returns | saved calendar-month order and return reports per account; scheduled refresh still collects reports 4 / 12 |
+| AJIO orders / RTV | saved order + RTV reports, with the same monthly/OMSGuru supplements as Business Reporting |
+| Flipkart orders / returns | saved Fulfilment Orders + Returns, Sales Reports and the same supplements as Business Reporting; no invoice-month grouping |
 | MasterSheet (+ optional Cost Sheet) | Drive `RETURN ANALYSIS/Supporting` |
 
 **PORTAL REPORTS** (1 Nov 2026): the downloaded reports are also kept in Drive `AGENT WORK/PORTAL
@@ -33,10 +44,17 @@ the 10th's. Not with `--drive-input` or `--no-upload`. See `docs/bots/portal-rep
 **Output** (Drive `RETURN ANALYSIS`, `RETURN_DRIVE_FOLDER_ID`): `Output/<MON-YY>/`, one report per
 portal + MYNTRA COMBINED + ALL PORTAL; `Template/<PORTAL> <MON-YY> TEMPLATE.csv`; Telegram table +
 ALL PORTAL workbook. A portal that cannot be fetched, or whose Flipkart returns are incomplete, is
-left out and named. `--drive-input` uses the Drive `Input/` folder, `--no-upload` is a test run.
+left out and named. An unknown return source is excluded, never shown as zero. `--saved-reports`
+(legacy alias `--drive-input`) skips portal refresh and reads PORTAL REPORTS; it no longer reads
+hand-dropped Input files. `--no-upload` also reads existing saved reports, generates local outputs
+only and does not request fresh portal jobs. A normal scheduled run first archives its fresh returns;
+an archive failure excludes that portal rather than silently using older return data.
 
 **Yearly** (`yearly.py`): each monthly run saves every portal's rows (template columns + STATE) to
 `Yearly/<YYYY>/<PORTAL> <MON-YY>.csv` and rebuilds `Output/<YYYY>/` (the same 7 workbooks, January
-to December; Monthly Summary shows the months). `--backfill-year 2026` built the year once.
-**Flipkart Jan to Jun 2026 are left out** of the yearly: Flipkart's Returns report only holds about
-four months, so those months have no returns data (their saved CSVs are emptied).
+to December; Monthly Summary shows the months). Yearly rendering revalidates the saved months against
+the canonical business lines, so old CSV return flags cannot reintroduce mismatches. Missing sources
+are named in the yearly notes. `--backfill-year 2026` now reuses archived PORTAL REPORTS, builds its
+canonical lines once, and renders closed months without requesting new portal jobs. A portal without
+both return reports is excluded; the old live-download backfill's fixed Jan-Jun Flipkart exclusion
+does not apply when complete archived sources exist.

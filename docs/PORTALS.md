@@ -57,6 +57,8 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   **RTV report**: `.../dropship/rtv/report/download`; form `pobIds=DV00348890,DV00316239`,
   headers `X-Tenant: AJIO`, `x-pob-id`, `businessModel: B2C`. Max **31 days** per download.
   Direct downloads — nothing to reuse or wait for.
+* RTV `Return Type` also uses `SELF_SHIP_WITHOUT_SHIPPING_CHARGE` for customer returns (seen in
+  Oct-Nov 2026). Treat it like `SELF_SHIP`, with positive Return QTY and the order month's return window.
 * SPF tickets (list, detail, comment, create) — used by the AJIO SPF bot.
 
 ## Flipkart Seller Hub — `portals/flipkart.py`

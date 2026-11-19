@@ -1,11 +1,11 @@
 """Monthly sale vs return analysis: Myntra MAIN / DBCC / FMCC, Ajio, Flipkart -> Drive -> Telegram.
 
 On the 15th at 2:00 PM IST (worker cron) for the month before: sale = that month, returns =
-its 1st to the 14th of this month. Inputs are fetched from the portals (sources.py), the reports
-are built with the rules of the hand-run tool (engine.py) and written to the Drive folder
+its 1st to the 14th of this month. Fresh portal returns are archived in PORTAL REPORTS, then the
+same order-line builders as Business Reporting count them (reconciled.py). The legacy engine renders
 RETURN ANALYSIS: Output/<MON-YY>/ (reports) and Template/ (flat CSVs). A portal whose input
-cannot be fetched is left out and named on Telegram; --drive-input uses the files in the Drive
-folder's Input/ instead (dropped there by hand). --request (9:00 AM on the 15th) only asks the
+cannot be fetched is left out and named on Telegram; --saved-reports (legacy --drive-input)
+uses existing PORTAL REPORTS without refreshing portals. --request (7:00 AM on the 10th/15th) only asks the
 portals for the slow reports, so the 2 PM run finds them ready.
 """
 from __future__ import annotations
@@ -78,21 +78,21 @@ def fetch_inputs(inputs: Path, sale, ret, parts, notes: list[str], alerts: list[
     return got
 
 
-def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -> None:
+def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -> set[str]:
     """The downloaded reports into Drive AGENT WORK/PORTAL REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/ as
     "<PORTAL> [<ACCOUNT>] ORDER / RETURN REPORT <MON-YY>", one calendar month each (1st to last
     day); the business reporting reads them from there:
     * order report = the first file of each portal (asked for exactly the month), only when the
       2nd's run (portal-reports) did not save it already;
-    * return report (the 10th, replaced by the 15th's fresh reports): Myntra's first returns report
-      is the month itself (the second, this month's 1st to the day before, is next month's and is not
-      kept); AJIO's RTV downloads and Flipkart's Returns report run into this month, so only the
-      month's rows are kept (Return Created Date / return_approval_date).
-    A failure is only noted: the analysis goes on."""
+    * return report (the 10th, replaced by the 15th's fresh reports): this month's rows are saved
+      as its return report; next month's tail is saved as PARTIAL unless a whole report exists.
+    Return the successfully archived portal/account names. A failure is named and that source
+    is excluded from the analysis, so an older return snapshot cannot silently replace it."""
     import tempfile
     from ..core import portal_reports as pr
     from ..core.tables import pajio_date as parse_ajio_date   # Polars (month_slice is Polars)
     tmp = Path(tempfile.mkdtemp(prefix="portal_reports_"))
+    saved = set()
     for name, files in got.items():
         portal, _, account = name.partition(" ")
         try:
@@ -108,6 +108,8 @@ def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -
                 cut = pr.month_slice(files[1:], month, ["return_approval_date", "return_requested_date"],
                                      tmp / "flipkart_returns.xlsx", sheet="Returns", key=["return_id", "order_item_id"])
                 ret = cut[0] if cut else None
+            if ret is None:
+                raise RuntimeError("no calendar-month return report could be archived")
             pr.save(portal, month, "return", ret, account)
             # the next month's 1st to 14th, the returns window's tail (owner, 16 Nov 2026: returns of a month's
             # orders = that month + the next 1st to 14th): kept as the next month's PARTIAL return report, read by
@@ -125,9 +127,11 @@ def archive_reports(month: date, got: dict[str, list[Path]], notes: list[str]) -
                                           key=["return_id", "order_item_id"])
                 tail = next_cut[0] if next_cut else None
             pr.save_partial(portal, nxt, "return", tail, account)
+            saved.add(name)
         except Exception as exc:  # noqa: BLE001
             log.exception("%s reports not saved to PORTAL REPORTS", name)
             notes.append(f"{name} reports not saved to PORTAL REPORTS: {_short_error(exc)}")
+    return saved
 
 
 def drive_inputs(root: DriveFolder, inputs: Path) -> None:
@@ -277,16 +281,19 @@ def run(args) -> int:
 
     notes, alerts = [], []
     inputs = work / "Input"
-    if args.drive_input:
-        drive_inputs(root, inputs)
-        notes.append("inputs taken from the Drive Input folder")
+    allowed = None
+    if args.drive_input or args.no_upload:
+        notes.append("inputs taken from saved PORTAL REPORTS, using Business Reporting's order lines")
     else:
         got = fetch_inputs(inputs, sale, ret, parts, notes, alerts)
-        if not args.no_upload:
-            archive_reports(month, got, notes)
+        allowed = archive_reports(month, got, notes)
 
-    from .engine import build_all
-    results, skipped = build_all(str(inputs), str(work / "Supporting"), str(work / "out"))
+    from .reconciled import build_month, load_context, load_reports
+    context = load_context(work / "Supporting")
+    reports, report_skipped = load_reports(month, context[0], work / "canonical", allowed=allowed)
+    results, skipped = build_month(month, work / "Supporting", work / "out", work / "canonical",
+                                   allowed=allowed, context=context, reports_by_portal=reports)
+    skipped = report_skipped + skipped
     for portal, reason in skipped:
         if not any(n.startswith(portal) for n in notes):
             notes.append(f"{portal} left out: {reason}")
@@ -325,10 +332,12 @@ def run(args) -> int:
         from . import yearly
         try:
             yearly.save_month_data(root, [r for r in results if r.get("df") is not None], work)
-            year_results = yearly.rebuild_year(root, month.year, work / "Supporting", work)
+            year_results = yearly.rebuild_year(root, month.year, work / "Supporting", work,
+                                               context=context, reports_by_portal=reports)
             if year_results:
-                send_yearly(args, year_results, month.year, [])
-                publish_year(month.year, year_results, [])
+                year_notes = year_results[0].get("notes", [])
+                send_yearly(args, year_results, month.year, year_notes)
+                publish_year(month.year, year_results, year_notes)
         except Exception as exc:  # noqa: BLE001 - the monthly report is already out
             log.exception("Yearly report not updated")
             msg = f"⚠️ <b>Yearly return analysis {month.year} not updated</b>\n\n<code>{telegram.esc(str(exc)[:300])}</code>"
@@ -349,12 +358,12 @@ def main(argv=None) -> int:
                    help="only ask the portals for the slow reports (morning of the 15th)")
     p.add_argument("--fresh", action="store_true",
                    help="with --request: new reports even where ones for the same dates exist (the 15th's second try)")
-    p.add_argument("--drive-input", action="store_true",
-                   help="use the files in the Drive folder's Input/ instead of fetching them")
+    p.add_argument("--drive-input", "--saved-reports", action="store_true",
+                   help="use saved PORTAL REPORTS without refreshing portals (legacy --drive-input alias)")
     p.add_argument("--backfill-year", metavar="YYYY",
-                   help="one-time build of that year's yearly report: fetch and build every finished month")
+                   help="rebuild that year's closed months from saved PORTAL REPORTS, without fresh portal jobs")
     p.add_argument("--backfill-portals", default="", metavar="LIST",
-                   help="with --backfill-year: only fetch these again, e.g. FLIPKART or MYNTRA,AJIO (default all)")
+                   help="with --backfill-year: rebuild these portals, e.g. FLIPKART or MYNTRA,AJIO (default all)")
     p.add_argument("--no-upload", action="store_true", help="keep the reports in output/returns only (test run)")
     p.add_argument("--no-telegram", action="store_true", help="print the summary instead of sending it")
     return run_bot("Return analysis", p, run, argv, key="returns")

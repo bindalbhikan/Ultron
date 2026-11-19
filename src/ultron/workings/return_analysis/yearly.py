@@ -6,9 +6,9 @@ Every monthly run keeps each portal's built rows (template columns + STATE) on D
 RETURN ANALYSIS/Yearly/<YYYY>/<PORTAL> <MON-YY>.csv and rebuilds the year's reports into
 RETURN ANALYSIS/Output/<YYYY>/<PORTAL> SALE RETURN ANALYSIS <YYYY>.xlsx.
 
-backfill() fills the months of a year that were never run: it fetches every month's inputs
-(Myntra one orders report per month and one returns report per calendar month, 15 minutes
-apart per report; Ajio and Flipkart per month), builds each month and then the year.
+backfill() reuses archived portal exports and the canonical business builders for every closed
+month, without requesting new portal jobs. Yearly rendering also revalidates older saved months
+against those builders instead of retaining legacy return flags.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ import pandas as pd
 from ..core.config import env
 from ..core.drive import DriveFolder
 from . import sources
-from .engine import DATA_COLUMNS, build_all, build_period, read_data
+from .engine import DATA_COLUMNS, build_period
 from ..core import clients
 
 log = logging.getLogger(__name__)
@@ -81,21 +81,46 @@ def blank_month_data(root: DriveFolder, portal: str, month: date, work: Path) ->
     log.info("Emptied %s on Drive (data not available)", name)
 
 
-def rebuild_year(root: DriveFolder, year: int, supporting: Path, work: Path, upload: bool = True) -> list[dict]:
-    """The year's reports from every monthly data file on Drive (Output/<YYYY>/)."""
+def rebuild_year(root: DriveFolder, year: int, supporting: Path, work: Path, upload: bool = True,
+                 *, context=None, reports_by_portal=None) -> list[dict]:
+    """Revalidate saved months against canonical lines before rendering the year.
+
+    Legacy monthly CSVs identify which months to include; their old return classifications
+    are never copied into the year's totals.
+    """
+    from .reconciled import load_context, load_reports, template_rows
     folder = root.subfolder("Yearly")
     folder = folder.subfolder(f"{year}") if folder else None
     if not folder:
         log.info("No monthly data for %s yet", year)
         return []
-    data = work / "yearly_in" / f"{year}"
-    folder.download_all(data)
-    frames = {}
+    months = {}
+    names = folder.children()
     for portal in PORTALS:
-        files = sorted(data.glob(f"{portal} *.csv"))
-        if files:
-            frames[portal] = pd.concat([read_data(f) for f in files], ignore_index=True)
-            log.info("Yearly %s %s: %s", year, portal, [f.stem.rsplit(" ", 1)[-1] for f in files])
+        months[portal] = sorted({pd.to_datetime(n[len(portal) + 1:-4], format="%b-%y").date()
+                                 for n in names if n.startswith(portal + " ") and n.endswith(".csv")})
+    latest = max((m for values in months.values() for m in values), default=None)
+    if latest is None:
+        return []
+    context = context if context is not None else load_context(supporting)
+    reports, gaps = (load_reports(latest, context[0], work / "canonical") if reports_by_portal is None
+                     else (reports_by_portal, []))
+    frames, notes = {}, [f"{p} left out: {why}" for p, why in gaps]
+    for portal, values in months.items():
+        source, _, account = portal.partition(" ")
+        rep = reports.get(source)
+        if rep is None:
+            if values:
+                notes.append(f"{portal} left out: canonical source unavailable")
+            continue
+        parts = []
+        for month in values:
+            try:
+                parts.append(template_rows(rep, month, account, context[3]))
+            except ValueError as exc:
+                notes.append(f"{portal} {tag(month)} left out: {exc}")
+        if parts:
+            frames[portal] = pd.concat(parts, ignore_index=True)
     if not frames:
         return []
     out = work / "yearly_out"
@@ -107,6 +132,7 @@ def rebuild_year(root: DriveFolder, year: int, supporting: Path, work: Path, upl
     for r in results:
         r["months"] = sorted({m for df in frames.values() for m in df["MONTH"].dropna().unique()})
         r["frames"] = frames          # the dashboard's details come from the same rows
+        r["notes"] = notes
     return results
 
 
@@ -249,51 +275,31 @@ def _month_input(raw: Path, month: date, inputs: Path) -> None:
 
 def backfill(root: DriveFolder, year: int, supporting: Path, work: Path, today: date,
              notes: list[str], portals: set[str] | None = None) -> tuple[list[date], list[dict]]:
-    """Fetch, build and keep every month of the year whose window is over, then build the year.
-    portals: only these sources ("MYNTRA", "AJIO", "FLIPKART"; default all) are fetched again;
-    the other portals' saved months stay as they are. (months filled, yearly results)."""
-    from concurrent.futures import ThreadPoolExecutor
-    from ..portals import myntra as mp
+    """Rebuild closed months from saved portal reports using the canonical business lines.
+
+    No new portal jobs are requested. Sources unavailable in the archive are named and excluded.
+    """
+    from .reconciled import build_month, load_context, load_reports
     months = months_to_fill(year, today)
     if not months:
         raise RuntimeError(f"no month of {year} has its returns window over yet")
     log.info("Backfill %s: %s", year, [tag(m) for m in months])
-    raw = work / "raw"
     portals = {p.upper() for p in portals} if portals else {"MYNTRA", "AJIO", "FLIPKART"}
-    jobs = {}
-    if "MYNTRA" in portals:
-        jobs.update({f"Myntra {a}": (_myntra_account, (a, months, raw / "Myntra" / a, notes)) for a in mp.ACCOUNTS})
-    if "AJIO" in portals:
-        jobs["Ajio"] = (_ajio, (months, raw / "Ajio", notes))
-    if "FLIPKART" in portals:
-        jobs["Flipkart"] = (_flipkart, (months, raw / "Flipkart", notes))
-    if not jobs:
+    allowed = {name for name in PORTALS if name.split()[0] in portals}
+    if not allowed:
         raise RuntimeError(f"no known portal in {sorted(portals)} (MYNTRA, AJIO, FLIPKART)")
-    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
-        futures = {name: pool.submit(fn, *args) for name, (fn, args) in jobs.items()}
-    flipkart_left_out: set[date] = set()
-    for name, fut in futures.items():
-        try:
-            res = fut.result()
-            if name == "Flipkart":
-                flipkart_left_out = res or set()
-        except Exception as exc:  # noqa: BLE001 - the other sources still count
-            log.exception("%s backfill failed", name)
-            notes.append(f"{name}: {str(exc)[:100]}")
-
+    context = load_context(supporting)
+    reports, failures = load_reports(months[-1], context[0], work / "canonical", allowed=allowed)
+    notes.extend(f"{portal} left out: {why}" for portal, why in failures)
     filled = []
     for m in months:
-        inputs = work / "months" / tag(m) / "Input"
-        _month_input(raw, m, inputs)
-        if not inputs.exists():
-            notes.append(f"{tag(m)}: no input could be fetched")
-            continue
-        results, skipped = build_all(str(inputs), str(supporting), str(work / "months" / tag(m) / "out"))
+        results, skipped = build_month(m, supporting, work / "months" / tag(m) / "out", work / "canonical",
+                                        allowed=allowed, context=context, reports_by_portal=reports)
         for portal, reason in skipped:
             notes.append(f"{tag(m)} {portal} left out: {reason[:80]}")
         if results:
             save_month_data(root, [r for r in results if r.get("df") is not None and r["month"] == tag(m)], work)
             filled.append(m)
-    for m in sorted(flipkart_left_out):   # an earlier run's (wrong) data for that month is emptied
-        blank_month_data(root, "FLIPKART", m, work)
-    return filled, rebuild_year(root, year, supporting, work)
+    # Revalidate other portals too when rendering an existing year's combined workbook.
+    results = rebuild_year(root, year, supporting, work, context=context)
+    return filled, results

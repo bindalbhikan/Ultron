@@ -16,10 +16,10 @@ on:
         description: "With request: 1 = new reports even where ones for the same dates exist (the 15th)"
         default: ""
       drive_input:
-        description: "1 = use the files in the Drive folder's Input/ instead of fetching them"
+        description: "1 = reuse saved PORTAL REPORTS without requesting fresh portal exports"
         default: ""
       backfill_year:
-        description: "YYYY = one-time build of that year's yearly report (fetches every finished month, a few hours)"
+        description: "YYYY = rebuild closed months from existing PORTAL REPORTS, without new portal jobs"
         default: ""
       backfill_portals:
         description: "With backfill_year: only these portals again, e.g. FLIPKART (empty = all)"

@@ -3,7 +3,8 @@ reports kept in PORTAL REPORTS.
 
   ORDER REPORT    Dropship order report: one row per order line (Cust Order No + Seller SKU), status,
                   Selling Price (what the customer paid), Invoice Value (what AJIO pays us)
-  RETURN REPORT   Dropship RTV report: one row per return line; Return Type RVP / REPL / SELF_SHIP =
+  RETURN REPORT   Dropship RTV report: one row per return line; RVP / REPL / SELF_SHIP and
+                  SELF_SHIP_WITHOUT_SHIPPING_CHARGE =
                   customer return (REPL = exchange, counted as a return as on Myntra), RTO = RTO
   PAYMENT REPORT  SRM statement of accounts (the AJIO ledger; owner's rule, 2 Nov 2026): G4 = payment
                   received for an invoice (REFERENCE = the Seller Invoice No), IC = a payment reversed for a
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("bindal.business_report")
 AJIO_FMT = "%a %b %d %H:%M:%S %Y"
-CUSTOMER = {"RVP", "REPL", "SELF_SHIP"}
+CUSTOMER = {"RVP", "REPL", "SELF_SHIP", "SELF_SHIP_WITHOUT_SHIPPING_CHARGE"}
 SHIPPED_DAYS = 60
 
 

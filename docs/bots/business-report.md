@@ -103,3 +103,14 @@
   ledger types shown apart; money not reaching an order line is named in the INPUT LOG). Category of Flipkart and AJIO = the article
   type Myntra lists the same design under.
 * Telegram: one line per portal (months, qty, net %, return %, RTO %).
+
+**Reconciliation with Return Analysis** (19 Nov 2026): the Return Analysis bot now uses these same
+builders on the same archived source reports (`return_analysis/reconciled.py`), including the partial
+quantity splits and per-order-month return window. Customer Return Qty must match; its Sales Units
+equal Delivered + Customer Return, whereas Gross Qty here also includes cancelled, RTO and in-transit
+units. Both the next month's PARTIAL and whole return reports can supply the 1st-14th tail; requesting
+an older end month no longer misses its tail just because a whole report has replaced the partial.
+The old Oct-26 outputs had six extra Myntra returns from order-report flags absent in the return
+sheets (one also after 14 Nov), and Flipkart mixed invoice-month and order-month units. AJIO's
+`SELF_SHIP_WITHOUT_SHIPPING_CHARGE` is now a customer return like `SELF_SHIP`: the old exact-type list
+left three Oct-26 units Delivered (909 returns instead of 912). Positive quantity and the window apply.

@@ -49,7 +49,7 @@ def month_of(text: str) -> date:
     return date(int(y), int(m), 1)
 
 
-def portal_files(portal: str, first: date, last: date, dest: Path) -> list[dict]:
+def portal_files(portal: str, first: date, last: date, dest: Path, kinds: set[str] | None = None) -> list[dict]:
     """Every report file of the portal from first to last month, downloaded: one dict per file."""
     root = agent_folder(pr.ROOT)
     pf = root.subfolder(portal) if root else None
@@ -73,7 +73,7 @@ def portal_files(portal: str, first: date, last: date, dest: Path) -> list[dict]
             folder = DriveFolder(mf["id"], pf.http)
             for name in folder.children():
                 m = NAME.match(name)
-                if not m or (tail and not (m["kind"] == "RETURN" and m["partial"])):
+                if not m or (tail and m["kind"] != "RETURN") or (kinds is not None and m["kind"] not in kinds):
                     continue
                 path = dest / portal / name
                 if not path.exists():                  # --work: a folder kept between runs is not fetched again
@@ -342,7 +342,7 @@ def ajio_with_oms(raw: pd.DataFrame, lines: pd.DataFrame, master: pd.DataFrame |
     return raw, changed
 
 
-def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: date) -> tuple:
+def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: date, *, include_earn_more: bool = True) -> tuple:
     paths = lambda k: [f["path"] for f in files if f["kind"] == k]  # noqa: E731
     o, r, s = flipkart.read_orders(paths("ORDER")), flipkart.read_returns(paths("RETURN")), flipkart.read_settled(paths("PAYMENT"))
     tax = flipkart.read_sales(paths("SALES"))
@@ -415,7 +415,7 @@ def build_flipkart(files: list[dict], master: pd.DataFrame, cats: dict, first: d
                len(master), "-", pd.NaT, pd.NaT, ""])
     bank = flipkart.bank_paid([(f["path"], pd.Timestamp(f["month"])) for f in files if f["kind"] == "PAYMENT"],
                               [(f["path"], pd.Timestamp(f["month"])) for f in files if f["kind"] == "MONTHLY"])
-    earn, why = earn_more_months(sorted(months))
+    earn, why = earn_more_months(sorted(months)) if include_earn_more else (None, "not needed for return analysis")
     if why:
         lg.append(["Earn More not read", "-", why, "-", "-", pd.NaT, pd.NaT, "the EARN MORE sheet is left out; the other sheets are whole"])
     else:
