@@ -78,3 +78,24 @@ The app is called **ULTRON** everywhere a person sees it: the Android launcher, 
    whose build failed is named "not built this time" and never silently left out.
 
 Version: `0.1.<run number>`, the run number is also the Android version code.
+
+## SMS only mode (22 Nov 2026)
+
+The sign-in screen's **SMS only (no account)** opens `/sms` (`ui/sms_only_screen.dart`). There the person types a
+name (2-40 characters) and picks Both / SIM 1 / SIM 2, then taps Start. The app asks for SMS (and, on Android 13+,
+notification) permission. From then on, every SMS that phone receives goes to the SMS sheet with that name. It keeps
+working after the app is closed and after a reboot.
+
+How it works on the Android side (`android/app/src/main/kotlin/.../sms`, ported from `android app/`):
+
+* `SmsReceiver` queues each SMS of the chosen SIM. `SmsUpload` (WorkManager: retries, backoff, waits for the
+  network) fetches the POD of a courier SMS (`Pod`, PDFBox) and posts JSON to the worker's `POST /api/sms`.
+* `SmsService` is a foreground service ("ULTRON: SMS to sheet on") that keeps the process alive on phones that
+  kill idle apps. `SmsBootReceiver` starts it again after a reboot or an update.
+* `SmsImport` sends the inbox of the last 60 days on a tap. The sheet skips SMS it already has.
+* `MainActivity`'s `ultron/sms` channel (`lib/src/data/sms_bridge.dart`) handles status, start, stop,
+  permissions, battery and the old SMS.
+
+The phone keeps its random id and the name. It never holds the sheet's link or key: the worker holds them.
+`--dart-define=ULTRON_WORKER=...` points another seller's build at their own worker. A phone blocked in the
+control panel gets "this phone is blocked" in its activity log.

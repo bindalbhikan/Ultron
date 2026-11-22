@@ -50,6 +50,13 @@ android {
     }
 }
 
+dependencies {
+    // "SMS only" mode (kotlin/.../sms): uploads that survive restarts and retry, the notification, POD text
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17

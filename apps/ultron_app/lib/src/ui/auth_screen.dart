@@ -350,6 +350,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   onPressed: busy ? null : () => context.go('/register'),
                   child: const Text('Create an account'),
                 ),
+                TextButton.icon(
+                  key: const Key('sms-only'),
+                  onPressed: busy ? null : () => context.go('/sms'),
+                  icon: const Icon(LucideIcons.messageSquareShare, size: 17),
+                  label: const Text('SMS only (no account)'),
+                ),
               ],
               if (verify || reset || register) ...[
                 const SizedBox(height: 12),

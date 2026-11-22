@@ -19,6 +19,7 @@ import 'ui/workflows_screen.dart';
 import 'ui/admin_screen.dart';
 import 'ui/account_screen.dart';
 import 'ui/control_screen.dart';
+import 'ui/sms_only_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier(0);
@@ -29,6 +30,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final phase = ref.read(authProvider).phase;
       final path = state.uri.path;
+      // SMS only needs no account: open whatever the session
+      if (path == '/sms') return null;
       final protected = path.startsWith('/app');
       if (phase == SessionPhase.signedOut &&
           (protected || path == '/verify' || path == '/access')) {
@@ -53,6 +56,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/', redirect: (context, state) => '/login'),
       GoRoute(path: '/login', builder: (context, state) => const AuthScreen()),
+      GoRoute(path: '/sms', builder: (context, state) => const SmsOnlyScreen()),
       GoRoute(
         path: '/register',
         builder: (context, state) =>
