@@ -32,7 +32,7 @@ Future<(CloudflareRepository, List<http.Request>)> signedIn(
   final client = MockClient((request) async {
     seen.add(request);
     final key = '${request.method} ${request.url.path}';
-    if (key == 'POST /api/auth/sign-in/email') {
+    if (key == 'POST /api/auth/sign-in/username') {
       return http.Response(
         jsonEncode({'token': 't'}),
         200,
@@ -51,7 +51,7 @@ Future<(CloudflareRepository, List<http.Request>)> signedIn(
     baseUrl: Uri.parse('https://api.example.test'),
     client: client,
   );
-  await repository.signIn('owner@example.test', 'a-long-public-test-pass');
+  await repository.signIn('owner', 'a-long-public-test-pass');
   return (repository, seen);
 }
 
@@ -72,6 +72,7 @@ void main() {
     });
     final user = await repository.createUser(
       name: ' New ',
+      username: ' newuser ',
       email: ' new@example.test ',
       password: 'a-long-public-test-pass',
       roleId: 'viewer',
@@ -80,6 +81,7 @@ void main() {
     final sent = jsonDecode(seen.last.body) as Map;
     expect(sent, {
       'name': 'New',
+      'username': 'newuser',
       'email': 'new@example.test',
       'password': 'a-long-public-test-pass',
       'roleId': 'viewer',

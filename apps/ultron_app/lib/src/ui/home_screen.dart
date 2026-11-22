@@ -1,416 +1,204 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 
+import '../domain/access.dart';
 import '../domain/models.dart';
-import '../theme/app_theme.dart';
-import 'actions.dart';
+import '../state/providers.dart';
 import 'components.dart';
 
-class HomeScreen extends StatelessWidget {
+/// Home: what needs attention, from the live services only. A number that could not be read says so;
+/// it is never shown as 0.
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _Read<T> {
+  const _Read({this.value, this.error});
+  final T? value;
+  final String? error;
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  _Read<List<AppUser>>? _users;
+  _Read<List<SmsPhone>>? _phones;
+  _Read<AgentSettings>? _settings;
+  _Read<AgentMemory>? _memory;
+  bool _loading = true;
 
   @override
-  Widget build(BuildContext context) => DataGate(
-    builder: (data) => PageBody(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Good morning,',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Workspace owner',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                ],
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<_Read<T>> _read<T>(Future<T> Function() call) async {
+    try {
+      return _Read(value: await call());
+    } on FrontendException catch (e) {
+      return _Read(error: e.message);
+    } catch (_) {
+      return const _Read(error: 'Not available right now.');
+    }
+  }
+
+  Future<void> _load() async {
+    final repo = ref.read(repositoryProvider);
+    final user = ref.read(authProvider).user;
+    setState(() => _loading = true);
+    final results = await Future.wait([
+      if (user?.allows('users.manage') ?? false)
+        _read(() async => (await repo.listUsers()).users)
+      else
+        Future.value(null),
+      if (user?.allows('phone.manage') ?? false)
+        _read(repo.smsPhones)
+      else
+        Future.value(null),
+      if (user?.allows('agent.tools.read') ?? false)
+        _read(repo.agentSettings)
+      else
+        Future.value(null),
+      if (user?.allows('agent.tools.read') ?? false)
+        _read(repo.agentMemory)
+      else
+        Future.value(null),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _users = results[0] as _Read<List<AppUser>>?;
+      _phones = results[1] as _Read<List<SmsPhone>>?;
+      _settings = results[2] as _Read<AgentSettings>?;
+      _memory = results[3] as _Read<AgentMemory>?;
+      _loading = false;
+    });
+  }
+
+  String _ago(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inMinutes < 1) return 'just now';
+    if (d.inHours < 1) return '${d.inMinutes} min ago';
+    if (d.inDays < 1) return '${d.inHours} h ago';
+    return '${d.inDays} days ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = ref.watch(authProvider).user;
+    final width = MediaQuery.sizeOf(context).width;
+    final columns = width >= 1100 ? 3 : (width >= 640 ? 2 : 1);
+    final cards = <Widget>[
+      if (_users != null)
+        _users!.value == null
+            ? StatCard(
+                icon: LucideIcons.userPlus,
+                label: 'Waiting for approval',
+                value: '—',
+                note: _users!.error,
+              )
+            : StatCard(
+                icon: LucideIcons.userPlus,
+                label: 'Waiting for approval',
+                value:
+                    '${_users!.value!.where((u) => u.status == 'pending').length}',
+                note: 'New registrations (latest 50)',
+                onTap: () => context.go('/app/admin'),
               ),
+      if (_phones != null)
+        _phones!.value == null
+            ? StatCard(
+                icon: LucideIcons.smartphone,
+                label: 'SMS phones',
+                value: '—',
+                note: _phones!.error,
+              )
+            : StatCard(
+                icon: LucideIcons.smartphone,
+                label: 'SMS phones',
+                value: '${_phones!.value!.where((p) => !p.blocked).length}',
+                note: _phones!.value!.isEmpty
+                    ? 'None yet: a phone joins with SMS only'
+                    : 'Last SMS ${_ago(_phones!.value!.first.lastSeen)} · ${_phones!.value!.fold<int>(0, (a, p) => a + p.sent)} sent',
+                onTap: () => context.go('/app/control'),
+              ),
+      if (_settings != null)
+        _settings!.value == null
+            ? StatCard(
+                icon: LucideIcons.brain,
+                label: 'Agent model',
+                value: '—',
+                note: _settings!.error,
+              )
+            : StatCard(
+                icon: LucideIcons.brain,
+                label: 'Agent model',
+                value: _settings!.value!.auto
+                    ? 'Auto'
+                    : _settings!.value!.model.split(':').last,
+                note:
+                    '${_settings!.value!.tier == 'fast' ? 'Fast & cheap' : 'Smart'} · ${_settings!.value!.order.length} providers in order',
+                onTap: () => context.go('/app/control'),
+              ),
+      if (_memory != null)
+        _memory!.value == null
+            ? StatCard(
+                icon: LucideIcons.bookOpen,
+                label: 'Agent memory',
+                value: '—',
+                note: _memory!.error,
+              )
+            : StatCard(
+                icon: LucideIcons.bookOpen,
+                label: 'Agent memory',
+                value:
+                    '${_memory!.value!.counts.values.fold<int>(0, (a, b) => a + b)}',
+                note:
+                    'Notes · ${_memory!.value!.counts['incident'] ?? 0} incidents',
+                onTap: () => context.go('/app/control'),
+              ),
+    ];
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: PageBody(
+        children: [
+          PageHeading(
+            'Hello, ${user?.name.split(' ').first ?? ''}',
+            subtitle: '${user?.roleName ?? ''} · what needs your attention',
+            action: IconButton(
+              tooltip: 'Refresh',
+              onPressed: _loading ? null : _load,
+              icon: const Icon(LucideIcons.refreshCw, size: 20),
             ),
-            CircleAvatar(
-              radius: 21,
-              backgroundColor: Theme.of(context).colorScheme.primary
-                  .withValues(alpha: .10),
-              child: const Text(
-                'OW',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Brand.green,
-                ),
+          ),
+          if (_loading && cards.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: Center(
+                child: CircularProgressIndicator(semanticsLabel: 'Loading'),
               ),
+            )
+          else if (cards.isEmpty)
+            const NotePanel(
+              'Your role has no overview yet. Ask an administrator for more access.',
+            )
+          else
+            LayoutBuilder(
+              builder: (context, box) {
+                const gap = 12.0;
+                final w = (box.maxWidth - gap * (columns - 1)) / columns;
+                return Wrap(
+                  spacing: gap,
+                  children: [
+                    for (final c in cards) SizedBox(width: w, child: c),
+                  ],
+                );
+              },
             ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final main = Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _OperationsCard(data: data),
-                const SizedBox(height: 22),
-                const _QuickActions(),
-                SectionHeading(
-                  'Recent activity',
-                  action: 'See all',
-                  onAction: () => context.go('/app/workflows'),
-                ),
-                for (final run in data.runs.take(
-                  constraints.maxWidth > 700 ? 5 : 3,
-                ))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _RunTile(run: run),
-                  ),
-                const SizedBox(height: 8),
-                NotePanel(
-                  'Myntra MAIN needs sign-in. Its figures are excluded.',
-                  warning: true,
-                  action: 'Review connection',
-                  onAction: () => context.go('/app/connections'),
-                ),
-              ],
-            );
-            final secondary = _HomeContext(data: data);
-            if (constraints.maxWidth < 860) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [main, secondary],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 8, child: main),
-                const SizedBox(width: 26),
-                Expanded(flex: 5, child: secondary),
-              ],
-            );
-          },
-        ),
-      ],
-    ),
-  );
-}
-
-class _OperationsCard extends StatelessWidget {
-  const _OperationsCard({required this.data});
-  final WorkspaceData data;
-  @override
-  Widget build(BuildContext context) => EmeraldPanel(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "Today's operations",
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-        ),
-        const SizedBox(height: 15),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final count = Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${data.completedRuns} / ${data.runs.length}',
-                  style: const TextStyle(
-                    fontSize: 42,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -1.8,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                const Text(
-                  'Runs completed',
-                  style: TextStyle(fontSize: 12, color: Color(0xFFD8F3E7)),
-                ),
-              ],
-            );
-            final states = Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _StatePill(
-                  icon: LucideIcons.play,
-                  text: '${data.activeRuns} running',
-                ),
-                const SizedBox(height: 7),
-                _StatePill(
-                  icon: LucideIcons.triangleAlert,
-                  text: '${data.blockedRuns} needs attention',
-                  warning: true,
-                ),
-              ],
-            );
-            if (constraints.maxWidth <
-                300 * MediaQuery.textScalerOf(context).scale(1)) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [count, const SizedBox(height: 18), states],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(child: count),
-                const SizedBox(width: 12),
-                states,
-              ],
-            );
-          },
-        ),
-      ],
-    ),
-  );
-}
-
-class _StatePill extends StatelessWidget {
-  const _StatePill({
-    required this.icon,
-    required this.text,
-    this.warning = false,
-  });
-  final IconData icon;
-  final String text;
-  final bool warning;
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: (warning ? const Color(0xFFE3C36C) : Colors.white).withValues(
-        alpha: .17,
+        ],
       ),
-      borderRadius: BorderRadius.circular(9),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          icon,
-          size: 14,
-          color: warning ? const Color(0xFFFFDD90) : const Color(0xFFA1F5C4),
-        ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            text,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _QuickActions extends StatelessWidget {
-  const _QuickActions();
-  @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      for (final (label, icon, action) in <(String, IconData, VoidCallback)>[
-        ('Run', LucideIcons.play, () => showRunWorkflow(context)),
-        ('Ask', LucideIcons.messageCircle, () => context.go('/app/agent')),
-        (
-          'Reports',
-          LucideIcons.chartNoAxesColumnIncreasing,
-          () => context.go('/app/reports'),
-        ),
-        ('Review', LucideIcons.squareCheck, () => context.go('/app/approvals')),
-      ])
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary
-                      .withValues(alpha: .08),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: IconButton(
-                  tooltip: label,
-                  onPressed: action,
-                  padding: const EdgeInsets.all(15),
-                  icon: Icon(
-                    icon,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 23,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-    ],
-  );
-}
-
-class _RunTile extends StatelessWidget {
-  const _RunTile({required this.run});
-  final WorkflowRun run;
-  @override
-  Widget build(BuildContext context) => Card(
-    child: InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: () => showRunDetail(context, run),
-      child: Padding(
-        padding: const EdgeInsets.all(13),
-        child: Row(
-          children: [
-            PortalIcon(
-              run.marketplace,
-              size: 37,
-              icon: run.marketplace == 'All' ? LucideIcons.fileText : null,
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    run.workflow,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    run.started,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            StatusBadge(status: run.status),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _HomeContext extends StatelessWidget {
-  const _HomeContext({required this.data});
-  final WorkspaceData data;
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      SectionHeading(
-        'Needs your review',
-        action:
-            '${data.pendingApprovals} request${data.pendingApprovals == 1 ? '' : 's'}',
-        onAction: () => context.go('/app/approvals'),
-      ),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(19),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  PortalIcon('Myntra', size: 35),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Myntra SPF master',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                data.pendingApprovals > 0
-                    ? '+12 proposed additions'
-                    : 'Decision recorded',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Existing rows retained. Review the exact scope before any change.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 17),
-              SizedBox(
-                width: double.infinity,
-                child: GradientButton(
-                  label: data.pendingApprovals > 0
-                      ? 'Review changes'
-                      : 'View decision',
-                  onPressed: () => context.go('/app/approvals'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      SectionHeading(
-        'Next scheduled',
-        action: 'View',
-        onAction: () => context.go('/app/schedule'),
-      ),
-      Card(
-        child: Column(
-          children: [
-            for (final (time, title) in [
-              ('11:00', 'Courier OTPs'),
-              ('11:30', 'Listing health'),
-            ])
-              ListTile(
-                dense: true,
-                leading: const Icon(LucideIcons.calendarDays, size: 18),
-                title: Text(title, style: const TextStyle(fontSize: 13)),
-                subtitle: Text(
-                  '$time IST · Example schedule',
-                  style: const TextStyle(fontSize: 11),
-                ),
-                trailing: const Icon(LucideIcons.chevronRight, size: 15),
-                onTap: () => context.go('/app/schedule'),
-              ),
-          ],
-        ),
-      ),
-      const SectionHeading('Your phone, connected'),
-      Card(
-        child: ListTile(
-          contentPadding: const EdgeInsets.all(16),
-          leading: const PortalIcon('All', icon: LucideIcons.smartphone),
-          title: const Text(
-            'Phone Work',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-          ),
-          subtitle: const Text(
-            'Agent mode · SMS · Courier OTP & POD',
-            style: TextStyle(fontSize: 11),
-          ),
-          trailing: const Icon(LucideIcons.chevronRight, size: 16),
-          onTap: () => context.go('/app/phone'),
-        ),
-      ),
-    ],
-  );
+    );
+  }
 }

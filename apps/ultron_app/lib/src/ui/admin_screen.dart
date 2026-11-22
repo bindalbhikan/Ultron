@@ -185,7 +185,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                                 (p) => Chip(
                                   label: Text(
                                     accessPermissions[p] ?? p,
-                                    style: const TextStyle(fontSize: 11),
+                                    style: const TextStyle(fontSize: 13),
                                   ),
                                 ),
                               )
@@ -240,23 +240,32 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 3),
-                        Text(user.email),
+                        Text('@${user.username}'),
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
                           runSpacing: 5,
                           children: [
-                            Chip(label: Text(user.status)),
-                            Chip(label: Text(user.roleName)),
+                            StatusPill(
+                              user.status,
+                              tone: switch (user.status) {
+                                'active' => Tone.good,
+                                'pending' => Tone.warn,
+                                _ => Tone.bad,
+                              },
+                            ),
+                            StatusPill(user.roleName),
                           ],
                         ),
-                        const SizedBox(height: 5),
-                        Text(
-                          user.emailVerified
-                              ? 'Email verified'
-                              : 'Email ownership not verified',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+                        if (user.status == 'pending') ...[
+                          const SizedBox(height: 10),
+                          FilledButton.icon(
+                            key: Key('approve-${user.id}'),
+                            onPressed: () => _editUser(user),
+                            icon: const Icon(LucideIcons.userCheck, size: 18),
+                            label: const Text('Approve'),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -273,24 +282,26 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            TextButton(
+            IconButton(
+              tooltip: 'Previous page',
               onPressed: _page > 0
                   ? () {
                       _page--;
                       _load();
                     }
                   : null,
-              child: const Text('Previous'),
+              icon: const Icon(LucideIcons.chevronLeft),
             ),
             Text('Page ${_page + 1}'),
-            TextButton(
+            IconButton(
+              tooltip: 'Next page',
               onPressed: _users!.hasMore
                   ? () {
                       _page++;
                       _load();
                     }
                   : null,
-              child: const Text('Next'),
+              icon: const Icon(LucideIcons.chevronRight),
             ),
           ],
         ),
@@ -316,7 +327,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(user.email),
+                  Text('@${user.username}'),
                   const SizedBox(height: 20),
                   DropdownButtonFormField<String>(
                     initialValue: status,
@@ -439,6 +450,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   /// An administrator creates an active account; the person signs in with this password and should change it.
   Future<void> _createUser() async {
     final name = TextEditingController(),
+        username = TextEditingController(),
         email = TextEditingController(),
         password = TextEditingController();
     final roles = _roles.where((r) => r.id != 'pending').toList();
@@ -467,10 +479,22 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                   ),
                   const SizedBox(height: 14),
                   TextField(
+                    controller: username,
+                    enabled: !busy,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Username',
+                      helperText: 'They sign in with it: 3-30 letters, digits, dots or underscores',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
                     controller: email,
                     enabled: !busy,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(labelText: 'Email'),
+                    decoration: const InputDecoration(
+                      labelText: 'Email (optional)',
+                    ),
                   ),
                   const SizedBox(height: 14),
                   TextField(
@@ -478,7 +502,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                     enabled: !busy,
                     obscureText: hidden,
                     decoration: InputDecoration(
-                      labelText: 'First password (12+ characters)',
+                      labelText: 'First password (8+ characters)',
                       suffixIcon: IconButton(
                         tooltip: hidden ? 'Show password' : 'Hide password',
                         onPressed: () => setDialogState(() => hidden = !hidden),
@@ -537,11 +561,16 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                   ? null
                   : () async {
                       if (name.text.trim().length < 2 ||
-                          !email.text.contains('@') ||
-                          password.text.length < 12 ||
+                          !RegExp(r'^[A-Za-z0-9_.]{3,30}$')
+                              .hasMatch(username.text.trim()) ||
+                          (email.text.trim().isNotEmpty &&
+                              !email.text.contains('@')) ||
+                          password.text.length < 8 ||
                           roleId.isEmpty) {
                         setDialogState(
-                          () => error = 'Enter a name, an email, a password of 12+ characters and a role.',
+                          () => error =
+                              'Enter a name, a username (3-30 letters, digits, dots or underscores), '
+                              'a password of 8+ characters and a role.',
                         );
                         return;
                       }
@@ -554,6 +583,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                             .read(repositoryProvider)
                             .createUser(
                               name: name.text,
+                              username: username.text,
                               email: email.text,
                               password: password.text,
                               roleId: roleId,
@@ -585,6 +615,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     );
     await Future<void>.delayed(const Duration(milliseconds: 250));
     name.dispose();
+    username.dispose();
     email.dispose();
     password.dispose();
     if (created == true && mounted) _load();

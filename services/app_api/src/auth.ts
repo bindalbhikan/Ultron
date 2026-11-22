@@ -16,7 +16,7 @@ export function createAuth(env: Env) {
     appName: 'Ultron', secret: env.AUTH_SECRET, baseURL: env.AUTH_BASE_URL, basePath: '/api/auth',
     database: drizzleAdapter(drizzle(env.DB), { provider: 'sqlite', schema, transaction: false }),
     trustedOrigins: env.APP_ORIGIN.split(',').map((origin) => origin.trim()),
-    emailAndPassword: { enabled: true, minPasswordLength: 10, maxPasswordLength: 128, autoSignIn: false },
+    emailAndPassword: { enabled: true, minPasswordLength: 8, maxPasswordLength: 128, autoSignIn: false },
     session: { expiresIn: 60 * 60 * 12, updateAge: 60 * 60, cookieCache: { enabled: false } },
     rateLimit: { enabled: true, storage: 'database', window: 60, max: 60,
       customRules: { '/sign-in/email': { window: 60, max: 5 }, '/sign-in/username': { window: 60, max: 5 },

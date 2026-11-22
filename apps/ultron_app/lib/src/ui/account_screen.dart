@@ -1,7 +1,7 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../app_info.dart';
 import '../domain/access.dart';
@@ -17,179 +17,162 @@ void showUltronAbout(BuildContext context) => showAboutDialog(
     Text('Developed by ${AppInfo.developer}'),
     SizedBox(height: 12),
     Text(
-      'E-commerce operations, workflows, reports and Phone Work in one workspace.',
+      'Users and access, the agent\'s model and memory, and SMS to the sheet.',
     ),
     SizedBox(height: 8),
     Text('Flutter ${AppInfo.flutterVersion} · Dart ${AppInfo.dartVersion}'),
   ],
 );
 
+/// Profile, and the pages a signed-in person sees without access: waiting for approval, disabled, or
+/// a feature their role does not include.
 class AccountScreen extends ConsumerWidget {
-  const AccountScreen({
-    super.key,
-    this.pending = false,
-    this.profile = false,
-    this.denied = false,
-  });
-  final bool pending, profile, denied;
+  const AccountScreen({super.key, this.pending = false, this.denied = false});
+  final bool pending, denied;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(authProvider);
     final user = session.user;
+    final theme = Theme.of(context);
+    Future<void> signOut() async {
+      await ref.read(authProvider.notifier).signOut();
+      if (context.mounted) context.go('/login');
+    }
+
     final content = PageBody(
-      maxWidth: 860,
+      maxWidth: 720,
       children: [
-        if (pending)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 35),
-            child: BrandMark(wordmark: true),
-          ),
+        if (pending) ...[
+          const BrandMark(size: 32, wordmark: true),
+          const SizedBox(height: 32),
+        ],
         PageHeading(
           denied
-              ? 'Access required'
+              ? 'Not in your role'
               : pending
               ? (user?.status == 'disabled'
                     ? 'Account disabled'
-                    : 'Awaiting approval')
-              : profile
-              ? 'Your account'
-              : 'Your workspace',
+                    : 'Waiting for approval')
+              : 'Profile',
           subtitle: pending
-              ? 'Your administrator decides your app and agent access.'
-              : 'Cloudflare account and access settings',
+              ? 'An administrator decides what your account can open.'
+              : denied
+              ? 'Ask an administrator to add this to your role.'
+              : null,
         ),
         Card(
           child: Padding(
-            padding: const EdgeInsets.all(22),
+            padding: const EdgeInsets.all(20),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   user?.name ?? 'Account',
-                  style: Theme.of(context).textTheme.headlineSmall,
+                  style: theme.textTheme.titleLarge,
                 ),
-                const SizedBox(height: 5),
-                Text(user?.email ?? ''),
-                const SizedBox(height: 18),
+                const SizedBox(height: 4),
+                Text(
+                  '@${user?.username ?? ''}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 14),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    Chip(label: Text(user?.roleName ?? 'No role')),
-                    Chip(label: Text(user?.status ?? 'Unavailable')),
+                    StatusPill(user?.roleName ?? 'No role'),
+                    StatusPill(
+                      user?.status ?? 'unknown',
+                      tone: switch (user?.status) {
+                        'active' => Tone.good,
+                        'pending' => Tone.warn,
+                        _ => Tone.bad,
+                      },
+                    ),
                   ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  user?.emailVerified == true ? 'Email verified' : 'Email ownership has not been verified. Your administrator must verify your identity before granting access.',
-                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 20),
         if (pending)
           const NotePanel(
-            'Registration creates an account only. Reports, workflows, Phone Work and agent tools remain blocked until an administrator activates your role. If access was just changed, sign in again.',
+            'Your account exists but opens nothing yet. Once an administrator approves it, tap '
+            '"Check again" or sign in again.',
           ),
-        if (denied)
-          const NotePanel(
-            'Your current role does not include this feature. Contact your administrator to request access.',
-          ),
-        if (!pending && !denied && !profile) ...[
-          const NotePanel(
-            'User management is connected. Operational reports and agent execution are not connected yet; they will use the same server-enforced permissions.',
-          ),
-          const SizedBox(height: 22),
-          for (final destination in <(String, String, String, IconData)>[
-            (
-              'User management',
-              '/app/admin',
-              'users.manage',
-              LucideIcons.users,
-            ),
-            (
-              'Roles & permissions',
-              '/app/roles',
-              'roles.manage',
-              LucideIcons.shieldCheck,
-            ),
-            (
-              'Reports',
-              '/app/reports',
-              'reports.read',
-              LucideIcons.chartNoAxesColumnIncreasing,
-            ),
-            ('Agent', '/app/agent', 'agent.chat', LucideIcons.messageCircle),
-            (
-              'Phone Work',
-              '/app/phone',
-              'phone.manage',
-              LucideIcons.smartphone,
-            ),
-          ])
-            if (user?.allows(destination.$3) == true)
-              Card(
-                child: ListTile(
-                  leading: Icon(destination.$4, size: 20),
-                  title: Text(destination.$1),
-                  trailing: const Icon(LucideIcons.chevronRight, size: 18),
-                  onTap: () => context.go(destination.$2),
-                ),
+        if (!pending && !denied) ...[
+          const SectionHeading('Appearance'),
+          SegmentedButton<ThemeMode>(
+            segments: const [
+              ButtonSegment(
+                value: ThemeMode.dark,
+                label: Text('Dark'),
+                icon: Icon(LucideIcons.moon, size: 16),
               ),
-        ],
-        if (profile) ...[
-          const SectionHeading('Your permissions'),
-          for (final permission in user?.permissions ?? <String>[])
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(LucideIcons.check, size: 17),
-              title: Text(accessPermissions[permission] ?? permission),
-            ),
-          const NotePanel(
-            'This session is held in memory and expires on the server after 12 hours. Closing or reloading the app requires sign-in again. Access changes end affected sessions immediately.',
+              ButtonSegment(
+                value: ThemeMode.light,
+                label: Text('Light'),
+                icon: Icon(LucideIcons.sun, size: 16),
+              ),
+              ButtonSegment(
+                value: ThemeMode.system,
+                label: Text('Phone'),
+                icon: Icon(LucideIcons.smartphone, size: 16),
+              ),
+            ],
+            selected: {ref.watch(themeModeProvider)},
+            onSelectionChanged: (v) =>
+                ref.read(themeModeProvider.notifier).set(v.first),
           ),
-          const SizedBox(height: 16),
-          if (user?.allows('users.manage') == true)
-            ListTile(
-              leading: const Icon(LucideIcons.users),
-              title: const Text('User management'),
-              onTap: () => context.go('/app/admin'),
+          const SectionHeading('What your role allows'),
+          Card(
+            child: Column(
+              children: [
+                for (final p in user?.permissions ?? const <String>[])
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(LucideIcons.check, size: 18),
+                    title: Text(accessPermissions[p] ?? p),
+                  ),
+              ],
             ),
-          if (user?.allows('roles.manage') == true)
-            ListTile(
-              leading: const Icon(LucideIcons.shieldCheck),
-              title: const Text('Roles & permissions'),
-              onTap: () => context.go('/app/roles'),
-            ),
+          ),
           ListTile(
-            title: const Text('About Ultron'),
+            contentPadding: EdgeInsets.zero,
             leading: const Icon(LucideIcons.info),
+            title: const Text('About ULTRON'),
             onTap: () => showUltronAbout(context),
           ),
         ],
-        if (session.error != null) NotePanel(session.error!, warning: true),
+        if (session.error != null) ...[
+          const SizedBox(height: 12),
+          NotePanel(session.error!, warning: true),
+        ],
         const SizedBox(height: 20),
         OutlinedButton.icon(
           onPressed: session.busy
               ? null
               : () => ref.read(authProvider.notifier).refreshAccess(),
-          icon: const Icon(LucideIcons.refreshCw, size: 17),
-          label: Text(session.busy ? 'Checking access…' : 'Refresh my access'),
+          icon: const Icon(LucideIcons.refreshCw, size: 18),
+          label: Text(session.busy ? 'Checking…' : 'Check again'),
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
           key: const Key('sign-out'),
-          onPressed: () => ref.read(authProvider.notifier).signOut(),
-          icon: const Icon(LucideIcons.logOut, size: 17),
+          onPressed: signOut,
+          icon: const Icon(LucideIcons.logOut, size: 18),
           label: const Text('Sign out'),
         ),
         const SizedBox(height: 24),
         Text(
           'Developed by ${AppInfo.developer}',
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );

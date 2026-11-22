@@ -60,8 +60,8 @@ async function createUser(request: Request, env: Env, actor: Identity) {
   const typed = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
   if (typed && !EMAIL.test(typed)) throw new HttpError(400, 'Enter a valid email address, or leave it empty.');
   const email = typed || internalEmail(user);
-  if (typeof input.password !== 'string' || input.password.length < 10 || input.password.length > 128) {
-    throw new HttpError(400, 'Use a password of 10 to 128 characters.');
+  if (typeof input.password !== 'string' || input.password.length < 8 || input.password.length > 128) {
+    throw new HttpError(400, 'Use a password of 8 to 128 characters.');
   }
   const role = typeof input.roleId === 'string'
     ? await env.DB.prepare("SELECT id FROM app_role WHERE id=? AND id!='pending'").bind(input.roleId).first() : null;

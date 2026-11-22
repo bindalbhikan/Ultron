@@ -55,9 +55,9 @@ def main() -> None:
     username = input("Username: ").strip()
     if len(name) < 2 or not USERNAME.match(username):
         sys.exit("A name of 2+ characters and a username of 3-30 letters, digits, dots or underscores.")
-    password = getpass.getpass("Password (10+ characters, hidden): ")
-    if len(password) < 10 or password != getpass.getpass("Password again: "):
-        sys.exit("The passwords differ or are shorter than 10 characters.")
+    password = getpass.getpass("Password (8+ characters, hidden): ")
+    if len(password) < 8 or password != getpass.getpass("Password again: "):
+        sys.exit("The passwords differ or are shorter than 8 characters.")
     print(register(name, username, password))
     promote(username)
     print(f"{username} is now an active administrator. Sign in to the ULTRON app with this username.")

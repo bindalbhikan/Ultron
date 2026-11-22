@@ -113,7 +113,7 @@ test('an administrator creates an active account; others cannot',async()=>{
   const managerToken=managerSignin.headers.get('set-auth-token')!;
   assert.equal((await call('/api/me','GET',undefined,managerToken)).status,200);
   assert.equal((await call('/api/admin/users','POST',{name:'Again',username:'MANAGER',password:'a-long-public-test-pass',roleId:'viewer'},adminToken)).status,409);
-  assert.equal((await call('/api/admin/users','POST',{name:'Short',username:'shorty',password:'nine-char',roleId:'viewer'},adminToken)).status,400);
+  assert.equal((await call('/api/admin/users','POST',{name:'Short',username:'shorty',password:'seven77',roleId:'viewer'},adminToken)).status,400);
   assert.equal((await call('/api/admin/users','POST',{name:'Pending',username:'pend',password:'a-long-public-test-pass',roleId:'pending'},adminToken)).status,400);
   assert.equal((await call('/api/admin/users','POST',{name:'Sneaky',username:'sneaky',password:'a-long-public-test-pass',roleId:'admin'},managerToken)).status,403);
   const audit=await db.prepare("SELECT detail FROM app_audit WHERE action='user.create'").all();
@@ -171,12 +171,12 @@ test('SMS-only phones are listed and an administrator blocks one',async()=>{
   assert.equal((await call('/api/admin/phones','GET',undefined,viewerToken)).status,200);   // managers have phone.manage
 });
 
-test('a ten-character password and a username are enough; a bad username is refused',async()=>{
+test('an eight-character password and a username are enough; a bad username is refused',async()=>{
   const adminToken=await signin('admin@example.test');
-  assert.equal((await call('/api/admin/users','POST',{name:'Owner Two',username:'Owner.Two',password:'Ten@chars1',roleId:'viewer'},adminToken)).status,201);
-  assert.equal((await call('/api/auth/sign-in/username','POST',{username:'owner.two',password:'Ten@chars1'})).status,200);
-  assert.equal((await call('/api/admin/users','POST',{name:'Bad Name',username:'no spaces',password:'Ten@chars1',roleId:'viewer'},adminToken)).status,400);
-  const reg=await call('/api/auth/sign-up/email','POST',{name:'New Person',username:'newperson',password:'Ten@chars1'});
+  assert.equal((await call('/api/admin/users','POST',{name:'Owner Two',username:'Owner.Two',password:'Eight@8c',roleId:'viewer'},adminToken)).status,201);
+  assert.equal((await call('/api/auth/sign-in/username','POST',{username:'owner.two',password:'Eight@8c'})).status,200);
+  assert.equal((await call('/api/admin/users','POST',{name:'Bad Name',username:'no spaces',password:'Eight@8c',roleId:'viewer'},adminToken)).status,400);
+  const reg=await call('/api/auth/sign-up/email','POST',{name:'New Person',username:'newperson',password:'Eight@8c'});
   assert.equal(reg.status,200);
   const row=await db.prepare("SELECT a.status FROM user u JOIN app_access a ON a.user_id=u.id WHERE u.username='newperson'").first<{status:string}>();
   assert.equal(row!.status,'pending');                       // a public registration waits for an administrator

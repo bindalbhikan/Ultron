@@ -4,7 +4,7 @@
 `AUTH_SECRET`), tested on the real Workers runtime (wrangler's test harness, local D1).
 
 **Sign-in is by username** (better-auth's username plugin, 3-30 letters, digits, dots or underscores; case does not
-matter). Passwords are 10 to 128 characters. An account made without an email gets the internal address
+matter). Passwords are 8 to 128 characters. An account made without an email gets the internal address
 `<username>@users.ultron.invalid`. A public registration starts **pending** until an administrator approves it.
 The first administrator is made from the owner's own terminal: `.venv\Scripts\python scriptspp\create_admin.py`.
 It asks for the name, username and password (hidden), registers through the API, then promotes the account with
@@ -36,7 +36,7 @@ through this API, with a signed-in user's session and permissions.
 | `POST /api/auth/sign-up/email` (name, username, password, optional email), `sign-in/username`, `sign-in/email`, `sign-out`, `get-session`, `change-password` | none | better-auth. A public sign-up starts **pending** and cannot choose its role. |
 | `GET /api/me` | signed in | the user, role and permissions |
 | `GET /api/admin/users`, `PATCH /api/admin/users/<id>` | `users.manage` | list (50 a page, search), approve / disable / change role (revision checked) |
-| `POST /api/admin/users` | `users.manage` | an administrator creates an account: name, username, optional email, password (10-128), an approved role. It starts **active**. The password is never audited. |
+| `POST /api/admin/users` | `users.manage` | an administrator creates an account: name, username, optional email, password (8-128), an approved role. It starts **active**. The password is never audited. |
 | `GET /api/admin/roles`, `PUT /api/admin/roles/<id>` | `roles.manage` | roles and their permissions (admin / pending cannot change) |
 | `GET /api/admin/audit` | `users.manage` | the last 100 changes |
 | `GET /api/agent/settings` | `agent.tools.read` | model (`auto` or `provider:model`), tier (`smart` / `fast`), provider order, revision |

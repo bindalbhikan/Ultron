@@ -6,8 +6,8 @@ import '../domain/access.dart';
 import '../domain/models.dart';
 import 'repository.dart';
 
-/// Tokens live only in memory. Relaunching the app requires sign-in.
-class CloudflareRepository extends UnconfiguredRepository {
+/// The live app API (services/app_api). Tokens live only in memory: relaunching the app asks to sign in.
+class CloudflareRepository extends UltronRepository {
   CloudflareRepository({
     required Uri baseUrl,
     http.Client? client,
@@ -87,12 +87,16 @@ class CloudflareRepository extends UnconfiguredRepository {
   }
 
   @override
-  Future<String> signIn(String email, String password) async {
+  Future<void> signIn(String username, String password) async {
     final epoch = _epoch;
     final response = await _request(
       'POST',
-      '/api/auth/sign-in/email',
-      body: {'email': email.trim(), 'password': password, 'rememberMe': false},
+      '/api/auth/sign-in/username',
+      body: {
+        'username': username.trim(),
+        'password': password,
+        'rememberMe': false,
+      },
       authenticated: false,
     );
     final token = response.headers['set-auth-token'] ?? response.data['token'];
@@ -107,27 +111,22 @@ class CloudflareRepository extends UnconfiguredRepository {
       _user = null;
       rethrow;
     }
-    return '';
   }
 
   @override
-  Future<void> verify(String challenge, String code) async =>
-      throw const FrontendException('Sign in with your registered account.');
-  @override
-  Future<void> register(String name, String email, String password) async {
+  Future<void> register(String name, String username, String password) async {
     await _request(
       'POST',
       '/api/auth/sign-up/email',
-      body: {'name': name.trim(), 'email': email.trim(), 'password': password},
+      body: {
+        'name': name.trim(),
+        'username': username.trim(),
+        'password': password,
+      },
       authenticated: false,
     );
   }
 
-  @override
-  Future<void> resetPassword(String email) async =>
-      throw const FrontendException(
-        'Contact your administrator. Email recovery is not configured yet.',
-      );
   @override
   Future<void> signOut() async {
     final token = _token;
@@ -214,16 +213,18 @@ class CloudflareRepository extends UnconfiguredRepository {
   @override
   Future<AppUser> createUser({
     required String name,
-    required String email,
+    required String username,
     required String password,
     required String roleId,
+    String email = '',
   }) async {
     final response = await _request(
       'POST',
       '/api/admin/users',
       body: {
         'name': name.trim(),
-        'email': email.trim(),
+        'username': username.trim(),
+        if (email.trim().isNotEmpty) 'email': email.trim(),
         'password': password,
         'roleId': roleId,
       },
@@ -286,4 +287,24 @@ class CloudflareRepository extends UnconfiguredRepository {
   Future<void> forgetNote(String id) async {
     await _request('DELETE', '/api/agent/memory/${Uri.encodeComponent(id)}');
   }
+
+  List<SmsPhone> _phones(Map<String, dynamic> data) => (data['phones'] as List)
+      .map((p) => SmsPhone.fromJson(Map<String, dynamic>.from(p as Map)))
+      .toList();
+
+  @override
+  Future<List<SmsPhone>> smsPhones() async =>
+      _phones((await _request('GET', '/api/admin/phones')).data);
+
+  @override
+  Future<List<SmsPhone>> blockPhone(
+    SmsPhone phone, {
+    required bool blocked,
+  }) async => _phones(
+    (await _request(
+      'PATCH',
+      '/api/admin/phones/${Uri.encodeComponent(phone.id)}',
+      body: {'blocked': blocked, 'revision': phone.revision},
+    )).data,
+  );
 }

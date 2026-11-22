@@ -1,30 +1,54 @@
 # Ultron app — cross-platform frontend
 
-**Status:** Flutter frontend built in `apps/ultron_app/`. 22 Nov 2026: the **Control panel** (`/app/control`) and **Create user** (Users page) work against the app API (`docs/apps/app-api.md`). That API is tested but not deployed yet; the Android Phone service migration remains open. The Kotlin `android app/` remains active until its background work is migrated and verified.
+**Status:** 23 Nov 2026: live. The app talks to the deployed app API (`docs/apps/app-api.md`); the demo
+(sample data, demo sign-in, the verification code) is removed. The Kotlin `android app/` stays only until its
+Agent mode (the Myntra lookups for zero TD) is moved into this app.
 
-## Product and toolchain
+## What it has
 
-The frontend follows the owner's emerald/mint reference. It includes required login, verification, reset form, guarded routes, Home, Agent, Workflows, Reports, Approvals, Analytics, Connections, Schedule, Profile and Phone Work. The login footer and Profile → About Ultron show **Developed by Bhikan Deshmukh**.
+Every screen reads a live service; a person sees only what their role allows (`domain/access.dart`):
 
-Flutter 3.50.0 stable and bundled Dart 3.14.0 were verified from the installed SDK and are pinned for this implementation. Android, iOS, Windows and macOS runner sources are included; web provides a local interactive preview. Native builds still require their platform toolchains. See the app README and `docs/libraries/11-flutter-frontend.md`.
+| Screen | Path | Needs | What |
+|---|---|---|---|
+| Sign in | `/login` | none | username and password (8+ characters); no SMS OTP (paid), no demo |
+| Ask for an account | `/register` | none | name, username, password; waits as *pending* until an administrator approves |
+| SMS only | `/sms` | none | Android: a name and a SIM, then every SMS goes to the sheet (below) |
+| Waiting for approval | `/access` | signed in | a pending or disabled account; "Check again" re-reads the access |
+| Home | `/app/home` | `app.access` | live numbers: registrations waiting, SMS phones (last SMS, sent), agent model, memory notes; a number that could not be read shows "—" and why, never 0 |
+| Control | `/app/control` | `agent.tools.read` | the agent's model (auto, tier, provider order), the SMS phones (block / unblock), the memory (remove a note) |
+| Users | `/app/admin` | `users.manage` | search, **Approve** on a pending registration, change role / status, **Create user** (username, optional email) |
+| Roles | `/app/roles` | `roles.manage` | roles and their permissions |
+| Profile | `/app/profile` | `app.access` | role, permissions, appearance (dark / light / phone), sign out |
+
+Phones show at most five items in the bottom bar; wider screens get a side rail.
+
+## Design (23 Nov 2026)
+
+The UI was reviewed with the ui-ux-pro-max skill (global skill, `~/.claude/skills/ui-ux-pro-max`) and rebuilt
+on its design system for an ops / admin product: a **dark operations look** (slate `#0F172A` surfaces, status
+green `#22C55E`), with a light variant of the same roles (green `#15803D` on white for 5:1 contrast). DM Sans
+(bundled, OFL) stays the font. Rules applied: body text 14-16px, 48dp touch targets, labels on every field,
+errors next to the form with an icon (never colour alone), status words with a dot, tabular numbers, safe
+areas. `test/app_test.dart` checks every screen at 320, 390, 760 and 1440px in dark and light without overflow.
+
+Flutter 3.50.0 stable and bundled Dart 3.14.0, pinned. Android, iOS, Windows, macOS and Linux runners; web for
+local previews. `--dart-define=ULTRON_API_URL=...` points another seller's build at their own API.
 
 ## Data and access boundaries
 
-`UltronRepository` defines authentication, workspace, run, approval and chat contracts. `DemoRepository` contains synthetic fixtures and in-memory mutations. Protected demo operations check their session; decisions check pending state and expiry. UI submission is guarded. These frontend/demo checks do not replace server authorisation.
-
-`ULTRON_DEMO=false` fails closed without data or demo sign-in. A supported app API is needed before live access. Telegram allowed-chat access and dashboard cookies do not automatically authenticate this app. Native secrets must use a supported secure store and server flow, never assets/build defines.
-
-Missing report sources stay named and excluded. Missing device health/check-ins/queue counts are unavailable, never zero. Analytics and schedule are marked illustrative; live schedules must come from the canonical worker. No real portal, workbook, stock, price, ticket, customer or courier is changed by the frontend.
+`CloudflareRepository` is the only repository: every call is authorised by the server, and the session token
+lives in memory (closing the app asks to sign in again). Telegram chat access and dashboard cookies do not sign
+in to this app. No secret is built into the app: the SMS sheet's link and key stay on the worker.
 
 ## Phone Work migration map
 
 | Existing component | New app responsibility | Current status |
 |---|---|---|
-| `AgentService.kt`, `MyntraLookup.kt` | Foreground service, worker polling, job/result protocol, check-ins | Setup/status UI built; Android runtime pending |
-| `SmsReceiver.kt`, `UploadWorker.kt` | Incoming SMS, offline retry, deduplication, SIM/sender selection | Setup UI built; no permissions requested or SMS read |
-| `SmsImport.kt` | Explicit 60-day inbox import and duplicate rules | Frontend entry point; native implementation pending |
-| `Pod.kt`, `apps-script/Code.gs` | Expiring POD fetch, AWB extraction, per-portal OTP replacement, evidence retention | Status/log entry points built; processing pending |
-| `BootReceiver.kt`, `Prefs.kt`, manifest | Reboot resume, battery/autostart and authorised settings | Setup UI built; lifecycle/storage migration pending |
+| `AgentService.kt`, `MyntraLookup.kt` | Foreground service, worker polling, job/result protocol, check-ins | open: next, then `android app/` goes |
+| `SmsReceiver.kt`, `UploadWorker.kt` | Incoming SMS, offline retry, deduplication, SIM selection | ✅ 22 Nov 2026: `sms/SmsReceiver`, `SmsUpload` (through the worker; no sender filter: every SMS of the SIM) |
+| `SmsImport.kt` | Explicit 60-day inbox import and duplicate rules | ✅ `sms/SmsImport` ("Send old SMS") |
+| `Pod.kt`, `apps-script/Code.gs` | Expiring POD fetch, AWB extraction, per-portal OTP replacement, evidence retention | ✅ `sms/Pod`; Code.gs v17 (User column, `Agent · <name>`) |
+| `BootReceiver.kt`, `Prefs.kt`, manifest | Reboot resume, battery/autostart and authorised settings | ✅ `sms/SmsService`, `SmsBootReceiver`, `SmsPrefs` |
 
 On-device SMS/foreground work is Android-specific. Other platforms may manage connected-device status through a future backend; they must not claim local Android capabilities. Raw SMS, OTPs, customer data and session values must stay out of public source, logs and fixtures.
 

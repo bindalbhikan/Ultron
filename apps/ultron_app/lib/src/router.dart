@@ -1,24 +1,16 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:material_ui/material_ui.dart';
 
-import 'domain/models.dart';
 import 'domain/access.dart';
+import 'domain/models.dart';
 import 'state/providers.dart';
-import 'ui/agent_screen.dart';
-import 'ui/analytics_screen.dart';
-import 'ui/app_shell.dart';
-import 'ui/approvals_screen.dart';
-import 'ui/auth_screen.dart';
-import 'ui/home_screen.dart';
-import 'ui/phone_screen.dart';
-import 'ui/profile_screen.dart';
-import 'ui/reports_screen.dart';
-import 'ui/schedule_screen.dart';
-import 'ui/workflows_screen.dart';
-import 'ui/admin_screen.dart';
 import 'ui/account_screen.dart';
+import 'ui/admin_screen.dart';
+import 'ui/app_shell.dart';
+import 'ui/auth_screen.dart';
 import 'ui/control_screen.dart';
+import 'ui/home_screen.dart';
 import 'ui/sms_only_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -28,53 +20,35 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/login',
     refreshListenable: refresh,
     redirect: (context, state) {
-      final phase = ref.read(authProvider).phase;
       final path = state.uri.path;
-      // SMS only needs no account: open whatever the session
+      // SMS only needs no account: it opens whatever the session
       if (path == '/sms') return null;
-      final protected = path.startsWith('/app');
-      if (phase == SessionPhase.signedOut &&
-          (protected || path == '/verify' || path == '/access')) {
-        return '/login';
+      final session = ref.read(authProvider);
+      final protected = path.startsWith('/app') || path == '/access';
+      if (session.phase == SessionPhase.signedOut) {
+        return protected ? '/login' : null;
       }
-      if (phase == SessionPhase.verification && path != '/verify') {
-        return '/verify';
+      final user = session.user;
+      if (user?.hasAppAccess != true) {
+        return path == '/access' ? null : '/access';
       }
-      if (phase == SessionPhase.signedIn) {
-        final user = ref.read(authProvider).user;
-        if (user?.hasAppAccess != true && path != '/access') return '/access';
-        if (user?.hasAppAccess == true) {
-          if (!protected) return '/app/home';
-          final permission = permissionForPath(path);
-          if (permission != null && !user!.allows(permission)) {
-            return '/app/denied';
-          }
-        }
-      }
+      if (!path.startsWith('/app')) return '/app/home';
+      final permission = permissionForPath(path);
+      if (permission != null && !user!.allows(permission)) return '/app/denied';
       return null;
     },
     routes: [
       GoRoute(path: '/', redirect: (context, state) => '/login'),
       GoRoute(path: '/login', builder: (context, state) => const AuthScreen()),
-      GoRoute(path: '/sms', builder: (context, state) => const SmsOnlyScreen()),
       GoRoute(
         path: '/register',
         builder: (context, state) =>
             const AuthScreen(mode: AuthScreenMode.register),
       ),
+      GoRoute(path: '/sms', builder: (context, state) => const SmsOnlyScreen()),
       GoRoute(
         path: '/access',
         builder: (context, state) => const AccountScreen(pending: true),
-      ),
-      GoRoute(
-        path: '/verify',
-        builder: (context, state) =>
-            const AuthScreen(mode: AuthScreenMode.verify),
-      ),
-      GoRoute(
-        path: '/reset',
-        builder: (context, state) =>
-            const AuthScreen(mode: AuthScreenMode.reset),
       ),
       ShellRoute(
         builder: (context, state, child) =>
@@ -82,47 +56,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: '/app/home',
-            builder: (context, state) => ref.read(repositoryProvider).isDemo
-                ? const HomeScreen()
-                : const AccountScreen(),
+            builder: (context, state) => const HomeScreen(),
           ),
           GoRoute(
-            path: '/app/agent',
-            builder: (context, state) => const AgentScreen(),
-          ),
-          GoRoute(
-            path: '/app/workflows',
-            builder: (context, state) => const WorkflowsScreen(),
-          ),
-          GoRoute(
-            path: '/app/reports',
-            builder: (context, state) => const ReportsScreen(),
-          ),
-          GoRoute(
-            path: '/app/approvals',
-            builder: (context, state) => const ApprovalsScreen(),
-          ),
-          GoRoute(
-            path: '/app/analytics',
-            builder: (context, state) => const AnalyticsScreen(),
-          ),
-          GoRoute(
-            path: '/app/profile',
-            builder: (context, state) => ref.read(repositoryProvider).isDemo
-                ? const ProfileScreen()
-                : const AccountScreen(profile: true),
-          ),
-          GoRoute(
-            path: '/app/connections',
-            builder: (context, state) => const ConnectionsScreen(),
-          ),
-          GoRoute(
-            path: '/app/phone',
-            builder: (context, state) => const PhoneScreen(),
-          ),
-          GoRoute(
-            path: '/app/schedule',
-            builder: (context, state) => const ScheduleScreen(),
+            path: '/app/control',
+            builder: (context, state) => const ControlScreen(),
           ),
           GoRoute(
             path: '/app/admin',
@@ -133,8 +71,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const AdminScreen(rolesOnly: true),
           ),
           GoRoute(
-            path: '/app/control',
-            builder: (context, state) => const ControlScreen(),
+            path: '/app/profile',
+            builder: (context, state) => const AccountScreen(),
           ),
           GoRoute(
             path: '/app/denied',
@@ -148,11 +86,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('This screen is unavailable.'),
+            const Text('This page does not exist.'),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () => context.go('/login'),
-              child: const Text('Return to workspace'),
+              child: const Text('Go to ULTRON'),
             ),
           ],
         ),

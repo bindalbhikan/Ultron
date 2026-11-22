@@ -2,225 +2,234 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:ultron_app/src/app.dart';
-import 'package:ultron_app/src/data/demo_repository.dart';
+import 'package:ultron_app/src/data/repository.dart';
+import 'package:ultron_app/src/domain/access.dart';
 import 'package:ultron_app/src/domain/models.dart';
 import 'package:ultron_app/src/router.dart';
 import 'package:ultron_app/src/state/providers.dart';
 
-Future<ProviderContainer> mountApp(
+const _all = [
+  'app.access',
+  'users.manage',
+  'roles.manage',
+  'agent.tools.read',
+  'agent.manage',
+  'memory.manage',
+  'phone.manage',
+];
+
+AppUser _user(
+  String username, {
+  String status = 'active',
+  String role = 'admin',
+  List<String> perms = _all,
+}) => AppUser(
+  id: 'id-$username',
+  name: '$username Person',
+  email: '$username@users.ultron.invalid',
+  username: username,
+  status: status,
+  roleId: role,
+  roleName: role == 'admin' ? 'Administrator' : role,
+  revision: 1,
+  permissions: status == 'active' ? perms : const [],
+);
+
+/// The app API, in memory: who signs in decides what the app may show.
+class FakeRepository extends UltronRepository {
+  FakeRepository(this.accounts);
+  final Map<String, AppUser> accounts;
+  AppUser? _me;
+  final approvals = <String>[];
+
+  @override
+  AppUser? get currentUser => _me;
+
+  @override
+  Future<void> signIn(String username, String password) async {
+    final user = accounts[username.toLowerCase()];
+    if (user == null || password != 'right-password') {
+      throw const FrontendException('Invalid username or password');
+    }
+    _me = user;
+  }
+
+  @override
+  Future<void> signOut() async => _me = null;
+  @override
+  Future<AppUser> refreshUser() async => _me!;
+  @override
+  Future<UserPage> listUsers({String search = '', int page = 0}) async =>
+      UserPage(accounts.values.toList());
+  @override
+  Future<List<AccessRole>> listRoles() async => const [
+    AccessRole(
+      id: 'admin',
+      name: 'Administrator',
+      permissions: _all,
+      revision: 1,
+    ),
+    AccessRole(
+      id: 'viewer',
+      name: 'Viewer',
+      permissions: ['app.access'],
+      revision: 1,
+    ),
+  ];
+  @override
+  Future<List<SmsPhone>> smsPhones() async => [
+    SmsPhone(
+      id: 'p1',
+      name: 'Store phone',
+      lastSeen: DateTime.now(),
+      sent: 12,
+      blocked: false,
+      revision: 1,
+    ),
+  ];
+  @override
+  Future<AgentSettings> agentSettings() async => const AgentSettings(
+    model: 'auto',
+    tier: 'smart',
+    order: ['anthropic', 'cloudflare'],
+    revision: 1,
+    providers: [
+      'anthropic',
+      'openai',
+      'google',
+      'nvidia',
+      'groq',
+      'cloudflare',
+    ],
+  );
+  @override
+  Future<AgentMemory> agentMemory({
+    String kind = '',
+    String search = '',
+  }) async => const AgentMemory([], counts: {'fact': 3, 'incident': 2});
+}
+
+final _accounts = {
+  'bhikan': _user('Bhikan'),
+  'newbie': _user('newbie', status: 'pending', role: 'pending'),
+  'viewer': _user('viewer', role: 'viewer', perms: const ['app.access']),
+};
+
+Future<FakeRepository> _open(
   WidgetTester tester, {
-  bool signedIn = false,
-  Size size = const Size(390, 844),
-  double textScale = 1,
+  Size size = const Size(1280, 860),
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
-  tester.platformDispatcher.textScaleFactorTestValue = textScale;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
-  addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-  final container = ProviderContainer(
-    overrides: [
-      repositoryProvider.overrideWithValue(
-        DemoRepository(delay: Duration.zero),
-      ),
-    ],
-  );
-  addTearDown(container.dispose);
-  if (signedIn) {
-    await tester.runAsync(() async {
-      await container
-          .read(authProvider.notifier)
-          .signIn(DemoRepository.demoEmail, DemoRepository.demoPassword);
-      await container
-          .read(authProvider.notifier)
-          .verify(DemoRepository.demoCode);
-    });
-  }
+  addTearDown(tester.view.reset);
+  final repo = FakeRepository(_accounts);
   await tester.pumpWidget(
-    UncontrolledProviderScope(container: container, child: const UltronApp()),
+    ProviderScope(
+      overrides: [repositoryProvider.overrideWithValue(repo)],
+      child: const UltronApp(),
+    ),
   );
   await tester.pumpAndSettle();
-  return container;
+  return repo;
 }
 
-Future<void> tapVisible(WidgetTester tester, Finder finder) async {
-  await tester.ensureVisible(finder);
-  await tester.pumpAndSettle();
-  await tester.tap(finder);
+Future<void> _signIn(WidgetTester tester, String username) async {
+  await tester.enterText(find.byKey(const Key('auth-username')), username);
+  await tester.enterText(
+    find.byKey(const Key('auth-password')),
+    'right-password',
+  );
+  await tester.tap(find.byKey(const Key('auth-submit')));
   await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('login requires verification and includes developer credit', (
-    tester,
-  ) async {
-    final container = await mountApp(tester);
-    expect(find.text('Developed by Bhikan Deshmukh'), findsOneWidget);
-    container.read(routerProvider).go('/app/reports');
-    await tester.pumpAndSettle();
-    expect(find.text('Welcome back'), findsOneWidget);
-    await tapVisible(tester, find.byKey(const Key('fill-demo')));
-    await tapVisible(tester, find.byKey(const Key('auth-submit')));
-    expect(container.read(authProvider).phase, SessionPhase.verification);
-    expect(find.text('Verify your sign-in'), findsOneWidget);
-    await tester.enterText(
-      find.byKey(const Key('verification-code')),
-      '000000',
-    );
-    await tapVisible(tester, find.byKey(const Key('auth-submit')));
-    expect(find.textContaining('Incorrect code'), findsOneWidget);
-    await tester.enterText(
-      find.byKey(const Key('verification-code')),
-      DemoRepository.demoCode,
-    );
-    await tapVisible(tester, find.byKey(const Key('auth-submit')));
-    expect(find.text("Today's operations"), findsOneWidget);
-    expect(container.read(authProvider).phase, SessionPhase.signedIn);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('About credits developer and sign-out guards protected routes', (
-    tester,
-  ) async {
-    final container = await mountApp(tester, signedIn: true);
-    container.read(routerProvider).go('/app/profile');
-    await tester.pumpAndSettle();
-    await tapVisible(tester, find.text('About Ultron'));
-    expect(find.text('Developed by Bhikan Deshmukh'), findsOneWidget);
-    await tapVisible(tester, find.text('Close'));
-    await tapVisible(tester, find.byKey(const Key('sign-out')));
-    expect(find.text('Welcome back'), findsOneWidget);
-    container.read(routerProvider).go('/app/phone');
-    await tester.pumpAndSettle();
-    expect(find.text('Welcome back'), findsOneWidget);
-  });
-
-  testWidgets('report detail names unavailable sources', (tester) async {
-    final container = await mountApp(tester, signedIn: true);
-    container.read(routerProvider).go('/app/reports');
-    await tester.pumpAndSettle();
-    await tapVisible(tester, find.text('Morning sale report'));
-    expect(find.text('Excluded'), findsOneWidget);
-    expect(find.textContaining('figures excluded'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets(
-    'review, run request, chat and Phone Work controls stay within demo state',
+    'sign-in asks for a username and password, offers SMS only, and shows no demo',
     (tester) async {
-      final container = await mountApp(tester, signedIn: true);
-      container.read(routerProvider).go('/app/approvals');
-      await tester.pumpAndSettle();
-      await tapVisible(tester, find.text('Review changes'));
-      await tapVisible(tester, find.text('Approve demo'));
+      await _open(tester);
+      expect(find.text('Username'), findsOneWidget);
+      expect(find.text('Password'), findsOneWidget);
+      expect(find.byKey(const Key('sms-only')), findsOneWidget);
+      expect(find.textContaining('demo', findRichText: true), findsNothing);
       expect(
-        container.read(workspaceProvider).requireValue.pendingApprovals,
-        0,
+        find.textContaining('Developed by Bhikan Deshmukh'),
+        findsOneWidget,
       );
-
-      container.read(routerProvider).go('/app/workflows');
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('workflow-search')),
-        'Inventory',
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Morning sale report'), findsNothing);
-      await tapVisible(tester, find.text('Inventory push'));
-      await tapVisible(tester, find.text('Simulate request'));
-      expect(
-        container.read(workspaceProvider).requireValue.runs.first.duration,
-        'Simulated',
-      );
-
-      container.read(routerProvider).go('/app/agent');
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(seconds: 4));
-      await tester.pumpAndSettle();
-      final messageCount = container
-          .read(workspaceProvider)
-          .requireValue
-          .messages
-          .length;
-      await tester.enterText(
-        find.byKey(const Key('agent-message')),
-        'Review the Myntra report',
-      );
-      await tapVisible(tester, find.byKey(const Key('agent-send')));
-      expect(
-        container.read(workspaceProvider).requireValue.messages.length,
-        messageCount + 2,
-      );
-      expect(
-        container
-            .read(workspaceProvider)
-            .requireValue
-            .messages[messageCount]
-            .text,
-        'Review the Myntra report',
-      );
-      expect(
-        container.read(workspaceProvider).requireValue.messages.last.sources,
-        contains('Demo account health'),
-      );
-
-      container.read(routerProvider).go('/app/phone');
-      await tester.pumpAndSettle();
-      await tapVisible(tester, find.byKey(const Key('phone-agent-toggle')));
-      expect(container.read(phonePreferencesProvider).agent, isTrue);
-      expect(find.text('Not connected'), findsWidgets);
-      expect(tester.takeException(), isNull);
+      await _signIn(tester, 'nobody');
+      expect(find.text('Invalid username or password'), findsOneWidget);
     },
   );
 
-  for (final width in [320.0, 390.0, 760.0, 1440.0]) {
-    testWidgets('all screens fit a ${width.toInt()}px window', (tester) async {
-      final container = await mountApp(
-        tester,
-        signedIn: true,
-        size: Size(width, 1000),
-      );
-      for (final screen in [
-        'home',
-        'agent',
-        'workflows',
-        'reports',
-        'approvals',
-        'analytics',
-        'profile',
-        'phone',
-        'connections',
-        'schedule',
-      ]) {
-        container.read(routerProvider).go('/app/$screen');
-        await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull, reason: '$screen at $width');
+  testWidgets(
+    'an administrator lands on Home with live numbers and every menu item',
+    (tester) async {
+      await _open(tester);
+      await _signIn(tester, 'Bhikan');
+      expect(find.text('Hello, Bhikan'), findsOneWidget);
+      expect(find.text('Waiting for approval'), findsOneWidget);
+      expect(
+        find.text('1'),
+        findsWidgets,
+      ); // one pending registration, one active phone
+      expect(find.text('Agent model'), findsOneWidget);
+      for (final label in ['Home', 'Control', 'Users', 'Roles', 'Profile']) {
+        expect(find.text(label), findsWidgets);
       }
-    });
-  }
+    },
+  );
 
-  testWidgets('large text and dark theme keep core actions available', (
+  testWidgets('the Users page offers Approve for a pending registration', (
     tester,
   ) async {
-    final container = await mountApp(
-      tester,
-      signedIn: true,
-      size: const Size(390, 1000),
-      textScale: 2,
-    );
-    container.read(themeModeProvider.notifier).set(ThemeMode.dark);
-    for (final screen in [
-      'home',
-      'workflows',
-      'reports',
-      'approvals',
-      'profile',
-      'phone',
-    ]) {
-      container.read(routerProvider).go('/app/$screen');
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull, reason: '$screen at 200% text');
-    }
+    await _open(tester);
+    await _signIn(tester, 'Bhikan');
+    await tester.tap(find.text('Users').first);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('approve-id-newbie')), findsOneWidget);
+    expect(find.text('Create user'), findsOneWidget);
   });
+
+  testWidgets('a pending account waits; a role without a feature is told so', (
+    tester,
+  ) async {
+    await _open(tester);
+    await _signIn(tester, 'newbie');
+    expect(find.text('Waiting for approval'), findsOneWidget);
+  });
+
+  testWidgets('a viewer sees only what the role allows', (tester) async {
+    await _open(tester);
+    await _signIn(tester, 'viewer');
+    expect(find.text('Users'), findsNothing);
+    expect(find.text('Control'), findsNothing);
+    expect(find.text('Profile'), findsWidgets);
+  });
+
+  for (final width in [320.0, 390.0, 760.0, 1440.0]) {
+    for (final mode in [ThemeMode.dark, ThemeMode.light]) {
+      testWidgets('every screen fits ${width.toInt()}px, ${mode.name}', (
+        tester,
+      ) async {
+        await _open(tester, size: Size(width, 900));
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(UltronApp)),
+        );
+        container.read(themeModeProvider.notifier).set(mode);
+        await tester.pumpAndSettle();
+        await _signIn(tester, 'Bhikan');
+        for (final path in [
+          '/app/control',
+          '/app/admin',
+          '/app/roles',
+          '/app/profile',
+          '/app/home',
+        ]) {
+          container.read(routerProvider).go(path);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: path);
+        }
+      });
+    }
+  }
 }

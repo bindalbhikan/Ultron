@@ -21,14 +21,6 @@ const accessPermissions = <String, String>{
 };
 
 String? permissionForPath(String path) => switch (path) {
-  '/app/agent' => 'agent.chat',
-  '/app/workflows' => 'workflows.read',
-  '/app/reports' => 'reports.read',
-  '/app/approvals' => 'approvals.read',
-  '/app/analytics' => 'analytics.read',
-  '/app/phone' => 'phone.manage',
-  '/app/connections' => 'connections.read',
-  '/app/schedule' => 'schedule.read',
   '/app/admin' => 'users.manage',
   '/app/roles' => 'roles.manage',
   '/app/control' => 'agent.tools.read',
@@ -41,6 +33,7 @@ class AppUser {
     required this.id,
     required this.name,
     required this.email,
+    this.username = '',
     required this.status,
     required this.roleId,
     required this.roleName,
@@ -48,7 +41,7 @@ class AppUser {
     this.emailVerified = false,
     this.permissions = const [],
   });
-  final String id, name, email, status, roleId, roleName;
+  final String id, name, email, username, status, roleId, roleName;
   final int revision;
   final bool emailVerified;
   final List<String> permissions;
@@ -61,6 +54,7 @@ class AppUser {
     id: json['id'] as String,
     name: json['name'] as String,
     email: json['email'] as String,
+    username: json['username'] as String? ?? '',
     status: json['status'] as String,
     roleId: json['roleId'] as String,
     roleName: json['roleName'] as String,
@@ -95,35 +89,6 @@ class UserPage {
   final List<AppUser> users;
   final bool hasMore;
 }
-
-const demoAdmin = AppUser(
-  id: 'demo-admin',
-  name: 'Workspace owner',
-  email: 'owner@example.com',
-  status: 'active',
-  roleId: 'admin',
-  roleName: 'Administrator',
-  revision: 1,
-  permissions: [
-    'app.access',
-    'reports.read',
-    'workflows.read',
-    'workflows.run',
-    'approvals.read',
-    'approvals.decide',
-    'analytics.read',
-    'connections.read',
-    'phone.manage',
-    'schedule.read',
-    'agent.chat',
-    'agent.tools.read',
-    'agent.tools.execute',
-    'users.manage',
-    'roles.manage',
-    'agent.manage',
-    'memory.manage',
-  ],
-);
 
 /// The agent's model settings (services/app_api /api/agent/settings): what the Python agent uses
 /// within 5 minutes, unless its AGENT_MODEL* variables are set.
@@ -202,3 +167,32 @@ const noteKinds = <String, String>{
   'known_issue': 'Known issues',
   'incident': 'Incidents',
 };
+
+/// A phone in SMS only mode (services/app_api /api/admin/phones).
+@immutable
+class SmsPhone {
+  const SmsPhone({
+    required this.id,
+    required this.name,
+    required this.lastSeen,
+    required this.sent,
+    required this.blocked,
+    required this.revision,
+    this.appVersion = '',
+  });
+  final String id, name, appVersion;
+  final DateTime lastSeen;
+  final int sent, revision;
+  final bool blocked;
+  factory SmsPhone.fromJson(Map<String, dynamic> json) => SmsPhone(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    lastSeen: DateTime.fromMillisecondsSinceEpoch(
+      (json['lastSeen'] as num).toInt(),
+    ),
+    sent: (json['sent'] as num? ?? 0).toInt(),
+    blocked: json['blocked'] == true,
+    revision: (json['revision'] as num? ?? 1).toInt(),
+    appVersion: json['appVersion'] as String? ?? '',
+  );
+}

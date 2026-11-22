@@ -20,6 +20,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   final _model = TextEditingController();
   AgentSettings? _settings;
   AgentMemory? _memory;
+  List<SmsPhone>? _phones;
+  String? _phonesError;
   String _tier = 'smart', _kind = '';
   bool _auto = true, _loading = true, _saving = false;
   List<String> _order = [];
@@ -59,6 +61,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         _memory = memory;
         _apply(settings);
       });
+      await _loadPhones();
     } on FrontendException catch (e) {
       if (mounted && request == _request) setState(() => _error = e.message);
     } catch (_) {
@@ -79,6 +82,32 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         : s.providers;
     _order = [...s.order, ...all.where((p) => !s.order.contains(p))];
     _off = all.where((p) => !s.order.contains(p)).toSet();
+  }
+
+  Future<void> _loadPhones() async {
+    if (!(ref.read(authProvider).user?.allows('phone.manage') ?? false)) return;
+    try {
+      final phones = await ref.read(repositoryProvider).smsPhones();
+      if (mounted) {
+        setState(() {
+          _phones = phones;
+          _phonesError = null;
+        });
+      }
+    } on FrontendException catch (e) {
+      if (mounted) setState(() => _phonesError = e.message);
+    }
+  }
+
+  Future<void> _block(SmsPhone phone, bool blocked) async {
+    try {
+      final phones = await ref
+          .read(repositoryProvider)
+          .blockPhone(phone, blocked: blocked);
+      if (mounted) setState(() => _phones = phones);
+    } on FrontendException catch (e) {
+      if (mounted) setState(() => _phonesError = e.message);
+    }
   }
 
   Future<void> _reloadMemory() async {
@@ -318,6 +347,43 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
               ),
             ),
           ),
+          if (canAccess(ref, 'phone.manage')) ...[
+            const SectionHeading('SMS phones'),
+            Text(
+              'Phones in SMS only mode. Each SMS goes to the sheet with the phone\'s name. Block one to stop taking its SMS.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            if (_phonesError != null)
+              NotePanel(_phonesError!, warning: true)
+            else if (_phones == null)
+              const SizedBox.shrink()
+            else if (_phones!.isEmpty)
+              const NotePanel(
+                'No phone yet. On a phone, open ULTRON and choose "SMS only".',
+              )
+            else
+              for (final ph in _phones!)
+                Card(
+                  child: ListTile(
+                    leading: Icon(
+                      ph.blocked
+                          ? LucideIcons.smartphoneNfc
+                          : LucideIcons.smartphone,
+                    ),
+                    title: Text(ph.name),
+                    subtitle: Text(
+                      'Last SMS ${ph.lastSeen.toLocal().toString().substring(0, 16)} · ${ph.sent} sent',
+                    ),
+                    trailing: canAccess(ref, 'phone.manage')
+                        ? TextButton(
+                            onPressed: () => _block(ph, !ph.blocked),
+                            child: Text(ph.blocked ? 'Unblock' : 'Block'),
+                          )
+                        : null,
+                  ),
+                ),
+          ],
           const SizedBox(height: 22),
           Text('Memory', style: theme.textTheme.titleMedium),
           const SizedBox(height: 6),
