@@ -1,6 +1,8 @@
 # 6. Polars — tables instead of pandas
 
-**Status**: 🔧 17 Nov 2026 — in (`polars>=1.30`, 2.1.0 in `uv.lock`); the business report's logic moved (all three portals).
+**Status**: 🔧 22 Nov 2026 — in (`polars>=1.30`, `fastexcel` for `pl.read_excel`); every working moved but AJIO TAT /
+Flipkart TAT (one engine), OMSGuru's `fetch_orders` that feeds them, and the pandas bridge of `core/tables.py`
+(`to_pandas`, `clean_id` of a Series); `scripts/legacy` is not run. When those go, pandas leaves `pyproject.toml`.
 
 **Why**: faster than pandas, multi-core, lazy queries, strict types (ids stay text: no more `46148.0`). For
 Bindal's files the gain is seconds; for a seller with 100x the orders it decides whether a run finishes.
@@ -17,8 +19,9 @@ sale report's work — read with ids as text, keep a date range, lines and amoun
 The totals were the same both ways at every size. (Python's memory tracer does not see Polars' Rust
 allocations, so no memory figure is claimed.)
 
-**Where pandas is now**: ~38 files, ~900 calls (business report 6, return analysis 4, AJIO TAT 4, grouping 3,
-VMS 2, portal sale 2, Flipkart price 2, one each in the other workings).
+**Where pandas is now** (22 Nov 2026): 7 files, ~150 calls: `ajio_tat/` (pipeline, tat_engine, sheets, pickup_form),
+`flipkart_tat/pipeline.py`, `portals/omsguru.py` (`fetch_orders`), `core/tables.py` (the bridge); and
+`scripts/legacy/myntra_build_workbook.py` (not run by any working).
 
 **Shared helpers** (`workings/core/tables.py`): `read_text_csv(bytes)` (every column text), `to_polars(df)` (the
 pandas bridge while both live side by side), `pcol(df, name)` (a column by name whatever its case),
