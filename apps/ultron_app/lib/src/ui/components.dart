@@ -33,7 +33,7 @@ class BrandMark extends StatelessWidget {
       if (wordmark) ...[
         const SizedBox(width: 9),
         Text(
-          'Ultron',
+          'ULTRON',
           style: TextStyle(
             fontSize: size * .67,
             fontWeight: FontWeight.w800,

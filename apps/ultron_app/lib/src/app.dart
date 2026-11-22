@@ -9,7 +9,7 @@ class UltronApp extends ConsumerWidget {
   const UltronApp({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) => MaterialApp.router(
-    title: 'Ultron · Ecom Manager',
+    title: 'ULTRON · Ecom Manager',
     debugShowCheckedModeBanner: false,
     theme: Brand.theme(Brightness.light),
     darkTheme: Brand.theme(Brightness.dark),

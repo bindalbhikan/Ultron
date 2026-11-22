@@ -514,7 +514,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                           bottom: 36,
                           left: 42,
                           child: Text(
-                            'Ultron · Ecom Manager',
+                            'ULTRON · Ecom Manager',
                             style: TextStyle(color: Color(0xFF48655A)),
                           ),
                         ),

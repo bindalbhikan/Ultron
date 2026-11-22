@@ -15,7 +15,6 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.ultron.ultron_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -29,11 +28,24 @@ android {
         versionName = flutter.versionName
     }
 
+    // GitHub builds (.github/workflows/flutter-app.yml) sign with the one fixed key kept in the owner's Drive
+    // (scripts/github/android_app.py keystore, the same key as Ultron Phone), so a new APK installs over the
+    // app already on the phone. A local build without ANDROID_KEYSTORE_FILE is signed with the debug key.
+    val keystore = System.getenv("ANDROID_KEYSTORE_FILE")
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = "ultronphone"
+                keyPassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystore != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 }

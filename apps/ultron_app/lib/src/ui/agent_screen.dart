@@ -56,7 +56,7 @@ class _AgentScreenState extends ConsumerState<AgentScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const PageHeading(
-                        'Ultron',
+                        'ULTRON',
                         subtitle: 'Operations assistant · Demo conversation',
                       ),
                       for (final message in data.messages)

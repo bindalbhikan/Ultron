@@ -53,3 +53,28 @@ Local validation passed: formatting, Flutter analysis, 15 repository/widget test
   "This service is not connected" for these.
 * Flutter 3.50.0 is installed on the owner's PC at `%USERPROFILE%\.ultron\tools\flutter`, on the user PATH,lutter`, on the user PATH,
   checksum-verified; `tool/dev.ps1 analyze` / `test` find it there.
+
+## Builds and downloads (22 Nov 2026)
+
+The app is called **ULTRON** everywhere a person sees it: the Android launcher, the window titles, `ULTRON.exe`,
+`ULTRON.app`, the Linux binary and the web title.
+
+`.github/workflows/flutter-app.yml` runs on every change to `apps/ultron_app/`:
+
+1. `frontend`: format, analyze, tests and a web build.
+2. Four builds in parallel on GitHub's runners:
+
+   | Job | Runner | Download file |
+   |---|---|---|
+   | `android` | Ubuntu | `ULTRON.apk` |
+   | `windows` | Windows | `ULTRON-Windows.zip` (run `ULTRON.exe`) |
+   | `macos` | macOS | `ULTRON-macOS.zip` (`ULTRON.app`, unsigned: right-click, Open the first time) |
+   | `linux` | Ubuntu, GTK 3 | `ULTRON-Linux.tar.gz` (run `bundle/ULTRON`) |
+
+   The APK is signed with the fixed key of Ultron Phone, kept in Drive AGENT WORK/ULTRON PHONE
+   (`scripts/github/android_app.py keystore`). So every new APK installs over the one on the phone.
+3. `publish` (main only): `scripts/github/flutter_app.py publish` puts the files in Drive **AGENT WORK/ULTRON APP**,
+   each updated in place under its fixed name. Telegram then gets one note with the download links. A platform
+   whose build failed is named "not built this time" and never silently left out.
+
+Version: `0.1.<run number>`, the run number is also the Android version code.

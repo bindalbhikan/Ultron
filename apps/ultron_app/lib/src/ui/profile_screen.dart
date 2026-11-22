@@ -188,7 +188,7 @@ class ProfileScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 18),
         Text(
-          'Ultron · Frontend ${AppInfo.version}',
+          'ULTRON · Frontend ${AppInfo.version}',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodySmall,
         ),
