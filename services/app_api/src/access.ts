@@ -3,7 +3,7 @@ import type { Env } from './auth';
 export const PERMISSIONS = [
   'app.access', 'reports.read', 'workflows.read', 'workflows.run', 'approvals.read', 'approvals.decide',
   'analytics.read', 'connections.read', 'phone.manage', 'schedule.read', 'agent.chat', 'agent.tools.read',
-  'agent.tools.execute', 'users.manage', 'roles.manage',
+  'agent.tools.execute', 'users.manage', 'roles.manage', 'agent.manage', 'memory.manage',
 ] as const;
 export type Permission = typeof PERMISSIONS[number];
 export type AccessStatus = 'pending' | 'active' | 'disabled';

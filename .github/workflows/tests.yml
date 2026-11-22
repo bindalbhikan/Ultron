@@ -22,5 +22,25 @@ jobs:
       - uses: ./.github/actions/setup
       - run: uv pip install --system "pytest>=8"
       - name: Versions installed
-        run: python -c "import pandas, openpyxl, httpx, orjson, scrapy; print('pandas', pandas.__version__, 'openpyxl', openpyxl.__version__, 'httpx', httpx.__version__, 'orjson', orjson.__version__, 'scrapy', scrapy.__version__)"
+        run: python -c "import polars, fastexcel, xlsxwriter, httpx, orjson, scrapy, openai; print('polars', polars.__version__, 'fastexcel', fastexcel.__version__, 'xlsxwriter', xlsxwriter.__version__, 'httpx', httpx.__version__, 'orjson', orjson.__version__, 'scrapy', scrapy.__version__, 'openai', openai.__version__)"
       - run: python -m pytest -q tests
+
+  app-api:
+    # the app API and the Telegram worker's routes on the real Workers runtime (wrangler's test
+    # harness, local D1 with the migrations): node only runs the tools here, never in production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/app_api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/app_api/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+      - run: npm test
+      - run: node --check ../../worker/agent.js

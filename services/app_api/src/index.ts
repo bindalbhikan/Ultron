@@ -35,6 +35,96 @@ function cleanName(value: unknown) {
   }
   return value.trim();
 }
+const PROVIDERS = ['anthropic', 'openai', 'google', 'nvidia', 'groq', 'cloudflare'] as const;
+const TIERS = ['smart', 'fast'] as const;
+const KINDS = ['preference', 'fact', 'known_issue', 'decision', 'incident'] as const;
+const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,63}$/;
+
+// An administrator creates an account: the user signs in with the password given here (and should
+// change it); the account starts active with the chosen role. Public sign-up still starts pending.
+async function createUser(request: Request, env: Env, actor: Identity) {
+  requirePermission(actor, 'users.manage');
+  const input = await body(request);
+  const name = cleanName(input.name);
+  const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
+  if (!EMAIL.test(email)) throw new HttpError(400, 'Enter a valid email address.');
+  if (typeof input.password !== 'string' || input.password.length < 12 || input.password.length > 128) {
+    throw new HttpError(400, 'Use a password of 12 to 128 characters.');
+  }
+  const role = typeof input.roleId === 'string'
+    ? await env.DB.prepare("SELECT id FROM app_role WHERE id=? AND id!='pending'").bind(input.roleId).first() : null;
+  if (!role) throw new HttpError(400, 'Choose an approved role.');
+  if (await env.DB.prepare('SELECT id FROM user WHERE email=?').bind(email).first()) {
+    throw new HttpError(409, 'An account with this email already exists.');
+  }
+  const created = await createAuth(env).api.signUpEmail({ body: { name, email, password: input.password } });
+  const id = created.user.id;
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE app_access SET status='active',role_id=?,revision=revision+1,updated_at=? WHERE user_id=?`)
+      .bind(input.roleId, Date.now(), id),
+    env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'user.create',?,?)`)
+      .bind(crypto.randomUUID(), actor.id, id, JSON.stringify({ email, roleId: input.roleId })),
+  ]);
+  return json({ user: await identity(env, id) }, 201);
+}
+
+// The agent's model settings (agent_setting): what the Python agent reads through the worker.
+async function agentSettings(env: Env) {
+  const { results } = await env.DB.prepare('SELECT key,value,revision,updated_at AS updatedAt FROM agent_setting').all();
+  const saved = Object.fromEntries(results.map((r) => [r.key, { value: JSON.parse(String(r.value)), revision: r.revision, updatedAt: r.updatedAt }]));
+  return { model: saved.model?.value ?? 'auto', tier: saved.tier?.value ?? 'smart', order: saved.order?.value ?? [...PROVIDERS],
+    revision: Math.max(0, ...results.map((r) => Number(r.revision))), providers: PROVIDERS, tiers: TIERS };
+}
+async function saveAgentSettings(request: Request, env: Env, actor: Identity) {
+  requirePermission(actor, 'agent.manage');
+  const input = await body(request);
+  const model = typeof input.model === 'string' ? input.model.trim() : '';
+  const [provider, ...rest] = model.split(':');
+  if (model !== 'auto' && (!PROVIDERS.includes(provider as typeof PROVIDERS[number]) || !/^[\w.@/:-]{1,120}$/.test(rest.join(':')))) {
+    throw new HttpError(400, 'Choose auto or provider:model.');
+  }
+  if (!TIERS.includes(input.tier as typeof TIERS[number])) throw new HttpError(400, 'Choose smart or fast.');
+  const order = input.order;
+  if (!Array.isArray(order) || !order.length || new Set(order).size !== order.length
+      || !order.every((p) => PROVIDERS.includes(p as typeof PROVIDERS[number]))) {
+    throw new HttpError(400, 'List each provider at most once.');
+  }
+  const expected = Number(input.revision);
+  const current = (await agentSettings(env)).revision;
+  if (!Number.isSafeInteger(expected) || expected !== current) throw new HttpError(409, 'Settings changed. Refresh before saving.');
+  const now = Date.now();
+  const put = (key: string, value: unknown) => env.DB.prepare(`INSERT INTO agent_setting(key,value,revision,updated_at,updated_by)
+    VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,revision=excluded.revision,
+    updated_at=excluded.updated_at,updated_by=excluded.updated_by`).bind(key, JSON.stringify(value), current + 1, now, actor.id);
+  await env.DB.batch([put('model', model), put('tier', input.tier), put('order', order),
+    env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'agent.settings','agent',?)`)
+      .bind(crypto.randomUUID(), actor.id, JSON.stringify({ model, tier: input.tier, order }))]);
+  return json({ settings: await agentSettings(env) });
+}
+
+// The agent's long-term notes (agent_note), newest first; a kind and words narrow them.
+async function agentMemory(env: Env, url: URL) {
+  const kind = url.searchParams.get('kind') || '';
+  if (kind && !KINDS.includes(kind as typeof KINDS[number])) throw new HttpError(400, 'Unknown kind.');
+  const search = (url.searchParams.get('search') || '').slice(0, 100).replace(/[\\%_]/g, '\\$&');
+  const { results } = await env.DB.prepare(`SELECT id,kind,text,tags,source,uses,created,updated FROM agent_note
+    WHERE (?='' OR kind=?) AND text LIKE ? ESCAPE '\\' ORDER BY updated DESC,id LIMIT 200`)
+    .bind(kind, kind, `%${search}%`).all();
+  const counts = await env.DB.prepare('SELECT kind,count(*) AS n FROM agent_note GROUP BY kind').all();
+  return json({ notes: results.map((r) => ({ ...r, tags: JSON.parse(String(r.tags)) })),
+    counts: Object.fromEntries(counts.results.map((r) => [r.kind, r.n])), kinds: KINDS });
+}
+async function forgetNote(env: Env, actor: Identity, id: string) {
+  requirePermission(actor, 'memory.manage');
+  const results = await env.DB.batch([
+    env.DB.prepare('DELETE FROM agent_note WHERE id=? RETURNING id').bind(id),
+    env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) SELECT ?,?,'agent.forget',?,'{}' WHERE changes()=1`)
+      .bind(crypto.randomUUID(), actor.id, id),
+  ]);
+  if (results[0].results.length !== 1) throw new HttpError(404, 'This note is already gone.');
+  return json({ deleted: id });
+}
+
 async function roles(env: Env) {
   const { results } = await env.DB.prepare('SELECT id,name,permissions,revision FROM app_role ORDER BY name').all();
   return results.map((row) => ({ ...row, permissions: JSON.parse(String(row.permissions)) }));
@@ -52,11 +142,12 @@ async function updateUser(request: Request, env: Env, actor: Identity, id: strin
   try {
     const result = await env.DB.batch([
       env.DB.prepare(`UPDATE app_access SET status=?,role_id=?,revision=revision+1,updated_at=?
-        WHERE user_id=? AND revision=?`).bind(input.status, input.roleId, Date.now(), id, expected),
+        WHERE user_id=? AND revision=? RETURNING user_id`).bind(input.status, input.roleId, Date.now(), id, expected),
       env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail)
         SELECT ?,?,'user.access',?,? WHERE changes()=1`).bind(crypto.randomUUID(), actor.id, id, detail),
     ]);
-    if (result[0].meta.changes !== 1) throw new HttpError(409, 'Access changed. Refresh before saving.');
+    // RETURNING, not meta.changes: D1 counts the rows its triggers change too (the revoked sessions)
+    if (result[0].results.length !== 1) throw new HttpError(409, 'Access changed. Refresh before saving.');
   } catch (error) {
     if (error instanceof Error && error.message.includes('last_admin')) {
       throw new HttpError(409, 'Keep at least one active administrator.');
@@ -76,14 +167,14 @@ async function saveRole(request: Request, env: Env, actor: Identity, id: string)
   const expected = input.revision === null ? null : revision(input.revision);
   const detail = JSON.stringify({ name, permissions });
   const sql = expected === null
-    ? env.DB.prepare('INSERT OR IGNORE INTO app_role(id,name,permissions) VALUES(?,?,?)').bind(id, name, JSON.stringify(permissions))
-    : env.DB.prepare(`UPDATE app_role SET name=?,permissions=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?`)
+    ? env.DB.prepare('INSERT OR IGNORE INTO app_role(id,name,permissions) VALUES(?,?,?) RETURNING id').bind(id, name, JSON.stringify(permissions))
+    : env.DB.prepare(`UPDATE app_role SET name=?,permissions=?,revision=revision+1,updated_at=? WHERE id=? AND revision=? RETURNING id`)
       .bind(name, JSON.stringify(permissions), Date.now(), id, expected);
   const results = await env.DB.batch([sql,
     env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail)
       SELECT ?,?,'role.save',?,? WHERE changes()=1`).bind(crypto.randomUUID(), actor.id, id, detail),
   ]);
-  if (results[0].meta.changes !== 1) throw new HttpError(409, 'Role changed. Refresh before saving.');
+  if (results[0].results.length !== 1) throw new HttpError(409, 'Role changed. Refresh before saving.');
   return json({ roles: await roles(env) });
 }
 
@@ -128,6 +219,18 @@ async function route(request: Request, env: Env) {
     requirePermission(user, 'roles.manage');
     return json({ roles: await roles(env), permissions: PERMISSIONS });
   }
+  if (path === '/api/admin/users' && request.method === 'POST') return createUser(request, env, user);
+  if (path === '/api/agent/settings' && request.method === 'GET') {
+    requirePermission(user, 'agent.tools.read');
+    return json({ settings: await agentSettings(env) });
+  }
+  if (path === '/api/agent/settings' && request.method === 'PUT') return saveAgentSettings(request, env, user);
+  if (path === '/api/agent/memory' && request.method === 'GET') {
+    requirePermission(user, 'agent.tools.read');
+    return agentMemory(env, url);
+  }
+  const noteMatch = path.match(/^\/api\/agent\/memory\/([a-f0-9]{6,16})$/);
+  if (noteMatch && request.method === 'DELETE') return forgetNote(env, user, noteMatch[1]);
   const userMatch = path.match(/^\/api\/admin\/users\/([A-Za-z0-9_-]{1,128})$/);
   if (userMatch && request.method === 'PATCH') return updateUser(request, env, user, userMatch[1]);
   const roleMatch = path.match(/^\/api\/admin\/roles\/([a-z0-9-]+)$/);
@@ -172,7 +275,7 @@ export default {
     headers.set('Vary', 'Origin');
     if (origin && allowed.includes(origin)) {
       headers.set('Access-Control-Allow-Origin', origin);
-      headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, OPTIONS');
+      headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
       headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
       headers.set('Access-Control-Expose-Headers', 'set-auth-token');
     }

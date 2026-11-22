@@ -1,15 +1,15 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { build } from 'esbuild';
-import { Miniflare } from 'miniflare';
-import { readD1Migrations } from 'wrangler';
+import { readdirSync, readFileSync } from 'node:fs';
+import { createTestHarness, unstable_splitSqlQuery, type TestHarness } from 'wrangler';
 
-let mf: Miniflare;
+// The real Worker as `wrangler dev` runs it (its wrangler.jsonc, bundling and runtime), local D1.
+let server: TestHarness;
 let db: D1Database;
 let ip = 0;
 const password = 'public-test-password-only';
 async function call(path: string, method='GET', body?: Record<string, unknown>, token?: string, address?: string) {
-  return mf.dispatchFetch(`https://api.example.test${path}`, { method, headers: {
+  return server.fetch(`https://api.example.test${path}`, { method, headers: {
     Origin: 'https://app.example.test', 'CF-Connecting-IP': address || `192.0.2.${++ip}`,
     ...(body ? {'Content-Type':'application/json'} : {}), ...(token ? {Authorization:`Bearer ${token}`} : {}),
   }, ...(body ? { body: JSON.stringify(body) } : {}) });
@@ -25,14 +25,24 @@ async function signin(email: string) {
   const data=await response.json() as {token:string};
   return response.headers.get('set-auth-token') || data.token;
 }
+async function signin2(email: string, pass: string) {
+  const response=await call('/api/auth/sign-in/email','POST',{email,password:pass});
+  assert.equal(response.status,200);
+  return response.headers.get('set-auth-token')!;
+}
 before(async () => {
-  const bundled=await build({entryPoints:['src/index.ts'],bundle:true,write:false,format:'esm',platform:'node',target:'es2023',external:['node:*'],conditions:['workerd','worker']});
-  mf=new Miniflare({modules:true,script:bundled.outputFiles[0].text,compatibilityDate:'2026-11-17',compatibilityFlags:['nodejs_compat'],
-    d1Databases:['DB'],bindings:{AUTH_SECRET:'integration-tests-only-secret-32-characters-minimum',AUTH_BASE_URL:'https://api.example.test',APP_ORIGIN:'https://app.example.test'}});
-  db=await mf.getD1Database('DB') as unknown as D1Database;
-  for (const migration of await readD1Migrations('migrations')) await db.batch(migration.queries.map((query)=>db.prepare(query)));
+  server=createTestHarness({workers:[{configPath:'wrangler.jsonc',
+    vars:{AUTH_BASE_URL:'https://api.example.test',APP_ORIGIN:'https://app.example.test'},
+    secrets:{AUTH_SECRET:'integration-tests-only-secret-32-characters-minimum'}}]});
+  await server.listen();
+  db=(await server.getWorker<{DB:D1Database}>().getEnv()).DB;
+  // the migrations in order, as `wrangler d1 migrations apply` runs them
+  for (const file of readdirSync('migrations').filter((f)=>f.endsWith('.sql')).sort()) {
+    const queries:string[]=unstable_splitSqlQuery(readFileSync(`migrations/${file}`,'utf8'));
+    await db.batch(queries.map((query)=>db.prepare(query)));
+  }
 });
-after(async()=>{await mf?.dispose();});
+after(async()=>{await server?.close();});
 
 test('registration is pending, cannot self-assign admin and stores a hash',async()=>{
   const registered=await signup('pending@example.test');
@@ -81,7 +91,7 @@ test('admin approves roles, revokes sessions immediately and retains the last ad
 });
 
 test('invalid origins, unknown permissions and auth brute force are rejected',async()=>{
-  const wrongOrigin=await mf.dispatchFetch('https://api.example.test/api/auth/sign-up/email',{method:'POST',headers:{Origin:'https://hostile.example.test'}});
+  const wrongOrigin=await server.fetch('https://api.example.test/api/auth/sign-up/email',{method:'POST',headers:{Origin:'https://hostile.example.test'}});
   assert.equal(wrongOrigin.status,403); assert.equal(wrongOrigin.headers.get('access-control-allow-origin'),null);
   const adminToken=await signin('admin@example.test');
   assert.equal((await call('/api/admin/roles/custom','PUT',{name:'Custom role',permissions:['invented.permission'],revision:null},adminToken)).status,400);
@@ -89,4 +99,59 @@ test('invalid origins, unknown permissions and auth brute force are rejected',as
   let last=0;
   for(let count=0;count<6;count++) last=(await call('/api/auth/sign-in/email','POST',{email:'missing@example.test',password},undefined,'192.0.2.250')).status;
   assert.equal(last,429);
+});
+
+test('an administrator creates an active account; others cannot',async()=>{
+  const adminToken=await signin('admin@example.test');
+  const created=await call('/api/admin/users','POST',{name:'Store Manager',email:'Manager@Example.test',password:'a-long-public-test-pass',roleId:'manager'},adminToken);
+  assert.equal(created.status,201);
+  const {user}=await created.json() as {user:{status:string;roleId:string;email:string}};
+  assert.equal(user.status,'active'); assert.equal(user.roleId,'manager'); assert.equal(user.email,'manager@example.test');
+  const managerSignin=await call('/api/auth/sign-in/email','POST',{email:'manager@example.test',password:'a-long-public-test-pass'});
+  assert.equal(managerSignin.status,200);
+  const managerToken=managerSignin.headers.get('set-auth-token')!;
+  assert.equal((await call('/api/me','GET',undefined,managerToken)).status,200);
+  assert.equal((await call('/api/admin/users','POST',{name:'Again',email:'manager@example.test',password:'a-long-public-test-pass',roleId:'viewer'},adminToken)).status,409);
+  assert.equal((await call('/api/admin/users','POST',{name:'Short',email:'s@example.test',password:'short',roleId:'viewer'},adminToken)).status,400);
+  assert.equal((await call('/api/admin/users','POST',{name:'Pending',email:'p@example.test',password:'a-long-public-test-pass',roleId:'pending'},adminToken)).status,400);
+  assert.equal((await call('/api/admin/users','POST',{name:'Sneaky',email:'x@example.test',password:'a-long-public-test-pass',roleId:'admin'},managerToken)).status,403);
+  const audit=await db.prepare("SELECT detail FROM app_audit WHERE action='user.create'").all();
+  assert.equal(audit.results.length,1);
+  assert.ok(!String(audit.results[0].detail).includes('pass'));      // the password never reaches the audit
+});
+
+test('the control panel reads and saves the model settings, with revisions and checks',async()=>{
+  const adminToken=await signin('admin@example.test');
+  const read=await call('/api/agent/settings','GET',undefined,adminToken);
+  assert.equal(read.status,200);
+  const {settings}=await read.json() as {settings:{model:string;tier:string;order:string[];revision:number}};
+  assert.equal(settings.model,'auto'); assert.equal(settings.revision,0); assert.equal(settings.order.at(-1),'cloudflare');
+  const save=(body:Record<string,unknown>,token=adminToken)=>call('/api/agent/settings','PUT',body,token);
+  assert.equal((await save({model:'anthropic:claude-sonnet-5-5',tier:'fast',order:['groq','cloudflare'],revision:0})).status,200);
+  const row=await db.prepare("SELECT value FROM agent_setting WHERE key='order'").first<{value:string}>();
+  assert.deepEqual(JSON.parse(row!.value),['groq','cloudflare']);
+  assert.equal((await save({model:'auto',tier:'smart',order:['groq'],revision:0})).status,409);           // stale
+  assert.equal((await save({model:'someone:x',tier:'smart',order:['groq'],revision:1})).status,400);
+  assert.equal((await save({model:'auto',tier:'huge',order:['groq'],revision:1})).status,400);
+  assert.equal((await save({model:'auto',tier:'smart',order:['groq','groq'],revision:1})).status,400);
+  const managerToken=await signin2('manager@example.test','a-long-public-test-pass');
+  assert.equal((await call('/api/agent/settings','GET',undefined,managerToken)).status,200);
+  assert.equal((await save({model:'auto',tier:'smart',order:['groq'],revision:1},managerToken)).status,403);
+});
+
+test('the control panel lists the agent memory and an administrator drops a note',async()=>{
+  const adminToken=await signin('admin@example.test');
+  await db.batch([
+    db.prepare("INSERT INTO agent_note(id,kind,text,tags,created,updated) VALUES('a1b2c3','fact','Ajio pays on Wednesdays','[\"ajio\"]',1,2)"),
+    db.prepare("INSERT INTO agent_note(id,kind,text,tags,created,updated) VALUES('d4e5f6','incident','vms.yml failed','[]',1,3)"),
+  ]);
+  const list=await call('/api/agent/memory?kind=fact&search=ajio','GET',undefined,adminToken);
+  const data=await list.json() as {notes:{id:string;tags:string[]}[];counts:Record<string,number>};
+  assert.deepEqual(data.notes.map((n)=>n.id),['a1b2c3']); assert.deepEqual(data.notes[0].tags,['ajio']);
+  assert.equal(data.counts.incident,1);
+  const managerToken=await signin2('manager@example.test','a-long-public-test-pass');
+  assert.equal((await call('/api/agent/memory/d4e5f6','DELETE',undefined,managerToken)).status,403);
+  assert.equal((await call('/api/agent/memory/d4e5f6','DELETE',undefined,adminToken)).status,200);
+  assert.equal((await call('/api/agent/memory/d4e5f6','DELETE',undefined,adminToken)).status,404);
+  assert.equal((await call('/api/agent/memory?kind=bogus','GET',undefined,adminToken)).status,400);
 });
