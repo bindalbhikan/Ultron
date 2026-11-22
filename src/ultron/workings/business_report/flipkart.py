@@ -41,10 +41,9 @@ from pathlib import Path
 
 from typing import TYPE_CHECKING
 
-import numpy as np
-import pandas as pd
+from datetime import datetime
 
-from .workbook import Report
+from .workbook import Report, add_months
 
 if TYPE_CHECKING:
     import polars as pl
@@ -55,26 +54,6 @@ CATEGORY_WORDS = {"COORD": "Co-Ords", "DRESS": "Dresses", "TOP": "Tops", "JUMPSU
 
 
 from ..core.tables import pnum as _num  # noqa: E402 - one number reader (docs/CENTRALISE.md)
-
-def clean(s: pd.Series) -> pd.Series:
-    return s.astype(str).str.replace('"', "", regex=False).str.replace("SKU:", "", regex=False).str.strip()
-
-
-def dt(s: pd.Series) -> pd.Series:
-    return pd.to_datetime(s.astype(str).str[:19], errors="coerce", format="mixed")
-
-
-def oi(s: pd.Series) -> pd.Series:
-    return s.astype(str).str.replace("OI:", "", regex=False).str.strip()
-
-
-# ------------------------------------------------------------------ inputs
-def _xlsx(path: Path, sheet: str, header: int | None = 0) -> pd.DataFrame:
-    """A Seller Hub sheet as text, read by Polars' calamine reader (core/tables.read_excel_text: the same cells as
-    pandas' read_excel(dtype=str) on every Flipkart sheet, 16 Nov 2026), handed on as a pandas table."""
-    from ..core.tables import read_excel_text, to_pandas
-    return to_pandas(read_excel_text(path, sheet, header=header))
-
 
 def _sheets(files: list[Path], sheet: str, header: int | None = 0) -> "pl.DataFrame":
     """The sheet of every file as one Polars text table (columns of all files, `_file` = the file's name)."""
@@ -127,7 +106,7 @@ def read_sales(files: list[Path]) -> "pl.DataFrame":
     return _sheets(files, "Sales Report")
 
 
-def read_monthly(files: list[tuple[Path, pd.Timestamp]]) -> "pl.DataFrame":
+def read_monthly(files: list[tuple[Path, datetime]]) -> "pl.DataFrame":
     """The "Order Wise" sheet of the owner's monthly files; one row per order item settled that month (Polars)."""
     from ..core.tables import pany_date, read_excel_text, unread_dates
     pl = _pl()
@@ -137,8 +116,8 @@ def read_monthly(files: list[tuple[Path, pd.Timestamp]]) -> "pl.DataFrame":
         df = df.rename(dict(zip(df.columns, _unique([re.sub(r"\s+", " ", str(c)).strip().lower() for c in df.columns]))))
         df = df.rename({"bank settlement value": "payout", "order item id": "oi"}, strict=False)
         df = df.filter(pl.col("oi").str.contains(r"^(OI:)?\d+").fill_null(False))   # order lines only, no totals or non-order rows
-        start = pd.Timestamp(month).to_pydatetime()
-        nxt = (pd.Timestamp(month) + pd.offsets.MonthBegin(1)).to_pydatetime()
+        start = datetime(month.year, month.month, 1)
+        nxt = add_months(start, 1)
         df = df.with_columns(oi=poi(pl.col("oi")), _day=pany_date(pl.col("order date")))
         unread_dates(df, "order date", "_day", f.name, log)
         df = df.with_columns(order_date=pl.when(pl.col("_day") < nxt).then(pl.col("_day").dt.strftime("%Y-%m-%d")),  # a mistyped later date: no date
@@ -153,36 +132,53 @@ def _rupees(text) -> float:
     return float(m[1].replace(",", "")) * {"K": 1e3, "L": 1e5, "Cr": 1e7, None: 1}[m[2]] if m else 0.0
 
 
-def bank_paid(settled_files: list[tuple[Path, pd.Timestamp]], monthly_files: list[tuple[Path, pd.Timestamp]]) -> pd.DataFrame:
-    """Per payment month what reached the bank: Settled Transactions' Net Bank Settlement, else the total row of the owner's
+def _float(v) -> float:
+    try:
+        return float(v) if v is not None else float("nan")
+    except ValueError:
+        return float("nan")
+
+
+def bank_paid(settled_files: list[tuple[Path, datetime]], monthly_files: list[tuple[Path, datetime]]) -> "pl.DataFrame | None":
+    """Per payment month (`m`) what reached the bank: Settled Transactions' Net Bank Settlement, else the total row of the owner's
     monthly file (order money + non-order SPF + ads + storage), with the transfers that file lists (rounded by Flipkart)."""
+    from ..core.tables import read_excel_text
+    pl = _pl()
     rows = {}
     for f, month in settled_files:
-        s = _xlsx(f, "Summary of report", header=None).dropna(how="all").dropna(axis=1, how="all")
-        first = s.columns[0]
-        head = s.index[s[first].astype(str).str.strip() == "Line Item"][0]
-        amount = s.columns[list(s.loc[head]).index("Amount Settled (Rs.)")]
-        line = s.loc[head + 1:]
-        net = line[line[first].astype(str).str.startswith("Net Bank Settlement")]
-        if len(net):
-            rows[month] = {"Net Bank Paid": float(net[amount].iloc[0]), "Transfers Listed": np.nan}
+        grid = [list(r) for r in read_excel_text(f, "Summary of report", header=None).rows()]
+        grid = [r for r in grid if any(v is not None for v in r)]                       # empty rows and columns out
+        keep = [j for j in range(len(grid[0]) if grid else 0) if any(r[j] is not None for r in grid)]
+        grid = [[r[j] for j in keep] for r in grid]
+        head = next(i for i, r in enumerate(grid) if str(r[0]).strip() == "Line Item")
+        amount = grid[head].index("Amount Settled (Rs.)")
+        net = [r for r in grid[head + 1:] if str(r[0]).startswith("Net Bank Settlement")]
+        if net:
+            rows[month] = {"Net Bank Paid": _float(net[0][amount]), "Transfers Listed": float("nan")}
     for f, month in monthly_files:
         if month in rows:
             continue
-        d = _xlsx(f, "Order Wise")
-        d.columns = [re.sub(r"\s+", " ", str(c)).strip().lower() for c in d.columns]
-        d = d.rename(columns={"bank settlement value": "payout"})
-        kind = d["type"].astype(str).str.strip().str.lower()
-        total = pd.to_numeric(d.loc[kind.isin(["total", "grand total", "net total"]), "payout"], errors="coerce").dropna()
-        if not len(total):
+        d = read_excel_text(f, "Order Wise")
+        d = d.rename({c: re.sub(r"\s+", " ", str(c)).strip().lower() for c in d.columns})
+        d = d.rename({"bank settlement value": "payout"}, strict=False)
+        kind = [str(v).strip().lower() for v in d["type"].to_list()]
+        payout = d["payout"].to_list()
+        total = [x for k, v in zip(kind, payout) if k in ("total", "grand total", "net total") and (x := _float(v)) == x]
+        if not total:
             continue
-        listed = np.nan
-        start = d.index[kind == "payment"]
-        if len(start):
-            amounts = d.loc[start[0] + 2:, "order item id"].dropna().astype(str)
-            listed = sum(_rupees(x) for x in amounts if "\u20b9" in x or re.match(r"^[\d,.]+\s*(K|L)?$", x.strip())) or np.nan
-        rows[month] = {"Net Bank Paid": float(total.iloc[-1]), "Transfers Listed": listed}
-    return pd.DataFrame.from_dict(rows, orient="index").sort_index() if rows else pd.DataFrame()
+        listed = float("nan")
+        start = [i for i, k in enumerate(kind) if k == "payment"]
+        if start:
+            amounts = [str(v) for v in d["order item id"].to_list()[start[0] + 2:] if v is not None]
+            listed = sum(_rupees(x) for x in amounts if "₹" in x or re.match(r"^[\d,.]+\s*(K|L)?$", x.strip())) or float("nan")
+        rows[month] = {"Net Bank Paid": total[-1], "Transfers Listed": listed}
+    if not rows:
+        return None
+    ms = sorted(rows)
+    return pl.DataFrame({"m": ms, "Net Bank Paid": [rows[m]["Net Bank Paid"] for m in ms],
+                         "Transfers Listed": [rows[m]["Transfers Listed"] for m in ms]},
+                        schema={"m": pl.Datetime("us"), "Net Bank Paid": pl.Float64, "Transfers Listed": pl.Float64}
+                        ).with_columns(pl.col("Net Bank Paid", "Transfers Listed").fill_nan(None))
 
 
 def monthly_settled(monthly, have: set) -> "pl.DataFrame":
@@ -192,7 +188,7 @@ def monthly_settled(monthly, have: set) -> "pl.DataFrame":
     m = _frame(monthly)
     if not m.height:
         return pl.DataFrame()
-    m = m.filter(~pl.col("_month").is_in([pd.Timestamp(x).to_pydatetime() for x in have]))
+    m = m.filter(~pl.col("_month").is_in([datetime(x.year, x.month, 1) for x in have]))
     if not m.height:
         return pl.DataFrame()
     money = (("Sale Amount (Rs.)", "sale amount"), ("Bank Settlement Value (Rs.)", "payout"), ("Marketplace Fee (Rs.)", "marketplace fee"),
@@ -350,10 +346,9 @@ RETURN_FIELDS = ["return_type", "return_id", "return_status", "return_result", "
 
 
 def raw_data(orders, returns, master, settled, category_of_design: dict[str, str] | None = None, sales=None,
-             monthly=None) -> pd.DataFrame:
+             monthly=None) -> "pl.DataFrame":
     """One row per order item (Orders report, then items only the Sales Report or the owner's monthly files have),
-    with its final status, return, settlement and master fields. Polars inside; handed on as a pandas table."""
-    from ..core.tables import to_pandas
+    with its final status, return, settlement and master fields."""
     pl = _pl()
     o = _frame(orders).with_columns(oi=poi(pl.col("order_item_id")), _source=pl.lit("Orders report"))
     tax = sales_items(sales)
@@ -438,23 +433,22 @@ def raw_data(orders, returns, master, settled, category_of_design: dict[str, str
           .otherwise(pl.lit("Not Applicable")).alias("PAYMENT STATUS"),
         "_row",
     ).sort(["ORDER DATE", "ORDER ITEM ID", "_row"], nulls_last=True).drop("_row")
-    return to_pandas(d)
+    return d
 
 
-def returned_units(raw: pd.DataFrame, returns) -> pd.Series:
+def returned_units(raw: "pl.DataFrame", returns) -> "pl.Series":
     """Units returned per row of raw: the returns report quantity of the item's lines in its window (windowed_returns),
     each return once; a line can return no more than it holds. The returns report only (owner, 16 Nov 2026)."""
-    from ..core.tables import to_polars
     pl = _pl()
-    keys = to_polars(raw[["ORDER ITEM ID", "ORDER MONTH"]]).select(
-        pl.col("ORDER ITEM ID").alias("oi"), pdt(pl.col("ORDER MONTH")).alias("_om"))
-    r = windowed_returns(returns, keys)
+    keys = raw.select(pl.col("ORDER ITEM ID").cast(pl.Utf8).alias("oi"), pl.col("ORDER MONTH").cast(pl.Datetime("us")).alias("_om"),
+                      pl.col("QTY").cast(pl.Float64).alias("_q"))
+    r = windowed_returns(returns, keys.select("oi", "_om"))
     if not r.height:
-        return pd.Series(0.0, index=raw.index)
+        return pl.Series("units", [0.0] * raw.height, dtype=pl.Float64)
     units = (r.unique(["oi", "return_id"], keep="first", maintain_order=True)
               .group_by("oi").agg(_u=_num(pl.col("quantity")).fill_null(1).sum()))
-    got = keys.join(units, on="oi", how="left", maintain_order="left")["_u"].fill_null(0).to_list()
-    return pd.Series(got, index=raw.index, dtype=float).clip(upper=raw["QTY"])
+    got = keys.join(units, on="oi", how="left", maintain_order="left")
+    return got.select(pl.min_horizontal(pl.col("_u").fill_null(0).cast(pl.Float64), pl.col("_q")).alias("units"))["units"]
 
 
 RETURN_COLS = ["REASON", "SUB REASON", "RETURN ID", "RETURN STATUS", "RETURN RESULT", "RETURN DATE", "RETURN MONTH", "RETURN TYPE SOURCE"]
@@ -469,9 +463,10 @@ MONEY = {"SALE VALUE", "MARKETPLACE FEE", "COMMISSION", "SHIPPING FEE", "REVERSE
          "PROTECTION FUND", "TCS", "TDS", "NET SETTLEMENT"}
 
 
-def report(raw: pd.DataFrame, settled: pd.DataFrame, input_log: pd.DataFrame, bank: pd.DataFrame | None = None) -> Report:
-    have_pay = raw["NET SETTLEMENT"].notna().any()
-    have_value = raw["SALE VALUE"].notna().any()
+def report(raw: "pl.DataFrame", settled, input_log: list, bank: "pl.DataFrame | None" = None) -> Report:
+    from .workbook import present
+    have_pay = bool(present(raw["NET SETTLEMENT"]).any())
+    have_value = bool(present(raw["SALE VALUE"]).any())
     pay_months = None
     s = _frame(settled)
     if s.height:
@@ -484,12 +479,12 @@ def report(raw: pd.DataFrame, settled: pd.DataFrame, input_log: pd.DataFrame, ba
         src_of = {dst: src for src, dst in SETTLE_COLS.items()}
         g = (s.with_columns(_m=month, **{n: _num(_get(s, src_of[c])).fill_null(0) for c, n in names.items()})
               .filter(pl.col("_m").is_not_null()).group_by("_m").agg(*[pl.col(n).sum() for n in names.values()]).sort("_m"))
-        pay_months = pd.DataFrame({n: g[n].to_list() for n in names.values()},
-                                  index=pd.DatetimeIndex(g["_m"].to_list(), name="m"))
-        if bank is not None and len(bank):
-            pay_months = pay_months.join(bank)
-            pay_months.insert(6, "SPF, Ads, Storage", pay_months["Net Bank Paid"] - pay_months["Order Settlement"])
-            pay_months["Difference"] = (pay_months["Net Bank Paid"] - pay_months["Transfers Listed"]).round(0)
+        pay_months = g.select(pl.col("_m").cast(pl.Datetime("us")).alias("m"), *names.values())
+        if bank is not None and bank.height:
+            pay_months = (pay_months.join(bank, on="m", how="left", maintain_order="left")
+                          .with_columns((pl.col("Net Bank Paid") - pl.col("Order Settlement")).alias("SPF, Ads, Storage"),
+                                        (pl.col("Net Bank Paid") - pl.col("Transfers Listed")).round(0).alias("Difference")))
+            pay_months = pay_months.select("m", *names.values(), "SPF, Ads, Storage", "Net Bank Paid", "Transfers Listed", "Difference")
     return Report(
         portal="FLIPKART", raw=raw, raw_cols=RAW_COLS,
         value="SALE VALUE" if have_value else None, settle="NET SETTLEMENT" if have_pay else None, money_cols=MONEY,

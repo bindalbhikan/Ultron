@@ -34,8 +34,7 @@ from pathlib import Path
 
 from typing import TYPE_CHECKING
 
-import numpy as np
-import pandas as pd
+from datetime import datetime
 
 from .workbook import Report
 
@@ -49,14 +48,6 @@ SHIPPED_DAYS = 60
 
 
 from ..core.tables import pnum  # noqa: E402 - one number reader (docs/CENTRALISE.md)
-
-def adate(s: pd.Series) -> pd.Series:
-    return pd.to_datetime(s.astype(str).str.replace(" IST", "", regex=False), format=AJIO_FMT, errors="coerce")
-
-
-def num(s) -> pd.Series:
-    return pd.to_numeric(s, errors="coerce")
-
 
 def read(files: list[Path]) -> "pl.DataFrame":
     """Every file's first sheet as one Polars text table (`_file` = the file's name)."""
@@ -97,48 +88,49 @@ def read_monthly(files: list[Path]) -> "pl.DataFrame":
     return m.unique("_key", keep="last", maintain_order=True).drop("_key")
 
 
-def ledger_lines(ledger_) -> pd.DataFrame:
-    """The ledger's lines once each; amt: money to us is positive; paid: the clearing date (worked out in Polars:
-    ledger(); handed on as pandas)."""
-    from ..core.tables import to_pandas
-    return to_pandas(ledger(ledger_))
-
-
-def forward_values(rtv) -> pd.DataFrame:
+def forward_values(rtv) -> "pl.DataFrame":
     """The return lines with qty, once each: key = order line, fwd = FWD B2B Invoice Amt (what a return takes back in the
-    owner's monthly files), created = Return Created Date. Polars inside."""
+    owner's monthly files), created = Return Created Date."""
     import polars as pl
     r = _frame(rtv)
     if not r.height:
-        return pd.DataFrame(columns=["key", "fwd", "created"])
+        return pl.DataFrame(schema={"key": pl.Utf8, "fwd": pl.Float64, "created": pl.Datetime("us")})
     r = (r.filter(pnum(pl.col("Return QTY")).fill_null(0) > 0)
           .unique(["RETURN ORDER NUMBER", "SELLER SKU"], keep="last", maintain_order=True))
-    k = r.select(_key("Cust Order No", "SELLER SKU").alias("key"), pnum(pl.col("FWD B2B Invoice Amt")).fill_null(0).alias("fwd"),
-                 padate(pl.col("Return Created Date")).alias("created"))
-    return pd.DataFrame({"key": k["key"].to_list(), "fwd": k["fwd"].to_list(), "created": pd.to_datetime(k["created"].to_list())})
+    return r.select(_key("Cust Order No", "SELLER SKU").alias("key"), pnum(pl.col("FWD B2B Invoice Amt")).fill_null(0).alias("fwd"),
+                    padate(pl.col("Return Created Date")).alias("created"))
 
 
-def file_payment(raw: pd.DataFrame, rtv: pd.DataFrame, months: set) -> pd.DataFrame:
+def _line_key() -> "pl.Expr":
+    """The order line of a RAW DATA row: "CUST ORDER NO|SELLER SKU" (an empty part is the text "nan", as the old code had it)."""
+    return _text("CUST ORDER NO") + "|" + _text("SELLER SKU")
+
+
+def file_payment(raw: "pl.DataFrame", rtv, months: set) -> "pl.DataFrame":
     """The payment of order months the SRM ledger does not reach, worked out as the owner's monthly files do: the line's
     Invoice Value received, less FWD B2B Invoice Amt of its returns. A statement of what is due, not of the bank."""
+    import polars as pl
     fwd = forward_values(rtv)
-    by_line = fwd.groupby("key")["fwd"].sum()
-    key = raw["CUST ORDER NO"].astype(str).str.strip() + "|" + raw["SELLER SKU"].astype(str).str.strip()
-    hit = raw["ORDER MONTH"].isin(months) & raw["FINAL STATUS"].ne("Cancelled")
-    raw.loc[raw["ORDER MONTH"].isin(months), ["INVOICE PAID", "CREDIT NOTE DEBIT", "NET SETTLEMENT", "PAYMENT DATE"]] = np.nan
-    raw.loc[hit, "INVOICE PAID"] = raw.loc[hit, "INVOICE VALUE"]
-    debit = -key[hit].map(by_line).fillna(0)
-    raw.loc[hit, "CREDIT NOTE DEBIT"] = debit.where(debit != 0)
-    raw.loc[hit, "NET SETTLEMENT"] = raw.loc[hit, "INVOICE VALUE"].fillna(0) + debit
-    raw.loc[hit, "PAYMENT STATUS"] = "As per monthly file"
-    raw.loc[raw["ORDER MONTH"].isin(months) & ~hit, "PAYMENT STATUS"] = "Not Applicable"
-    oms_line = hit & raw["SOURCE"].eq("OMSGuru")                     # no order report: OMSGuru's value, nothing kept on a return
-    raw.loc[oms_line, "NET SETTLEMENT"] = raw.loc[oms_line, "INVOICE VALUE"].where(raw.loc[oms_line, "FINAL STATUS"].eq("Delivered"), 0.0)
-    raw.loc[oms_line, "PAYMENT STATUS"] = "As per OMSGuru"
-    return raw
+    by_line = fwd.filter(pl.col("key").is_not_null()).group_by("key").agg(_fwd=pl.col("fwd").sum())
+    month = pl.col("ORDER MONTH").is_in(list(months)).fill_null(False)
+    hit = month & (pl.col("FINAL STATUS") != "Cancelled").fill_null(True)
+    x = raw.with_columns(_k=_line_key()).join(by_line, left_on="_k", right_on="key", how="left", maintain_order="left")
+    debit = -pl.col("_fwd").fill_null(0)
+    oms_line = hit & (pl.col("SOURCE") == "OMSGuru").fill_null(False)    # no order report: OMSGuru's value, nothing kept on a return
+    value = pl.col("INVOICE VALUE")
+    return x.with_columns(
+        pl.when(hit).then(value).when(month).then(None).otherwise(pl.col("INVOICE PAID")).alias("INVOICE PAID"),
+        pl.when(hit).then(pl.when(debit != 0).then(debit)).when(month).then(None).otherwise(pl.col("CREDIT NOTE DEBIT"))
+          .alias("CREDIT NOTE DEBIT"),
+        pl.when(oms_line).then(pl.when(pl.col("FINAL STATUS") == "Delivered").then(value).otherwise(0.0))
+          .when(hit).then(value.fill_null(0) + debit).when(month).then(None).otherwise(pl.col("NET SETTLEMENT")).alias("NET SETTLEMENT"),
+        pl.when(month).then(None).otherwise(pl.col("PAYMENT DATE")).alias("PAYMENT DATE"),
+        pl.when(oms_line).then(pl.lit("As per OMSGuru")).when(hit).then(pl.lit("As per monthly file"))
+          .when(month).then(pl.lit("Not Applicable")).otherwise(pl.col("PAYMENT STATUS")).alias("PAYMENT STATUS"),
+    ).drop("_k", "_fwd")
 
 
-def monthly_expenses(files: list[tuple[Path, pd.Timestamp]]) -> pd.Series:
+def monthly_expenses(files: list[tuple[Path, datetime]]) -> dict:
     """Month -> the charges on the EXP sheet of the owner's monthly file (money off, so negative)."""
     import polars as pl
 
@@ -152,32 +144,39 @@ def monthly_expenses(files: list[tuple[Path, pd.Timestamp]]) -> pd.Series:
         e = e.rename({c: str(c).strip().upper() for c in e.columns})
         if "AMOUNT" in e.columns:
             out[month] = -abs(float(e.select(pnum(pl.col("AMOUNT")).sum())[0, 0] or 0.0))
-    return pd.Series(out, dtype=float)
+    return out
 
 
-def file_payment_months(raw: pd.DataFrame, rtv: pd.DataFrame, months: set, charges: pd.Series | None = None) -> pd.DataFrame:
-    """Those months in the cash table: Invoice Value of the month's orders, FWD B2B Invoice Amt of the month's returns, the
-    charges of the file's EXP sheet."""
-    keep = raw[raw["ORDER MONTH"].isin(months)]
-    t = pd.DataFrame({"Received (G4)": keep.groupby("ORDER MONTH")["INVOICE PAID"].sum()})
-    fwd = forward_values(rtv)
-    fwd["m"] = pd.to_datetime(fwd["created"]).dt.to_period("M").dt.to_timestamp()
-    t["Reversed (IC)"] = -fwd[fwd["m"].isin(months)].groupby("m")["fwd"].sum().reindex(t.index).fillna(0)
-    t["Other (EXP sheet)"] = (charges if charges is not None else pd.Series(dtype=float)).reindex(t.index).fillna(0)
-    return t
+def file_payment_months(raw: "pl.DataFrame", rtv, months: set, charges: dict | None = None) -> "pl.DataFrame":
+    """Those months in the cash table (first column `m`): Invoice Value of the month's orders, FWD B2B Invoice Amt of the
+    month's returns, the charges of the file's EXP sheet."""
+    import polars as pl
+    t = (raw.filter(pl.col("ORDER MONTH").is_in(list(months)).fill_null(False))
+            .group_by("ORDER MONTH").agg(pl.col("INVOICE PAID").fill_nan(None).sum().alias("Received (G4)"))
+            .rename({"ORDER MONTH": "m"}).sort("m"))
+    fwd = forward_values(rtv).with_columns(m=pl.col("created").dt.truncate("1mo"))
+    rev = fwd.filter(pl.col("m").is_in(list(months)).fill_null(False)).group_by("m").agg(_r=pl.col("fwd").sum())
+    exp = pl.DataFrame({"m": list((charges or {}).keys()), "_e": list((charges or {}).values())},
+                       schema={"m": pl.Datetime("us"), "_e": pl.Float64})
+    return (t.with_columns(pl.col("m").cast(pl.Datetime("us")))
+             .join(rev, on="m", how="left", maintain_order="left").join(exp, on="m", how="left", maintain_order="left")
+             .select("m", "Received (G4)", (-pl.col("_r").fill_null(0)).alias("Reversed (IC)"),
+                     pl.col("_e").fill_null(0).alias("Other (EXP sheet)")))
 
 
-def payment_match(raw: pd.DataFrame, ledger: pd.DataFrame, table: pd.DataFrame) -> list[tuple[str, float]]:
+def payment_match(raw: "pl.DataFrame", ledger_, table: "pl.DataFrame") -> list[tuple[str, float]]:
     """From the bank (KP) to NET SETTLEMENT in RAW DATA, step by step: every rupee named."""
-    lg = ledger_lines(ledger)
-    both = lg["DT"].isin(["G4", "IC"])
-    paid = float(table["Bank Paid (KP)"].sum())
-    cleared_unpaid = float(table["Difference"].sum())
-    charges = float(lg.loc[lg["paid"].notna() & ~both & lg["DT"].ne("KP"), "amt"].sum())
-    open_lines = float(lg.loc[lg["paid"].isna() & both, "amt"].sum())
-    whole = float(lg.loc[both, "amt"].sum())
-    file_lines = float(raw.loc[raw["PAYMENT STATUS"].eq("As per monthly file"), "NET SETTLEMENT"].sum())
-    on_lines = float(raw["NET SETTLEMENT"].sum())
+    import polars as pl
+    lg = ledger(ledger_)
+    both = pl.col("DT").is_in(["G4", "IC"])
+    total = lambda df, c: float(df.select(pl.col(c).cast(pl.Float64).fill_nan(None).sum()).item() or 0.0)  # noqa: E731
+    paid = total(table, "Bank Paid (KP)")
+    cleared_unpaid = total(table, "Difference")
+    charges = total(lg.filter(pl.col("paid").is_not_null() & ~both & (pl.col("DT") != "KP").fill_null(True)), "amt")
+    open_lines = total(lg.filter(pl.col("paid").is_null() & both), "amt")
+    whole = total(lg.filter(both), "amt")
+    file_lines = total(raw.filter(pl.col("PAYMENT STATUS") == "As per monthly file"), "NET SETTLEMENT")
+    on_lines = total(raw, "NET SETTLEMENT")
     return [("Bank paid (KP), all months", paid),
             ("Cleared in the ledger, bank payment still to come", cleared_unpaid),
             ("Add back: charges in the ledger, no order line (TOT, GST retention, other)", -charges),
@@ -253,10 +252,9 @@ def ledger(ledger_) -> "pl.DataFrame":
               .unique(["DT", "REFERENCE", "DOCNO", "AMOUNT"], keep="first", maintain_order=True))
 
 
-def raw_data(orders, rtv, ledger_, master, category_of_design: dict[str, str] | None = None, monthly=None) -> pd.DataFrame:
+def raw_data(orders, rtv, ledger_, master, category_of_design: dict[str, str] | None = None, monthly=None) -> "pl.DataFrame":
     """One row per order line (order report, then lines only the owner's monthly files have) with its final status,
-    return and payment (G4 / IC by invoice). Polars inside; handed on as a pandas table."""
-    from ..core.tables import to_pandas
+    return and payment (G4 / IC by invoice)."""
     pl = _pl()
     o = (_frame(orders).with_columns(key=_key("Cust Order No", "Seller SKU"))
          .unique("key", keep="last", maintain_order=True).with_columns(_source=pl.lit("Order report")))
@@ -300,7 +298,7 @@ def raw_data(orders, rtv, ledger_, master, category_of_design: dict[str, str] | 
     titles = {d: d.title() for d in x["Description"].drop_nulls().unique().to_list()}   # pandas' str.title exactly
     cats = category_of_design or {}
     day = padate(pl.col("Cust Order Date")).dt.truncate("1d")
-    today = pd.Timestamp.today().normalize().to_pydatetime()
+    today = datetime.combine(datetime.today().date(), datetime.min.time())
     st0 = pl.col("Status").str.strip_chars().str.to_lowercase()
     # a status is as old as its file (the order report of a month is saved once): Shipped long ago with no RTV line since was delivered
     stale = ((pl.lit(today) - day).dt.total_days() > SHIPPED_DAYS).fill_null(False) & (st0 == "shipped").fill_null(False)
@@ -374,41 +372,36 @@ def raw_data(orders, rtv, ledger_, master, category_of_design: dict[str, str] | 
             "CREDIT NOTE NUMBER", "COURIER", "SHIPMENT DATE", "SLA STATUS", "INVOICE PAID", "PAYMENT DATE", "CREDIT NOTE DEBIT",
             "NET SETTLEMENT", "PAYMENT STATUS"]
     d = d.sort(["ORDER DATE", "CUST ORDER NO", "_row"], nulls_last=True).select(cols)
-    return to_pandas(d)
+    return d
 
 
-def _line_key(raw: pd.DataFrame) -> pd.Series:
-    return raw["CUST ORDER NO"].astype(str).str.strip() + "|" + raw["SELLER SKU"].astype(str).str.strip()
-
-
-def returned_units(raw: pd.DataFrame, rtv) -> pd.Series:
+def returned_units(raw: "pl.DataFrame", rtv) -> "pl.Series":
     """Units returned per row of raw: the Return QTY of the line's return orders, each once; no more than the row holds
     (a replacement can come back again)."""
-    from ..core.tables import to_polars
     pl = _pl()
-    keys = to_polars(pd.DataFrame({"key": _line_key(raw).values, "_om": raw["ORDER MONTH"].values})).with_columns(
-        _om=pl.col("_om").str.slice(0, 19).str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False, time_unit="us"))
-    r = windowed_rtv(rtv, keys)
+    keys = raw.select(_line_key().alias("key"), pl.col("ORDER MONTH").cast(pl.Datetime("us")).alias("_om"),
+                      pl.col("QTY").cast(pl.Float64).alias("_q"))
+    r = windowed_rtv(rtv, keys.select("key", "_om"))
     if not r.height:
-        return pd.Series(0.0, index=raw.index)
+        return pl.Series("units", [0.0] * raw.height, dtype=pl.Float64)
     units = (r.filter(pnum(pl.col("Return QTY")).fill_null(0) > 0)
               .unique(["RETURN ORDER NUMBER", "SELLER SKU"], keep="last", maintain_order=True)
               .filter(pl.col("key").is_not_null())
               .group_by("key").agg(_u=pnum(pl.col("Return QTY")).sum()))
-    got = keys.join(units, on="key", how="left", maintain_order="left")["_u"].fill_null(0).to_list()
-    return pd.Series(got, index=raw.index, dtype=float).clip(upper=raw["QTY"])
+    got = keys.join(units, on="key", how="left", maintain_order="left")
+    return got.select(pl.min_horizontal(pl.col("_u").fill_null(0).cast(pl.Float64), pl.col("_q")).alias("units"))["units"]
 
 
-def cancelled_units(raw: pd.DataFrame, orders) -> pd.Series:
-    """Units cancelled per row of raw: Cancelled Qty of the order report (the newest file's line). Polars inside."""
+def cancelled_units(raw: "pl.DataFrame", orders) -> "pl.Series":
+    """Units cancelled per row of raw: Cancelled Qty of the order report (the newest file's line)."""
     import polars as pl
     o = _frame(orders)
     if not o.height or "Cancelled Qty" not in o.columns:
-        return pd.Series(0.0, index=raw.index)
+        return pl.Series("units", [0.0] * raw.height, dtype=pl.Float64)
     o = (o.with_columns(key=_key("Cust Order No", "Seller SKU")).unique("key", keep="last", maintain_order=True)
-          .filter(pl.col("key").is_not_null()))
-    qty = dict(zip(o["key"].to_list(), o.select(pnum(pl.col("Cancelled Qty")).fill_null(0))[:, 0].to_list()))
-    return _line_key(raw).map(qty).fillna(0).astype(float)
+          .filter(pl.col("key").is_not_null()).select("key", _c=pnum(pl.col("Cancelled Qty")).fill_null(0)))
+    got = raw.select(_line_key().alias("key")).join(o, on="key", how="left", maintain_order="left")
+    return got["_c"].fill_null(0).cast(pl.Float64).alias("units")
 
 
 RETURN_COLS = ["REASON", "RETURN TYPE", "RETURN ORDER NUMBER", "RETURN STATUS", "RETURN CREATED DATE", "RETURN MONTH", "CREDIT NOTE NUMBER"]
@@ -421,22 +414,36 @@ RAW_COLS = ["ORDER DATE", "ORDER MONTH", "SOURCE", "OMS STATUS", "CUST ORDER NO"
 MONEY = {"MRP", "SELLING PRICE", "SALE VALUE", "INVOICE VALUE", "INVOICE PAID", "CREDIT NOTE DEBIT", "NET SETTLEMENT"}
 
 
-def report(raw: pd.DataFrame, ledger: pd.DataFrame, input_log: pd.DataFrame, file_months: pd.DataFrame | None = None) -> Report:
-    have_pay = raw["NET SETTLEMENT"].notna().any()
+def report(raw: "pl.DataFrame", ledger_, input_log: list, file_months: "pl.DataFrame | None" = None) -> Report:
+    import polars as pl
+
+    from .workbook import present
+    have_pay = bool(present(raw["NET SETTLEMENT"]).any())
     pay_months = None
-    if len(ledger):
-        lg = ledger_lines(ledger)
-        lg["m"] = lg["paid"].dt.to_period("M").dt.to_timestamp()
-        lg = lg.dropna(subset=["m"])
-        t = lg.pivot_table(index="m", columns="DT", values="amt", aggfunc="sum", fill_value=0)
-        t = t.reindex(columns=["G4", "IC"] + sorted(c for c in t.columns if c not in ("G4", "IC")), fill_value=0)
-        t.columns = ["Received (G4)", "Reversed (IC)"] + [f"Other ({c})" for c in t.columns[2:]]
-        bank = -t.pop("Other (KP)") if "Other (KP)" in t.columns else pd.Series(0.0, index=t.index)   # KP = the bank payment itself
-        if file_months is not None and len(file_months):          # before the ledger: as the owner's monthly files
-            t = pd.concat([file_months, t[~t.index.isin(file_months.index)]]).fillna(0).sort_index()
-        t["Net Due"] = t.sum(axis=1)
-        t["Bank Paid (KP)"] = bank.reindex(t.index)                    # none before the ledger: a monthly file shows what is due
-        t["Difference"] = (t["Net Due"] - t["Bank Paid (KP)"]).round(0)
+    if ledger_ is not None and len(ledger_):
+        lg = (ledger(ledger_).with_columns(m=pl.col("paid").dt.truncate("1mo"))
+                .filter(pl.col("m").is_not_null() & pl.col("DT").is_not_null()))
+        t = lg.group_by("m", "DT").agg(pl.col("amt").sum()).pivot(on="DT", index="m", values="amt").fill_null(0).sort("m")
+        dts = [c for c in t.columns if c != "m"]
+        for c in ("G4", "IC"):
+            if c not in dts:
+                t = t.with_columns(pl.lit(0.0).alias(c))
+        others = sorted(c for c in dts if c not in ("G4", "IC"))
+        t = t.select("m", pl.col("G4").alias("Received (G4)"), pl.col("IC").alias("Reversed (IC)"),
+                     *[pl.col(c).alias(f"Other ({c})") for c in others])
+        # KP = the bank payment itself
+        bank = (t.select("m", (-pl.col("Other (KP)")).alias("Bank Paid (KP)")) if "Other (KP)" in t.columns
+                else t.select("m", pl.lit(0.0).alias("Bank Paid (KP)")))
+        t = t.drop("Other (KP)", strict=False)
+        if file_months is not None and file_months.height:        # before the ledger: as the owner's monthly files
+            later = t.filter(~pl.col("m").is_in(file_months["m"].to_list()))
+            names = list(file_months.columns) + [c for c in t.columns if c not in file_months.columns]
+            t = (pl.concat([file_months.with_columns(pl.col("m").cast(pl.Datetime("us"))), later], how="diagonal_relaxed")
+                   .select(names).fill_null(0).sort("m", maintain_order=True))
+        money = [c for c in t.columns if c != "m"]
+        t = (t.with_columns(pl.sum_horizontal(money).alias("Net Due"))
+              .join(bank, on="m", how="left", maintain_order="left")    # none before the ledger: a monthly file shows what is due
+              .with_columns((pl.col("Net Due") - pl.col("Bank Paid (KP)")).round(0).alias("Difference")))
         pay_months = t
     return Report(
         portal="AJIO", raw=raw, raw_cols=RAW_COLS, value="SALE VALUE",

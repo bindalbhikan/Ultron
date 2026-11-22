@@ -206,7 +206,7 @@ OMS_LOCK = threading.Lock()        # one OMSGuru session at a time
 def oms_lines(portal: str, first: date, last: date, dest: Path) -> Path:
     """OMSGuru's order lines of the portal's channels ordered in the month (AJIO: both Ajio and Ajio Api), read only."""
     from ultron.portals.omsguru_orders import channel_names, order_lines_range
-    from ..business_report.oms import rows_of
+    from ..business_report.oms import rows_of, write
     from ..core import clients
     with OMS_LOCK:
         client = clients.omsguru(warehouse=True)
@@ -216,7 +216,7 @@ def oms_lines(portal: str, first: date, last: date, dest: Path) -> Path:
             raise RuntimeError(f"no OMSGuru channel for {portal}")
         lines = order_lines_range(client, first, last, wanted)
     path = dest / f"{portal.lower()}_omsguru.xlsx"
-    rows_of(lines, names).to_excel(path, index=False)
+    write(path, rows_of(lines, names))
     return path
 
 

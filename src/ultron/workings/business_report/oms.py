@@ -7,85 +7,100 @@ Checked against the portals' own reports, Jan-26 to Sep-26, on 43,000 one-line o
 Before Shipping mean the same; Return Init / Return Received = customer return; Cancelled Return Received and Cancel
 Init = RTO. It is not whole: Flipkart FBF orders are not in it, and most orders cancelled before shipping are not.
 So it corrects a line the reports have, and adds a line only in a month with no fuller report.
+
+Polars (docs/libraries/06-polars.md). An OMSGuru table carries `_i`, its row number: a raw line's match is that number.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 FINAL = {"cancelled": "Cancelled", "cancelled before shipping": "Cancelled",
          "cancelled return received": "RTO", "partial cancelled return received": "RTO", "cancel init": "RTO",
          "return init": "Customer Return", "return received": "Customer Return", "partial return received": "Customer Return",
          "delivered": "Delivered"}
 COLUMNS = ["DAY", "CHANNEL", "ORDER", "SKU", "QTY", "STATUS", "VALUE"]
+SCHEMA = {"DAY": pl.Datetime("us"), "CHANNEL": pl.Utf8, "ORDER": pl.Utf8, "SKU": pl.Utf8, "QTY": pl.Float64,
+          "STATUS": pl.Utf8, "VALUE": pl.Float64, "_file": pl.Utf8, "FINAL": pl.Utf8, "_i": pl.Int64}
 
 
-def rows_of(lines: list[dict], names: dict[str, str]) -> pd.DataFrame:
-    """OMSGuru order list lines (ultron.portals.omsguru_orders) as one row per SKU, exact repeats once."""
-    rows = [{"DAY": r["day"], "CHANNEL": names.get(r["channel"], r["channel"]), "ORDER": r["order"], "SKU": sku.upper(),
-             "QTY": qty, "STATUS": r["status"].strip(), "VALUE": r["value"]}
-            for r in lines for sku, qty in (r["skus"] or [("", r["qty"])])]
-    df = pd.DataFrame(rows, columns=COLUMNS)
-    return df.drop_duplicates(["CHANNEL", "ORDER", "SKU", "DAY", "QTY", "STATUS"])
+def rows_of(lines: list[dict], names: dict[str, str]) -> list[list]:
+    """OMSGuru order list lines (ultron.portals.omsguru_orders) as one row per SKU (COLUMNS), exact repeats once."""
+    out, seen = [], set()
+    for r in lines:
+        for sku, qty in (r["skus"] or [("", r["qty"])]):
+            row = [r["day"], names.get(r["channel"], r["channel"]), r["order"], sku.upper(), qty, r["status"].strip(), r["value"]]
+            key = (row[1], row[2], row[3], row[0], row[4], row[5])
+            if key not in seen:
+                seen.add(key)
+                out.append(row)
+    return out
 
 
-def read(files: list[Path]) -> pd.DataFrame:
-    from ..core.tables import read_excel_text, to_pandas
-    frames = [to_pandas(read_excel_text(f, 0)).assign(_file=f.name) for f in files]
-    frames = [f for f in frames if len(f)]
+def write(path: Path, rows: list[list]) -> Path:
+    """An OMSGURU REPORT file (one sheet: COLUMNS)."""
+    from ..core.xlsx import write_sheets
+    return write_sheets(path, {"Sheet1": (COLUMNS, rows)})
+
+
+def _day(e: pl.Expr) -> pl.Expr:
+    s = e.cast(pl.Utf8).str.strip_chars().str.slice(0, 19)
+    return pl.coalesce(s.str.to_datetime("%Y-%m-%d %H:%M:%S", strict=False, time_unit="us"),
+                       s.str.to_date("%Y-%m-%d", strict=False).cast(pl.Datetime("us"))).dt.truncate("1d")
+
+
+def read(files: list[Path]) -> pl.DataFrame:
+    from ..core.tables import pnum, read_excel_text
+    frames = [read_excel_text(f, 0).with_columns(_file=pl.lit(f.name)) for f in files]
+    frames = [f for f in frames if f.height]
     if not frames:
-        return pd.DataFrame(columns=COLUMNS + ["_file", "FINAL"])
-    df = pd.concat(frames, ignore_index=True)
-    df["ORDER"] = df["ORDER"].astype(str).str.strip()
-    df["SKU"] = df["SKU"].fillna("").astype(str).str.strip().str.upper()
-    df["QTY"] = pd.to_numeric(df["QTY"], errors="coerce").fillna(1)
-    df["VALUE"] = pd.to_numeric(df["VALUE"], errors="coerce")
-    df["DAY"] = pd.to_datetime(df["DAY"], errors="coerce").dt.normalize()
-    df["FINAL"] = df["STATUS"].str.strip().str.lower().map(FINAL).fillna("In Transit")
-    return df
+        return pl.DataFrame(schema=SCHEMA)
+    df = pl.concat(frames, how="diagonal_relaxed")
+    for c in COLUMNS:
+        if c not in df.columns:
+            df = df.with_columns(pl.lit(None, dtype=pl.Utf8).alias(c))
+    return df.select(
+        _day(pl.col("DAY")).alias("DAY"), "CHANNEL",
+        pl.col("ORDER").fill_null("nan").str.strip_chars().alias("ORDER"),
+        pl.col("SKU").fill_null("").str.strip_chars().str.to_uppercase().alias("SKU"),
+        pnum(pl.col("QTY")).fill_null(1).alias("QTY"), "STATUS", pnum(pl.col("VALUE")).alias("VALUE"), "_file",
+        pl.col("STATUS").str.strip_chars().str.to_lowercase().replace_strict(FINAL, default="In Transit").alias("FINAL"),
+    ).with_row_index("_i").with_columns(pl.col("_i").cast(pl.Int64)).select(list(SCHEMA))
 
 
-def match(raw: pd.DataFrame, id_col: str, oms: pd.DataFrame) -> tuple[pd.Series, set]:
-    """For every raw line its OMSGuru row (index, -1 = none), and the rows used. By order id + FINAL SKU, the nth line with
+def match(raw: pl.DataFrame, id_col: str, oms: pl.DataFrame) -> tuple[pl.Series, set]:
+    """For every raw line its OMSGuru row (`_i`, -1 = none), and the rows used. By order id + FINAL SKU, the nth line with
     the nth; then a line left over with the only row left of its order (a SKU spelled otherwise in the master)."""
-    ids = raw[id_col].astype(str).str.strip()
-    skus = raw["FINAL SKU"].fillna("").astype(str).str.strip().str.upper()
-    nth = pd.DataFrame({"i": ids, "s": skus}).groupby(["i", "s"]).cumcount()
-    a = ids + "|" + skus + "|" + nth.astype(str)
-    b = oms["ORDER"] + "|" + oms["SKU"] + "|" + oms.groupby(["ORDER", "SKU"]).cumcount().astype(str)
-    index_of = pd.Series(oms.index, index=b.values)
-    found = a.map(index_of).fillna(-1).astype(int)
-    used = set(found[found >= 0])
-    left = oms[~oms.index.isin(used)]
-    alone = left.groupby("ORDER").filter(lambda g: len(g) == 1)
-    waiting = ids[found < 0]
-    single = waiting[waiting.map(waiting.value_counts()) == 1]
-    by_order = pd.Series(alone.index, index=alone["ORDER"].values)
-    second = single.map(by_order).dropna().astype(int)
-    found.loc[second.index] = second
-    used |= set(second)
-    return found, used
+    a = raw.select(i=pl.col(id_col).cast(pl.Utf8).fill_null("nan").str.strip_chars(),
+                   s=pl.col("FINAL SKU").cast(pl.Utf8).fill_null("").str.strip_chars().str.to_uppercase()) \
+           .with_row_index("_r").with_columns(n=pl.int_range(pl.len()).over(["i", "s"]))
+    b = oms.select("_i", i="ORDER", s="SKU").with_columns(n=pl.int_range(pl.len()).over(["i", "s"]))
+    first = a.join(b, on=["i", "s", "n"], how="left", maintain_order="left").with_columns(pl.col("_i").fill_null(-1))
+    used = set(first.filter(pl.col("_i") >= 0)["_i"].to_list())
+    left = oms.filter(~pl.col("_i").is_in(list(used)))
+    alone = left.filter(pl.len().over("ORDER") == 1).select(i="ORDER", _alone="_i")
+    waiting = first.filter(pl.col("_i") < 0)
+    single = waiting.filter(pl.len().over("i") == 1).join(alone, on="i", how="inner").select("_r", "_alone")
+    out = first.join(single, on="_r", how="left", maintain_order="left").select(pl.coalesce("_alone", "_i"))
+    used |= set(single["_alone"].to_list())
+    return out.to_series().alias("_m"), used
 
 
-def status_of(raw: pd.DataFrame, found: pd.Series, oms: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+def status_of(raw: pl.DataFrame, found: pl.Series, oms: pl.DataFrame) -> tuple[pl.Series, pl.Series]:
     """(OMSGuru's status, its final status) of every raw line, blank when it has none."""
-    has = found >= 0
-    text = pd.Series("", index=raw.index, dtype=object)
-    final = pd.Series("", index=raw.index, dtype=object)
-    text.loc[has] = oms.loc[found[has], "STATUS"].values
-    final.loc[has] = oms.loc[found[has], "FINAL"].values
+    got = pl.DataFrame({"_i": found}).join(oms.select("_i", "STATUS", "FINAL"), on="_i", how="left", maintain_order="left")
+    has = (found >= 0)
+    text = pl.select(pl.when(has).then(got["STATUS"]).otherwise(pl.lit(""))).to_series()
+    final = pl.select(pl.when(has).then(got["FINAL"]).otherwise(pl.lit(""))).to_series()
     return text, final
 
 
-def corrected(current: pd.Series, final: pd.Series, keep: pd.Series) -> pd.Series:
-    """The final status after OMSGuru: a return, an RTO or a cancellation it shows replaces Delivered, In Transit or Return
-    Type Pending; its Delivered replaces In Transit. keep: lines a return report has settled are not touched."""
-    out = current.copy()
-    open_line = current.isin(["Delivered", "In Transit", "Return Type Pending"]) & ~keep
+def corrected(current: pl.Series, final: pl.Series, keep: pl.Series) -> pl.Series:
+    """The final status after OMSGuru: a cancellation it shows replaces Delivered, In Transit or Return Type Pending; its
+    Delivered replaces In Transit. keep: lines a return report has settled are not touched."""
+    open_line = current.is_in(["Delivered", "In Transit", "Return Type Pending"]) & ~keep
     # a return or an RTO only from the portal's returns report (owner, 16 Nov 2026), never from OMSGuru
-    hit = open_line & final.eq("Cancelled")
-    out.loc[hit] = final[hit]
-    done = current.eq("In Transit") & final.eq("Delivered")
-    out.loc[done] = "Delivered"
-    return out
+    hit = (open_line & (final == "Cancelled")).fill_null(False)
+    done = ((current == "In Transit") & (final == "Delivered")).fill_null(False)
+    return pl.select(pl.when(hit).then(final).when(done).then(pl.lit("Delivered")).otherwise(current)).to_series()

@@ -24,10 +24,11 @@ import logging
 import re
 import time
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
+
 from ultron.core import http
 from ..core.tables import clean_id
 
@@ -52,27 +53,48 @@ DONE, FRESH, WAITING, APPROVED, CHECK = "DONE", "FRESH", "WAITING ON MYNTRA", "A
 PARTIAL, FAILED, REJECTED = "PARTIAL", "FAILED", "REJECTED"
 
 
-def read_record(path: Path | None) -> pd.DataFrame:
+TEXT = {c: pl.Utf8 for c in COLS}
+
+
+def _text_table(df: pl.DataFrame, cols: list[str]) -> pl.DataFrame:
+    """The columns of a record sheet as text, in this order (a column the sheet lacks is empty)."""
+    return df.select(*[(pl.col(c).cast(pl.Utf8) if c in df.columns else pl.lit(None, dtype=pl.Utf8)).alias(c) for c in cols])
+
+
+def read_record(path: Path | None) -> pl.DataFrame:
+    from ..core.tables import read_excel_text
     if path and path.exists():
-        return pd.read_excel(path, sheet_name="SUBMISSIONS", dtype=str).reindex(columns=COLS)
-    return pd.DataFrame(columns=COLS, dtype=object)
+        return _text_table(read_excel_text(path, "SUBMISSIONS"), COLS)
+    return pl.DataFrame(schema=TEXT)
+
+
+def _upload_styles(data) -> tuple[str, list[str]]:
+    """(unique id, style ids) of an upload file (a path or its bytes): A2, and column C."""
+    from ..core.tables import read_excel_text
+    df = read_excel_text(data, 0)
+    if not df.height or df.width < 3:
+        return "", []
+    uid = str(df[0, 0]).strip() if df[0, 0] is not None else "nan"
+    return uid, [clean_id(x) for x in df[:, 2].drop_nulls().to_list()]
 
 
 def template_rows(path: Path) -> tuple[str, list[str]]:
     """(unique id, style ids) of one upload file."""
-    df = pd.read_excel(path, dtype=str)
-    uid = str(df.iloc[0, 0]).strip() if len(df) else ""
-    return uid, [clean_id(x) for x in df.iloc[:, 2].dropna()]
+    return _upload_styles(path)
 
 
 def _when(value) -> tuple[str, str]:
     """(date, time) in IST of a job's createdAt (the portal answers UTC, ISO text or epoch ms)."""
     try:
-        t = pd.to_datetime(value, unit="ms") if str(value).isdigit() else pd.to_datetime(value)
-        t = t.tz_convert(None) if t.tzinfo else t
+        text = str(value)
+        if text.isdigit():
+            t = datetime.fromtimestamp(int(text) / 1000, tz=timezone.utc).replace(tzinfo=None)
+        else:
+            t = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            t = t.astimezone(timezone.utc).replace(tzinfo=None) if t.tzinfo else t
         t = t + timedelta(hours=5, minutes=30)
         return f"{t:%Y-%m-%d}", f"{t:%H:%M}"
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return str(value)[:10], ""
 
 
@@ -84,18 +106,25 @@ def _job_styles(job: dict) -> tuple[str, list[str]]:
     try:
         r = http.get(url, timeout=60)
         r.raise_for_status()
-        df = pd.read_excel(io.BytesIO(r.content), dtype=str)
-        return str(df.iloc[0, 0]).strip(), [clean_id(x) for x in df.iloc[:, 2].dropna()]
+        return _upload_styles(r.content)
     except Exception as exc:  # noqa: BLE001 - the job is still recorded
         log.info("Input file of job %s not read: %s", job.get("id"), str(exc)[:100])
         return "", []
 
 
-def sync_jobs(record: pd.DataFrame, accounts: list[str] | None = None) -> tuple[pd.DataFrame, list[str]]:
+def _add(record: pl.DataFrame, rows: list[dict]) -> pl.DataFrame:
+    """New rows at the end of the record (their missing columns empty)."""
+    if not rows:
+        return record
+    new = pl.DataFrame([{c: r.get(c) for c in COLS} for r in rows], schema=TEXT)
+    return pl.concat([record, new], how="vertical")
+
+
+def sync_jobs(record: pl.DataFrame, accounts: list[str] | None = None) -> tuple[pl.DataFrame, list[str]]:
     """The portal's jobs into the record, every status read again; problems, one line each."""
     from ..portals import myntra as mp
     from ..return_analysis.sources import env, myntra_portal
-    record, problems, new = record.copy(), [], []
+    problems, new, seen = [], [], {}
     for account in accounts or list(SELLER_OF):
         try:
             portal = myntra_portal(account)
@@ -110,30 +139,32 @@ def sync_jobs(record: pd.DataFrame, accounts: list[str] | None = None) -> tuple[
         except Exception as exc:  # noqa: BLE001 - one account never stops the others
             problems.append(f"{account}: grouping jobs not read ({str(exc).splitlines()[0][:100]})")
             continue
-        known = set(record["JOB ID"].astype(str))
+        known = set(record["JOB ID"].fill_null("nan").to_list())
         for j in jobs:
             jid = str(j.get("id"))
             counts = [str(j.get("status") or ""), str(j.get("totalRecords") or 0), str(j.get("processedRecords") or 0),
                       str(j.get("erredRecords") or 0)]
             day, at = _when(j.get("createdAt"))
             if jid in known:     # the portal's own time: the clock of the run that uploaded can be UTC
-                record.loc[record["JOB ID"].astype(str) == jid,
-                           ["SUBMITTED ON", "TIME", "JOB STATUS", "TOTAL RECORDS", "PROCESSED RECORDS", "ERRED RECORDS"]] = [day, at, *counts]
+                seen[jid] = {"JOB ID": jid, "SUBMITTED ON": day, "TIME": at, "JOB STATUS": counts[0], "TOTAL RECORDS": counts[1],
+                             "PROCESSED RECORDS": counts[2], "ERRED RECORDS": counts[3]}
                 continue
             uid, styles = _job_styles(j)
             new.append({"SUBMITTED ON": day, "TIME": at, "ACCOUNT": account, "SELLER ID": SELLER_OF[account],
                         "UNIQUE ID": uid, "BRAND": "", "ARTICLE TYPE": "", "FILE": "", "STYLES": str(len(styles)),
                         "STYLE IDS": ", ".join(styles), "JOB ID": jid, "JOB STATUS": counts[0], "TOTAL RECORDS": counts[1],
                         "PROCESSED RECORDS": counts[2], "ERRED RECORDS": counts[3], "BY": "Portal"})
-    if new:
-        record = pd.concat([record, pd.DataFrame(new, columns=COLS)], ignore_index=True)
-    return record, problems
+    if seen:
+        fresh = pl.DataFrame(list(seen.values()), schema={c: pl.Utf8 for c in next(iter(seen.values()))})
+        record = record.update(fresh, on="JOB ID", how="left")
+    return _add(record, new), problems
 
 
-def read_reasons(path: Path | None) -> pd.DataFrame:
+def read_reasons(path: Path | None) -> pl.DataFrame:
+    from ..core.tables import read_excel_text
     if path and path.exists():
-        return pd.read_excel(path, sheet_name="REASONS", dtype=str).reindex(columns=REASON_COLS)
-    return pd.DataFrame(columns=REASON_COLS, dtype=object)
+        return _text_table(read_excel_text(path, "REASONS"), REASON_COLS)
+    return pl.DataFrame(schema={c: pl.Utf8 for c in REASON_COLS})
 
 
 def _report_rows(link: str) -> list[dict]:
@@ -141,11 +172,13 @@ def _report_rows(link: str) -> list[dict]:
     GroupId; a rejected job's uniqueId, styleId, groupingType, rejectReason. A long report repeats its header.
     When the portal could not read the upload at all, its error stands alone in the first column."""
     import zipfile
+
+    from ..core.tables import read_text_csv
     z = zipfile.ZipFile(io.BytesIO(http.get(link, timeout=60).content))
-    df = pd.read_csv(z.open(z.namelist()[0]), dtype=str)
-    df.columns = [re.sub(r"[^a-z]", "", str(c).lower()) for c in df.columns]
+    df = read_text_csv(z.open(z.namelist()[0]).read(), pandas_na=True)
+    df = df.rename({c: re.sub(r"[^a-z]", "", str(c).lower()) for c in df.columns}).fill_null("")
     out = []
-    for r in df.fillna("").to_dict("records"):
+    for r in df.iter_rows(named=True):
         style = clean_id(r.get("styleid", ""))
         remark = str(r.get("remarks", r.get("rejectreason", ""))).strip()
         unique = str(r.get("uniqueid", "")).strip()
@@ -160,14 +193,14 @@ def _report_rows(link: str) -> list[dict]:
     return out
 
 
-def update_reasons(record: pd.DataFrame, reasons: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+def update_reasons(record: pl.DataFrame, reasons: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame, list[str]]:
     """Every finished job's report not read yet into the reasons, JOB STATUS brought up to date, and PORTAL REMARK
     of each job from them; (record, reasons, problems). A report that cannot be read is tried again next run."""
     from ..return_analysis.sources import myntra_portal
-    record, portals, new, unread = record.copy(), {}, [], 0
-    have = set(reasons["JOB ID"].astype(str))
-    numbered = record["JOB ID"].astype(str).str.fullmatch(r"\d+")
-    for _, r in record[numbered & record["JOB STATUS"].isin(FINISHED)].iterrows():
+    portals, new, unread = {}, [], 0
+    have = set(reasons["JOB ID"].fill_null("nan").to_list())
+    done = record.filter(pl.col("JOB ID").str.contains(r"^\d+$").fill_null(False) & pl.col("JOB STATUS").is_in(sorted(FINISHED)))
+    for r in done.iter_rows(named=True):
         jid = str(r["JOB ID"])
         if jid in have:
             continue
@@ -182,26 +215,30 @@ def update_reasons(record: pd.DataFrame, reasons: pd.DataFrame) -> tuple[pd.Data
         common = {"JOB ID": jid, "SUBMITTED ON": r["SUBMITTED ON"], "ACCOUNT": r["ACCOUNT"], "SELLER ID": r["SELLER ID"]}
         new += [{**common, **row} for row in rows or [{"REMARK": EMPTY_REPORT}]]
     if new:
-        reasons = pd.concat([reasons, pd.DataFrame(new, columns=REASON_COLS)], ignore_index=True)
-    status = dict(zip(record["JOB ID"].astype(str), record["JOB STATUS"]))
-    reasons["JOB STATUS"] = reasons["JOB ID"].astype(str).map(status)
-    said = reasons[~reasons["REMARK"].astype(str).str.upper().isin(["SUCCESS", "", "NAN"])]
-    joined = said.groupby(said["JOB ID"].astype(str))["REMARK"].agg(lambda x: " | ".join(dict.fromkeys(x.astype(str)))[:300])
-    record["PORTAL REMARK"] = record["JOB ID"].astype(str).map(joined).fillna("")
+        reasons = pl.concat([reasons, pl.DataFrame([{c: n.get(c) for c in REASON_COLS} for n in new],
+                                                   schema={c: pl.Utf8 for c in REASON_COLS})], how="vertical")
+    status = record.select(pl.col("JOB ID").fill_null("nan").alias("_j"), pl.col("JOB STATUS").alias("_s")).unique("_j", keep="last")
+    reasons = (reasons.with_columns(pl.col("JOB ID").fill_null("nan").alias("_j")).drop("JOB STATUS")
+                      .join(status, on="_j", how="left", maintain_order="left")
+                      .rename({"_s": "JOB STATUS"}).drop("_j").select(REASON_COLS))
+    said = reasons.filter(~pl.col("REMARK").fill_null("nan").str.to_uppercase().is_in(["SUCCESS", "", "NAN"]))
+    joined = (said.group_by(pl.col("JOB ID").fill_null("nan").alias("_j"), maintain_order=True)
+                  .agg(pl.col("REMARK").unique(maintain_order=True).str.join(" | ").str.slice(0, 300).alias("_r")))
+    record = (record.with_columns(pl.col("JOB ID").fill_null("nan").alias("_j")).join(joined, on="_j", how="left", maintain_order="left")
+                    .with_columns(pl.col("_r").fill_null("").alias("PORTAL REMARK")).select(COLS))
     return record, reasons, [f"{unread} job reports not read: tried again next run"] if unread else []
 
 
-def jobs_of(record: pd.DataFrame) -> list[dict]:
+def jobs_of(record: pl.DataFrame) -> list[dict]:
     """Every job the portal took, oldest first (by job id: the portal numbers them in order)."""
     out = []
-    for _, r in record.iterrows():
+    for r in record.iter_rows(named=True):
         jid = clean_id(r["JOB ID"])
         if not jid.isdigit():
             continue
-        remark = r["PORTAL REMARK"]
         out.append({"id": int(jid), "seller": str(r["SELLER ID"]), "day": str(r["SUBMITTED ON"])[:10], "status": str(r["JOB STATUS"]),
-                    "styles": {s for s in str(r["STYLE IDS"]).split(", ") if s and s != "nan"},
-                    "remark": "" if pd.isna(remark) else str(remark)})
+                    "styles": {s for s in str(r["STYLE IDS"]).split(", ") if s and s not in ("nan", "None")},
+                    "remark": r["PORTAL REMARK"] or ""})
     return sorted(out, key=lambda j: j["id"])
 
 
@@ -244,15 +281,15 @@ def group_state(jobs_newest_first: list[dict], pending: bool, today: date) -> st
     return {"PARTIAL_COMPLETE": PARTIAL, "FAILED": FAILED, "REJECTED": REJECTED}.get(job["status"], WAITING)
 
 
-def changed_jobs(old: pd.DataFrame, new: pd.DataFrame) -> Counter:
+def changed_jobs(old: pl.DataFrame, new: pl.DataFrame) -> Counter:
     """New status -> jobs that are new or got that status since the old record."""
-    was = dict(zip(old["JOB ID"].astype(str), old["JOB STATUS"].astype(str)))
-    return Counter(str(s) for j, s in zip(new["JOB ID"].astype(str), new["JOB STATUS"].astype(str))
-                   if j.isdigit() and was.get(j) != str(s))
+    was = dict(zip(old["JOB ID"].fill_null("nan").to_list(), old["JOB STATUS"].fill_null("nan").to_list()))
+    return Counter(s for j, s in zip(new["JOB ID"].fill_null("nan").to_list(), new["JOB STATUS"].fill_null("nan").to_list())
+                   if j.isdigit() and was.get(j) != s)
 
 
-def submit(folder: Path, record: pd.DataFrame, limit: int = 0, pause: float = 0.005,
-           again: bool = False) -> tuple[pd.DataFrame, list[str], int, Counter]:
+def submit(folder: Path, record: pl.DataFrame, limit: int = 0, pause: float = 0.005,
+           again: bool = False) -> tuple[pl.DataFrame, list[str], int, Counter]:
     """Upload the files of folder/ACC-<seller id>/; (record, problems, submitted, reason -> skipped).
     limit: at most that many groups in all (a test). again: see skip_reason."""
     from ..portals import myntra as mp
@@ -289,52 +326,54 @@ def submit(folder: Path, record: pd.DataFrame, limit: int = 0, pause: float = 0.
                          "BY": "Ultron"})
             time.sleep(pause)
         mp.save_to_worker(env, portal.cookies(), account)
-    if rows:
-        record = pd.concat([record, pd.DataFrame(rows, columns=COLS)], ignore_index=True)
-    return record, problems, sum(1 for r in rows if r["JOB ID"]), skipped
+    return _add(record, rows), problems, sum(1 for r in rows if r["JOB ID"]), skipped
 
 
-def _newest_first(record: pd.DataFrame) -> pd.DataFrame:
-    return (record.assign(_job=pd.to_numeric(record["JOB ID"], errors="coerce"))
-            .sort_values(["SUBMITTED ON", "_job"], ascending=False, na_position="last").drop(columns="_job"))
+def _newest_first(record: pl.DataFrame) -> pl.DataFrame:
+    job = pl.col("JOB ID").str.strip_chars().cast(pl.Float64, strict=False)
+    return (record.with_columns(job.alias("_job"))
+                  .sort(["SUBMITTED ON", "_job"], descending=True, nulls_last=True, maintain_order=True).drop("_job"))
 
 
-def write_record(record: pd.DataFrame, path: Path) -> Path:
-    from .engine import format_workbook
-    with pd.ExcelWriter(path, engine="openpyxl") as xw:
-        _newest_first(record).to_excel(xw, sheet_name="SUBMISSIONS", index=False)
-        format_workbook(xw.book)
+def write_record(record: pl.DataFrame, path: Path) -> Path:
+    from .engine import write_tables
+    write_tables(path, [("SUBMISSIONS", COLS, _newest_first(record).rows())])
     return path
 
 
-def write_reasons(reasons: pd.DataFrame, path: Path) -> Path:
-    from .engine import format_workbook
-    rows = reasons.assign(_job=pd.to_numeric(reasons["JOB ID"], errors="coerce")).sort_values("_job", ascending=False, kind="stable").drop(columns="_job")
-    with pd.ExcelWriter(path, engine="openpyxl") as xw:
-        rows.to_excel(xw, sheet_name="REASONS", index=False)
-        format_workbook(xw.book)
+def write_reasons(reasons: pl.DataFrame, path: Path) -> Path:
+    from .engine import write_tables
+    job = pl.col("JOB ID").str.strip_chars().cast(pl.Float64, strict=False)
+    rows = reasons.with_columns(job.alias("_job")).sort("_job", descending=True, nulls_last=True, maintain_order=True).drop("_job")
+    write_tables(path, [("REASONS", REASON_COLS, rows.select(REASON_COLS).rows())])
     return path
 
 
-def apply(report: Path, record: pd.DataFrame, reasons: pd.DataFrame, today: date | None = None) -> dict[str, Counter]:
-    """The account sheets in the owner's LAYOUT, a style not grouped yet with its own newest job and reason (every
-    other row blank, and a style never uploaded), and the SUBMISSIONS sheet. Safe to run on a master that has them already. Returns seller ->
-    pending groups per state."""
-    from openpyxl import load_workbook
-    from .engine import PENDING_REMARKS, REMARK_EXTRA, format_workbook
+def read_sheets(path: Path) -> dict[str, pl.DataFrame]:
+    """Every sheet of a workbook, typed (pl.read_excel, calamine)."""
+    return pl.read_excel(path, sheet_id=0, engine="calamine", raise_if_empty=False)
+
+
+def apply(report: Path, record: pl.DataFrame, reasons: pl.DataFrame, today: date | None = None) -> dict[str, Counter]:
+    """The master written again (xlsxwriter): the account sheets in the owner's LAYOUT, a style not grouped yet with its own
+    newest job and reason (every other row blank, and a style never uploaded), the other sheets as they were, and the
+    SUBMISSIONS sheet. Safe to run on a master that has them already. Returns seller -> pending groups per state."""
+    from .engine import PENDING_REMARKS, REMARK_EXTRA, write_tables
     today, states = today or date.today(), {}
     jobs = jobs_of(record)
     latest = {(j["seller"], s): j for j in jobs for s in j["styles"]}    # oldest first: the newest stays
-    said = {(str(r["JOB ID"]), str(r["STYLE ID"])): str(r["REMARK"]) for _, r in reasons.iterrows()}
-    wb = load_workbook(report)
-    for old in [s for s in wb.worksheets if s.title.startswith("ACC-")]:
-        seller = old.title[4:]
-        rows = list(old.iter_rows(values_only=True))
-        head = list(rows[0])
+    said = {(str(j), str(s)): str(r) for j, s, r in reasons.select("JOB ID", "STYLE ID", "REMARK").iter_rows()}
+    out_sheets = []
+    for title, sheet in read_sheets(report).items():
+        if title == "SUBMISSIONS":
+            continue
+        if not title.startswith("ACC-"):
+            out_sheets.append((title, sheet.columns, sheet.rows()))
+            continue
+        seller = title[4:]
         groups: dict[str, dict] = {}
         out = []
-        for values in rows[1:]:
-            row = dict(zip(head, values))
+        for row in sheet.iter_rows(named=True):
             sid = clean_id(row.get("Style ID") or "")
             job = latest.get((seller, sid))
             remark = row.get("GROUPING REMARK")
@@ -346,26 +385,15 @@ def apply(report: Path, record: pd.DataFrame, reasons: pd.DataFrame, today: date
                         "PORTAL REMARK": said.get((str(job["id"]), sid)) or job["remark"]} if job and remark in PENDING_REMARKS else
                        {"JOB ID": None, "JOB STATUS": None, "JOB SUBMITED DATE": None, "PORTAL REMARK": None})
             out.append([row.get(c) for c in LAYOUT])
-        at, title = wb.index(old), old.title
-        wb.remove(old)
-        ws = wb.create_sheet(title, at)
-        ws.append(LAYOUT)
-        for values in out:
-            ws.append(values)
+        out_sheets.append((title, LAYOUT, out))
         tally = Counter()
         for g in groups.values():
             if g["pending"]:
                 mine = [j for j in reversed(jobs) if j["seller"] == seller and j["styles"] & g["styles"]]
                 tally[group_state(mine, True, today)] += 1
         states[seller] = tally
-    if "SUBMISSIONS" in wb.sheetnames:
-        del wb["SUBMISSIONS"]
-    ws = wb.create_sheet("SUBMISSIONS")
-    ws.append(COLS)
-    for r in _newest_first(record).itertuples(index=False):
-        ws.append(["" if pd.isna(v) else v for v in r])
-    format_workbook(wb)
-    wb.save(report)
+    out_sheets.append(("SUBMISSIONS", COLS, _newest_first(record).rows()))
+    write_tables(report, out_sheets)
     return states
 
 
@@ -377,64 +405,50 @@ def brand_master(master: Path, dest: Path) -> Path:
     of every account, ACCOUNT first and then the master's columns; a Summary per brand and account; and
     SUBMISSIONS with a BRANDS column (a job uploaded by hand gets the brands of its styles). Built from the
     finished account-wise master, so the job columns match it."""
-    from openpyxl import Workbook, load_workbook
-    from .engine import BRANDS, FILLS, format_workbook
+    from .engine import BRANDS, FILLS, write_tables
     names = {b.strip().lower(): b for b in BRANDS}      # only the owner's brands, nothing else
-    src = load_workbook(master, read_only=True)
     per_brand: dict[str, list] = {k: [] for k in names}
     head: list = []
     brand_of: dict[tuple[str, str], str] = {}           # (seller id, style id) -> brand
-    for ws in src.worksheets:
-        if not ws.title.startswith("ACC-"):
+    book = read_sheets(master)
+    for title, sheet in book.items():
+        if not title.startswith("ACC-") or not sheet.width:
             continue
-        rows = list(ws.iter_rows(values_only=True))
-        if not rows:
-            continue
-        head = head or list(rows[0])
-        col = {c: i for i, c in enumerate(rows[0])}
-        seller = ws.title[4:]
-        for values in rows[1:]:
-            brand = str(values[col["Brand"]] or "").strip().lower()
+        head = head or list(sheet.columns)
+        seller = title[4:]
+        for row in sheet.iter_rows(named=True):
+            brand = str(row.get("Brand") or "").strip().lower()
             if brand in names:
-                per_brand[brand].append([ACCOUNT_OF.get(seller, seller), *(values[col[c]] if c in col else None for c in head)])
-                brand_of[(seller, clean_id(values[col["Style ID"]] or ""))] = names[brand]
-    record = list(src["SUBMISSIONS"].iter_rows(values_only=True)) if "SUBMISSIONS" in src.sheetnames else []
-    src.close()
+                per_brand[brand].append([ACCOUNT_OF.get(seller, seller), *(row.get(c) for c in head)])
+                brand_of[(seller, clean_id(row.get("Style ID") or ""))] = names[brand]
+    record = book.get("SUBMISSIONS")
 
-    wb = Workbook()
-    wb.remove(wb.active)
-    summary = []
+    sheets, summary = [], []
     at = head.index("GROUPING REMARK") + 1 if head else None
     uid_at = head.index("Unique ID") + 1 if head else None
     for key, rows in per_brand.items():
         if not rows:
             continue
-        ws = wb.create_sheet(names[key][:31])
-        ws.append(["ACCOUNT", *head])
-        for values in rows:
-            ws.append(values)
+        sheets.append((names[key][:31], ["ACCOUNT", *head], rows))
         for account in dict.fromkeys(r[0] for r in rows):
             mine = [r for r in rows if r[0] == account]
             remarks = Counter(r[at] for r in mine)
             summary.append([names[key], account, len({r[uid_at] for r in mine}), len(mine), *(remarks.get(k, 0) for k in FILLS)])
-    ws = wb.create_sheet("Summary")
-    ws.append(["Brand", "Account", "Groups", "Rows", *FILLS])
-    for values in summary:
-        ws.append(values)
-    ws = wb.create_sheet("SUBMISSIONS")
-    if record:
-        col = {c: i for i, c in enumerate(record[0])}
-        ws.append(["BRANDS", *record[0]])
-        for values in record[1:]:
-            named = str(values[col["BRAND"]] or "").strip() if "BRAND" in col else ""
-            seller = str(values[col["SELLER ID"]] or "").strip() if "SELLER ID" in col else ""
-            styles = [x.strip() for x in str(values[col["STYLE IDS"]] or "").split(",")] if "STYLE IDS" in col else []
+    sheets.append(("Summary", ["Brand", "Account", "Groups", "Rows", *FILLS], summary))
+    if record is not None and record.width:
+        out = []
+        for r in record.iter_rows(named=True):
+            named = str(r.get("BRAND") or "").strip()
+            seller = str(r.get("SELLER ID") or "").strip()
+            styles = [x.strip() for x in str(r.get("STYLE IDS") or "").split(",")]
             brands = [named] if named else sorted({brand_of[(seller, x)] for x in styles if (seller, x) in brand_of})
-            ws.append([", ".join(brands), *values])
-    format_workbook(wb)
+            out.append([", ".join(brands), *(v for v in r.values())])
+        sheets.append(("SUBMISSIONS", ["BRANDS", *record.columns], out))
+    else:
+        sheets.append(("SUBMISSIONS", [], []))
     dest.mkdir(parents=True, exist_ok=True)
     path = dest / BRAND_MASTER
-    wb.save(path)
+    write_tables(path, sheets)
     return path
 
 

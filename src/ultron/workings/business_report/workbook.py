@@ -19,27 +19,30 @@ tiles or wrap; values left + middle, headers centre + middle.
 Standard RAW DATA columns: ORDER DATE, ORDER MONTH, BRAND, CATEGORY, QTY, FINAL STATUS, REASON;
 the sale value and the net settlement columns when the portal has them (Report.value / .settle).
 FINAL STATUS: Delivered, Customer Return, RTO, Cancelled, In Transit (+ Return Type Pending).
+
+Tables are Polars (docs/libraries/06-polars.md). Months are datetime.datetime (the 1st, midnight) everywhere.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
+import polars as pl
 
 log = logging.getLogger("bindal.business_report")
 
 YELLOW, LIGHT, TITLE, EDGE = "#FFC000", "#FFE699", "#FFF2CC", "#BF8F00"
-EXCEL_DAY0 = pd.Timestamp("1899-12-30")
+EXCEL_DAY0 = datetime(1899, 12, 30)
 STANDARD = ["ORDER DATE", "ORDER MONTH", "BRAND", "CATEGORY", "QTY", "FINAL STATUS", "REASON"]
+LOG_COLS = ["Input", "Account", "File", "Rows", "Date Used", "From", "To", "Note"]
 
 
 @dataclass
 class Report:
     portal: str
-    raw: pd.DataFrame
+    raw: pl.DataFrame
     raw_cols: list[str]                       # RAW DATA columns in order (the standard ones included)
     value: str | None = None                  # sale value column
     settle: str | None = None                 # net settlement column (payment against the order line)
@@ -47,22 +50,41 @@ class Report:
     reasons: list[tuple[str, str]] = field(default_factory=lambda: [("Customer Return Reason", "Customer Return"),
                                                                       ("Cancellation Reason", "Cancelled")])
     pay_table: list[tuple[str, str]] = field(default_factory=list)   # PAYMENT (1): (header, RAW column), net last
-    pay_months: pd.DataFrame | None = None    # PAYMENT (2): cash by payment month (values)
-    input_log: pd.DataFrame | None = None
+    pay_months: pl.DataFrame | None = None    # PAYMENT (2): cash by payment month; first column = the month
+    input_log: list[list] | None = None       # INPUT LOG rows (LOG_COLS)
     min_orders: int = 500
     unknown: dict[str, set] = field(default_factory=dict)   # BASE key -> months its number is not known: "-", never 0
     recv_all: bool = False                    # Net Received = the settlement of every line (a charge on an RTO is money too)
     pay_match: list[tuple[str, float]] = field(default_factory=list)   # PAYMENT: from the bank to the order lines, step by step
-    earn_more: pd.DataFrame | None = None     # EARN MORE: the portal's month figures, index = order month
+    earn_more: dict | None = None             # EARN MORE: order month -> the portal's month figures
 
 
-def one_spelling(s: pd.Series) -> np.ndarray:
-    """Values that differ only in letter case or spaces become their most common spelling: Excel's
-    SUMIFS does not tell "Customer requested" from "customer requested"."""
-    t = pd.Series(s, dtype=object).where(pd.notna(s), "").astype(str).str.strip()
-    key = t.str.lower().str.replace(r"\s+", " ", regex=True)
-    best = t[t != ""].groupby(key[t != ""]).agg(lambda x: x.value_counts().index[0])
-    return key.map(best).fillna(t).values
+def num(e: pl.Expr) -> pl.Expr:
+    """A column as numbers for a sum: text that is no number, NaN and empty cells count 0 (pandas' to_numeric + fillna(0))."""
+    return e.cast(pl.Float64, strict=False).fill_nan(None).fill_null(0.0)
+
+
+def present(s: pl.Series) -> pl.Series:
+    """pandas' notna(): not null and, for floats, not NaN."""
+    out = s.is_not_null()
+    return out & ~s.is_nan().fill_null(False) if s.dtype.is_float() else out
+
+
+def one_spelling(s: pl.Series) -> pl.Series:
+    """Values that differ only in letter case or spaces become their most common spelling (the first seen of equals):
+    Excel's SUMIFS does not tell "Customer requested" from "customer requested"."""
+    t = s.cast(pl.Utf8).fill_null("").str.strip_chars()
+    df = pl.DataFrame({"t": t, "k": t.str.to_lowercase().str.replace_all(r"\s+", " ")}).with_row_index("i")
+    best = (df.filter(pl.col("t") != "")
+              .group_by("k", "t").agg(n=pl.len(), i=pl.col("i").min())
+              .sort(["k", "n", "i"], descending=[False, True, False])
+              .unique("k", keep="first").select("k", best="t"))
+    return df.join(best, on="k", how="left", maintain_order="left").select(pl.coalesce("best", "t"))["best"].alias(s.name)
+
+
+def add_months(m: datetime, n: int) -> datetime:
+    y, mo = divmod(m.month - 1 + n, 12)
+    return m.replace(year=m.year + y, month=mo + 1)
 
 
 class Writer:
@@ -76,9 +98,9 @@ class Writer:
         import xlsxwriter
         from xlsxwriter.utility import xl_col_to_name, xl_rowcol_to_cell
         self.cell, self.colname = xl_rowcol_to_cell, xl_col_to_name
-        self.r, self.raw = rep, rep.raw
-        for c in ["BRAND", "CATEGORY", "REASON"]:
-            self.raw[c] = one_spelling(self.raw[c])
+        self.r = rep
+        rep.raw = rep.raw.with_columns(*[one_spelling(rep.raw[c]) for c in ["BRAND", "CATEGORY", "REASON"]])
+        self.raw = rep.raw
         self.wb = xlsxwriter.Workbook(str(path), {"nan_inf_to_errors": True})
         base = {"font_name": "Calibri", "font_size": 10, "font_color": "#000000", "valign": "vcenter", "align": "left"}
         box = {"border": 1, "border_color": "#BFBFBF"}
@@ -91,7 +113,7 @@ class Writer:
         self.ttxt, self.tint, self.tpct, self.tmon = f(**tot), f(num_format="#,##0", **tot), f(num_format="0.0%", **tot), f(num_format="mmm-yy", **tot)
         self.dash, self.tdash = f(**box), f(**tot)
         self.last = len(self.raw) + 1
-        self.months = [pd.Timestamp(m) for m in sorted(self.raw["ORDER MONTH"].dropna().unique())]
+        self.months = sorted(self.raw["ORDER MONTH"].drop_nulls().unique().to_list())
         self.net = "nv" if rep.value else "nq"
         self.spec = self._spec()
         self._last_vals: list[dict] = []
@@ -108,33 +130,33 @@ class Writer:
         t = str(text).replace("~", "~~").replace("*", "~*").replace("?", "~?").replace('"', '""')
         return f'"{t}"'
 
-    def crit_month(self, m: pd.Timestamp) -> tuple:
+    def crit_month(self, m: datetime) -> tuple:
         return ("ORDER MONTH", str((m - EXCEL_DAY0).days), lambda d: d["ORDER MONTH"] == m)
 
     def crit_eq(self, col: str, val) -> tuple:
-        return (col, self.lit(val), lambda d: d[col].astype(str) == str(val))
+        return (col, self.lit(val), lambda d: d[col].cast(pl.Utf8).fill_null("nan") == str(val))
 
     def crit_status(self, st) -> list:
         if st is None:
             return []
         if isinstance(st, tuple):
-            return [("FINAL STATUS", "{" + ",".join(self.lit(s) for s in st) + "}", lambda d: d["FINAL STATUS"].isin(st))]
+            return [("FINAL STATUS", "{" + ",".join(self.lit(s) for s in st) + "}", lambda d: d["FINAL STATUS"].is_in(list(st)))]
         return [("FINAL STATUS", self.lit(st), lambda d: d["FINAL STATUS"] == st)]
 
     def sumifs(self, col: str, crit: list) -> tuple[str, float]:
-        args, mask, array = [self.rng(col)], np.ones(len(self.raw), dtype=bool), False
+        args, mask, array = [self.rng(col)], pl.repeat(True, len(self.raw), eager=True), False
         for c, x, fn in crit:
             args += [self.rng(c), x]
             if (c, x) not in self._masks:                     # a criterion is worked out once
-                self._masks[(c, x)] = np.asarray(fn(self.raw), dtype=bool)
-            mask &= self._masks[(c, x)]
+                self._masks[(c, x)] = fn(self.raw).fill_null(False)
+            mask = mask & self._masks[(c, x)]
             array |= x.startswith("{")
         if len(args) == 1:
             args += [self.rng("QTY"), '"<>"']
         fm = f"SUMIFS({','.join(args)})"
         if col not in self._num:
-            self._num[col] = pd.to_numeric(self.raw[col], errors="coerce").fillna(0).to_numpy()
-        val = float(self._num[col][mask].sum())
+            self._num[col] = self.raw.select(num(pl.col(col)))[col]
+        val = float(self._num[col].filter(mask).sum())
         return (f"=SUM({fm})" if array else f"={fm}"), val
 
     def base_cell(self, key: str, crit: list) -> tuple[str, float]:
@@ -191,15 +213,15 @@ class Writer:
         vals: list[dict] = []
         for n, (label, how) in enumerate(rows):
             last = n == len(rows) - 1
-            if isinstance(label, pd.Timestamp):
-                ws.write_datetime(r, 0, label.to_pydatetime(), self.tmon if last else self.mon)
+            if isinstance(label, datetime):
+                ws.write_datetime(r, 0, label, self.tmon if last else self.mon)
             else:
                 ws.write_string(r, 0, str(label), self.ttxt if last else self.txt)
             v, c = {}, {k: self.cell(r, i) for k, i in col.items()}
             for key in col:
                 if key not in self.BASE:
                     continue
-                if isinstance(label, pd.Timestamp) and label in self.r.unknown.get(key, ()):
+                if isinstance(label, datetime) and label in self.r.unknown.get(key, ()):
                     ws.write_string(r, col[key], "-", self.dash)      # not known: never a 0
                     v[key] = 0.0
                     continue
@@ -218,11 +240,11 @@ class Writer:
             pct, num = (self.tpct, self.tint) if last else (self.pct, self.int)
             if "rp" in col:
                 d = v["gq"] - v["cq"]
-                if isinstance(label, pd.Timestamp) and label in self.r.unknown.get("rq", ()):
+                if isinstance(label, datetime) and label in self.r.unknown.get("rq", ()):
                     ws.write_string(r, col["rp"], "-", self.dash)
                 else:
                     ws.write_formula(r, col["rp"], f'=IF({c["gq"]}-N({c["cq"]})=0,"-",N({c["rq"]})/({c["gq"]}-N({c["cq"]})))', pct, v["rq"] / d if d else "-")
-            unknown_at = lambda *keys: isinstance(label, pd.Timestamp) and any(label in self.r.unknown.get(k, ()) for k in keys)  # noqa: E731
+            unknown_at = lambda *keys: isinstance(label, datetime) and any(label in self.r.unknown.get(k, ()) for k in keys)  # noqa: E731
             if "tp" in col and unknown_at("tq", "nq"):
                 ws.write_string(r, col["tp"], "-", self.dash)
             elif "tp" in col:
@@ -237,16 +259,16 @@ class Writer:
                 # the month before must be the row above: a month with no data is never skipped over
                 before = rows[n - 1][0] if n else None
                 none = self.r.unknown.get(net, ())
-                if (n == 0 or last or not isinstance(label, pd.Timestamp)
-                        or before != label - pd.DateOffset(months=1) or label in none or before in none):
+                if (n == 0 or last or not isinstance(label, datetime)
+                        or before != add_months(label, -1) or label in none or before in none):
                     ws.write_string(r, col["mom"], "-", self.tdash if last else self.dash)
                 else:
                     prev, pv = self.cell(r - 1, col[net]), vals[-1][net]
                     ws.write_formula(r, col["mom"], f'=IF({prev}=0,"-",{c[net]}/{prev}-1)', self.pct, v[net] / pv - 1 if pv else "-")
             if "ly" in col:
                 # the same month last year, found by its date: a month with no data must not shift the rest
-                year_ago = next((i for i in range(n) if isinstance(label, pd.Timestamp)
-                                 and rows[i][0] == label - pd.DateOffset(years=1)), None)
+                year_ago = next((i for i in range(n) if isinstance(label, datetime)
+                                 and rows[i][0] == add_months(label, -12)), None)
                 if year_ago is not None and not last and label not in self.r.unknown.get(net, ()) and rows[year_ago][0] not in self.r.unknown.get(net, ()):
                     ly = vals[year_ago][net]
                     ws.write_formula(r, col["ly"], f"={self.cell(top + year_ago, col[net])}", self.int, ly)
@@ -277,10 +299,10 @@ class Writer:
         """(MONTH WISE cell, value) of each month's net sale and of the total (the share columns)."""
         col = 1 + [k for _, _, k in self.spec_month()].index(self.net)
         measure = self.r.value or "QTY"
-        dl = self.raw["FINAL STATUS"] == "Delivered"
-        out = [(f"'MONTH WISE'!{self.cell(2 + i, col, True, True)}",
-                float(self.raw.loc[dl & (self.raw["ORDER MONTH"] == m), measure].sum())) for i, m in enumerate(self.months)]
-        out.append((f"'MONTH WISE'!{self.cell(2 + len(self.months), col, True, True)}", float(self.raw.loc[dl, measure].sum())))
+        dl = self.raw.filter(pl.col("FINAL STATUS") == "Delivered").select("ORDER MONTH", v=num(pl.col(measure)))
+        by_month = dict(dl.group_by("ORDER MONTH").agg(pl.col("v").sum()).iter_rows())
+        out = [(f"'MONTH WISE'!{self.cell(2 + i, col, True, True)}", float(by_month.get(m, 0.0))) for i, m in enumerate(self.months)]
+        out.append((f"'MONTH WISE'!{self.cell(2 + len(self.months), col, True, True)}", float(dl["v"].sum())))
         return out
 
     # ---------------------------------------------------------------- sheets
@@ -294,14 +316,16 @@ class Writer:
     def group_sheet(self, name: str, cols: list[str]) -> None:
         ws = self.wb.add_worksheet(name)
         raw = self.raw
-        key = raw[cols].astype(str).agg(" - ".join, axis=1)
-        size = raw.groupby(key)["QTY"].sum()
-        named = [g for g in raw.groupby(key)[self.r.value or "QTY"].sum().sort_values(ascending=False).index
-                 if size[g] >= self.r.min_orders]
-        parts = dict(zip(key, raw[cols].astype(str).itertuples(index=False, name=None)))
+        text = [pl.col(c).cast(pl.Utf8).fill_null("nan") for c in cols]
+        g = (raw.select(pl.concat_str(text, separator=" - ").alias("_k"), *[t.alias(f"_p{i}") for i, t in enumerate(text)],
+                        num(pl.col("QTY")).alias("_q"), num(pl.col(self.r.value or "QTY")).alias("_v"))
+                .group_by("_k").agg(pl.col("_q").sum(), pl.col("_v").sum(), *[pl.col(f"_p{i}").first() for i in range(len(cols))])
+                .sort("_k").sort("_v", descending=True, maintain_order=True))     # by value, equal values A to Z
+        named = [k for k, q in zip(g["_k"], g["_q"]) if q >= self.r.min_orders]
+        parts = {row[0]: tuple(row[1:]) for row in g.select("_k", *[f"_p{i}" for i in range(len(cols))]).iter_rows()}
         if len(cols) > 1:                              # brand A to Z, then category A to Z
-            named.sort(key=lambda g: tuple(x.lower() for x in parts[g]))
-        others = bool((~key.isin(named)).any())
+            named.sort(key=lambda k: tuple(x.lower() for x in parts[k]))
+        others = len(named) < g.height
 
         def crit_of(g):
             return [self.crit_eq(c, x) for c, x in zip(cols, parts[g])]
@@ -310,7 +334,7 @@ class Writer:
         spec_month = self.spec + share + self._pay()
         label = " - ".join(c.title() for c in cols)
         total_row = 3 + len(named) + int(others)
-        total_net = float(raw.loc[raw["FINAL STATUS"] == "Delivered", self.r.value or "QTY"].sum())
+        total_net = float(raw.filter(pl.col("FINAL STATUS") == "Delivered").select(num(pl.col(self.r.value or "QTY")).sum()).item())
         share_all = (self.cell(total_row, 1 + [k for _, _, k in spec_all].index(self.net), True, True), total_net)
         rows = [(g, crit_of(g)) for g in named] + ([("Others", ("rest", []))] if others else []) + [("Total", None)]
         word = {"BRAND": "BRANDS", "CATEGORY": "CATEGORIES"}
@@ -333,14 +357,15 @@ class Writer:
         ws = self.wb.add_worksheet("REASONS")
         c0 = 0
         for label, status in self.r.reasons:
-            fr = self.raw[self.raw["FINAL STATUS"] == status]
-            t = fr.assign(R=fr["REASON"].replace("", np.nan).fillna("Not Given")).groupby("R")["QTY"].sum().sort_values(ascending=False)
+            reason = pl.when(pl.col("REASON").is_null() | (pl.col("REASON") == "")).then(pl.lit("Not Given")).otherwise(pl.col("REASON"))
+            t = (self.raw.filter(pl.col("FINAL STATUS") == status).group_by(R=reason).agg(q=num(pl.col("QTY")).sum())
+                     .sort("R").sort("q", descending=True, maintain_order=True))      # by qty, equal qty A to Z
             for j, h in enumerate([label, "Qty", "%"]):
                 ws.write(0, c0 + j, h, self.hdr)
-            end, total = len(t) + 1, float(t.sum())
+            end, total = t.height + 1, float(t["q"].sum())
             tot = self.cell(end, c0 + 1, True, True)
-            for i, (rs, _) in enumerate(t.items(), start=1):
-                crit = [("REASON", '"="', lambda d: d["REASON"].replace("", np.nan).isna())] if rs == "Not Given" \
+            for i, rs in enumerate(t["R"].to_list(), start=1):
+                crit = [("REASON", '"="', lambda d: d["REASON"].is_null() | (d["REASON"] == ""))] if rs == "Not Given" \
                     else [self.crit_eq("REASON", rs)]
                 fm, val = self.sumifs("QTY", crit + self.crit_status(status))
                 ws.write_string(i, c0, str(rs), self.txt)
@@ -366,14 +391,14 @@ class Writer:
         for j, h in enumerate(hs):
             ws.write(1, j, h, self.hdr)
             ws.set_column(j, j, max(len(h) + 3, 12))
-        settled = (self.r.settle, '"<>"', lambda d: d[self.r.settle].notna())
+        settled = (self.r.settle, '"<>"', lambda d: present(d[self.r.settle]))
         first, totals = 2, {}
         for i, m in enumerate(self.months + ["Total"]):
             r, last = first + i, m == "Total"
             if last:
                 ws.write_string(r, 0, "Total", self.ttxt)
             else:
-                ws.write_datetime(r, 0, m.to_pydatetime(), self.mon)
+                ws.write_datetime(r, 0, m, self.mon)
             crit = [] if last else [self.crit_month(m)]
             v, cell = {}, {}
             for j, (_h, key) in enumerate(cols, start=1):
@@ -401,27 +426,29 @@ class Writer:
                 ws.write_formula(r, len(hs) - 1, f'=IF({cell["nv"]}=0,"-",{cell[nk]}/{cell["nv"]})',
                                  self.tpct if last else self.pct, v[nk] / v["nv"] if v.get("nv") else "-")
         pm = self.r.pay_months
-        if pm is not None and len(pm):
+        if pm is not None and pm.height:
+            names = pm.columns[1:]                                   # the first column is the payment month
             r = first + len(self.months) + 3
-            ws.merge_range(r, 0, r, max(len(hs), len(pm.columns) + 1) - 1, "PAYMENT RECEIVED IN BANK EACH MONTH (BY PAYMENT DATE)", self.title)
-            for j, h in enumerate(["Payment Month"] + list(pm.columns)):
+            ws.merge_range(r, 0, r, max(len(hs), len(names) + 1) - 1, "PAYMENT RECEIVED IN BANK EACH MONTH (BY PAYMENT DATE)", self.title)
+            for j, h in enumerate(["Payment Month"] + list(names)):
                 ws.write(r + 1, j, h, self.hdr)
                 ws.set_column(j, j, max(len(h) + 3, 12))
-            pct_cols = [str(c).endswith("%") for c in pm.columns]
-            for i, (m, row) in enumerate(pm.iterrows(), start=r + 2):
-                ws.write_datetime(i, 0, pd.Timestamp(m).to_pydatetime(), self.mon)
-                for j, x in enumerate(row.values, start=1):
-                    if x is None or pd.isna(x):
+            pct_cols = [str(c).endswith("%") for c in names]
+            for i, row in enumerate(pm.iter_rows(), start=r + 2):
+                ws.write_datetime(i, 0, row[0], self.mon)
+                for j, x in enumerate(row[1:], start=1):
+                    if x is None or x != x:
                         ws.write_blank(i, j, None, self.pct if pct_cols[j - 1] else self.int)
                     else:
                         ws.write_number(i, j, float(x), self.pct if pct_cols[j - 1] else self.int)
-            end = r + 2 + len(pm)
+            end = r + 2 + pm.height
             ws.write_string(end, 0, "Total", self.ttxt)
-            for j in range(1, len(pm.columns) + 1):
+            for j in range(1, len(names) + 1):
                 if pct_cols[j - 1]:
                     ws.write_blank(end, j, None, self.tpct)
                 else:
-                    ws.write_formula(end, j, f"=SUM({self.cell(r + 2, j)}:{self.cell(end - 1, j)})", self.tint, float(pm.iloc[:, j - 1].sum()))
+                    total = float(pm.select(pl.col(names[j - 1]).cast(pl.Float64).fill_nan(None).sum()).item() or 0.0)
+                    ws.write_formula(end, j, f"=SUM({self.cell(r + 2, j)}:{self.cell(end - 1, j)})", self.tint, total)
             if self.r.pay_match:
                 r = end + 3
                 ws.merge_range(r, 0, r, 4, "PAYMENT MATCH: FROM THE BANK TO THE ORDER LINES", self.title)
@@ -434,19 +461,20 @@ class Writer:
 
     def input_log(self) -> None:
         ws = self.wb.add_worksheet("INPUT LOG")
-        lg = self.r.input_log if self.r.input_log is not None else pd.DataFrame()
+        rows = self.r.input_log or []
+        heads = LOG_COLS if self.r.input_log is not None else []
         day = self.f(num_format="dd-mmm-yy", border=1, border_color="#BFBFBF")
-        for j, h in enumerate(lg.columns):
+        for j, h in enumerate(heads):
             ws.write(0, j, h, self.hdr)
-        for i, row in enumerate(lg.itertuples(index=False), start=1):
+        for i, row in enumerate(rows, start=1):
             for j, v in enumerate(row):
-                if isinstance(v, pd.Timestamp) and pd.notna(v):
-                    ws.write_datetime(i, j, v.to_pydatetime(), day)
-                elif isinstance(v, (int, float, np.integer, np.floating)) and not isinstance(v, bool) and pd.notna(v):
+                if isinstance(v, datetime):
+                    ws.write_datetime(i, j, v, day)
+                elif isinstance(v, (int, float)) and not isinstance(v, bool) and v == v:
                     ws.write_number(i, j, float(v), self.int)
                 else:
-                    ws.write_string(i, j, "" if v is None or v is pd.NaT or (isinstance(v, float) and np.isnan(v)) else str(v), self.txt)
-        for j, w in enumerate([30, 9, 62, 10, 24, 11, 11, 70][:len(lg.columns)]):
+                    ws.write_string(i, j, "" if v is None or (isinstance(v, float) and v != v) else str(v), self.txt)
+        for j, w in enumerate([30, 9, 62, 10, 24, 11, 11, 70][:len(heads)]):
             ws.set_column(j, j, w)
         ws.freeze_panes(1, 0)
 
@@ -473,14 +501,20 @@ class Writer:
             else:
                 kinds.append(("s", rt))
                 ws.set_column(j, j, max(w, 40 if c in ("REASON", "SUB STATUS", "PRODUCT TITLE") else 16))
-        cols = [raw[c].to_numpy(dtype=object) for c in self.r.raw_cols]
-        for i in range(len(raw)):
+        cols = [raw[c].to_list() if c in raw.columns else [None] * raw.height for c in self.r.raw_cols]
+        for i in range(raw.height):
             for j, (k, f) in enumerate(kinds):
                 v = cols[j][i]
-                if v is None or v is pd.NaT or (isinstance(v, float) and np.isnan(v)) or (isinstance(v, str) and v in ("", "nan", "None", "NaT")):
+                if v is None or (isinstance(v, float) and v != v) or (isinstance(v, str) and v in ("", "nan", "None", "NaT")):
                     continue
                 if k == "d":
-                    ws.write_datetime(i + 1, j, pd.Timestamp(v).to_pydatetime(), f)
+                    if not isinstance(v, datetime):           # a date the report gave as text (ISO)
+                        try:
+                            v = datetime.fromisoformat(str(v).strip()[:19])
+                        except ValueError:
+                            ws.write_string(i + 1, j, str(v), rt)
+                            continue
+                    ws.write_datetime(i + 1, j, v, f)
                 elif k == "n":
                     try:
                         ws.write_number(i + 1, j, float(v), f)
@@ -512,15 +546,16 @@ class Writer:
         keys = ["gross_units", "gross_amount", "cancellation_units", "cancellation_amount", "return_units", "return_amount"]
         total = dict.fromkeys(keys, 0.0)
         total_qty = 0.0
+        qty_of = dict(self.raw.group_by("ORDER MONTH").agg(num(pl.col("QTY")).sum()).iter_rows())
         for i, month in enumerate(self.months, start=3):
-            ws.write_datetime(i, 0, month.to_pydatetime(), self.mon)
-            qty = float(self.raw.loc[self.raw["ORDER MONTH"] == month, "QTY"].sum())
+            ws.write_datetime(i, 0, month, self.mon)
+            qty = float(qty_of.get(month, 0.0))
             ws.write_number(i, 10, qty, self.int)
-            if month not in data.index:
+            if month not in data:
                 for j in [*range(1, 10), 11]:
                     ws.write_string(i, j, "-", self.dash)
                 continue
-            row = data.loc[month]
+            row = data[month]
             total_qty += qty
             for j, k in enumerate(keys, start=1):
                 ws.write_number(i, j, float(row[k]), self.int)
@@ -564,9 +599,7 @@ def build(rep: Report, out: Path) -> Path:
     missing = [c for c in STANDARD if c not in rep.raw_cols]
     if missing:
         raise ValueError(f"RAW DATA lacks {missing}")
-    rep.raw = rep.raw.reset_index(drop=True)
-    rep.raw["QTY"] = pd.to_numeric(rep.raw["QTY"], errors="coerce").fillna(0)
-    rep.raw = rep.raw[rep.raw["ORDER MONTH"].notna()].reset_index(drop=True)
+    rep.raw = rep.raw.with_columns(num(pl.col("QTY")).alias("QTY")).filter(pl.col("ORDER MONTH").is_not_null())
     Writer(rep, out).write()
-    log.info("%s analysis: %d order lines -> %s (%.1f MB)", rep.portal, len(rep.raw), out.name, out.stat().st_size / 1e6)
+    log.info("%s analysis: %d order lines -> %s (%.1f MB)", rep.portal, rep.raw.height, out.name, out.stat().st_size / 1e6)
     return out

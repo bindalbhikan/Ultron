@@ -16,15 +16,15 @@ import calendar
 import logging
 import shutil
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from ..core.config import env
 from ..core.drive import DriveFolder
 from . import sources
-from .engine import DATA_COLUMNS, build_period
+from .engine import DATA_COLUMNS, SCHEMA, build_period
 from ..core import clients
 
 log = logging.getLogger(__name__)
@@ -56,11 +56,11 @@ def save_month_data(root: DriveFolder, results: list[dict], work: Path) -> list[
     for r in results:
         if r.get("df") is None:
             continue
-        month = pd.to_datetime(r["month"], format="%b-%y").date()
+        month = datetime.strptime(r["month"], "%b-%y").date()
         folder = root.subfolder("Yearly", create=True).subfolder(f"{month.year}", create=True)
         path = work / "yearly_data" / f"{r['portal']} {r['month']}.csv"
         path.parent.mkdir(parents=True, exist_ok=True)
-        r["df"][DATA_COLUMNS].to_csv(path, index=False)
+        r["df"].select(DATA_COLUMNS).write_csv(path)
         folder.put(path, "text/csv")
         saved.append(r["portal"])
     return saved
@@ -76,7 +76,7 @@ def blank_month_data(root: DriveFolder, portal: str, month: date, work: Path) ->
         return
     path = work / "yearly_blank" / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(columns=DATA_COLUMNS).to_csv(path, index=False)
+    pl.DataFrame(schema=SCHEMA).select(DATA_COLUMNS).write_csv(path)
     folder.put(path, "text/csv")
     log.info("Emptied %s on Drive (data not available)", name)
 
@@ -97,7 +97,7 @@ def rebuild_year(root: DriveFolder, year: int, supporting: Path, work: Path, upl
     months = {}
     names = folder.children()
     for portal in PORTALS:
-        months[portal] = sorted({pd.to_datetime(n[len(portal) + 1:-4], format="%b-%y").date()
+        months[portal] = sorted({datetime.strptime(n[len(portal) + 1:-4], "%b-%y").date()
                                  for n in names if n.startswith(portal + " ") and n.endswith(".csv")})
     latest = max((m for values in months.values() for m in values), default=None)
     if latest is None:
@@ -121,7 +121,7 @@ def rebuild_year(root: DriveFolder, year: int, supporting: Path, work: Path, upl
             except ValueError as exc:
                 notes.append(f"{portal} {tag(month)} left out: {exc}")
         if parts:
-            frames[portal] = pd.concat(parts, ignore_index=True)
+            frames[portal] = pl.concat(parts, how="diagonal_relaxed")
     if not frames:
         return []
     out = work / "yearly_out"
@@ -131,7 +131,7 @@ def rebuild_year(root: DriveFolder, year: int, supporting: Path, work: Path, upl
         for r in results:
             target.put(Path(r["report"]), XLSX)
     for r in results:
-        r["months"] = sorted({m for df in frames.values() for m in df["MONTH"].dropna().unique()})
+        r["months"] = sorted({m for df in frames.values() for m in df["MONTH"].drop_nulls().unique().to_list()})
         r["frames"] = frames          # the dashboard's details come from the same rows
         r["notes"] = notes
     return results

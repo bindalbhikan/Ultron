@@ -42,10 +42,9 @@ import time
 from collections import Counter
 from datetime import datetime
 
-import pandas as pd
-from openpyxl import load_workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
+from typing import NamedTuple
+
+import polars as pl
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INPUT_DIR = os.path.join(BASE_DIR, "input")
@@ -105,22 +104,47 @@ COLUMNS = [
 
 
 def norm(value):
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if value is None or (isinstance(value, float) and value != value):
         return ""
     return str(value).strip().upper()
+
+
+def pnorm(e: pl.Expr) -> pl.Expr:
+    """norm() of a column: text, outer spaces out, upper case, empty for a missing value."""
+    return e.cast(pl.Utf8).fill_null("").str.strip_chars().str.to_uppercase()
+
+
+class Style(NamedTuple):
+    """One listed style of an account (load_listings)."""
+    account: str
+    style_id: str
+    brand: str
+    article: str
+    my_sku: str
+    status: str
+
+
+def style_rows(df: pl.DataFrame) -> list[Style]:
+    return [Style(**r) for r in df.select(Style._fields).iter_rows(named=True)]
+
+
+def first_of(df: pl.DataFrame, key: str, value: str) -> dict:
+    """key -> value of the first row of each key."""
+    return dict(df.unique(key, keep="first", maintain_order=True).select(key, value).iter_rows())
 
 
 # ---------------------------------------------------------------- loaders
 
 def load_grouping_sheet(path):
     """Return a list of (category, [sku, ...]) groups in sheet order."""
-    wb = load_workbook(path, read_only=True, data_only=True)
+    from python_calamine import CalamineWorkbook
+    wb = CalamineWorkbook.from_path(str(path))
     groups = []
-    for ws in wb.worksheets:
-        category = ws.title.strip()
+    for name in wb.sheet_names:
+        category = name.strip()
         current = []
-        for row in ws.iter_rows(min_col=1, max_col=1, values_only=True):
-            sku = norm(row[0])
+        for row in wb.get_sheet_by_name(name).to_python(skip_empty_area=False):
+            sku = norm(row[0] if row else None)
             if sku.startswith("GROUPING"):
                 continue
             if not sku:
@@ -131,27 +155,19 @@ def load_grouping_sheet(path):
                 current.append(sku)
         if current:
             groups.append((category, current))
-    wb.close()
     return groups
 
 
 def load_master(path):
+    from ..core.tables import read_excel_text
     cols = ["Channel Name", "MY SKU", "SIZE SKU", "FINAL MY SKU", "MYNTRA STYLE ID", "MYNTRA SKU CODE"]
-    df = pd.read_excel(path, sheet_name="Master", usecols=cols, dtype=str)
-    for c in cols:
-        df[c] = df[c].map(norm)
-    final_map = (
-        df[df["MY SKU"] != ""].drop_duplicates("MY SKU").set_index("MY SKU")["FINAL MY SKU"].to_dict()
-    )
-    size_final_map = (
-        df[df["SIZE SKU"] != ""].drop_duplicates("SIZE SKU").set_index("SIZE SKU")["FINAL MY SKU"].to_dict()
-    )
-    myntra = df[df["Channel Name"].str.startswith("MYNTRA") & (df["MYNTRA SKU CODE"] != "")]
-    code_map = myntra.drop_duplicates("MYNTRA SKU CODE").set_index("MYNTRA SKU CODE")["MY SKU"].to_dict()
-    style_map = (
-        myntra[myntra["MYNTRA STYLE ID"] != ""]
-        .drop_duplicates("MYNTRA STYLE ID").set_index("MYNTRA STYLE ID")["MY SKU"].to_dict()
-    )
+    m = read_excel_text(path, "Master")
+    df = m.select(*[pnorm(pl.col(c) if c in m.columns else pl.lit(None)).alias(c) for c in cols])
+    final_map = first_of(df.filter(pl.col("MY SKU") != ""), "MY SKU", "FINAL MY SKU")
+    size_final_map = first_of(df.filter(pl.col("SIZE SKU") != ""), "SIZE SKU", "FINAL MY SKU")
+    myntra = df.filter(pl.col("Channel Name").str.starts_with("MYNTRA") & (pl.col("MYNTRA SKU CODE") != ""))
+    code_map = first_of(myntra, "MYNTRA SKU CODE", "MY SKU")
+    style_map = first_of(myntra.filter(pl.col("MYNTRA STYLE ID") != ""), "MYNTRA STYLE ID", "MY SKU")
     return {
         "my_skus": set(final_map),
         "final": final_map,
@@ -172,43 +188,39 @@ def guess_my_sku(van, my_skus):
     return ""
 
 
+def _csv(path) -> pl.DataFrame:
+    """A report CSV as text, read the way pandas' read_csv(dtype=str) did (its missing-value words are empty)."""
+    from ..core.tables import read_text_csv
+    return read_text_csv(path, pandas_na=True)
+
+
 def load_listings(master):
-    """Return one row per (account, style id) with brand, MY SKU and status."""
+    """Return one row per (account, style id) with brand, MY SKU and status (Polars, keys A to Z), and SKU code -> style id."""
     frames = []
     for path in glob.glob(os.path.join(INPUT_DIR, "*Seller_Listings_Report*.csv")):
         match = re.search(r"_(\d+)\.csv$", path)
         if not match:
             continue
-        df = pd.read_csv(path, dtype=str).fillna("")
-        df["account"] = match.group(1)
-        frames.append(df)
+        frames.append(_csv(path).fill_null("").with_columns(account=pl.lit(match.group(1))))
     if not frames:
         sys.exit("No Seller_Listings_Report CSV found in input/")
-    df = pd.concat(frames, ignore_index=True)
-    df["my_sku"] = df["sku code"].map(norm).map(master["code"]).fillna("")
-    missing = df["my_sku"] == ""
-    df.loc[missing, "my_sku"] = df.loc[missing, "van"].map(lambda v: guess_my_sku(v, master["my_skus"]))
-    missing = df["my_sku"] == ""
-    df.loc[missing, "my_sku"] = df.loc[missing, "seller sku code"].map(
-        lambda v: guess_my_sku(v, master["my_skus"])
-    )
-
-    def style_status(values):
-        values = list(values)
-        return "Active" if "Active" in values else (values[0] if values else "")
-
+    df = pl.concat(frames, how="diagonal_relaxed").fill_null("")
+    df = df.with_columns(pnorm(pl.col("sku code")).replace_strict(master["code"], default="").alias("my_sku"))
+    for source in ("van", "seller sku code"):              # a MY SKU from the VAN, then from the seller SKU
+        want = df.filter(pl.col("my_sku") == "")[source].unique().to_list()
+        guess = {v: guess_my_sku(v, master["my_skus"]) for v in want}
+        df = df.with_columns(pl.when(pl.col("my_sku") == "").then(pl.col(source).replace_strict(guess, default=""))
+                               .otherwise(pl.col("my_sku")).alias("my_sku"))
     styles = (
-        df.groupby(["account", "style id"])
-        .agg(
-            brand=("brand", "first"),
-            article=("article type", "first"),
-            my_sku=("my_sku", lambda s: next((x for x in s if x), "")),
-            status=("listing status description", style_status),
-        )
-        .reset_index()
-        .rename(columns={"style id": "style_id"})
+        df.group_by("account", "style id", maintain_order=True)
+        .agg(pl.col("brand").first(), pl.col("article type").first().alias("article"),
+             pl.col("my_sku").filter(pl.col("my_sku") != "").first().fill_null("").alias("my_sku"),
+             pl.when((pl.col("listing status description") == "Active").any()).then(pl.lit("Active"))
+               .otherwise(pl.col("listing status description").first()).alias("status"))
+        .rename({"style id": "style_id"})
+        .sort("account", "style_id")
     )
-    sku_to_style = df.drop_duplicates("sku code").set_index("sku code")["style id"].to_dict()
+    sku_to_style = first_of(df, "sku code", "style id")
     return styles, sku_to_style
 
 
@@ -218,16 +230,18 @@ def load_sales(sku_to_style):
         print("WARNING: no sale files found in sale/")
         return {}
     cols = ["sale_order_code", "product_sku_code", "order_item_status", "party_id_to"]
-    df = pd.concat([pd.read_csv(f, usecols=cols, dtype=str) for f in files], ignore_index=True)
-    df = df.drop_duplicates("sale_order_code")
-    df = df[df["order_item_status"].str.lower().isin(SALE_STATUSES)]
-    df["style_id"] = df["product_sku_code"].map(sku_to_style)
-    counts = df.dropna(subset=["style_id"]).groupby(["party_id_to", "style_id"]).size()
-    return {(str(a), str(s)): int(n) for (a, s), n in counts.items()}
+    df = pl.concat([_csv(f).select(cols) for f in files], how="vertical_relaxed")
+    df = (df.unique("sale_order_code", keep="first", maintain_order=True)
+            .filter(pl.col("order_item_status").str.to_lowercase().is_in(sorted(SALE_STATUSES)).fill_null(False))
+            .with_columns(pl.col("product_sku_code").replace_strict(sku_to_style, default=None, return_dtype=pl.Utf8).alias("style_id"))
+            .filter(pl.col("style_id").is_not_null() & pl.col("party_id_to").is_not_null()))
+    counts = df.group_by("party_id_to", "style_id").len()
+    return {(str(a), str(s)): int(n) for a, s, n in counts.iter_rows()}
 
 
 def load_inventory(master):
     """Optional inventory file -> {FINAL SKU: qty}."""
+    from ..core.tables import pnum, read_excel_text
     files = [
         f for f in glob.glob(os.path.join(INPUT_DIR, "*"))
         if "inventory" in os.path.basename(f).lower() and f.lower().endswith((".xlsx", ".xls", ".csv"))
@@ -236,7 +250,7 @@ def load_inventory(master):
         return None
     inv = {}
     for path in files:
-        df = pd.read_csv(path, dtype=str) if path.lower().endswith(".csv") else pd.read_excel(path, dtype=str)
+        df = _csv(path) if path.lower().endswith(".csv") else read_excel_text(path, 0)
         sku_col = next((c for c in df.columns if "sku" in str(c).lower()), None)
         qty_col = next(
             (c for c in df.columns if re.search(r"qty|quantity|inventory|stock|inv", str(c), re.I) and c != sku_col),
@@ -245,7 +259,7 @@ def load_inventory(master):
         if not sku_col or not qty_col:
             print(f"WARNING: could not find SKU/qty columns in {os.path.basename(path)}, skipped")
             continue
-        for sku, qty in zip(df[sku_col].map(norm), pd.to_numeric(df[qty_col], errors="coerce").fillna(0)):
+        for sku, qty in df.select(pnorm(pl.col(sku_col)), pnum(pl.col(qty_col)).fill_null(0)).iter_rows():
             final = master["size_final"].get(sku) or master["final"].get(sku) or sku
             inv[final] = inv.get(final, 0) + int(qty)
     return inv
@@ -458,16 +472,19 @@ def portal_components(cache):
 
 def build_account_rows(account, groups, styles, master, sales, inventory, cache):
     connected = portal_components(cache)
-    acc = styles[styles["account"] == account]
+    acc = style_rows(styles.filter(pl.col("account") == account))
     by_brand_sku = {}
-    for r in acc.itertuples():
+    for r in acc:
         by_brand_sku.setdefault((r.brand, r.my_sku), []).append(r)
-    style_info = {r.style_id: r for r in acc.itertuples()}
-    brands = sorted(acc["brand"].unique(), key=str.lower)
-    # Article type of a SKU across all accounts, used when the SKU is not listed in this brand.
-    any_article = (
-        styles[styles["article"] != ""].groupby("my_sku")["article"]
-        .agg(lambda s: s.value_counts().index[0]).to_dict()
+    style_info = {r.style_id: r for r in acc}
+    brands = sorted({r.brand for r in acc}, key=str.lower)
+    # Article type of a SKU across all accounts, used when the SKU is not listed in this brand: the most common one
+    # (of equally common ones the first seen).
+    any_article = dict(
+        styles.with_row_index("_i").filter(pl.col("article") != "")
+        .group_by("my_sku", "article").agg(pl.len().alias("_n"), pl.col("_i").min())
+        .sort(["my_sku", "_n", "_i"], descending=[False, True, False]).unique("my_sku", keep="first")
+        .select("my_sku", "article").iter_rows()
     )
 
     def split_by_article(skus, brand):
@@ -667,11 +684,16 @@ def pending_group_styles(rows):
 
 
 def write_portal_templates(account_rows, stamp):
-    """One copy of 'portal template.xlsx' per pending group:
-    output/templates/<date>/ACC-<account>/<unique id>_<brand>_<article>.xlsx"""
+    """One upload file per pending group, in the layout of 'portal template.xlsx' (its sheet name and header row; the
+    Unique ID as text): output/templates/<date>/ACC-<account>/<unique id>_<brand>_<article>.xlsx (xlsxwriter)."""
+    import xlsxwriter
+    from python_calamine import CalamineWorkbook
     if not os.path.exists(PORTAL_TEMPLATE_FILE):
         print("WARNING: 'portal template.xlsx' not found, portal templates skipped")
         return
+    template = CalamineWorkbook.from_path(PORTAL_TEMPLATE_FILE)
+    sheet = template.sheet_names[0]
+    header = (template.get_sheet_by_name(sheet).to_python(nrows=1) or [[]])[0]
     for account, rows in account_rows.items():
         folder = os.path.join(TEMPLATE_DIR, stamp, f"ACC-{account}")
         os.makedirs(folder, exist_ok=True)
@@ -681,16 +703,18 @@ def write_portal_templates(account_rows, stamp):
         groups = pending_group_styles(rows)
         styles_total = 0
         for uid, group in groups.items():
-            wb = load_workbook(PORTAL_TEMPLATE_FILE)
-            ws = wb.worksheets[0]
-            if ws.max_row > 1:
-                ws.delete_rows(2, ws.max_row - 1)
-            for r, sid in enumerate(group["style_ids"], start=2):
-                ws.cell(r, 1, uid).number_format = "@"
-                ws.cell(r, 2, GROUP_TYPE)
-                ws.cell(r, 3, sid)
             name = re.sub(r'[\\/:*?"<>|]+', "-", f"{uid}_{group['brand']}_{group['article']}")
-            wb.save(os.path.join(folder, f"{name}.xlsx"))
+            wb = xlsxwriter.Workbook(os.path.join(folder, f"{name}.xlsx"), {"strings_to_numbers": False})
+            ws = wb.add_worksheet(sheet)
+            text = wb.add_format({"num_format": "@"})
+            for j, h in enumerate(header):
+                if h not in ("", None):
+                    ws.write(0, j, h)
+            for r, sid in enumerate(group["style_ids"], start=1):
+                ws.write_string(r, 0, str(uid), text)
+                ws.write_string(r, 1, GROUP_TYPE)
+                ws.write(r, 2, sid)
+            wb.close()
             styles_total += len(group["style_ids"])
         print(f"  ACC-{account}: {len(groups)} group files, {styles_total} styles -> {folder}")
 
@@ -707,52 +731,78 @@ FILLS = {
 }
 
 
+def write_tables(path, sheets: list[tuple[str, list, list]]) -> None:
+    """A new workbook of [(sheet, headers, rows)] in the grouping look (xlsxwriter): a dark blue header, the header frozen,
+    a filter, GROUPING REMARK coloured, a line above each new Unique ID, widths from the values (10 to 60)."""
+    import xlsxwriter
+    os.makedirs(os.path.dirname(str(path)) or ".", exist_ok=True)
+    wb = xlsxwriter.Workbook(str(path), {"strings_to_numbers": False, "strings_to_formulas": False, "strings_to_urls": False,
+                                         "nan_inf_to_errors": True})
+    looks: dict = {}
+
+    def look(fill=None, top=False, head=False):
+        key = (fill, top, head)
+        if key not in looks:
+            f = {}
+            if head:
+                f.update(bold=True, font_color="#FFFFFF", bg_color="#1F4E78", pattern=1, align="center", valign="vcenter")
+            if fill:
+                f.update(bg_color="#" + fill, pattern=1)
+            if top:
+                f.update(top=2, top_color="#1F4E78")
+            looks[key] = wb.add_format(f) if f else None
+        return looks[key]
+
+    for name, headers, rows in sheets:
+        ws = wb.add_worksheet(name)
+        widths = [len(str(h)) for h in headers]
+        for j, h in enumerate(headers):
+            ws.write_string(0, j, str(h), look(head=True))
+        remark = headers.index("GROUPING REMARK") if "GROUPING REMARK" in headers else None
+        uid = headers.index("Unique ID") if "Unique ID" in headers else None
+        prev = None
+        n = 0
+        for i, row in enumerate(rows, start=1):
+            n = i
+            top = uid is not None and prev is not None and row[uid] != prev
+            if uid is not None:
+                prev = row[uid]
+            for j in range(len(headers)):
+                v = row[j] if j < len(row) else None
+                f = look(FILLS.get(v) if j == remark else None, top)
+                if v is not None:
+                    widths[j] = max(widths[j], len(str(v)))
+                if v is None or v == "" or (isinstance(v, float) and v != v):     # an empty text is an empty cell
+                    if f is not None:
+                        ws.write_blank(i, j, None, f)
+                elif isinstance(v, bool):
+                    ws.write_boolean(i, j, v, f)
+                elif isinstance(v, (int, float)):
+                    ws.write_number(i, j, v, f)
+                elif isinstance(v, datetime):
+                    ws.write_datetime(i, j, v, f)
+                else:
+                    ws.write_string(i, j, str(v), f)
+        ws.freeze_panes(1, 0)
+        if headers:
+            ws.autofilter(0, 0, n, len(headers) - 1)
+        for j, w in enumerate(widths):
+            ws.set_column(j, j, min(max(w + 2, 10), 60))
+    wb.close()
+
+
 def write_report(path, account_rows):
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    """ACC-<account> per account (COLUMNS) and Summary."""
     summary = []
-    with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        for account, rows in account_rows.items():
-            df = pd.DataFrame(rows, columns=COLUMNS)
-            df.to_excel(writer, sheet_name=f"ACC-{account}", index=False)
-            counts = df["GROUPING REMARK"].value_counts()
-            summary.append({
-                "Account": account,
-                "Groups": df["Unique ID"].nunique(),
-                "Rows": len(df),
-                **{k: int(counts.get(k, 0)) for k in FILLS},
-            })
-        pd.DataFrame(summary).to_excel(writer, sheet_name="Summary", index=False)
-        # Format in memory: re-opening the saved file on a synced drive can read a half-written file.
-        format_workbook(writer.book)
-
-
-def format_workbook(wb):
-    header_fill = PatternFill("solid", fgColor="1F4E78")
-    for ws in wb.worksheets:
-        for cell in ws[1]:
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-        ws.freeze_panes = "A2"
-        ws.auto_filter.ref = ws.dimensions
-        headers = [c.value for c in ws[1]]
-        remark_idx = headers.index("GROUPING REMARK") if "GROUPING REMARK" in headers else None
-        uid_idx = headers.index("Unique ID") if "Unique ID" in headers else None
-        prev_uid = None
-        for row in ws.iter_rows(min_row=2):
-            if remark_idx is not None:
-                color = FILLS.get(row[remark_idx].value)
-                if color:
-                    row[remark_idx].fill = PatternFill("solid", fgColor=color)
-            if uid_idx is not None:
-                uid = row[uid_idx].value
-                if prev_uid is not None and uid != prev_uid:
-                    for cell in row:
-                        cell.border = Border(top=Side(style="medium", color="1F4E78"))
-                prev_uid = uid
-        for i, col in enumerate(ws.columns, start=1):
-            width = max(len(str(c.value)) if c.value is not None else 0 for c in col)
-            ws.column_dimensions[get_column_letter(i)].width = min(max(width + 2, 10), 60)
+    for account, rows in account_rows.items():
+        df = pl.DataFrame({"uid": [r.get("Unique ID") for r in rows], "remark": [r.get("GROUPING REMARK") for r in rows]},
+                          schema={"uid": pl.Utf8, "remark": pl.Utf8}, strict=False)
+        counts = dict(df.group_by("remark").len().iter_rows())
+        summary.append({"Account": account, "Groups": df["uid"].drop_nulls().n_unique(), "Rows": df.height,
+                        **{k: int(counts.get(k, 0)) for k in FILLS}})
+    heads = ["Account", "Groups", "Rows", *FILLS]
+    write_tables(path, [(f"ACC-{account}", COLUMNS, [[r.get(c) for c in COLUMNS] for r in rows]) for account, rows in account_rows.items()]
+                 + [("Summary", heads, [[s[h] for h in heads] for s in summary])])
 
 
 def main():
@@ -771,9 +821,9 @@ def main():
     print("Loading listing reports ...")
     styles, sku_to_style = load_listings(master)
     wanted = {b.strip().lower() for b in BRANDS}
-    styles = styles[styles["brand"].str.strip().str.lower().isin(wanted)].reset_index(drop=True)
-    print(f"  brands: {', '.join(sorted(styles['brand'].unique(), key=str.lower))}")
-    accounts = sorted(styles["account"].unique())
+    styles = styles.filter(pl.col("brand").str.strip_chars().str.to_lowercase().is_in(sorted(wanted)))
+    print(f"  brands: {', '.join(sorted(styles['brand'].unique().to_list(), key=str.lower))}")
+    accounts = sorted(styles["account"].unique().to_list())
     print(f"  accounts: {', '.join(accounts)}")
     print("Loading sales ...")
     sales = load_sales(sku_to_style)
@@ -782,7 +832,7 @@ def main():
         print("  no inventory file in input/, INV column left blank")
 
     group_skus = {sku for _, skus in groups for sku in skus}
-    to_check = sorted(styles.loc[styles["my_sku"].isin(group_skus), "style_id"].unique())
+    to_check = sorted(styles.filter(pl.col("my_sku").is_in(sorted(group_skus)))["style_id"].unique().to_list())
     cache = {} if args.refresh else load_cache()
     if not args.no_fetch:
         fetch_portal([sid for sid in to_check if sid not in cache], cache, args.concurrency)

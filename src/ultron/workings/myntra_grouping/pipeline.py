@@ -35,10 +35,11 @@ import argparse
 import logging
 import shutil
 import tempfile
+from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from ..core import portal_reports as pr
 from ..core import telegram
@@ -46,7 +47,7 @@ from ..core.app import run_bot
 from ..core.config import env, num
 from ..core.drive import DriveFolder, agent_folder
 from ..core import clients
-from ..core.tables import clean_id
+from ..core.tables import clean_id, read_text_csv
 
 log = logging.getLogger("bindal.myntra_grouping")
 
@@ -132,10 +133,14 @@ def sales_counts(sku_to_style: dict, dest: Path, months: int, accounts: list[str
         month = (month - timedelta(days=1)).replace(day=1)
         seen = set()
         for f in pr.load("MYNTRA", month, "sale", dest / f"orders_{month:%Y%m}"):
-            df = pd.read_csv(f, dtype=str, usecols=lambda c: c in ("seller id", "style id", "order status", "order line id"))
-            seen.update(clean_id(s) for s in df["seller id"].dropna().unique())
-            df = df[df["order status"].isin(["C", "SH"])].drop_duplicates("order line id")
-            for (seller, style), n in df.groupby(["seller id", "style id"]).size().items():
+            df = read_text_csv(f, pandas_na=True)
+            df = df.select(*[(pl.col(c) if c in df.columns else pl.lit(None, dtype=pl.Utf8)).alias(c)
+                             for c in ("seller id", "style id", "order status", "order line id")])
+            seen.update(clean_id(s) for s in df["seller id"].drop_nulls().unique().to_list())
+            df = (df.filter(pl.col("order status").is_in(["C", "SH"]).fill_null(False))
+                    .unique("order line id", keep="first", maintain_order=True)
+                    .filter(pl.col("seller id").is_not_null() & pl.col("style id").is_not_null()))
+            for seller, style, n in df.group_by("seller id", "style id").len().iter_rows():
                 key = (clean_id(seller), clean_id(style))
                 counts[key] = counts.get(key, 0) + int(n)
         lacking = [ACCOUNT_OF.get(a, a) for a in accounts if a not in seen]
@@ -160,7 +165,7 @@ def omsguru_inventory(dest: Path) -> Path | None:
         return None
     stock = stock_of(blobs)
     path = dest / "omsguru_inventory.csv"
-    pd.DataFrame({"SKU": list(stock), "Qty": list(stock.values())}).to_csv(path, index=False)
+    pl.DataFrame({"SKU": list(stock), "Qty": list(stock.values())}).write_csv(path)
     log.info("OMSGuru inventory: %d SKUs, %d units", len(stock), sum(stock.values()))
     return path
 
@@ -257,13 +262,13 @@ def run(args) -> int:
     master = e.load_master(e.MASTER_FILE)
     styles, sku_to_style = e.load_listings(master)
     wanted = {b.strip().lower() for b in e.BRANDS}
-    styles = styles[styles["brand"].str.strip().str.lower().isin(wanted)].reset_index(drop=True)
-    accounts = sorted(styles["account"].unique())
+    styles = styles.filter(pl.col("brand").str.strip_chars().str.to_lowercase().is_in(sorted(wanted)))
+    accounts = sorted(styles["account"].unique().to_list())
     sales, sales_missing = sales_counts(sku_to_style, work / "sale", int(num("GROUPING_SALE_MONTHS", 3)), accounts)
     inv_file = omsguru_inventory(work / "input")
     inventory = e.load_inventory(master) if inv_file else None
     group_skus = {sku for _, skus in groups for sku in skus}
-    to_check = sorted(styles.loc[styles["my_sku"].isin(group_skus), "style_id"].unique())
+    to_check = sorted(styles.filter(pl.col("my_sku").is_in(sorted(group_skus)))["style_id"].unique().to_list())
     cache: dict = {}
     log.info("%d groups, %d accounts, %d styles to check on myntra.com", len(groups), len(accounts), len(to_check))
     via = (env("MYNTRA_GROUPING_VIA") or "").lower()
@@ -307,15 +312,15 @@ def run(args) -> int:
 
     lines = [f"🎨 <b>Myntra colour grouping</b> {stamp}", ""]
     for a, rows in account_rows.items():
-        df = pd.DataFrame(rows)
-        rem = df["GROUPING REMARK"].value_counts() if len(df) else pd.Series(dtype=int)
+        rem = Counter(r.get("GROUPING REMARK") for r in rows)
+        groups = len({r.get("Unique ID") for r in rows} - {None})
         pending = e.pending_group_styles(rows)
-        lines.append(f"<b>{ACCOUNT_OF.get(a, a)}</b>: {df['Unique ID'].nunique() if len(df) else 0} groups · DONE {int(rem.get(e.REMARK_DONE, 0))} · "
+        lines.append(f"<b>{ACCOUNT_OF.get(a, a)}</b>: {groups} groups · DONE {int(rem.get(e.REMARK_DONE, 0))} · "
                      f"NOT DONE {int(rem.get(e.REMARK_NOT_DONE, 0))} · "
                      f"extra in portal {int(rem.get(e.REMARK_EXTRA, 0))} · {len(pending)} groups to submit")
         lines.append(f"   pending groups: {sb.state_line(states.get(a) or sb.Counter())}")
-    open_jobs = record[~record["JOB STATUS"].astype(str).isin(sb.FINISHED)]
-    open_jobs = open_jobs[open_jobs["JOB ID"].astype(str).str.fullmatch(r"\d+")]
+    open_jobs = record.filter(~pl.col("JOB STATUS").fill_null("nan").is_in(sorted(sb.FINISHED))
+                              & pl.col("JOB ID").str.contains(r"^\d+$").fill_null(False))
     lines.append(f"\nSubmitted now: <b>{submitted}</b> groups" + "".join(f", {n} skipped ({why})" for why, n in skipped.items())
                  + f" · {len(open_jobs)} jobs waiting on Myntra")
     lines += [f"❌ {telegram.esc(x)}" for x in problems[:15]]

@@ -20,8 +20,7 @@ newest line of an order line wins (later months' reports carry the late returns 
 from __future__ import annotations
 
 import logging
-
-import pandas as pd
+from datetime import datetime
 
 from typing import TYPE_CHECKING
 
@@ -37,11 +36,6 @@ V = "SALE PRICE (FINAL AMOUNT)"
 
 
 from ..core.tables import pnum  # noqa: E402 - one number reader (docs/CENTRALISE.md)
-
-def dt(s):
-    d = pd.to_datetime(s, errors="coerce", format="mixed")
-    return d.where(d > "2000-01-01")
-
 
 def pdt(e: "pl.Expr") -> "pl.Expr":
     """A date column (ISO text) as a datetime; empty, unreadable or before 2000 (the 1970 of RTO lines) -> null."""
@@ -234,15 +228,12 @@ MONEY = {"MRP", "DISCOUNT", V, "SELLER PRICE", "FWD SETTLED AMT", "COMMISSION", 
          "REVERSE SETTLED AMT", "RETURN LOGISTICS FEE", "SPF / NOD AMT", "NET SETTLEMENT"}
 
 
-def pay_months_pl(p: "pl.DataFrame", start) -> pd.DataFrame | None:
-    """Cash received by payment month (the second PAYMENT table, values), from Polars payment lines; a pandas
-    table for the workbook (index M)."""
+def pay_months_pl(p: "pl.DataFrame", start) -> "pl.DataFrame | None":
+    """Cash received by payment month (the second PAYMENT table, values; first column M), from the payment lines."""
     import polars as pl
-
-    from ..core.tables import to_pandas
-    if p is None or not p.height:
+    if p is None or not p.height or start is None:
         return None
-    pp = p.filter(pl.col("Payment_Date") >= pl.lit(pd.Timestamp(start).to_pydatetime()))
+    pp = p.filter(pl.col("Payment_Date") >= pl.lit(datetime(start.year, start.month, start.day)))
     if not pp.height:
         return None
     pp = pp.with_columns(pl.col("Payment_Date").dt.truncate("1mo").alias("M"))
@@ -265,15 +256,13 @@ def pay_months_pl(p: "pl.DataFrame", start) -> pd.DataFrame | None:
     t = t.with_columns((pl.col("Net Payout") / pl.col("Net Payout").shift(1) - 1).alias("MoM %"))
     t = t.select("M", "Forward Settled", "Reverse Debit", "SPF / NOD", "Net Payout", "Forward Lines", "Reverse Lines",
                  "Commission", "Forward Logistics", "Return Logistics", "TCS + TDS", "MoM %")
-    out = to_pandas(t).set_index("M")
-    out.index.name = "M"
-    out.columns.name = None
-    return out
+    return t
 
 
-def report_pl(raw: pd.DataFrame, p: "pl.DataFrame", input_log: pd.DataFrame) -> Report:
-    """report() on the Polars payment lines (raw already a pandas table for the workbook)."""
-    have_pay = raw["NET SETTLEMENT"].notna().any()
+def report_pl(raw: "pl.DataFrame", p: "pl.DataFrame", input_log: list) -> Report:
+    """The report of RAW DATA and the payment lines."""
+    from .workbook import present
+    have_pay = bool(present(raw["NET SETTLEMENT"]).any())
     return Report(
         portal="MYNTRA", raw=raw, raw_cols=RAW_COLS, value=V, settle="NET SETTLEMENT" if have_pay else None,
         money_cols=MONEY,

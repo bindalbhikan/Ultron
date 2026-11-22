@@ -121,6 +121,24 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
     sheet (32,313 GRN lines, OMSGuru's answers fixed by the AWB, nothing sent): the workbook every cell, formula
     and format the same, the message the same.
 
+* 22 Nov 2026, the last pandas of these three out (old vs new code on the same saved files, `git worktree`):
+  * **Business report, whole** (`business_report/`: pipeline, the three portals, OMSGuru matching, the workbook): RAW
+    DATA stays a Polars table from the reports to the last cell; months are `datetime`; the INPUT LOG plain rows.
+    Golden on the real Apr-25..Oct-26 PORTAL REPORTS (Myntra 295,281 qty, Flipkart 65,206, AJIO 31,281): every sheet,
+    cell, formula and format the same but (a) REASONS: reasons with equal qty now A to Z (pandas' quicksort left them
+    in no order), (b) one AJIO PAYMENT cell 0 where pandas' float sum left 1.2e-11. 15.9 min with the downloads before,
+    3.5 min now from the same saved files.
+  * **Return analysis, whole** (`return_analysis/`: engine, reconciled, yearly, dash): the report rendered from Polars
+    by xlsxwriter (no openpyxl), the dead input builders of the hand-run tool removed. Oct-26 from the same saved
+    files: the 7 reports every formula, format, merge, freeze and width the same, the 5 template CSVs the same,
+    every total the same; the Grand Total row now carries its values (openpyxl wrote formulas without, so a preview
+    showed nothing).
+  * **Myntra grouping** (`myntra_grouping/`: engine, submit, pipeline): listings, sales, inventory and the
+    submissions record in Polars, every workbook written by xlsxwriter and read by calamine (no openpyxl: the master is
+    written again, not edited). Offline from the saved 4 Nov 2026 run (portal cache, record of 302 jobs, reasons;
+    listings and the grouping sheet made from its report): the rows, the group states, the report, record, reasons,
+    master and brand master and all 344 upload files the same.
+
 **Next, one by one, each with a parity test on real files**: the owner's monthly files and
 the business report workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the

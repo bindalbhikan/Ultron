@@ -25,6 +25,12 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
   Bots run through `scripts/github/ci_run.sh` (encrypted output). `.env`, `service_account.json`,
   `myntra_session*.json`, `output/` stay local (ignored).
 - **Data must never be wrong**: a failed or incomplete source is left out and named, never shown as 0.
+- **Numbers that connect agree** (owner, 22 Nov 2026): when a report shows a figure another report also shows (the
+  return analysis' sold / returned units and the business report's Delivered + Customer Return / Customer Return of
+  the same order month and account, the dashboards, the yearly files), both come from the same order lines and are
+  checked unit for unit before anything is published; a figure that differs is left out and named, never sent
+  (`return_analysis/reconciled.check_against_business`). Rebuild reports from the saved PORTAL REPORTS, never from
+  newly requested ones, so every report reads the same files.
 - Seller specifics live in `agent.toml` and `src/ultron/workings/`; `src/ultron/` core never names Bindal.
 - Free Cloudflare plan: at most **5 cron triggers** (`worker/wrangler.toml`); each `SCHEDULE` entry in
   `worker/src/worker.js` must use a time the triggers fire at.

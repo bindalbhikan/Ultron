@@ -1,7 +1,7 @@
 """Return Analysis must preserve the canonical business report's returned units."""
-from datetime import date
+from datetime import date, datetime
 
-import pandas as pd
+import polars as pl
 import pytest
 
 from ultron.workings.business_report.workbook import Report
@@ -16,8 +16,8 @@ from ultron.workings.return_analysis.reconciled import template_rows
 def test_monthly_returns_preserve_units_and_exclude_other_order_months(portal, sku_col, id_col, value):
     # A two-unit order returned in part is already split by the shared builder. Counting rows,
     # or assigning the prior month's return to this month, would both give the wrong answer.
-    raw = pd.DataFrame({
-        "ORDER MONTH": pd.to_datetime(["2026-10-01"] * 6 + ["2026-09-01"]),
+    raw = pl.DataFrame({
+        "ORDER MONTH": [datetime(2026, 10, 1)] * 6 + [datetime(2026, 9, 1)],
         "FINAL STATUS": ["Customer Return", "Delivered", "Customer Return", "RTO", "Cancelled", "In Transit", "Customer Return"],
         "QTY": [1, 1, 2, 3, 4, 5, 9],
         "ACCOUNT": ["MAIN"] * 7,
@@ -27,17 +27,17 @@ def test_monthly_returns_preserve_units_and_exclude_other_order_months(portal, s
         "BRAND": ["Test"] * 7, "CATEGORY": ["Top"] * 7,
         "REASON": ["Test reason"] * 7, value: [100, 100, 200, 300, 400, 500, 900],
     })
-    rep = Report(portal=portal, raw=raw, raw_cols=list(raw), value=value)
+    rep = Report(portal=portal, raw=raw, raw_cols=raw.columns, value=value)
     rows = template_rows(rep, date(2026, 10, 1), "MAIN" if portal == "MYNTRA" else "")
-    assert rows.loc[rows["ORDER STATUS"] == "Return", "QTY"].sum() == 3
+    assert rows.filter(pl.col("ORDER STATUS") == "Return")["QTY"].sum() == 3
     assert rows["QTY"].sum() == 4
-    assert set(rows["MONTH"]) == {"10-2026"}
-    assert set(rows["ORDER ID"]) == {"partial", "returned"}
+    assert set(rows["MONTH"].to_list()) == {"10-2026"}
+    assert set(rows["ORDER ID"].to_list()) == {"partial", "returned"}
 
 
 def test_missing_return_source_does_not_become_zero_returns():
     month = date(2026, 10, 1)
-    rep = Report(portal="FLIPKART", raw=pd.DataFrame(), raw_cols=[], unknown={"tq": {pd.Timestamp(month)}})
+    rep = Report(portal="FLIPKART", raw=pl.DataFrame(), raw_cols=[], unknown={"tq": {datetime(2026, 10, 1)}})
     with pytest.raises(ValueError, match="return report is missing"):
         template_rows(rep, month)
 
@@ -87,13 +87,13 @@ def test_yearly_report_revalidates_legacy_saved_months(monkeypatch, tmp_path):
         def children(self):
             return {"AJIO OCT-26.csv": {}}
 
-    raw = pd.DataFrame({
-        "ORDER MONTH": pd.to_datetime(["2026-10-01"]), "FINAL STATUS": ["Customer Return"],
+    raw = pl.DataFrame({
+        "ORDER MONTH": [datetime(2026, 10, 1)], "FINAL STATUS": ["Customer Return"],
         "QTY": [2], "SELLER SKU": ["TEST-SKU"], "CUST ORDER NO": ["TEST-ORDER"],
         "FINAL SKU": ["TEST-FINAL"], "MY SKU": ["TEST"], "BRAND": ["Test"], "CATEGORY": ["Top"],
         "REASON": ["Test reason"], "SALE VALUE": [200],
     })
-    rep = Report(portal="AJIO", raw=raw, raw_cols=list(raw), value="SALE VALUE")
+    rep = Report(portal="AJIO", raw=raw, raw_cols=raw.columns, value="SALE VALUE")
 
     def render(frames, *_args):
         assert frames["AJIO"]["QTY"].sum() == 2
@@ -103,3 +103,15 @@ def test_yearly_report_revalidates_legacy_saved_months(monkeypatch, tmp_path):
     results = yearly.rebuild_year(Folder(), 2026, tmp_path, tmp_path, upload=False,
                                    context=(None, None, None, None), reports_by_portal={"AJIO": rep})
     assert results[0]["returned"] == 2
+
+
+def test_units_that_differ_from_the_business_report_are_not_published():
+    from ultron.workings.return_analysis import reconciled
+    raw = pl.DataFrame({"ORDER MONTH": [datetime(2026, 10, 1)] * 3, "FINAL STATUS": ["Delivered", "Customer Return", "RTO"],
+                        "QTY": [2.0, 1.0, 5.0], "ACCOUNT": ["MAIN"] * 3})
+    rep = Report(portal="MYNTRA", raw=raw, raw_cols=raw.columns)
+    assert reconciled.business_figures(rep, date(2026, 10, 1), "MAIN") == (3.0, 1.0)
+    good = pl.DataFrame({"QTY": [2, 1], "ORDER STATUS": ["Delivered", "Return"]})
+    reconciled.check_against_business("MYNTRA MAIN", good, 3.0, 1.0)
+    with pytest.raises(reconciled.NumbersDiffer, match="not published"):
+        reconciled.check_against_business("MYNTRA MAIN", good, 4.0, 1.0)

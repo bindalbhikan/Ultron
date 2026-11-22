@@ -29,8 +29,8 @@ def test_self_ship_without_shipping_charge_respects_quantity_and_return_window()
         "Channel Name", "Channel Listing SKU Code", "MY SKU", "FINAL SKU", "FINAL MY SKU", "DESIGN-NO", "Brand"
     )})
     raw = ajio.raw_data(orders, rtv, None, master)
-    statuses = raw.set_index("CUST ORDER NO")["FINAL STATUS"].to_dict()
+    statuses = dict(zip(raw["CUST ORDER NO"], raw["FINAL STATUS"]))
     assert statuses == {"A": "Customer Return", "B": "Delivered", "C": "Delivered", "D": "RTO"}
     assert raw["QTY"].sum() == 4
     assert raw["SALE VALUE"].sum() == 400
-    assert ajio.returned_units(raw, rtv).tolist() == [1, 0, 0, 1]
+    assert ajio.returned_units(raw, rtv).to_list() == [1, 0, 0, 1]

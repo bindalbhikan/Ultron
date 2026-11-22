@@ -3,7 +3,7 @@ import sys
 import unittest
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ultron.workings.myntra_grouping import engine as e
@@ -12,7 +12,7 @@ from ultron.workings.myntra_grouping import engine as e
 class ColourGroupingTests(unittest.TestCase):
     def rows(self, links, skus=None):
         skus = skus or {sid: f"SKU-{sid}" for sid in links}
-        styles = pd.DataFrame([
+        styles = pl.DataFrame([
             {"account": "test", "style_id": sid, "brand": "Test", "article": "Dresses",
              "my_sku": skus[sid], "status": "Active"}
             for sid in links

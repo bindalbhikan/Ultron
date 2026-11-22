@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 from unittest import mock
 
-import pandas as pd
+import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ultron.workings.business_report import pipeline as bp
@@ -16,7 +16,7 @@ from ultron.workings.myntra_grouping import pipeline as gp
 
 class NoAnswerStyle(unittest.TestCase):
     def rows(self, cache):
-        styles = pd.DataFrame([{"account": "t", "style_id": s, "brand": "B", "article": "Dresses",
+        styles = pl.DataFrame([{"account": "t", "style_id": s, "brand": "B", "article": "Dresses",
                                 "my_sku": f"SKU-{s}", "status": "Active"} for s in ("1", "2")])
         return e.build_account_rows("t", [("Dresses", ["SKU-1", "SKU-2"])], styles,
                                     {"final": {}, "style": {}}, {}, None, cache)
@@ -37,8 +37,8 @@ class SalesMonths(unittest.TestCase):
     def test_month_without_an_account_is_named(self):
         with tempfile.TemporaryDirectory() as tmp:
             sale = Path(tmp) / "o.csv"
-            pd.DataFrame({"seller id": ["19170"], "style id": ["5"], "order status": ["C"],
-                          "order line id": ["a"]}).to_csv(sale, index=False)
+            pl.DataFrame({"seller id": ["19170"], "style id": ["5"], "order status": ["C"],
+                          "order line id": ["a"]}).write_csv(sale)
             loads = {date(2026, 10, 1): [sale], date(2026, 9, 1): []}
             with mock.patch.object(gp.pr, "load", side_effect=lambda _p, m, _k, _d: loads[m]), \
                  mock.patch.object(gp, "date", wraps=date) as today:
