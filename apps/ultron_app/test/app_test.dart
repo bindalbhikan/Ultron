@@ -103,6 +103,8 @@ class FakeRepository extends UltronRepository {
     ],
   );
   @override
+  Future<List<PhoneAgent>> phoneAgents() async => const [];
+  @override
   Future<AgentMemory> agentMemory({
     String kind = '',
     String search = '',

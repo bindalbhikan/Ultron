@@ -40,7 +40,7 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 * Buyer site (`www.myntra.com`): fixed rule, bots read it with Scrapy spiders only, no browser. On
   4 Nov 2026 a Patchright page load failed with `ERR_HTTP2_PROTOCOL_ERROR` (bundled Chromium and
   installed Chrome), while the Scrapy zero TD run from the office PC took 94 seconds. GitHub's
-  runners get 403, so those runs use Ultron Phone.
+  runners get 403, so those runs use the ULTRON app's Agent mode.
 * Buyer-site colour groups (`www.myntra.com/gateway/v2/product/<style>`): the `colours` lists can
   differ between members of the same group (verified 4 Nov 2026). An inactive style can show the
   full group while other members omit it, including a two-style group where one member returns an

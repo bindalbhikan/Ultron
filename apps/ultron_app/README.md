@@ -29,29 +29,30 @@ Use the helper for builds/previews from Google Drive: it copies source into a fr
 
 Android needs an emulator/device and Android toolchain. Windows needs the Visual Studio C++ desktop workload. iOS/macOS need a Mac and Xcode. Their native binaries cannot be validated on this Windows host. The new app does not reuse the installed Phone app's identity/signing key.
 
-## Demo sign-in
+## Sign in
 
-Select **Fill demo account**, then sign in and verify:
+The app talks to the live app API (`../../services/app_api`, `--dart-define=ULTRON_API_URL=...` for another
+seller's). There is no demo. Accounts sign in with a username and a password of 8+ characters; a new registration
+waits until an administrator approves it on **Users**. The first administrator is made from the owner's terminal:
+`.venv\Scripts\python scriptspp\create_admin.py` (the password is typed hidden, never stored or logged).
 
-- Email: `owner@example.com`
-- Password: `ultron-demo`
-- Verification code: `123456`
+## Screens
 
-These are public examples for an in-memory demo, not production credentials. Do not enter real credentials. Protected routes require verification; sign-out clears the session and demo records. No passwords, codes or messages are written to disk or logs. Reset requests, decisions, run requests and agent answers are simulated. Missing sources are excluded and named, never shown as zero.
+Home (live numbers), Control (agent model, SMS phones, Agent mode phones, memory), Users (approve, create),
+Roles, Profile; and without an account, **SMS only** (Android). A role sees only its screens. See
+[the app's doc](../../docs/apps/ultron-app.md) for what each needs.
 
-`--dart-define=ULTRON_DEMO=false` selects a fail-closed live placeholder: no authentication or workspace access is available until a supported backend is connected. It never falls back to demo access. Never bundle portal cookies, shared dashboard/GitHub tokens or service-account keys in this app.
+## Android: SMS only and Agent mode
 
-## Frontend
-
-Login, verification, reset form, Home, Agent, searchable/filterable Workflows, Reports with source coverage, approval review, Analytics, Connections, Schedule, Profile, appearance, About and sign-out. Mobile uses bottom navigation; wider windows use a rail/sidebar and expanded overview. Local DM Sans, light/dark themes and common components form one design system.
-
-Home totals are derived from demo runs. Analytics and schedule examples are labelled illustrative. Live progress and schedules must come from backend sources. File access, portal reconnect and push delivery explain their unconnected status when selected.
-
-**Phone Work** includes agent-mode settings/status, SMS sync, SIM/sender filters, permission setup, test/import entry points, courier OTP/POD status and device setup. Controls are presentation/demo preferences: no permission is requested, SMS read or service started. Unknown device/queue values stay unavailable. Android migration and parity checks must finish before discontinuing `../../android app/`; see [migration map](../../docs/apps/ultron-app.md).
+`android/app/src/main/kotlin/.../sms` sends every SMS of the chosen SIM to the SMS sheet through the worker
+(no setup on the phone). `.../agent` is Agent mode: the phone looks up Myntra styles for the zero TD bot when the
+office PC is off; an administrator turns it on from the phone (Control → Agent mode), which gets its own token
+from the app API, and revokes it there. Both keep running in the background and after a reboot. They replace
+the old Kotlin Ultron Phone app (removed 23 Nov 2026): uninstall that app once this one runs.
 
 ## Source and checks
 
-`lib/src/domain/` defines immutable records; `data/` defines the repository and demo/live boundaries; `state/` contains Riverpod controllers; `theme/` and `ui/` own the design and screens. `router.dart` guards protected routes. `app_info.dart` centralises versions and developer credits.
+`lib/src/domain/` defines immutable records; `data/` holds the live repository and the Android bridges; `state/` contains Riverpod controllers; `theme/` and `ui/` own the design and screens. `router.dart` guards protected routes. `app_info.dart` centralises versions and developer credits.
 
 ```powershell
 dart format --output=none --set-exit-if-changed lib test

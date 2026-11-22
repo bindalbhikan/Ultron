@@ -1,8 +1,8 @@
 # Ultron app — cross-platform frontend
 
 **Status:** 23 Nov 2026: live. The app talks to the deployed app API (`docs/apps/app-api.md`); the demo
-(sample data, demo sign-in, the verification code) is removed. The Kotlin `android app/` stays only until its
-Agent mode (the Myntra lookups for zero TD) is moved into this app.
+(sample data, demo sign-in, the verification code) is removed. The old Kotlin `android app/` (Ultron Phone) is
+removed too: its SMS and Agent mode are in this app (`android/.../sms`, `.../agent`).
 
 ## What it has
 
@@ -15,7 +15,7 @@ Every screen reads a live service; a person sees only what their role allows (`d
 | SMS only | `/sms` | none | Android: a name and a SIM, then every SMS goes to the sheet (below) |
 | Waiting for approval | `/access` | signed in | a pending or disabled account; "Check again" re-reads the access |
 | Home | `/app/home` | `app.access` | live numbers: registrations waiting, SMS phones (last SMS, sent), agent model, memory notes; a number that could not be read shows "—" and why, never 0 |
-| Control | `/app/control` | `agent.tools.read` | the agent's model (auto, tier, provider order), the SMS phones (block / unblock), the memory (remove a note) |
+| Control | `/app/control` | `agent.tools.read` | the agent's model (auto, tier, provider order), the SMS phones (block / unblock), Agent mode (turn this phone on, revoke a phone), the memory (remove a note) |
 | Users | `/app/admin` | `users.manage` | search, **Approve** on a pending registration, change role / status, **Create user** (username, optional email) |
 | Roles | `/app/roles` | `roles.manage` | roles and their permissions |
 | Profile | `/app/profile` | `app.access` | role, permissions, appearance (dark / light / phone), sign out |
@@ -44,7 +44,7 @@ in to this app. No secret is built into the app: the SMS sheet's link and key st
 
 | Existing component | New app responsibility | Current status |
 |---|---|---|
-| `AgentService.kt`, `MyntraLookup.kt` | Foreground service, worker polling, job/result protocol, check-ins | open: next, then `android app/` goes |
+| `AgentService.kt`, `MyntraLookup.kt` | Foreground service, worker polling, job/result protocol, check-ins | ✅ 23 Nov 2026: `agent/AgentService`, `MyntraLookup`; a token per phone from the app API (Control → Agent mode), revocable |
 | `SmsReceiver.kt`, `UploadWorker.kt` | Incoming SMS, offline retry, deduplication, SIM selection | ✅ 22 Nov 2026: `sms/SmsReceiver`, `SmsUpload` (through the worker; no sender filter: every SMS of the SIM) |
 | `SmsImport.kt` | Explicit 60-day inbox import and duplicate rules | ✅ `sms/SmsImport` ("Send old SMS") |
 | `Pod.kt`, `apps-script/Code.gs` | Expiring POD fetch, AWB extraction, per-portal OTP replacement, evidence retention | ✅ `sms/Pod`; Code.gs v17 (User column, `Agent · <name>`) |

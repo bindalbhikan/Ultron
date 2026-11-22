@@ -1,7 +1,9 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../data/agent_bridge.dart';
 import '../domain/access.dart';
 import '../domain/models.dart';
 import '../state/providers.dart';
@@ -21,6 +23,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   AgentSettings? _settings;
   AgentMemory? _memory;
   List<SmsPhone>? _phones;
+  List<PhoneAgent>? _agents;
+  AgentStatus? _agent;
+  bool _agentBusy = false;
+  static const _bridge = AgentBridge();
   String? _phonesError;
   String _tier = 'smart', _kind = '';
   bool _auto = true, _loading = true, _saving = false;
@@ -87,6 +93,22 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   Future<void> _loadPhones() async {
     if (!(ref.read(authProvider).user?.allows('phone.manage') ?? false)) return;
     try {
+      final agents = await ref.read(repositoryProvider).phoneAgents();
+      final agent = _bridge.supported ? await _bridge.status() : null;
+      if (mounted) {
+        setState(() {
+          _agents = agents;
+          _agent = agent;
+        });
+      }
+    } on FrontendException catch (e) {
+      if (mounted) setState(() => _phonesError = e.message);
+    } on PlatformException catch (_) {
+      /* the Android side refused: the list still shows */
+    } on MissingPluginException catch (_) {
+      /* a build without the Android side (tests, other platforms): the list still shows */
+    }
+    try {
       final phones = await ref.read(repositoryProvider).smsPhones();
       if (mounted) {
         setState(() {
@@ -94,6 +116,48 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           _phonesError = null;
         });
       }
+    } on FrontendException catch (e) {
+      if (mounted) setState(() => _phonesError = e.message);
+    }
+  }
+
+  /// Agent mode on this phone: a token from the app API for it, handed to the Android service.
+  Future<void> _agentOn(bool on) async {
+    setState(() => _agentBusy = true);
+    try {
+      if (on) {
+        final token = await ref
+            .read(repositoryProvider)
+            .newPhoneAgent(_agent?.device ?? 'Android phone');
+        final status = await _bridge.start(token);
+        final agents = await ref.read(repositoryProvider).phoneAgents();
+        if (mounted) {
+          setState(() {
+            _agent = status;
+            _agents = agents;
+          });
+        }
+      } else {
+        final status = await _bridge.stop();
+        if (mounted) setState(() => _agent = status);
+      }
+    } on FrontendException catch (e) {
+      if (mounted) setState(() => _phonesError = e.message);
+    } on PlatformException catch (e) {
+      if (mounted) {
+        setState(
+          () => _phonesError = e.message ?? 'Agent mode could not change.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _agentBusy = false);
+    }
+  }
+
+  Future<void> _revoke(PhoneAgent a) async {
+    try {
+      final agents = await ref.read(repositoryProvider).revokePhoneAgent(a.id);
+      if (mounted) setState(() => _agents = agents);
     } on FrontendException catch (e) {
       if (mounted) setState(() => _phonesError = e.message);
     }
@@ -381,6 +445,49 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             child: Text(ph.blocked ? 'Unblock' : 'Block'),
                           )
                         : null,
+                  ),
+                ),
+          ],
+          if (canAccess(ref, 'phone.manage')) ...[
+            const SectionHeading('Agent mode'),
+            Text(
+              'A phone that does work for the bots on its own line (the Myntra style lookups of zero TD, '
+              'when the office PC is off). Turn it on from that phone; revoke a phone here.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            if (_bridge.supported && _agent != null)
+              Card(
+                child: SwitchListTile(
+                  key: const Key('agent-switch'),
+                  value: _agent!.on,
+                  onChanged: _agentBusy ? null : _agentOn,
+                  title: Text('This phone: ${_agent!.device}'),
+                  subtitle: Text(
+                    _agent!.on
+                        ? (_agent!.lastPoll == null
+                              ? 'On, waiting for the first check-in'
+                              : 'On · checked in ${_agent!.lastPoll!.toLocal().toString().substring(11, 16)}'
+                                    '${_agent!.lastJob.isEmpty ? '' : ' · ${_agent!.lastJob}'}')
+                        : 'Off',
+                  ),
+                ),
+              ),
+            for (final a in _agents ?? const <PhoneAgent>[])
+              if (!a.revoked)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(LucideIcons.bot),
+                    title: Text(a.device),
+                    subtitle: Text(
+                      a.lastSeen == null
+                          ? 'Not checked in yet'
+                          : 'Last check-in ${a.lastSeen!.toLocal().toString().substring(0, 16)}',
+                    ),
+                    trailing: TextButton(
+                      onPressed: () => _revoke(a),
+                      child: const Text('Revoke'),
+                    ),
                   ),
                 ),
           ],

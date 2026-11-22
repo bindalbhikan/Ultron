@@ -1,4 +1,4 @@
-"""Ultron Phone: work handed to the Android app (android app/), through the Telegram worker's
+"""the ULTRON app's Agent mode: work handed to the ULTRON app's Agent mode (apps/ultron_app), through the Telegram worker's
 /api/phone routes (worker/src/worker.js), for what only a phone line can do - www.myntra.com
 refuses GitHub's runners (HTTP 403) but answers a mobile connection.
 

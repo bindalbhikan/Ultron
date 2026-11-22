@@ -78,7 +78,7 @@ def read_source(path: Path, accounts: list[str]) -> dict[str, pl.DataFrame]:
 
 
 def lookup(ids: list[int]) -> dict[int, dict | str]:
-    """Each style's buyer-side answer: straight from www.myntra.com, and through Ultron Phone
+    """Each style's buyer-side answer: straight from www.myntra.com, and through the ULTRON app's Agent mode
     (core/phone.py, the Android app on a mobile line) when myntra.com refuses this machine (403 on
     GitHub's runners) or MYNTRA_ZERO_TD_VIA=phone. The phone answers the same "style" object,
     cut down to what check() reads."""
@@ -91,7 +91,7 @@ def lookup(ids: list[int]) -> dict[int, dict | str]:
         refused = sum(1 for a in answers.values() if a == "HTTP 403")
         if refused < len(ids) / 2:
             return answers
-        log.warning("www.myntra.com refused this machine (%d of %d styles HTTP 403): asking Ultron Phone",
+        log.warning("www.myntra.com refused this machine (%d of %d styles HTTP 403): asking the ULTRON app's Agent mode",
                     refused, len(ids))
     wait = num("MYNTRA_ZERO_TD_PHONE_MINUTES", 40)
     got = phone.run_job("myntra_style", ids, wait_minutes=wait)

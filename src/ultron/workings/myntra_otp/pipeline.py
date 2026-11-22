@@ -85,7 +85,7 @@ COURIER_TAGS = {"MYE": "EK", "MYS": "FL"}
 def sheet_rows(rows, now: datetime, existing: list[list[str]], notes: list[str] | None = None):
     """(new rows, {sheet row number: new code}) for today's codes - never a second row and never a
     team row changed:
-      - a code the sheet has that day (any portal: Ultron Phone or the team may have written it) - nothing;
+      - a code the sheet has that day (any portal: the ULTRON app's Agent mode or the team may have written it) - nothing;
       - a courier whose row of that day, portal and status has another code (Myntra changed it by the
         11:40 AM retry) - the code of that row is replaced only while its COUNT is empty (the bot's own
         row, not yet worked by the team); a row the team filled is left alone and named in `notes`;

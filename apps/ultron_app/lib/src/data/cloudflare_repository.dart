@@ -307,4 +307,31 @@ class CloudflareRepository extends UltronRepository {
       body: {'blocked': blocked, 'revision': phone.revision},
     )).data,
   );
+
+  List<PhoneAgent> _agents(Map<String, dynamic> data) =>
+      (data['agents'] as List)
+          .map((a) => PhoneAgent.fromJson(Map<String, dynamic>.from(a as Map)))
+          .toList();
+
+  @override
+  Future<List<PhoneAgent>> phoneAgents() async =>
+      _agents((await _request('GET', '/api/admin/phone-agents')).data);
+
+  @override
+  Future<String> newPhoneAgent(String device) async {
+    final response = await _request(
+      'POST',
+      '/api/admin/phone-agents',
+      body: {'device': device},
+    );
+    return response.data['token'] as String;
+  }
+
+  @override
+  Future<List<PhoneAgent>> revokePhoneAgent(String id) async => _agents(
+    (await _request(
+      'DELETE',
+      '/api/admin/phone-agents/${Uri.encodeComponent(id)}',
+    )).data,
+  );
 }

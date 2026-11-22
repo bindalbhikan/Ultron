@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: "office = the office PC; cloud = GitHub's runner, myntra.com through Ultron Phone"
+        description: "office = the office PC; cloud = GitHub's runner, myntra.com through the ULTRON app's Agent mode"
         default: "office"
       no_upload:
         description: "1 = test run: Drive not changed"
@@ -26,7 +26,7 @@ jobs:
   run:
     # The office PC (self-hosted runner, label bindal-office): www.myntra.com refuses GitHub's runners
     # (HTTP 403). runner=cloud (the worker picks it when the office PC's runner is offline): GitHub's
-    # runner, the styles looked up by Ultron Phone (the same website API from a mobile line).
+    # runner, the styles looked up by the ULTRON app's Agent mode (the same website API from a mobile line).
     runs-on: ${{ inputs.runner == 'cloud' && 'ubuntu-latest' || fromJSON('["self-hosted", "bindal-office"]') }}
     timeout-minutes: 60
     env:
@@ -44,7 +44,7 @@ jobs:
       OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
       OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
       OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
-      # Ultron Phone, through the worker's /api/phone routes
+      # the ULTRON app's Agent mode, through the worker's /api/phone routes
       DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
       DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
       MYNTRA_GROUPING_VIA: ${{ inputs.runner == 'cloud' && 'phone' || '' }}

@@ -10,7 +10,7 @@ DRIVE_ID = re.compile(r"""['"]1[A-Za-z0-9_-]{30,}['"]""")
 
 class NoDriveIds(unittest.TestCase):
     def test_tracked_code_holds_no_drive_id(self):
-        names = subprocess.run(["git", "ls-files", "src", "scripts", "worker", "android app/apps-script", ".github"],
+        names = subprocess.run(["git", "ls-files", "src", "scripts", "worker", "services/sms_sheet", ".github"],
                                cwd=ROOT, capture_output=True, text=True, check=True).stdout.splitlines()
         hits = []
         for name in names:

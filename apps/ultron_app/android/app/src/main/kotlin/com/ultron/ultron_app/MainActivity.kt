@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import com.ultron.ultron_app.agent.AgentPrefs
+import com.ultron.ultron_app.agent.AgentService
 import com.ultron.ultron_app.sms.SmsImport
 import com.ultron.ultron_app.sms.SmsPrefs
 import com.ultron.ultron_app.sms.SmsService
@@ -35,6 +37,28 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ultron/agent").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "status" -> result.success(agentStatus())
+                "start" -> {
+                    val worker = call.argument<String>("worker").orEmpty().trim()
+                    val token = call.argument<String>("token").orEmpty().trim()
+                    if (!worker.startsWith("https://") || token.length < 40) {
+                        result.error("bad", "a worker and this phone's token", null)
+                    } else {
+                        AgentPrefs.turnOn(this, worker, token)
+                        AgentService.start(this)
+                        result.success(agentStatus())
+                    }
+                }
+                "stop" -> {
+                    AgentPrefs.turnOff(this)
+                    AgentService.stop(this)
+                    result.success(agentStatus())
+                }
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ultron/sms").setMethodCallHandler { call, result ->
             when (call.method) {
                 "status" -> result.success(status())
@@ -85,6 +109,15 @@ class MainActivity : FlutterActivity() {
             }
         }
     }
+
+    /** Agent mode (lib/src/data/agent_bridge.dart): the token comes from the app API, never typed. */
+    private fun agentStatus(): Map<String, Any> = mapOf(
+        "on" to AgentPrefs.isOn(this),
+        "device" to "${Build.MANUFACTURER} ${Build.MODEL}",
+        "lastPoll" to AgentPrefs.lastPoll(this),
+        "lastJob" to AgentPrefs.lastJob(this),
+        "log" to AgentPrefs.log(this),
+    )
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)

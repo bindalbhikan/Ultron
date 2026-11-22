@@ -4,7 +4,7 @@
                                                           packages) to Drive, each updated in place under its
                                                           fixed name, then one Telegram note with the links
 
-The Android signing key is the one of Ultron Phone (scripts/github/android_app.py keystore), so the app
+The Android signing key is the old Ultron Phone app's (scripts/github/android_app.py keystore), so the app
 always installs over the one on the phone. The files stay in the owner's Drive, never in this public repo.
 """
 from __future__ import annotations

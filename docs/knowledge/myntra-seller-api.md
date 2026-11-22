@@ -16,7 +16,7 @@ A second way into Myntra's seller data, separate from the partner-portal report 
 | Host | `partnersapi.myntrainfo.com` | `api-integration.myntra.com` |
 | Auth | hand-made login session + reCAPTCHA | bearer `access_token` (no session) |
 | Data | CSV report jobs, 15-min cooldown, stale before ~9 AM | live, immediate |
-| Runs from GitHub runner | often 403 → Ultron Phone | yes (no session, no reCAPTCHA) |
+| Runs from GitHub runner | often 403 → the ULTRON app's Agent mode | yes (no session, no reCAPTCHA) |
 
 So for live order status (SJIT, TAT, portal sale, morning) this API avoids the report-job cooldown
 and the once-a-day stale copy. The portal stays for anything the API will not give us.

@@ -26,9 +26,9 @@ button on the Myntra menu, or run the workflow. About 1-2 minutes for ~5,900 sty
   `C:\Users\Bhikan\actions-runner` with its own venv): www.myntra.com answers GitHub's runners with
   403 (26 Oct 2026). The PC must be on at the run times; a run waits in the queue while the runner
   is off. The runner starts at login only once `start-hidden.vbs` is in the Startup folder.
-* **Office PC off -> Ultron Phone**: before each run the worker asks GitHub whether the office runner
+* **Office PC off -> the ULTRON app's Agent mode**: before each run the worker asks GitHub whether the office runner
   is online; if not it starts the run with `runner=cloud` (GitHub's runner) and the style lookups go to
-  the Android app (`android app/`, Agent mode on), which checks them on the phone's mobile line
+  the ULTRON app (`apps/ultron_app`, Agent mode on), which checks them on the phone's mobile line
   (`core/phone.py`, worker `/api/phone/*`). Any run that gets 403 for most styles hands them to the
   phone too; `MYNTRA_ZERO_TD_VIA=phone` always does. The phone has `MYNTRA_ZERO_TD_PHONE_MINUTES`
   (40) to answer.

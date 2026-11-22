@@ -11,7 +11,7 @@ Inputs:
         order lines delivered (C) or on the way (SH), per account and style
   www.myntra.com/gateway/v2/product/<style>                     each style's live colour group: the
         engine's spider on the office PC, else (refused, or the PC off: MYNTRA_GROUPING_VIA=phone)
-        Ultron Phone, which asks the same website API from a mobile line
+        the ULTRON app's Agent mode, which asks the same website API from a mobile line
 
 Output (Drive AGENT WORK/MYNTRA/LISTING GROUPING):
   MYNTRA GROUPING MASTER.xlsx       one sheet per account (every group, style and remark: DONE, NOT DONE,
@@ -171,7 +171,7 @@ def omsguru_inventory(dest: Path) -> Path | None:
 
 
 def phone_records(style_ids: list[str]) -> dict:
-    """The styles' colour groups through Ultron Phone (the Android app on a mobile line asks the same
+    """The styles' colour groups through the ULTRON app's Agent mode (the Android app on a mobile line asks the same
     www.myntra.com product API as the website), in the engine's cache shape."""
     from ..core import phone
     got = phone.run_job("myntra_style", [int(s) for s in style_ids], wait_minutes=num("GROUPING_PHONE_MINUTES", 40))
@@ -188,7 +188,7 @@ def phone_records(style_ids: list[str]) -> dict:
         elif a == "NOT FOUND":
             out[sid] = {"http": 404, "fetched": now, "live": False, "colours": []}
     if old_app and not any(r.get("live") for r in out.values()):
-        raise RuntimeError("Ultron Phone sends no colour groups yet: update the app on the phone (Ultron Phone build after 2 Nov 2026)")
+        raise RuntimeError("the ULTRON app's Agent mode sends no colour groups yet: update the ULTRON app on the phone")
     return out
 
 
@@ -276,7 +276,7 @@ def run(args) -> int:
         e.fetch_portal(to_check, cache, int(num("GROUPING_CONCURRENCY", 16)))
     missing = [sid for sid in to_check if sid not in cache]
     if to_check and (via == "phone" or len(missing) > len(to_check) * 0.2):
-        log.warning("myntra.com answered %d of %d styles here: asking Ultron Phone for the rest",
+        log.warning("myntra.com answered %d of %d styles here: asking the ULTRON app's Agent mode for the rest",
                     len(to_check) - len(missing), len(to_check))
         cache.update(phone_records(missing))
         missing = [sid for sid in to_check if sid not in cache]

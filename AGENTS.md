@@ -41,7 +41,7 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
   fallback. Use it only where no API gives the data. A CAPTCHA or bot check is reported, never solved.
 - **Myntra buyer site (`www.myntra.com`)**: bots read it with Scrapy spiders only (`myntra_zero_td/spider.py`,
   `myntra_grouping/engine.py`), never a browser or another HTTP client. The one exception is the
-  existing Ultron Phone route, for when GitHub's runner gets 403.
+  existing phone route (the ULTRON app's Agent mode), for when GitHub's runner gets 403.
 - **Myntra SPF tickets**: never close one; a claim stays alive until the return is received or the SPF
   is paid (`docs/bots/myntra-spf.md`, disputes).
 - Never merge to main by yourself from CI; propose a PR (`ci-fix.yml`).
@@ -91,7 +91,7 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 
 - New control app: `apps/ultron_app/` (`docs/apps/ultron-app.md`). Its sign-in/data are demo-only until
   a supported app backend is connected. The owner wants Phone agent/SMS/OTP/POD work consolidated here;
-  the existing `android app/` remains active until native migration and parity checks finish.
+  The old Kotlin `android app/` was removed on 23 Nov 2026: SMS only and Agent mode live in `apps/ultron_app`.
 
 - The project lives at **`D:\ULTRON`**, a normal Git clone off Google Drive (since 22 Nov 2026; the old Drive
   folder `AGENT-ULTRON-BINDAL` is no longer worked in: Drive's `desktop.ini` broke Git refs there).

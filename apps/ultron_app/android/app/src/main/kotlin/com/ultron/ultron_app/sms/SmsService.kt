@@ -61,11 +61,11 @@ class SmsService : Service() {
     }
 }
 
-/** After a reboot or an app update, "SMS only" mode comes back on by itself when it was on. */
+/** After a reboot or an app update, SMS only and Agent mode come back on by themselves when they were on. */
 class SmsBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action in listOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED) && SmsPrefs.isOn(context)) {
-            SmsService.start(context)
-        }
+        if (intent.action !in listOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED)) return
+        if (SmsPrefs.isOn(context)) SmsService.start(context)
+        if (com.ultron.ultron_app.agent.AgentPrefs.isOn(context)) com.ultron.ultron_app.agent.AgentService.start(context)
     }
 }

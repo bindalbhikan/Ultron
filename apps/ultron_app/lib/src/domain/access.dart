@@ -196,3 +196,26 @@ class SmsPhone {
     appVersion: json['appVersion'] as String? ?? '',
   );
 }
+
+/// A phone in Agent mode (services/app_api /api/admin/phone-agents).
+@immutable
+class PhoneAgent {
+  const PhoneAgent({
+    required this.id,
+    required this.device,
+    required this.lastSeen,
+    required this.revoked,
+  });
+  final String id, device;
+  final DateTime? lastSeen;
+  final bool revoked;
+  factory PhoneAgent.fromJson(Map<String, dynamic> json) {
+    final seen = (json['lastSeen'] as num? ?? 0).toInt();
+    return PhoneAgent(
+      id: json['id'] as String,
+      device: json['device'] as String,
+      lastSeen: seen > 0 ? DateTime.fromMillisecondsSinceEpoch(seen) : null,
+      revoked: json['revoked'] == true,
+    );
+  }
+}

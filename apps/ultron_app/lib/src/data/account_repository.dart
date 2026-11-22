@@ -53,6 +53,11 @@ abstract class AccountRepository {
     required bool blocked,
   }) async => unavailable();
 
+  /// Agent mode phones: list; make a token for this phone (returned once); revoke one.
+  Future<List<PhoneAgent>> phoneAgents() async => unavailable();
+  Future<String> newPhoneAgent(String device) async => unavailable();
+  Future<List<PhoneAgent>> revokePhoneAgent(String id) async => unavailable();
+
   Never unavailable() =>
       throw const FrontendException('This service is not connected.');
 }

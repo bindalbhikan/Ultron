@@ -1,4 +1,4 @@
-"""Work again the courier SMS already on the Ultron Phone SMS sheet (Phone OTP Sheet 2026), oldest first:
+"""Work again the courier SMS already on the SMS sheet (Phone OTP Sheet 2026), oldest first:
 each POD behind an SMS link downloaded and read here, sent with the SMS to the sheet's Apps Script
 (rework=1), which files it like a new one - the PDF into Drive AGENT WORK/RETURN PODS/<date>/, its
 AWBs into RETURN PODS MASTER, the SMS row's Agent note and OTP SHEET checkbox. Links that expired
@@ -37,7 +37,7 @@ WORK = re.compile(r"https?://|\bOTP\b|\bcode\b", re.I)
 
 
 def pod(body: str) -> dict:
-    """The fields the phone sends for an SMS's POD (the same as android app Pod.kt)."""
+    """The fields the phone sends for an SMS's POD (the same as the ULTRON app's sms/Pod.kt)."""
     link = LINK.search(body)
     if not link:
         return {}

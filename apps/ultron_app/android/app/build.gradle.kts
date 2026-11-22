@@ -29,7 +29,7 @@ android {
     }
 
     // GitHub builds (.github/workflows/flutter-app.yml) sign with the one fixed key kept in the owner's Drive
-    // (scripts/github/android_app.py keystore, the same key as Ultron Phone), so a new APK installs over the
+    // (scripts/github/android_app.py keystore, the key of the old Ultron Phone app), so a new APK installs over the
     // app already on the phone. A local build without ANDROID_KEYSTORE_FILE is signed with the debug key.
     val keystore = System.getenv("ANDROID_KEYSTORE_FILE")
     signingConfigs {

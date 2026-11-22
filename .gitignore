@@ -37,8 +37,6 @@ desktop.ini
 client_secret*.json
 
 # Android app (built on GitHub, kept in Drive AGENT WORK/ULTRON PHONE)
-android app/.gradle/
-android app/local.properties
 *.apk
 *.keystore
 # wrangler dev's local secrets

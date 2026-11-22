@@ -1,12 +1,11 @@
-"""Ultron Phone builds on GitHub (.github/workflows/android-app.yml), kept in Drive AGENT WORK/ULTRON PHONE.
+"""The Android signing key of the ULTRON app's APK (.github/workflows/flutter-app.yml), kept in Drive.
 
-    python scripts/github/android_app.py keystore <dir>   the signing key from Drive (made on the first
-                                                          build), its path and password into $GITHUB_ENV
-    python scripts/github/android_app.py upload <apk>     the APK to Drive as "Ultron Phone.apk" (updated
-                                                          in place) and a Telegram note with the link
+    python scripts/github/android_app.py keystore <dir>   the key from Drive AGENT WORK/ULTRON PHONE (made on the
+                                                          first build), its path and password into $GITHUB_ENV
 
-One fixed key, so every new APK installs over the one on the phone. It lives only in the owner's Drive
-(never in this public repo); losing it means uninstalling the app once before the next install.
+One fixed key, so every new APK installs over the one on the phone. It lives only in the owner's Drive (never
+in this public repo); losing it means uninstalling the app once before the next install. The key is the one
+the old Ultron Phone app used (its folder and alias kept), so phones keep their trust in it.
 """
 from __future__ import annotations
 
@@ -20,11 +19,10 @@ from ultron.workings.core.config import agent_work_id
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ultron.workings.core.config import env  # noqa: E402
 from ultron.workings.core.drive import DriveFolder  # noqa: E402
 
 FOLDER = "ULTRON PHONE"
-KEYSTORE, PASSWORD, APK = "ultronphone.keystore", "ultronphone.keystore.password", "Ultron Phone.apk"
+KEYSTORE, PASSWORD = "ultronphone.keystore", "ultronphone.keystore.password"
 
 
 def folder() -> DriveFolder:
@@ -51,19 +49,7 @@ def keystore(out: Path) -> None:
         g.write(f"ANDROID_KEYSTORE_FILE={ks}\nANDROID_KEYSTORE_PASSWORD={password}\n")
 
 
-def upload(apk: Path) -> None:
-    named = apk.with_name(APK)
-    named.write_bytes(apk.read_bytes())
-    file_id = folder().put(named, "application/vnd.android.package-archive")
-    link = f"https://drive.google.com/file/d/{file_id}/view"
-    version = env("APP_VERSION_CODE", "?")
-    print(f"APK saved: AGENT WORK/{FOLDER}/{APK} ({link})")
-    if env("TELEGRAM_BOT_TOKEN") and env("TELEGRAM_CHAT_ID"):
-        from ultron.workings.core import telegram
-        telegram.send(f"📱 <b>Ultron Phone v2.0.{version} built</b>\n<i>AGENT WORK/{FOLDER}</i>\n\n"
-                      f"Open on the phone and install over the old one:\n{link}")
-
-
 if __name__ == "__main__":
-    cmd, arg = sys.argv[1], Path(sys.argv[2])
-    keystore(arg) if cmd == "keystore" else upload(arg)
+    if len(sys.argv) != 3 or sys.argv[1] != "keystore":
+        sys.exit(__doc__)
+    keystore(Path(sys.argv[2]))

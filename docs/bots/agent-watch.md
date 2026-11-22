@@ -41,4 +41,4 @@ An alert also goes to the owner's WhatsApp when `CALLMEBOT_PHONE` / `CALLMEBOT_A
 
 A grep of a run's log keeps its **end** when it is too long for the model: the fatal lines are the last ones, and the retry check and the plain alert read that text too. `curl: (n)` counts as a passing cause.
 
-A `[watch] lost_runner` workflow (`myntra-zero-td.yml`) whose self-hosted runner goes away mid-run is started once more with `runner=cloud`: the style lookups then go through Ultron Phone. Only workflows with no other inputs belong on the list: a dispatch starts them with defaults.
+A `[watch] lost_runner` workflow (`myntra-zero-td.yml`) whose self-hosted runner goes away mid-run is started once more with `runner=cloud`: the style lookups then go through the ULTRON app's Agent mode. Only workflows with no other inputs belong on the list: a dispatch starts them with defaults.

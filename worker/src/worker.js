@@ -60,7 +60,7 @@ const COMMANDS = {
             examples: ["/fkcalc"], inputs: none("/fkcalc") },
   fktat: { workflow: "flipkart-tat.yml", icon: "📦", name: "Flipkart TAT", portal: "flipkart", chat: true, minutes: 6,
            examples: ["/fktat"], inputs: none("/fktat") },
-  // Ultron Phone: courier SMS the SMS sheet's script did not file (returns OTP / POD), worked again
+  // the ULTRON app's Agent mode: courier SMS the SMS sheet's script did not file (returns OTP / POD), worked again
   smscatchup: { workflow: "sms-catchup.yml", icon: "📨", name: "Returns SMS catch-up", portal: "all", minutes: 2,
                 examples: ["/smscatchup"], inputs: none("/smscatchup") },
   // AJIO
@@ -126,7 +126,7 @@ const COMMANDS = {
                 const a = args.map((x) => x.toLowerCase());
                 if (a.length === 0) return {};
                 if (a.length === 1 && a[0] === "status") return { status_only: "1" };
-                if (a.length === 1 && a[0] === "phone") return { runner: "cloud" };   // GitHub's runner, myntra.com through Ultron Phone
+                if (a.length === 1 && a[0] === "phone") return { runner: "cloud" };   // GitHub's runner, myntra.com through the ULTRON app's Agent mode
                 // check, then submit every account's pending groups on the partner portal
                 // again: also the rejected / failed / recently approved groups (only a job still waiting holds one back)
                 const rest = a.slice(1);
@@ -288,7 +288,7 @@ const SCREENS = {
   },
   grouping: {
     title: "🎨 <b>Myntra colour grouping</b>\n<i>all about you · Fashfun · Murcia · DressBerry</i>\n\n" +
-      "🎨 Check = office PC, or the phone when the PC is off\n📱 Phone = always through Ultron Phone\n" +
+      "🎨 Check = office PC, or the phone when the PC is off\n📱 Phone = always through the ULTRON app's Agent mode\n" +
       "🔄 Status = only the portal's jobs again\n⚠️ Submit = check, then upload every account's pending groups on the portal\n\n" +
       "📂 Drive LISTING GROUPING: MYNTRA GROUPING MASTER (account-wise) + MYNTRA GROUPING MASTER BRAND WISE",
     rows: [
@@ -791,8 +791,8 @@ async function readMyntraSession(request, env) {
   return body ? new Response(body, { headers: { "Content-Type": "application/json" } }) : new Response("none", { status: 404 });
 }
 
-// ------------------------------------------------------------------ Ultron Phone
-// The Android app (android app/) as a worker for what only a phone line can do: www.myntra.com
+// ------------------------------------------------------------------ the ULTRON app's Agent mode
+// The ULTRON app (apps/ultron_app, Agent mode) as a worker for what only a phone line can do: www.myntra.com
 // refuses GitHub's runners, so a bot run hands its lookups to the phone through here. All POST,
 // DASHBOARD_TOKEN. One job at a time:
 //   job      {id, kind, items}    a bot run queues it (kind "myntra_style": style ids)
@@ -909,7 +909,7 @@ function b64url(bytes) {
 }
 
 async function dispatch(env, cmd, inputs) {
-  // office: true - the office PC's runner when it is online, else GitHub's runner with Ultron Phone
+  // office: true - the office PC's runner when it is online, else GitHub's runner with the ULTRON app's Agent mode
   if (cmd.office && !inputs.runner) inputs = { ...inputs, runner: (await officeOnline(env)) ? "office" : "cloud" };
   return github(env, `/repos/${OWNER}/${REPO}/actions/workflows/${cmd.workflow}/dispatches`, {
     method: "POST",
@@ -918,7 +918,7 @@ async function dispatch(env, cmd, inputs) {
 }
 
 // Is the office PC's self-hosted runner (label bindal-office) online? When GitHub does not say, the
-// office is assumed, as before Ultron Phone.
+// office is assumed, as before the ULTRON app's Agent mode.
 async function officeOnline(env) {
   try {
     const res = await github(env, `/repos/${OWNER}/${REPO}/actions/runners`);

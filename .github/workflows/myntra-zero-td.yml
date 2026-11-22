@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: "office = the office PC; cloud = GitHub's runner, myntra.com through Ultron Phone"
+        description: "office = the office PC; cloud = GitHub's runner, myntra.com through the ULTRON app's Agent mode"
         default: "office"
 
 concurrency:
@@ -21,7 +21,7 @@ jobs:
     # the runner's venv (C:\Users\Bhikan\actions-runner\venv, first on PATH in the runner's .env,
     # with Git Bash for the bash steps); the PC's clock is already IST (no TZ: Windows reads it wrong).
     # runner=cloud (the worker picks it when the office PC's runner is offline): GitHub's runner, and
-    # the styles are looked up by Ultron Phone, the Android app on a mobile line (core/phone.py).
+    # the styles are looked up by the ULTRON app's Agent mode, the Android app on a mobile line (core/phone.py).
     runs-on: ${{ inputs.runner == 'cloud' && 'ubuntu-latest' || fromJSON('["self-hosted", "bindal-office"]') }}
     timeout-minutes: 45   # styles without an answer from the phone are asked for again
     env:
@@ -38,7 +38,7 @@ jobs:
       GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
       AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
-      # Ultron Phone, through the worker's /api/phone routes
+      # the ULTRON app's Agent mode, through the worker's /api/phone routes
       DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
       DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
       MYNTRA_ZERO_TD_VIA: ${{ inputs.runner == 'cloud' && 'phone' || vars.MYNTRA_ZERO_TD_VIA }}
