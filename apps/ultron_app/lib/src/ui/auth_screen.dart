@@ -8,10 +8,11 @@ import '../domain/models.dart';
 import '../state/providers.dart';
 import 'components.dart';
 
-enum AuthScreenMode { login, register }
+enum AuthScreenMode { login, register, setup }
 
-/// Sign in with a username and password; or ask for an account (an administrator approves it); or
-/// "SMS only" for a phone that only sends its SMS to the sheet.
+/// Sign in with a username and password; ask for an account (an administrator approves it); "SMS only"
+/// for a phone that only sends its SMS to the sheet; and, while no administrator exists, first-time setup
+/// (the setup code makes the first administrator, who chooses their own password).
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key, this.mode = AuthScreenMode.login});
   final AuthScreenMode mode;
@@ -25,14 +26,26 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _username = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
-  bool _hidden = true, _busy = false, _requested = false;
+  final _code = TextEditingController();
+  bool _hidden = true, _busy = false, _requested = false, _setupNeeded = false;
   String? _error;
 
-  bool get _register => widget.mode == AuthScreenMode.register;
+  bool get _login => widget.mode == AuthScreenMode.login;
+  bool get _setup => widget.mode == AuthScreenMode.setup;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_login) {
+      ref.read(repositoryProvider).setupNeeded().then((needed) {
+        if (mounted) setState(() => _setupNeeded = needed);
+      });
+    }
+  }
 
   @override
   void dispose() {
-    for (final c in [_name, _username, _password, _confirm]) {
+    for (final c in [_name, _username, _password, _confirm, _code]) {
       c.dispose();
     }
     super.dispose();
@@ -40,7 +53,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   Future<void> _submit() async {
     if (!(_form.currentState?.validate() ?? false)) return;
-    if (!_register) {
+    if (_login) {
       await ref
           .read(authProvider.notifier)
           .signIn(_username.text, _password.text);
@@ -51,9 +64,21 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       _error = null;
     });
     try {
-      await ref
-          .read(repositoryProvider)
-          .register(_name.text, _username.text, _password.text);
+      final repo = ref.read(repositoryProvider);
+      if (_setup) {
+        await repo.firstAdmin(
+          code: _code.text,
+          name: _name.text,
+          username: _username.text,
+          password: _password.text,
+        );
+        // the first administrator signs straight in
+        await ref
+            .read(authProvider.notifier)
+            .signIn(_username.text, _password.text);
+        return;
+      }
+      await repo.register(_name.text, _username.text, _password.text);
       if (mounted) setState(() => _requested = true);
     } on FrontendException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -73,8 +98,24 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final busy = _busy || session.busy;
-    final error = _register ? _error : session.error;
+    final error = _login
+        ? session.error
+        : (_error ?? (_setup ? session.error : null));
     final wide = MediaQuery.sizeOf(context).width >= 900;
+    final title = switch (widget.mode) {
+      AuthScreenMode.login => 'Sign in',
+      AuthScreenMode.register => 'Ask for an account',
+      AuthScreenMode.setup => 'Set up ULTRON',
+    };
+    final lead = switch (widget.mode) {
+      AuthScreenMode.login =>
+        'Use the username and password your administrator gave you.',
+      AuthScreenMode.register =>
+        'An administrator approves new accounts before they can open ULTRON.',
+      AuthScreenMode.setup =>
+        'Make the first administrator: enter the setup code you were given, then choose your own '
+            'username and password.',
+    };
 
     final form = Form(
       key: _form,
@@ -91,16 +132,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             ],
             Semantics(
               header: true,
-              child: Text(
-                _register ? 'Ask for an account' : 'Sign in',
-                style: theme.textTheme.headlineMedium,
-              ),
+              child: Text(title, style: theme.textTheme.headlineMedium),
             ),
             const SizedBox(height: 6),
             Text(
-              _register
-                  ? 'An administrator approves new accounts before they can open ULTRON.'
-                  : 'Use the username and password your administrator gave you.',
+              lead,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
@@ -116,7 +152,26 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 child: const Text('Back to sign in'),
               ),
             ] else ...[
-              if (_register) ...[
+              if (_setup) ...[
+                TextFormField(
+                  key: const Key('setup-code'),
+                  controller: _code,
+                  enabled: !busy,
+                  autocorrect: false,
+                  textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Setup code',
+                    hintText: 'XXXX-XXXX-XXXX',
+                    prefixIcon: Icon(LucideIcons.keyRound, size: 18),
+                  ),
+                  validator: (v) => (v ?? '').trim().length < 6
+                      ? 'Enter the setup code'
+                      : null,
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (!_login) ...[
                 TextFormField(
                   key: const Key('register-name'),
                   controller: _name,
@@ -136,9 +191,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 textInputAction: TextInputAction.next,
                 autocorrect: false,
                 autofillHints: [
-                  _register
-                      ? AutofillHints.newUsername
-                      : AutofillHints.username,
+                  _login ? AutofillHints.username : AutofillHints.newUsername,
                 ],
                 decoration: const InputDecoration(
                   labelText: 'Username',
@@ -152,18 +205,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 controller: _password,
                 enabled: !busy,
                 obscureText: _hidden,
-                textInputAction: _register
-                    ? TextInputAction.next
-                    : TextInputAction.done,
+                textInputAction: _login
+                    ? TextInputAction.done
+                    : TextInputAction.next,
                 autofillHints: [
-                  _register
-                      ? AutofillHints.newPassword
-                      : AutofillHints.password,
+                  _login ? AutofillHints.password : AutofillHints.newPassword,
                 ],
-                onFieldSubmitted: _register ? null : (_) => _submit(),
+                onFieldSubmitted: _login ? (_) => _submit() : null,
                 decoration: InputDecoration(
                   labelText: 'Password',
-                  helperText: _register ? 'At least 8 characters' : null,
+                  helperText: _login ? null : 'At least 8 characters',
                   prefixIcon: const Icon(LucideIcons.lockKeyhole, size: 18),
                   suffixIcon: IconButton(
                     tooltip: _hidden ? 'Show password' : 'Hide password',
@@ -174,13 +225,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     ),
                   ),
                 ),
-                validator: (v) => (v ?? '').length < (_register ? 8 : 1)
-                    ? (_register
-                          ? 'At least 8 characters'
-                          : 'Enter your password')
+                validator: (v) => (v ?? '').length < (_login ? 1 : 8)
+                    ? (_login ? 'Enter your password' : 'At least 8 characters')
                     : null,
               ),
-              if (_register) ...[
+              if (!_login) ...[
                 const SizedBox(height: 16),
                 TextFormField(
                   key: const Key('register-confirm'),
@@ -205,7 +254,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               const SizedBox(height: 24),
               GradientButton(
                 key: const Key('auth-submit'),
-                label: _register ? 'Send request' : 'Sign in',
+                label: switch (widget.mode) {
+                  AuthScreenMode.login => 'Sign in',
+                  AuthScreenMode.register => 'Send request',
+                  AuthScreenMode.setup => 'Create administrator',
+                },
                 busy: busy,
                 onPressed: _submit,
               ),
@@ -213,14 +266,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               TextButton(
                 onPressed: busy
                     ? null
-                    : () => context.go(_register ? '/login' : '/register'),
-                child: Text(
-                  _register
-                      ? 'I have an account: sign in'
-                      : 'Ask for an account',
-                ),
+                    : () => context.go(_login ? '/register' : '/login'),
+                child: Text(_login ? 'Ask for an account' : 'Back to sign in'),
               ),
-              if (!_register) ...[
+              if (_login && _setupNeeded) ...[
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  key: const Key('first-setup'),
+                  onPressed: busy ? null : () => context.go('/setup'),
+                  icon: const Icon(LucideIcons.shieldPlus, size: 18),
+                  label: const Text('First-time setup: make the administrator'),
+                ),
+              ],
+              if (_login) ...[
                 const SizedBox(height: 8),
                 const Divider(),
                 const SizedBox(height: 8),

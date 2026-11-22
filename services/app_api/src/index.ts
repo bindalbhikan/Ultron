@@ -194,6 +194,36 @@ async function revokePhoneAgent(env: Env, actor: Identity, id: string) {
   return phoneAgents(env);
 }
 
+// First-time setup: while no active administrator exists, the person holding the setup code (its SHA-256 is
+// the worker secret SETUP_CODE_HASH) makes the first one from the app's sign-in screen, choosing their own
+// password. Once an administrator exists this answers 409, for good.
+async function adminExists(env: Env) {
+  return Boolean(await env.DB.prepare("SELECT 1 FROM app_access WHERE status='active' AND role_id='admin' LIMIT 1").first());
+}
+async function firstAdmin(request: Request, env: Env) {
+  if (await adminExists(env)) throw new HttpError(409, 'ULTRON is already set up. Sign in instead.');
+  const input = await body(request);
+  const code = typeof input.code === 'string' ? input.code.trim() : '';
+  const hash = hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code)));
+  if (!env.SETUP_CODE_HASH || !code || hash !== env.SETUP_CODE_HASH) throw new HttpError(403, 'The setup code is not right.');
+  const name = cleanName(input.name);
+  const user = cleanUsername(input.username);
+  if (typeof input.password !== 'string' || input.password.length < 8 || input.password.length > 128) {
+    throw new HttpError(400, 'Use a password of 8 to 128 characters.');
+  }
+  if (await env.DB.prepare('SELECT id FROM user WHERE username=?').bind(user.toLowerCase()).first()) {
+    throw new HttpError(409, 'This username is taken.');
+  }
+  const created = await createAuth(env).api.signUpEmail({ body: { name, email: internalEmail(user), password: input.password, username: user } });
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE app_access SET status='active',role_id='admin',revision=revision+1,updated_at=? WHERE user_id=?`)
+      .bind(Date.now(), created.user.id),
+    env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'setup.first_admin',?,?)`)
+      .bind(crypto.randomUUID(), created.user.id, created.user.id, JSON.stringify({ username: user })),
+  ]);
+  return json({ ok: true, username: user }, 201);
+}
+
 async function roles(env: Env) {
   const { results } = await env.DB.prepare('SELECT id,name,permissions,revision FROM app_role ORDER BY name').all();
   return results.map((row) => ({ ...row, permissions: JSON.parse(String(row.permissions)) }));
@@ -254,6 +284,8 @@ async function route(request: Request, env: Env) {
     await env.DB.prepare('SELECT id FROM app_role WHERE id=?').bind('admin').first();
     return json({ ok: true, service: 'ultron-app-api' });
   }
+  if (path === '/api/setup' && request.method === 'GET') return json({ needed: !(await adminExists(env)) });
+  if (path === '/api/setup' && request.method === 'POST') return firstAdmin(request, env);
   const auth = createAuth(env);
   if (path.startsWith('/api/auth/')) {
     const authPath = path.slice('/api/auth'.length);

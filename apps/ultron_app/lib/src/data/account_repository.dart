@@ -6,6 +6,17 @@ import '../domain/models.dart';
 abstract class AccountRepository {
   AppUser? get currentUser => null;
 
+  /// First-time setup: true while no administrator exists yet.
+  Future<bool> setupNeeded() async => false;
+
+  /// Makes the first administrator with the one-time setup code; the person chooses their own password.
+  Future<void> firstAdmin({
+    required String code,
+    required String name,
+    required String username,
+    required String password,
+  }) async => unavailable();
+
   /// A public registration: it starts pending until an administrator approves it.
   Future<void> register(String name, String username, String password) async =>
       unavailable();

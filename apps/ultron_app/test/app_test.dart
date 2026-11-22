@@ -56,6 +56,23 @@ class FakeRepository extends UltronRepository {
 
   @override
   Future<void> signOut() async => _me = null;
+  bool setup = false;
+  @override
+  Future<bool> setupNeeded() async => setup;
+  @override
+  Future<void> firstAdmin({
+    required String code,
+    required String name,
+    required String username,
+    required String password,
+  }) async {
+    if (code != 'GOOD-CODE') {
+      throw const FrontendException('The setup code is not right.');
+    }
+    accounts[username.toLowerCase()] = _user(username);
+    setup = false;
+  }
+
   @override
   Future<AppUser> refreshUser() async => _me!;
   @override
@@ -120,11 +137,12 @@ final _accounts = {
 Future<FakeRepository> _open(
   WidgetTester tester, {
   Size size = const Size(1280, 860),
+  bool setup = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final repo = FakeRepository(_accounts);
+  final repo = FakeRepository(Map.of(_accounts))..setup = setup;
   await tester.pumpWidget(
     ProviderScope(
       overrides: [repositoryProvider.overrideWithValue(repo)],
@@ -146,6 +164,41 @@ Future<void> _signIn(WidgetTester tester, String username) async {
 }
 
 void main() {
+  testWidgets(
+    'first-time setup: the code makes the administrator, who lands signed in',
+    (tester) async {
+      await _open(tester, setup: true);
+      await tester.tap(find.byKey(const Key('first-setup')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('setup-code')), 'WRONG-CODE');
+      await tester.enterText(
+        find.byKey(const Key('register-name')),
+        'Owner Person',
+      );
+      await tester.enterText(find.byKey(const Key('auth-username')), 'Owner');
+      await tester.enterText(
+        find.byKey(const Key('auth-password')),
+        'right-password',
+      );
+      await tester.enterText(
+        find.byKey(const Key('register-confirm')),
+        'right-password',
+      );
+      await tester.tap(find.byKey(const Key('auth-submit')));
+      await tester.pumpAndSettle();
+      expect(find.text('The setup code is not right.'), findsOneWidget);
+      await tester.enterText(find.byKey(const Key('setup-code')), 'GOOD-CODE');
+      await tester.tap(find.byKey(const Key('auth-submit')));
+      await tester.pumpAndSettle();
+      expect(find.text('Hello, Owner'), findsOneWidget);
+    },
+  );
+
+  testWidgets('no setup button once an administrator exists', (tester) async {
+    await _open(tester);
+    expect(find.byKey(const Key('first-setup')), findsNothing);
+  });
+
   testWidgets(
     'sign-in asks for a username and password, offers SMS only, and shows no demo',
     (tester) async {

@@ -47,6 +47,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/sms', builder: (context, state) => const SmsOnlyScreen()),
       GoRoute(
+        path: '/setup',
+        builder: (context, state) =>
+            const AuthScreen(mode: AuthScreenMode.setup),
+      ),
+      GoRoute(
         path: '/access',
         builder: (context, state) => const AccountScreen(pending: true),
       ),

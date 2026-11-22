@@ -33,7 +33,8 @@ async function signin2(username: string, pass: string) {
 before(async () => {
   server=createTestHarness({workers:[{configPath:'wrangler.jsonc',
     vars:{AUTH_BASE_URL:'https://api.example.test',APP_ORIGIN:'https://app.example.test'},
-    secrets:{AUTH_SECRET:'integration-tests-only-secret-32-characters-minimum'}}]});
+    secrets:{AUTH_SECRET:'integration-tests-only-secret-32-characters-minimum',
+      SETUP_CODE_HASH:'5b02d4eb46b7e8525e3b26acb6b37563dcffc9981c86f352c70c2d4347fb5591'}}]});
   await server.listen();
   db=(await server.getWorker<{DB:D1Database}>().getEnv()).DB;
   // the migrations in order, as `wrangler d1 migrations apply` runs them
@@ -43,6 +44,12 @@ before(async () => {
   }
 });
 after(async()=>{await server?.close();});
+
+test('first-time setup: only with the code, only while no administrator exists',async()=>{
+  assert.deepEqual(await (await call('/api/setup')).json(),{needed:true});
+  assert.equal((await call('/api/setup','POST',{code:'wrong',name:'Owner',username:'Owner1',password:'Eight@8c'})).status,403);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM user').first<{n:number}>())!.n,0);
+});
 
 test('registration is pending, cannot self-assign admin and stores a hash',async()=>{
   const registered=await signup('pending@example.test');

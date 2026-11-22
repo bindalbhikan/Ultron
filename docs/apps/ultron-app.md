@@ -11,6 +11,7 @@ Every screen reads a live service; a person sees only what their role allows (`d
 | Screen | Path | Needs | What |
 |---|---|---|---|
 | Sign in | `/login` | none | username and password (8+ characters); no SMS OTP (paid), no demo |
+| First-time setup | `/setup` | the setup code | only while no administrator exists: makes the first one, who chooses their own password, then signs in |
 | Ask for an account | `/register` | none | name, username, password; waits as *pending* until an administrator approves |
 | SMS only | `/sms` | none | Android: a name and a SIM, then every SMS goes to the sheet (below) |
 | Waiting for approval | `/access` | signed in | a pending or disabled account; "Check again" re-reads the access |

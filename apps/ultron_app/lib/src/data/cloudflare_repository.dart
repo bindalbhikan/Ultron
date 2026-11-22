@@ -334,4 +334,38 @@ class CloudflareRepository extends UltronRepository {
       '/api/admin/phone-agents/${Uri.encodeComponent(id)}',
     )).data,
   );
+
+  @override
+  Future<bool> setupNeeded() async {
+    try {
+      return (await _request(
+            'GET',
+            '/api/setup',
+            authenticated: false,
+          )).data['needed'] ==
+          true;
+    } on FrontendException {
+      return false; // offline: sign-in shows its own error
+    }
+  }
+
+  @override
+  Future<void> firstAdmin({
+    required String code,
+    required String name,
+    required String username,
+    required String password,
+  }) async {
+    await _request(
+      'POST',
+      '/api/setup',
+      body: {
+        'code': code.trim(),
+        'name': name.trim(),
+        'username': username.trim(),
+        'password': password,
+      },
+      authenticated: false,
+    );
+  }
 }

@@ -6,7 +6,10 @@
 **Sign-in is by username** (better-auth's username plugin, 3-30 letters, digits, dots or underscores; case does not
 matter). Passwords are 8 to 128 characters. An account made without an email gets the internal address
 `<username>@users.ultron.invalid`. A public registration starts **pending** until an administrator approves it.
-The first administrator is made from the owner's own terminal: `.venv\Scripts\python scriptspp\create_admin.py`.
+**First-time setup** (no terminal): while no active administrator exists, the app's sign-in screen offers
+"First-time setup"; the setup code (its SHA-256 is the worker secret `SETUP_CODE_HASH`; the code itself was given to the
+owner once) plus a name, username and password the owner types make the first administrator (`GET/POST /api/setup`).
+Once an administrator exists the route answers 409 for good. Or, from the owner's own terminal: `.venv\Scripts\python scriptspp\create_admin.py`.
 It asks for the name, username and password (hidden), registers through the API, then promotes the account with
 wrangler. The password never reaches a file or a log.
 
