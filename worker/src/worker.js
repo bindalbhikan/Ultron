@@ -804,8 +804,26 @@ async function readMyntraSession(request, env) {
 const PHONE_SEEN = "phone_seen";
 const PHONE_JOB = "phone_job";
 
+// An Agent mode phone of the ULTRON app: its own token, made by the app API (services/app_api, phone_agent
+// table, only the SHA-256 kept) when an administrator turned the phone on; revoked there. It opens only the
+// phone's own routes (next, result), never queueing or collecting jobs.
+async function phoneAgent(request, env) {
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer /, "");
+  if (token.length < 40 || !env.AGENT_DB) return false;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const row = await env.AGENT_DB.prepare("SELECT id,last_seen FROM phone_agent WHERE token_hash=? AND revoked=0").bind(hash).first();
+  if (!row) return false;
+  if (Date.now() - row.last_seen > 10 * 60 * 1000) {
+    await env.AGENT_DB.prepare("UPDATE phone_agent SET last_seen=? WHERE id=?").bind(Date.now(), row.id).run();
+  }
+  return true;
+}
+
 async function phoneApi(request, env, action) {
-  if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+  if (!authorised(request, env) && !(["next", "result"].includes(action) && await phoneAgent(request, env))) {
+    return new Response("forbidden", { status: 403 });
+  }
   const q = new URL(request.url).searchParams;
   const json = (data) => new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
   if (action === "job") {

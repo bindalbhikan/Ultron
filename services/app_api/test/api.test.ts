@@ -181,3 +181,20 @@ test('an eight-character password and a username are enough; a bad username is r
   const row=await db.prepare("SELECT a.status FROM user u JOIN app_access a ON a.user_id=u.id WHERE u.username='newperson'").first<{status:string}>();
   assert.equal(row!.status,'pending');                       // a public registration waits for an administrator
 });
+
+test('an administrator turns a phone into an agent with a token kept only as a hash, and revokes it',async()=>{
+  const adminToken=await signin('admin@example.test');
+  const made=await call('/api/admin/phone-agents','POST',{device:'Xiaomi Redmi 12'},adminToken);
+  assert.equal(made.status,201);
+  const {id,token}=await made.json() as {id:string;token:string};
+  assert.ok(token.length>=40);
+  const row=await db.prepare('SELECT token_hash,revoked FROM phone_agent WHERE id=?').bind(id).first<{token_hash:string;revoked:number}>();
+  assert.notEqual(row!.token_hash,token); assert.equal(row!.token_hash.length,64); assert.equal(row!.revoked,0);
+  const list=await (await call('/api/admin/phone-agents','GET',undefined,adminToken)).json() as {agents:{id:string}[]};
+  assert.equal(list.agents[0].id,id);
+  assert.equal((await call(`/api/admin/phone-agents/${id}`,'DELETE',undefined,adminToken)).status,200);
+  assert.equal((await call(`/api/admin/phone-agents/${id}`,'DELETE',undefined,adminToken)).status,404);
+  assert.equal((await call('/api/admin/phone-agents','POST',{device:'x'},adminToken)).status,400);
+  const viewerToken=await signin2('owner.two','Eight@8c');            // a viewer: no phone.manage
+  assert.equal((await call('/api/admin/phone-agents','POST',{device:'Some phone'},viewerToken)).status,403);
+});

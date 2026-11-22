@@ -21,6 +21,7 @@ The database is called `ultron`. Its tables come from `services/app_api/migratio
 | Migration | Tables | Used by |
 |---|---|---|
 | `0001_identity.sql` | `user`, `session`, `account`, `verification`, `rate_limit` (better-auth), `app_role`, `app_access`, `app_audit` | app API |
+| `0005_phone_agent.sql` | `phone_agent`: Agent mode phones (device, SHA-256 of the token, last seen, revoked) | the app API makes / revokes, the Telegram worker checks |
 | `0004_username.sql` | `user.username` (unique) and `display_username` | app API (sign-in by username) |
 | `0003_sms_phone.sql` | `sms_phone`: the phones in "SMS only" mode (name, last seen, SMS sent, blocked) | the Telegram worker writes, the app API lists and blocks |
 | `0002_agent.sql` | `agent_note`, `agent_turn` (the agent's memory), `agent_setting` (model, tier, order); admin gets `agent.manage` and `memory.manage` | app API (binding `DB`) and the Telegram worker (`worker/`, binding `AGENT_DB`) |
@@ -44,6 +45,7 @@ through this API, with a signed-in user's session and permissions.
 | `GET /api/agent/memory?kind=&search=` | `agent.tools.read` | the agent's notes, newest first (200), and the count of each kind |
 | `DELETE /api/agent/memory/<id>` | `memory.manage` | drop one note (audited) |
 | `GET /api/admin/phones` | `phone.manage` | the SMS-only phones, newest first: name, first / last seen, SMS sent, app version, blocked |
+| `GET` / `POST /api/admin/phone-agents`, `DELETE /api/admin/phone-agents/<id>` | `phone.manage` | Agent mode phones: list; make a token for this phone (shown once, only its SHA-256 kept); revoke one. The worker's `/api/phone/next` and `/result` accept it until revoked |
 | `PATCH /api/admin/phones/<id>` | `phone.manage` | block or unblock one (revision checked, audited); the worker then refuses its SMS (403) |
 
 The operational routes (`/api/reports`, `/api/workflows`, `/api/agent/chat` ...) check the permission

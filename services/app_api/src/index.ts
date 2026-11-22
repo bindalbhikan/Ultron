@@ -159,6 +159,41 @@ async function blockPhone(request: Request, env: Env, actor: Identity, id: strin
   return smsPhones(env);
 }
 
+// Agent mode phones: a token per phone (only its SHA-256 kept), for the worker's /api/phone/next and /result.
+const hex = (buf: ArrayBuffer) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+async function phoneAgents(env: Env) {
+  const { results } = await env.DB.prepare(`SELECT id,device,created_at AS createdAt,last_seen AS lastSeen,revoked
+    FROM phone_agent ORDER BY created_at DESC LIMIT 50`).all();
+  return json({ agents: results.map((r) => ({ ...r, revoked: Boolean(r.revoked) })) });
+}
+async function newPhoneAgent(request: Request, env: Env, actor: Identity) {
+  requirePermission(actor, 'phone.manage');
+  const input = await body(request);
+  const device = typeof input.device === 'string' ? input.device.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+  if (device.length < 2) throw new HttpError(400, 'Say which phone this is.');
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const id = crypto.randomUUID();
+  const hash = hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)));
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO phone_agent(id,token_hash,device,created_by,created_at) VALUES(?,?,?,?,?)')
+      .bind(id, hash, device, actor.id, Date.now()),
+    env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'phone.agent',?,?)`)
+      .bind(crypto.randomUUID(), actor.id, id, JSON.stringify({ device })),
+  ]);
+  return json({ id, token, device }, 201);      // the token is shown once, to the phone that asked
+}
+async function revokePhoneAgent(env: Env, actor: Identity, id: string) {
+  requirePermission(actor, 'phone.manage');
+  const results = await env.DB.batch([
+    env.DB.prepare('UPDATE phone_agent SET revoked=1 WHERE id=? AND revoked=0 RETURNING id').bind(id),
+    env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) SELECT ?,?,'phone.agent.revoke',?,'{}'
+      WHERE changes()=1`).bind(crypto.randomUUID(), actor.id, id),
+  ]);
+  if (results[0].results.length !== 1) throw new HttpError(404, 'This phone is already off.');
+  return phoneAgents(env);
+}
+
 async function roles(env: Env) {
   const { results } = await env.DB.prepare('SELECT id,name,permissions,revision FROM app_role ORDER BY name').all();
   return results.map((row) => ({ ...row, permissions: JSON.parse(String(row.permissions)) }));
@@ -272,6 +307,13 @@ async function route(request: Request, env: Env) {
   }
   const phoneMatch = path.match(/^\/api\/admin\/phones\/([0-9a-f-]{36})$/);
   if (phoneMatch && request.method === 'PATCH') return blockPhone(request, env, user, phoneMatch[1]);
+  if (path === '/api/admin/phone-agents' && request.method === 'GET') {
+    requirePermission(user, 'phone.manage');
+    return phoneAgents(env);
+  }
+  if (path === '/api/admin/phone-agents' && request.method === 'POST') return newPhoneAgent(request, env, user);
+  const agentMatch = path.match(/^\/api\/admin\/phone-agents\/([0-9a-f-]{36})$/);
+  if (agentMatch && request.method === 'DELETE') return revokePhoneAgent(env, user, agentMatch[1]);
   const noteMatch = path.match(/^\/api\/agent\/memory\/([a-f0-9]{6,16})$/);
   if (noteMatch && request.method === 'DELETE') return forgetNote(env, user, noteMatch[1]);
   const userMatch = path.match(/^\/api\/admin\/users\/([A-Za-z0-9_-]{1,128})$/);
