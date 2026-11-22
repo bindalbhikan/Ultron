@@ -51,7 +51,9 @@ Ultron Phone works.
 
 22 Nov 2026: the sheet also takes SMS from the Ultron app's "SMS only" mode, through the Telegram worker's
 `POST /api/sms` (`docs/bots/worker-and-dashboard.md`). The worker holds the URL and the key, so a phone needs
-no setup; the phone's name goes in the new **User** column (H). Code.gs version 16 is deployed at the same URL.
+no setup; the phone's name goes in the new **User** column (H), and in the Daily OTP sheet the name column of
+the agent's rows reads `Agent · <phone name>` (still the agent's mark: the team's rows, and the Myntra OTP bot's
+`Bhikan` rows, are never changed). Code.gs version 17 is deployed at the same URL.
 
 1. A Google Sheet -> Extensions -> Apps Script, the code of `apps-script/Code.gs`.
 2. In `setupSecret()` put a long random key, run it once, allow the permissions. In Project Settings ->

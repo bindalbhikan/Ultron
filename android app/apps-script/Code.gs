@@ -30,7 +30,11 @@ const POD_HEADERS = ['DATE', 'PORTAL', 'COURIER', 'AWB', 'OTP', 'STATUS', 'TYPE'
 const P = { day: 0, portal: 1, awb: 3, ref: 9 };                      // POD_HEADERS columns used to match
 const LOG_TAB = 'OTP LOG';
 const LOG_HEADERS = ['REF', 'DATE', 'PORTAL', 'STATUS', 'OTP', 'COUNT', 'SMS TIME', 'UPDATED'];
-const OTP_NAME = 'Agent';
+const OTP_NAME = 'Agent';   // the name column of the agent's own rows: 'Agent', or 'Agent · <phone name>'
+// A row of the Daily OTP sheet the agent wrote (any phone); the team's rows are never changed.
+function ours(name) {
+  return name === OTP_NAME || String(name).startsWith(OTP_NAME + ' · ');
+}
 const OTP_DAYS = 2;
 const TZ = 'Asia/Kolkata';
 
@@ -340,13 +344,13 @@ function returns(from, body, deviceTime, p) {
       notes.push(sp + ': left to the Myntra OTP bot');
       if (!otpRows.some(r => r[0] === day && r[3] === sms.otp)) filled = false;
     } else if (sms.otp) {
-      const put = putOtp(otpSheet, otpRows, day, sp, sms.status, otp, count, logged, fresh);
+      const put = putOtp(otpSheet, otpRows, day, sp, sms.status, otp, count, logged, fresh, p.user);
       notes.push(sp + ' ' + count + ' OTP ' + otp + ': ' + put);
       if (put === 'not in the sheet') filled = false;
     } else if (logged && logged[4] && count && fresh && !myntra && sheetable) {   // final POD: the count only
       const sheet = SpreadsheetApp.openById(OTP_SHEET_ID).getSheets()[0];
       const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getDisplayValues() : [];
-      putOtp(sheet, rows, day, sp, sms.status, logged[4], count, logged, true);
+      putOtp(sheet, rows, day, sp, sms.status, logged[4], count, logged, true, p.user);
     }
     const entry = [ref, day, sp, sms.status, otp, count, sms.otp ? deviceTime : (logged ? logged[6] : ''), new Date()];
     if (logged) {
@@ -372,17 +376,19 @@ function returns(from, body, deviceTime, p) {
 
 // One OTP row of the team's sheet: the row of the earlier code of this REF updated (a resend), a row
 // the team already wrote left alone, else a new row. Older SMS (write = false) are only looked up.
-function putOtp(sheet, rows, day, portal, status, otp, count, logged, write) {
+// user: the phone's name (SMS-only mode), shown in the name column as 'Agent · <name>'.
+function putOtp(sheet, rows, day, portal, status, otp, count, logged, write, user) {
+  const name = (user || '').trim() ? OTP_NAME + ' · ' + String(user).trim() : OTP_NAME;
   const at = (code) => rows.findIndex(r => r[0] === day && r[1] === portal && r[3] === code && r[4].toUpperCase() === status);
   const old = logged && logged[4] ? at(logged[4]) : -1;
   if (old >= 0 && write) {
     const team = rows.findIndex((r, i) => i !== old && r[0] === day && r[1] === portal && r[3] === otp && r[4].toUpperCase() === status);
-    if (team >= 0 && rows[old][5] === OTP_NAME) {                // the team already wrote the new code: ours goes
+    if (team >= 0 && ours(rows[old][5])) {                // the team already wrote the new code: ours goes
       sheet.deleteRow(old + 2);
       rows.splice(old, 1);
       return 'resent, ' + otp + ' already in the sheet (removed our ' + logged[4] + ')';
     }
-    if (rows[old][5] !== OTP_NAME) {                              // a row the team wrote: never changed
+    if (!ours(rows[old][5])) {                              // a row the team wrote: never changed
       return logged[4] === otp ? 'already in the sheet' : 'resent ' + otp + ': not written, the team\'s row has ' + logged[4];
     }
     sheet.getRange(old + 2, 3, 1, 2).setValues([[count, otp]]);
@@ -392,10 +398,10 @@ function putOtp(sheet, rows, day, portal, status, otp, count, logged, write) {
   }
   // the team's own row of this code (their portal name may differ); the agent's rows of other portals
   // with the same code (one POD, several portals) do not count
-  if (at(otp) >= 0 || rows.some(r => r[0] === day && r[3] === otp && r[5] !== OTP_NAME)) return 'already in the sheet';
+  if (at(otp) >= 0 || rows.some(r => r[0] === day && r[3] === otp && !ours(r[5]))) return 'already in the sheet';
   if (!write) return 'not in the sheet';
-  sheet.appendRow([day, portal, count, otp, status, OTP_NAME, '']);
-  rows.push([day, portal, count, otp, status, OTP_NAME]);
+  sheet.appendRow([day, portal, count, otp, status, name, '']);
+  rows.push([day, portal, count, otp, status, name]);
   return 'added';
 }
 
