@@ -273,9 +273,16 @@ def run(args) -> int:
         raise RuntimeError("RETURN_DRIVE_FOLDER_ID (Drive folder BINDAL EXPORTS/RETURN ANALYSIS) not set")
     root = DriveFolder(env("RETURN_DRIVE_FOLDER_ID"))
     supporting = root.subfolder("Supporting")
-    if not supporting or not supporting.download("MasterSheet.xlsx", work / "Supporting" / "MasterSheet.xlsx"):
+    # the Supporting files from the shared cache: downloaded again only when they changed on Drive
+    shared = output_dir("cache") / "return_supporting"
+    master = supporting.cached("MasterSheet.xlsx", shared) if supporting else None
+    if not master:
         raise RuntimeError("MasterSheet.xlsx not found in RETURN ANALYSIS/Supporting on Drive")
-    supporting.download("Cost Sheet.xlsx", work / "Supporting" / "Cost Sheet.xlsx")   # optional
+    cost = supporting.cached("Cost Sheet.xlsx", shared)                                  # optional
+    (work / "Supporting").mkdir(parents=True, exist_ok=True)
+    for f in (master, cost):
+        if f:
+            shutil.copy2(f, work / "Supporting" / f.name)
     if args.backfill_year:
         return run_backfill(args, root, work)
 

@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import logging
 import re
-import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -51,8 +50,16 @@ def mon(d) -> datetime:
     return datetime(d.year, d.month, 1)
 
 
-def portal_files(portal: str, first: date, last: date, dest: Path, kinds: set[str] | None = None) -> list[dict]:
-    """Every report file of the portal from first to last month, downloaded: one dict per file."""
+def report_cache() -> Path:
+    """The local copies of PORTAL REPORTS and the master, shared by every working of this machine: a file is downloaded
+    again only when it changed on Drive (core/drive.DriveFolder.cached)."""
+    return output_dir("cache") / "portal_reports"
+
+
+def portal_files(portal: str, first: date, last: date, dest: Path | None = None, kinds: set[str] | None = None) -> list[dict]:
+    """Every report file of the portal from first to last month, from the cache (dest, else report_cache()): one dict
+    per file."""
+    cache = (dest or report_cache()) / portal
     root = agent_folder(pr.ROOT)
     pf = root.subfolder(portal) if root else None
     out = []
@@ -73,22 +80,20 @@ def portal_files(portal: str, first: date, last: date, dest: Path, kinds: set[st
             if not (first <= month <= last or tail):
                 continue
             folder = DriveFolder(mf["id"], pf.http)
-            for name in folder.children():
+            for name, meta in folder.children().items():
                 m = NAME.match(name)
                 if not m or (tail and m["kind"] != "RETURN") or (kinds is not None and m["kind"] not in kinds):
                     continue
-                path = dest / portal / name
-                if not path.exists():                  # --work: a folder kept between runs is not fetched again
-                    path = folder.download(name, path)
+                path = folder.cached(name, cache, meta)    # downloaded only when the file changed on Drive
                 out.append({"path": path, "month": month, "kind": m["kind"], "account": m["acc"] or "",
                             "partial": bool(m["partial"]), "name": name})
     log.info("PORTAL REPORTS/%s: %d files %s..%s", portal, len(out), first, last)
     return sorted(out, key=lambda x: (x["month"], x["kind"], x["account"]))
 
 
-def master_sheet(dest: Path) -> pl.DataFrame:
+def master_sheet(dest: Path | None = None) -> pl.DataFrame:
     folder = agent_folder(FOLDER)
-    path = folder.download("MasterSheet.xlsx", dest / "MasterSheet.xlsx") if folder else None
+    path = folder.cached("MasterSheet.xlsx", dest or report_cache()) if folder else None
     if not path:
         raise RuntimeError(f"MasterSheet.xlsx not found in AGENT WORK/{FOLDER}")
     from ..core.tables import read_excel_text
@@ -591,8 +596,7 @@ def run(args) -> int:
     first = month_of(args.from_month)
     last = month_of(args.to_month) if args.to_month else (today.replace(day=1) - timedelta(days=1)).replace(day=1)
     portals = [p.strip().upper() for p in (args.portals or "MYNTRA,FLIPKART,AJIO").split(",") if p.strip()]
-    work = Path(args.work) if args.work else Path(tempfile.mkdtemp(prefix="business_report_"))
-    work.mkdir(parents=True, exist_ok=True)
+    work = Path(args.work) if args.work else None          # None: the shared cache (report_cache)
     master = master_sheet(work)
     out_dir = output_dir("business_report")
     lines, failed, cats = ["📊 <b>Business reporting</b>", ""], [], {}
@@ -650,5 +654,5 @@ def main(argv=None) -> int:
     p.add_argument("--from", dest="from_month", default="2025-01", metavar="YYYY-MM", help="first order month (default 2025-01)")
     p.add_argument("--to", dest="to_month", default="", metavar="YYYY-MM", help="last order month (default: last month)")
     p.add_argument("--no-upload", action="store_true", help="build only, Drive not changed (test run)")
-    p.add_argument("--work", default="", help="keep the downloaded reports in this folder (a test run again reads them)")
+    p.add_argument("--work", default="", help="another folder for the local copies of the reports (default: the shared cache)")
     return run_bot("Business reporting", p, run, argv)

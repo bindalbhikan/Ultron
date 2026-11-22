@@ -82,7 +82,7 @@ def load_reports(month: date, master, work: Path, *, files_by_portal=None, allow
         first = business.START.get(portal, date(2025, 1, 1))
         try:
             files = (files_by_portal.get(portal, []) if files_by_portal is not None else
-                     business.portal_files(portal, first, month, work, kinds=KINDS))
+                     business.portal_files(portal, first, month, kinds=KINDS))
             if portal == "MYNTRA":
                 rep, orders = business.build_myntra(files, master)
                 cats = business.category_map(orders, master)

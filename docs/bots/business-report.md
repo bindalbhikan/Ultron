@@ -33,7 +33,10 @@
   `<PORTAL> SALE RETURN ANALYSIS <FIRST MON-YY> TO <LAST MON-YY>.xlsx`; the portal's older one goes
   to the Drive trash.
 * Inputs: every month of Drive `AGENT WORK/PORTAL REPORTS` from `--from` (default 2025-01; a portal
-  starts where its reports do) to last month, and `BUSINESS REPORTING/MasterSheet.xlsx`.
+  starts where its reports do) to last month, and `BUSINESS REPORTING/MasterSheet.xlsx`. Read from the shared
+  local cache `output/cache/portal_reports/` (22 Nov 2026): a file is downloaded again only when its Drive copy
+  changed (id + modifiedTime, `DriveFolder.cached`), so the return analysis and a rebuild read the very same files
+  without fetching them twice; `--work` names another cache folder.
   Months kept on 3 Nov 2026: Myntra orders Apr-25 on (older refused; payments Jan-25), Flipkart orders
   Feb-26 on + the tax Sales Report (items before Feb-26 come from its events, SOURCE = Sales
   report; Sales Report Archived for Nov-25, Dec-25; payments May-26 on), AJIO orders from 13 Dec 2025 (Dec-25 PARTIAL, from the Ads Gap
