@@ -146,3 +146,21 @@ def test_a_report_is_downloaded_again_only_when_it_changed_on_drive(tmp_path):
     assert http.gets == 1 and first == again and first.read_bytes() == b"version 1"
     changed = folder.cached("R.csv", tmp_path, {**meta, "modifiedTime": "2026-11-02T09:00:00Z"})
     assert http.gets == 2 and changed.read_bytes() == b"version 2"
+
+
+def test_a_copy_with_drives_checksum_is_used_without_a_download(tmp_path):
+    import hashlib
+
+    from ultron.workings.core.drive import DriveFolder
+
+    class Http:
+        gets = 0
+
+        def get(self, *_a, **_k):
+            Http.gets += 1
+            raise AssertionError("downloaded although the copy is the same")
+
+    (tmp_path / "R.csv").write_bytes(b"same content")
+    folder = DriveFolder("folder", Http())
+    meta = {"id": "f1", "mimeType": "text/csv", "modifiedTime": "x", "md5Checksum": hashlib.md5(b"same content").hexdigest()}
+    assert folder.cached("R.csv", tmp_path, meta) == tmp_path / "R.csv" and Http.gets == 0

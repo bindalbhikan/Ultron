@@ -177,7 +177,7 @@ class DriveFolder:
         out, token = {}, None
         while True:
             params = {"q": f"'{self.folder_id}' in parents and trashed=false", "pageSize": 1000,
-                      "fields": "nextPageToken,files(id,name,mimeType,modifiedTime)",
+                      "fields": "nextPageToken,files(id,name,mimeType,modifiedTime,md5Checksum)",
                       "supportsAllDrives": "true", "includeItemsFromAllDrives": "true"}
             if token:
                 params["pageToken"] = token
@@ -211,17 +211,22 @@ class DriveFolder:
         return dest
 
     def cached(self, name: str, cache: Path, found: dict | None = None) -> Path | None:
-        """The named file from its copy in cache while the Drive file is the same one (id and modifiedTime), else
-        downloaded into cache; None when the folder has no such file. found: its entry of children(), when the
-        caller listed the folder already (one listing for all its files)."""
+        """The named file from its copy in cache while it is the Drive file's content, else downloaded into cache; None
+        when the folder has no such file. Same content: the copy's MD5 is Drive's md5Checksum (a copy put there by
+        another run counts too), or, for a file Drive gives no checksum, the same id and modifiedTime as when it was
+        downloaded. found: its entry of children(), when the caller listed the folder already."""
+        import hashlib
         import json
         found = found if found is not None else self.children().get(name)
         if not found or found["mimeType"] == self.FOLDER:
             return None
         path, stamp = cache / name, cache / f"{name}.drive.json"
-        key = {"id": found["id"], "modifiedTime": found.get("modifiedTime")}
-        if path.exists() and stamp.exists() and json.loads(stamp.read_text(encoding="utf-8")) == key:
-            return path
+        key = {"id": found["id"], "modifiedTime": found.get("modifiedTime"), "md5": found.get("md5Checksum")}
+        if path.exists():
+            if key["md5"] and hashlib.md5(path.read_bytes()).hexdigest() == key["md5"]:
+                return path
+            if not key["md5"] and stamp.exists() and json.loads(stamp.read_text(encoding="utf-8")) == key:
+                return path
         r = self.http.get(f"{API}/{found['id']}", params={"alt": "media", "supportsAllDrives": "true"}, timeout=600)
         self._check(r, f"download of {name}")
         cache.mkdir(parents=True, exist_ok=True)

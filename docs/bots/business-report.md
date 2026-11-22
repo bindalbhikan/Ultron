@@ -35,7 +35,7 @@
 * Inputs: every month of Drive `AGENT WORK/PORTAL REPORTS` from `--from` (default 2025-01; a portal
   starts where its reports do) to last month, and `BUSINESS REPORTING/MasterSheet.xlsx`. Read from the shared
   local cache `<output folder>/cache/portal_reports/` (22 Nov 2026): a file is downloaded again only when its Drive copy
-  changed (id + modifiedTime, `DriveFolder.cached`), so the return analysis and a rebuild read the very same files
+  changed (its MD5 against Drive's md5Checksum, `DriveFolder.cached`), so the return analysis and a rebuild read the very same files
   without fetching them twice; `--work` names another cache folder.
   Months kept on 3 Nov 2026: Myntra orders Apr-25 on (older refused; payments Jan-25), Flipkart orders
   Feb-26 on + the tax Sales Report (items before Feb-26 come from its events, SOURCE = Sales
