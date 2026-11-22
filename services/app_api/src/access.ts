@@ -8,21 +8,21 @@ export const PERMISSIONS = [
 export type Permission = typeof PERMISSIONS[number];
 export type AccessStatus = 'pending' | 'active' | 'disabled';
 export interface Identity {
-  id: string; name: string; email: string; emailVerified: boolean;
+  id: string; name: string; username: string; email: string; emailVerified: boolean;
   status: AccessStatus; roleId: string; roleName: string; revision: number; permissions: string[];
 }
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 export async function identity(env: Env, id: string): Promise<Identity> {
-  const row = await env.DB.prepare(`SELECT u.id,u.name,u.email,u.email_verified,a.status,a.role_id,a.revision,
+  const row = await env.DB.prepare(`SELECT u.id,u.name,COALESCE(u.display_username,u.username,'') AS username,u.email,u.email_verified,a.status,a.role_id,a.revision,
     r.name AS role_name,r.permissions FROM user u JOIN app_access a ON a.user_id=u.id
     JOIN app_role r ON r.id=a.role_id WHERE u.id=?`).bind(id).first<{
-      id: string; name: string; email: string; email_verified: number; status: AccessStatus;
+      id: string; name: string; username: string; email: string; email_verified: number; status: AccessStatus;
       role_id: string; revision: number; role_name: string; permissions: string;
     }>();
   if (!row) throw new HttpError(403, 'Account access is unavailable.');
-  return { id: row.id, name: row.name, email: row.email, emailVerified: Boolean(row.email_verified),
+  return { id: row.id, name: row.name, username: row.username, email: row.email, emailVerified: Boolean(row.email_verified),
     status: row.status, roleId: row.role_id, roleName: row.role_name, revision: row.revision,
     permissions: row.status === 'active' ? JSON.parse(row.permissions) : [] };
 }

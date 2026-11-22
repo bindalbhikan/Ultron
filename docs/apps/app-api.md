@@ -1,7 +1,14 @@
 # App API (`services/app_api`) — users, roles and the agent's control panel
 
-**Status:** 22 Nov 2026: built and tested on the real Workers runtime (wrangler's test harness, local D1);
-not deployed yet (`wrangler.jsonc` still has a placeholder `database_id`).
+**Status:** 23 Nov 2026: deployed at `https://ultron-app-api.bhikan-serein.workers.dev` (D1 `ultron`, secret
+`AUTH_SECRET`), tested on the real Workers runtime (wrangler's test harness, local D1).
+
+**Sign-in is by username** (better-auth's username plugin, 3-30 letters, digits, dots or underscores; case does not
+matter). Passwords are 10 to 128 characters. An account made without an email gets the internal address
+`<username>@users.ultron.invalid`. A public registration starts **pending** until an administrator approves it.
+The first administrator is made from the owner's own terminal: `.venv\Scripts\python scriptspp\create_admin.py`.
+It asks for the name, username and password (hidden), registers through the API, then promotes the account with
+wrangler. The password never reaches a file or a log.
 
 A Cloudflare Worker (TypeScript) that the Flutter app (`apps/ultron_app`) talks to. It runs on Cloudflare's
 own runtime (workerd), never on Node; Node only runs the tools on a PC or in CI (wrangler, tsc, tests).
@@ -14,6 +21,7 @@ The database is called `ultron`. Its tables come from `services/app_api/migratio
 | Migration | Tables | Used by |
 |---|---|---|
 | `0001_identity.sql` | `user`, `session`, `account`, `verification`, `rate_limit` (better-auth), `app_role`, `app_access`, `app_audit` | app API |
+| `0004_username.sql` | `user.username` (unique) and `display_username` | app API (sign-in by username) |
 | `0003_sms_phone.sql` | `sms_phone`: the phones in "SMS only" mode (name, last seen, SMS sent, blocked) | the Telegram worker writes, the app API lists and blocks |
 | `0002_agent.sql` | `agent_note`, `agent_turn` (the agent's memory), `agent_setting` (model, tier, order); admin gets `agent.manage` and `memory.manage` | app API (binding `DB`) and the Telegram worker (`worker/`, binding `AGENT_DB`) |
 
@@ -25,10 +33,10 @@ through this API, with a signed-in user's session and permissions.
 
 | Route | Permission | What |
 |---|---|---|
-| `POST /api/auth/sign-up/email`, `sign-in/email`, `sign-out`, `get-session`, `change-password` | none | better-auth. A public sign-up starts **pending** and cannot choose its role. |
+| `POST /api/auth/sign-up/email` (name, username, password, optional email), `sign-in/username`, `sign-in/email`, `sign-out`, `get-session`, `change-password` | none | better-auth. A public sign-up starts **pending** and cannot choose its role. |
 | `GET /api/me` | signed in | the user, role and permissions |
 | `GET /api/admin/users`, `PATCH /api/admin/users/<id>` | `users.manage` | list (50 a page, search), approve / disable / change role (revision checked) |
-| `POST /api/admin/users` | `users.manage` | an administrator creates an account: name, email, password (12-128), an approved role. It starts **active**. The password is never audited. |
+| `POST /api/admin/users` | `users.manage` | an administrator creates an account: name, username, optional email, password (10-128), an approved role. It starts **active**. The password is never audited. |
 | `GET /api/admin/roles`, `PUT /api/admin/roles/<id>` | `roles.manage` | roles and their permissions (admin / pending cannot change) |
 | `GET /api/admin/audit` | `users.manage` | the last 100 changes |
 | `GET /api/agent/settings` | `agent.tools.read` | model (`auto` or `provider:model`), tier (`smart` / `fast`), provider order, revision |

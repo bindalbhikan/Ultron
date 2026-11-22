@@ -15,7 +15,7 @@ async function call(path: string, method='GET', body?: Record<string, unknown>, 
   }, ...(body ? { body: JSON.stringify(body) } : {}) });
 }
 async function signup(email: string) {
-  const response=await call('/api/auth/sign-up/email','POST',{name:'Test User',email,password,roleId:'admin',status:'active',emailVerified:true});
+  const response=await call('/api/auth/sign-up/email','POST',{name:'Test User',email,username:email.split('@')[0],password,roleId:'admin',status:'active',emailVerified:true});
   assert.equal(response.status,200);
   return db.prepare('SELECT id FROM user WHERE email=?').bind(email).first<{id:string}>();
 }
@@ -25,8 +25,8 @@ async function signin(email: string) {
   const data=await response.json() as {token:string};
   return response.headers.get('set-auth-token') || data.token;
 }
-async function signin2(email: string, pass: string) {
-  const response=await call('/api/auth/sign-in/email','POST',{email,password:pass});
+async function signin2(username: string, pass: string) {
+  const response=await call('/api/auth/sign-in/username','POST',{username,password:pass});
   assert.equal(response.status,200);
   return response.headers.get('set-auth-token')!;
 }
@@ -103,18 +103,19 @@ test('invalid origins, unknown permissions and auth brute force are rejected',as
 
 test('an administrator creates an active account; others cannot',async()=>{
   const adminToken=await signin('admin@example.test');
-  const created=await call('/api/admin/users','POST',{name:'Store Manager',email:'Manager@Example.test',password:'a-long-public-test-pass',roleId:'manager'},adminToken);
+  const created=await call('/api/admin/users','POST',{name:'Store Manager',username:'Manager',password:'a-long-public-test-pass',roleId:'manager'},adminToken);
   assert.equal(created.status,201);
   const {user}=await created.json() as {user:{status:string;roleId:string;email:string}};
-  assert.equal(user.status,'active'); assert.equal(user.roleId,'manager'); assert.equal(user.email,'manager@example.test');
-  const managerSignin=await call('/api/auth/sign-in/email','POST',{email:'manager@example.test',password:'a-long-public-test-pass'});
+  assert.equal(user.status,'active'); assert.equal(user.roleId,'manager'); assert.equal(user.email,'manager@users.ultron.invalid');
+  assert.equal((user as unknown as {username:string}).username,'Manager');
+  const managerSignin=await call('/api/auth/sign-in/username','POST',{username:'manager',password:'a-long-public-test-pass'});
   assert.equal(managerSignin.status,200);
   const managerToken=managerSignin.headers.get('set-auth-token')!;
   assert.equal((await call('/api/me','GET',undefined,managerToken)).status,200);
-  assert.equal((await call('/api/admin/users','POST',{name:'Again',email:'manager@example.test',password:'a-long-public-test-pass',roleId:'viewer'},adminToken)).status,409);
-  assert.equal((await call('/api/admin/users','POST',{name:'Short',email:'s@example.test',password:'short',roleId:'viewer'},adminToken)).status,400);
-  assert.equal((await call('/api/admin/users','POST',{name:'Pending',email:'p@example.test',password:'a-long-public-test-pass',roleId:'pending'},adminToken)).status,400);
-  assert.equal((await call('/api/admin/users','POST',{name:'Sneaky',email:'x@example.test',password:'a-long-public-test-pass',roleId:'admin'},managerToken)).status,403);
+  assert.equal((await call('/api/admin/users','POST',{name:'Again',username:'MANAGER',password:'a-long-public-test-pass',roleId:'viewer'},adminToken)).status,409);
+  assert.equal((await call('/api/admin/users','POST',{name:'Short',username:'shorty',password:'nine-char',roleId:'viewer'},adminToken)).status,400);
+  assert.equal((await call('/api/admin/users','POST',{name:'Pending',username:'pend',password:'a-long-public-test-pass',roleId:'pending'},adminToken)).status,400);
+  assert.equal((await call('/api/admin/users','POST',{name:'Sneaky',username:'sneaky',password:'a-long-public-test-pass',roleId:'admin'},managerToken)).status,403);
   const audit=await db.prepare("SELECT detail FROM app_audit WHERE action='user.create'").all();
   assert.equal(audit.results.length,1);
   assert.ok(!String(audit.results[0].detail).includes('pass'));      // the password never reaches the audit
@@ -134,7 +135,7 @@ test('the control panel reads and saves the model settings, with revisions and c
   assert.equal((await save({model:'someone:x',tier:'smart',order:['groq'],revision:1})).status,400);
   assert.equal((await save({model:'auto',tier:'huge',order:['groq'],revision:1})).status,400);
   assert.equal((await save({model:'auto',tier:'smart',order:['groq','groq'],revision:1})).status,400);
-  const managerToken=await signin2('manager@example.test','a-long-public-test-pass');
+  const managerToken=await signin2('manager','a-long-public-test-pass');
   assert.equal((await call('/api/agent/settings','GET',undefined,managerToken)).status,200);
   assert.equal((await save({model:'auto',tier:'smart',order:['groq'],revision:1},managerToken)).status,403);
 });
@@ -149,7 +150,7 @@ test('the control panel lists the agent memory and an administrator drops a note
   const data=await list.json() as {notes:{id:string;tags:string[]}[];counts:Record<string,number>};
   assert.deepEqual(data.notes.map((n)=>n.id),['a1b2c3']); assert.deepEqual(data.notes[0].tags,['ajio']);
   assert.equal(data.counts.incident,1);
-  const managerToken=await signin2('manager@example.test','a-long-public-test-pass');
+  const managerToken=await signin2('manager','a-long-public-test-pass');
   assert.equal((await call('/api/agent/memory/d4e5f6','DELETE',undefined,managerToken)).status,403);
   assert.equal((await call('/api/agent/memory/d4e5f6','DELETE',undefined,adminToken)).status,200);
   assert.equal((await call('/api/agent/memory/d4e5f6','DELETE',undefined,adminToken)).status,404);
@@ -166,6 +167,17 @@ test('SMS-only phones are listed and an administrator blocks one',async()=>{
   assert.equal((await call(`/api/admin/phones/${id}`,'PATCH',{blocked:true,revision:1},adminToken)).status,200);
   assert.equal((await db.prepare('SELECT blocked FROM sms_phone WHERE id=?').bind(id).first<{blocked:number}>())!.blocked,1);
   assert.equal((await call(`/api/admin/phones/${id}`,'PATCH',{blocked:false,revision:1},adminToken)).status,409);
-  const viewerToken=await signin2('manager@example.test','a-long-public-test-pass');
+  const viewerToken=await signin2('manager','a-long-public-test-pass');
   assert.equal((await call('/api/admin/phones','GET',undefined,viewerToken)).status,200);   // managers have phone.manage
+});
+
+test('a ten-character password and a username are enough; a bad username is refused',async()=>{
+  const adminToken=await signin('admin@example.test');
+  assert.equal((await call('/api/admin/users','POST',{name:'Owner Two',username:'Owner.Two',password:'Ten@chars1',roleId:'viewer'},adminToken)).status,201);
+  assert.equal((await call('/api/auth/sign-in/username','POST',{username:'owner.two',password:'Ten@chars1'})).status,200);
+  assert.equal((await call('/api/admin/users','POST',{name:'Bad Name',username:'no spaces',password:'Ten@chars1',roleId:'viewer'},adminToken)).status,400);
+  const reg=await call('/api/auth/sign-up/email','POST',{name:'New Person',username:'newperson',password:'Ten@chars1'});
+  assert.equal(reg.status,200);
+  const row=await db.prepare("SELECT a.status FROM user u JOIN app_access a ON a.user_id=u.id WHERE u.username='newperson'").first<{status:string}>();
+  assert.equal(row!.status,'pending');                       // a public registration waits for an administrator
 });

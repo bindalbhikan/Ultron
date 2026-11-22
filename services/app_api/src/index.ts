@@ -2,7 +2,8 @@ import { createAuth, type Env } from './auth';
 import { HttpError, identity, PERMISSIONS, requirePermission, rolePermissions, type Identity, type Permission } from './access';
 
 const json = (value: unknown, status = 200) => Response.json(value, { status });
-const publicAuthPaths = new Set(['/sign-up/email', '/sign-in/email', '/sign-out', '/get-session', '/change-password']);
+const publicAuthPaths = new Set(['/sign-up/email', '/sign-in/email', '/sign-in/username', '/sign-out', '/get-session',
+  '/change-password']);
 async function body(request: Request): Promise<Record<string, unknown>> {
   if (!request.headers.get('content-type')?.includes('application/json')) throw new HttpError(415, 'Use JSON.');
   const reader = request.body?.getReader();
@@ -39,6 +40,15 @@ const PROVIDERS = ['anthropic', 'openai', 'google', 'nvidia', 'groq', 'cloudflar
 const TIERS = ['smart', 'fast'] as const;
 const KINDS = ['preference', 'fact', 'known_issue', 'decision', 'incident'] as const;
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,63}$/;
+const USERNAME = /^[A-Za-z0-9_.]{3,30}$/;
+// An account made without an email gets this internal address: .invalid is reserved and never mailed
+const internalEmail = (username: string) => `${username.toLowerCase()}@users.ultron.invalid`;
+function cleanUsername(value: unknown) {
+  if (typeof value !== 'string' || !USERNAME.test(value.trim())) {
+    throw new HttpError(400, 'Use a username of 3 to 30 letters, digits, dots or underscores.');
+  }
+  return value.trim();
+}
 
 // An administrator creates an account: the user signs in with the password given here (and should
 // change it); the account starts active with the chosen role. Public sign-up still starts pending.
@@ -46,24 +56,26 @@ async function createUser(request: Request, env: Env, actor: Identity) {
   requirePermission(actor, 'users.manage');
   const input = await body(request);
   const name = cleanName(input.name);
-  const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
-  if (!EMAIL.test(email)) throw new HttpError(400, 'Enter a valid email address.');
-  if (typeof input.password !== 'string' || input.password.length < 12 || input.password.length > 128) {
-    throw new HttpError(400, 'Use a password of 12 to 128 characters.');
+  const user = cleanUsername(input.username);
+  const typed = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
+  if (typed && !EMAIL.test(typed)) throw new HttpError(400, 'Enter a valid email address, or leave it empty.');
+  const email = typed || internalEmail(user);
+  if (typeof input.password !== 'string' || input.password.length < 10 || input.password.length > 128) {
+    throw new HttpError(400, 'Use a password of 10 to 128 characters.');
   }
   const role = typeof input.roleId === 'string'
     ? await env.DB.prepare("SELECT id FROM app_role WHERE id=? AND id!='pending'").bind(input.roleId).first() : null;
   if (!role) throw new HttpError(400, 'Choose an approved role.');
-  if (await env.DB.prepare('SELECT id FROM user WHERE email=?').bind(email).first()) {
-    throw new HttpError(409, 'An account with this email already exists.');
+  if (await env.DB.prepare('SELECT id FROM user WHERE email=? OR username=?').bind(email, user.toLowerCase()).first()) {
+    throw new HttpError(409, 'An account with this username or email already exists.');
   }
-  const created = await createAuth(env).api.signUpEmail({ body: { name, email, password: input.password } });
+  const created = await createAuth(env).api.signUpEmail({ body: { name, email, password: input.password, username: user } });
   const id = created.user.id;
   await env.DB.batch([
     env.DB.prepare(`UPDATE app_access SET status='active',role_id=?,revision=revision+1,updated_at=? WHERE user_id=?`)
       .bind(input.roleId, Date.now(), id),
     env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'user.create',?,?)`)
-      .bind(crypto.randomUUID(), actor.id, id, JSON.stringify({ email, roleId: input.roleId })),
+      .bind(crypto.randomUUID(), actor.id, id, JSON.stringify({ username: user, roleId: input.roleId })),
   ]);
   return json({ user: await identity(env, id) }, 201);
 }
@@ -216,7 +228,9 @@ async function route(request: Request, env: Env) {
       if (authPath === '/sign-up/email') {
         input.name = cleanName(input.name);
         // Public registration may never set access, roles, verification or session policy.
-        for (const key of Object.keys(input)) if (!['name','email','password'].includes(key)) delete input[key];
+        for (const key of Object.keys(input)) if (!['name','email','password','username'].includes(key)) delete input[key];
+        input.username = cleanUsername(input.username);
+        if (!input.email) input.email = internalEmail(String(input.username));
       }
       request = new Request(request.url, { method: 'POST', headers: request.headers, body: JSON.stringify(input) });
     }
@@ -231,10 +245,11 @@ async function route(request: Request, env: Env) {
     const page = Number(url.searchParams.get('page') || '0');
     const search = (url.searchParams.get('search') || '').slice(0, 100).replace(/[\\%_]/g, '\\$&');
     if (!Number.isSafeInteger(page) || page < 0 || page > 100000) throw new HttpError(400, 'Invalid page.');
-    const { results } = await env.DB.prepare(`SELECT u.id,u.name,u.email,u.email_verified AS emailVerified,
+    const { results } = await env.DB.prepare(`SELECT u.id,u.name,COALESCE(u.display_username,u.username,'') AS username,
+      u.email,u.email_verified AS emailVerified,
       a.status,a.role_id AS roleId,a.revision,r.name AS roleName FROM user u JOIN app_access a ON a.user_id=u.id
-      JOIN app_role r ON r.id=a.role_id WHERE u.name LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\'
-      ORDER BY u.created_at DESC,u.id LIMIT 51 OFFSET ?`).bind(`%${search}%`, `%${search}%`, page * 50).all();
+      JOIN app_role r ON r.id=a.role_id WHERE u.name LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\'
+      ORDER BY u.created_at DESC,u.id LIMIT 51 OFFSET ?`).bind(`%${search}%`, `%${search}%`, `%${search}%`, page * 50).all();
     return json({ users: results.slice(0, 50), hasMore: results.length > 50, page });
   }
   if (path === '/api/admin/roles' && request.method === 'GET') {
