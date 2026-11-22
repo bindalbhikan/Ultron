@@ -28,9 +28,10 @@ Bots: `sale`, `vms`, `ajio-tat`, `ajio-spf`, `returns`, `myntra-spf`, `ajio-ads`
 | sale, vms, ajio-tat | `--no-drive --no-telegram` |
 | ajio-spf | `--dry-run --no-upload --no-telegram` (posts nothing on AJIO) |
 
-Results and the log go to `output/<bot>/` (git-ignored, has customer data: delete when done).
+Results and the log go to `%LOCALAPPDATA%\Ultron\output\<bot>\` (outside the source code, `ultron/core/paths.py`;
+`ULTRON_OUTPUT` names another folder). It holds customer data: delete what you no longer need.
 
-`run_local.bat <bot> [options]` does the same and appends the output to `output\local_run.log`
+`run_local.bat <bot> [options]` does the same and appends the output to `%LOCALAPPDATA%\Ultron\output\local_run.log`
 (for Windows Task Scheduler).
 
 ## Rules

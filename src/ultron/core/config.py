@@ -77,7 +77,9 @@ class Config:
 
     @property
     def output(self) -> Path:
-        return self.root / "output"
+        """Where results and logs go (core/paths.py): never inside the source code."""
+        from .paths import output_root
+        return output_root()
 
     def worker(self) -> tuple[str, str]:
         """(url, token) of the Cloudflare worker that serves the model and the approvals."""

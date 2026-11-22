@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
 REPO = "bindalbhikan/Ultron"
 sys.path.insert(0, str(ROOT / "src"))
 from ultron.workings.core.secure import decrypt  # noqa: E402
@@ -43,7 +44,8 @@ def main(argv: list[str]) -> int:
             print("This run has no encrypted output (older runs kept plain files)")
             return 1
         data = decrypt(found[0].read_bytes(), key)
-    dest = ROOT / "output" / "runs" / run_id
+    from ultron.core.paths import output_root
+    dest = output_root() / "runs" / run_id
     dest.mkdir(parents=True, exist_ok=True)
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         tar.extractall(dest, filter="data")

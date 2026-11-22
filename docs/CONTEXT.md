@@ -121,7 +121,7 @@ detailed **hyper log** is kept on Drive in `AGENT WORK/AGENT LOGS/<month>/<date>
   folder / file ids and chat ids live in secrets.
 - Local: one `.env` (copy of `.env.example`) + `service_account.json` (Google service account
   `ajio-tat-bot@storied-port-441507-k7.iam.gserviceaccount.com`, Editor on the folders). Ignored by
-  git, as are `output/`, workbooks, CSVs, captures, `myntra_session*.json`, `scripts/*.txt`.
+  git, as are the output folder (outside the source code, `ultron/core/paths.py`), workbooks, CSVs, captures, `myntra_session*.json`, `scripts/*.txt`.
 - GitHub: repository **Secrets** (logins, Drive ids, `GOOGLE_SERVICE_ACCOUNT_JSON`,
   `GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN`, `ARTIFACT_KEY`) and **Variables** (tuning). `SPF_DRY_RUN=0` = AJIO SPF
   posts for real. A blank GitHub variable arrives as an empty string and falls back to the default.

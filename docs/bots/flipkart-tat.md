@@ -17,5 +17,5 @@ in the same folder is not touched.
   on time when by the SLA time.
 - Status rules, columns and colours are the AJIO engine's (`ajio_tat/tat_engine.py`).
 
-Options: `--days N`, `--from` / `--to YYYY-MM-DD`, `--no-drive` (local master in output/flipkart_tat),
+Options: `--days N`, `--from` / `--to YYYY-MM-DD`, `--no-drive` (local master in <output folder>/flipkart_tat),
 `--no-telegram`.

@@ -8,8 +8,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ultron.core.paths import output_root
+
 def _project_root() -> Path:
-    """The project folder the bots read .env, output/ and tracking_config.json in: ULTRON_ROOT, else
+    """The project folder the bots read .env and tracking_config.json in: ULTRON_ROOT, else
     the nearest folder from the current one up that holds agent.toml, else the current folder."""
     if os.getenv("ULTRON_ROOT"):
         return Path(os.environ["ULTRON_ROOT"]).resolve()
@@ -18,7 +20,7 @@ def _project_root() -> Path:
 
 
 ROOT = _project_root()
-OUTPUT = ROOT / "output"
+OUTPUT = output_root()                 # never inside the source code (ultron/core/paths.py)
 
 TRUE = ("1", "true", "yes", "on")
 FALSE = ("0", "false", "no", "off")

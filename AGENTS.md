@@ -23,7 +23,9 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 - **English only** in everything written: code, comments, logs, docs, commits, PRs, Telegram texts.
 - **Public repo**: never commit or print logins, cookies, tokens, customer data, Drive/chat ids.
   Bots run through `scripts/github/ci_run.sh` (encrypted output). `.env`, `service_account.json`,
-  `myntra_session*.json`, `output/` stay local (ignored).
+  `myntra_session*.json` stay local (ignored). A run's files never go inside the source code: the output folder is
+  the user's data folder (`%LOCALAPPDATA%\Ultron\output` on Windows; `ULTRON_OUTPUT` overrides it, GitHub's runner
+  uses the checkout's `output/` that `ci_run.sh` encrypts), `ultron/core/paths.py`.
 - **Data must never be wrong**: a failed or incomplete source is left out and named, never shown as 0.
 - **Numbers that connect agree** (owner, 22 Nov 2026): when a report shows a figure another report also shows (the
   return analysis' sold / returned units and the business report's Delivered + Customer Return / Customer Return of

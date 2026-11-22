@@ -154,7 +154,7 @@ The agent remembers between messages and runs (`core/memory.py`, `[memory]` in a
   OK; an incident seen before is called recurring) and notes every alert it sends.
 * **Where**: the worker's KV (`/api/memory`, versioned so two runs never overwrite each other),
   shared by GitHub Actions runs and every host, a fallback phone included; or
-  `output/agent/memory.json` on a machine with no worker. Never in git.
+  `<output folder>/agent/memory.json` on a machine with no worker (the user's data folder, `ultron/core/paths.py`). Never in git.
 * **Never kept**: text that looks like a password, OTP, token or key, or a phone number or email
   is refused before it is stored.
 * **Owner commands** (ultron serve): `/memory [words]` lists notes, `/forget <id>` drops one,

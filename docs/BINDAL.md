@@ -29,7 +29,7 @@ old versions under "Manage versions"), and Drive for desktop syncs it into the p
 | AJIO TAT | `AJIO_TAT_MASTER.xlsx` on Drive (`TAT_DRIVE_FILE_ID`) |
 
 Close a workbook in Excel before a run, otherwise Drive may hold two versions. Run logs and
-error lists go to `output/<bot>/` (on GitHub: the run's artifact).
+error lists go to `<output folder>/<bot>/` (this PC: `%LOCALAPPDATA%\Ultron\output`; on GitHub: the run's artifact).
 
 ## Layout
 

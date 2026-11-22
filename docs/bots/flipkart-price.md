@@ -62,7 +62,7 @@ today, still pending (moved closer / not changed) with the reasons, not live.
 **Run of 14 Nov 2026** (5 parts, 16:03–16:19): 3,566 at TP before, 2,532 listings changed;
 most increases need 2–3 days (2 a day). Part 1: 920 steps made, 247 "10%" refusals retried.
 
-**Output**: `output/flipkart-price/Flipkart Final TP update <date time>.xlsx` (sheets *Listings*:
+**Output**: `<output folder>/flipkart-price/Flipkart Final TP update <date time>.xlsx` (sheets *Listings*:
 start / now / status per listing; *Steps*: every step, its settlement and price, and Flipkart's
 answer; *Not live*) and a Telegram summary with the file.
 

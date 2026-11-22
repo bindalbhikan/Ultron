@@ -10,6 +10,7 @@
 # timeout-minutes, stops the bot first so a run that takes too long still leaves its log.
 set -u
 mkdir -p output secure
+export ULTRON_OUTPUT="$PWD/output"     # the bots write here; it is packed and encrypted below (ultron/core/paths.py)
 if [ -n "${RUN_TIMEOUT:-}" ]; then
   timeout -k 60 "$RUN_TIMEOUT" python run.py "$@" > output/run.log 2>&1
 else

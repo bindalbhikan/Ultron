@@ -17,8 +17,8 @@ can read the bots' logs or files, every workflow runs its bot through `ci_run.sh
    python scripts/github/run_output.py 39154511943
    ```
 
-3. It downloads and decrypts the artifact into `output/runs/<run id>/`:
-   `output/run.log` is the log, the rest are the files the run made.
+3. It downloads and decrypts the artifact into `<output folder>/runs/<run id>/` (this PC:
+   `%LOCALAPPDATA%\Ultron\output`): `output/run.log` in it is the log, the rest are the files the run made.
 
 Needs the GitHub CLI (`gh`, logged in) and `ARTIFACT_KEY` in `.env`. `output/` is git-ignored and
 holds customer data: delete it when done.

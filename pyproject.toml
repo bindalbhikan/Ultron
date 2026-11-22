@@ -17,6 +17,8 @@ dependencies = [
     # one retry helper, ultron.core.retry (docs/libraries/04-tenacity.md); pure Python
     "tenacity>=9.0",
     "python-dotenv>=1.0",
+    # where results go, outside the source code (ultron.core.paths): the OS's user data folder; pure Python
+    "platformdirs>=4.2",
 ]
 
 [project.optional-dependencies]
