@@ -1,5 +1,10 @@
 # Ultron Phone
 
+The new cross-platform control frontend is in `../apps/ultron_app/`. Its **Phone Work** section is the
+planned home for this app's agent/SMS/OTP/POD features. The new screens are frontend-only so far;
+these Kotlin services remain active until native migration and parity checks finish
+(`../docs/apps/ultron-app.md`).
+
 The Bindal agent's Android app (was "SMS to Sheet"). Two jobs:
 
 1. **Agent mode** - the phone works for the bots when a PC cannot: www.myntra.com refuses GitHub's

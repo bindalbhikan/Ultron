@@ -1,0 +1,8 @@
+.dev.vars
+.dev.vars.*
+.env*
+!.env.example
+node_modules/
+.wrangler/
+dist/
+desktop.ini

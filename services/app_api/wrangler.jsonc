@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ultron-app-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": { "enabled": false },
+  "vars": {
+    "APP_ORIGIN": "http://127.0.0.1:8788",
+    "AUTH_BASE_URL": "http://127.0.0.1:8790"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ultron-app-users",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

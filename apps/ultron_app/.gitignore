@@ -1,0 +1,27 @@
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+coverage/
+*.iml
+.idea/
+.vscode/
+android/.gradle/
+android/local.properties
+android/key.properties
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+macos/Pods/
+macos/Flutter/ephemeral/
+windows/flutter/ephemeral/
+**/xcuserdata/
+**/.DS_Store
+**/desktop.ini
+
+# The repository-wide data/ rule excludes runtime data; this directory is Dart source.
+!lib/src/data/
+!lib/src/data/*.dart
+

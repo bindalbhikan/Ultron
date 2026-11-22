@@ -26,16 +26,18 @@ repo on 25 Oct 2026):
 | `agent.toml` | Bindal's Ultron setup (company, channels, actions, tools) |
 | `worker/src/worker.js`, `worker/wrangler.toml` | Bindal's Telegram worker: the bot is Ultron, plus the daily schedule (`worker/README.md`) |
 | `dashboard/` | the dashboard worker |
+| `apps/ultron_app/` | Flutter control frontend: emerald mobile/desktop UI, required demo sign-in and Phone Work; live API/native migration pending ([guide](apps/ultron_app/README.md)) |
 | `scripts/`, `docs/` | manual tools; how each working runs (`docs/bots/`, which the watcher reads), `docs/BINDAL.md` |
 
-Install for the workings: `pip install -e ".[full,workings]"`. The workings are Bindal's own (its
+Install for the workings: `uv sync --all-extras --frozen` (the exact versions of `uv.lock`; on Windows
+`scripts/local/setup_pc.ps1` does it). The workings are Bindal's own (its
 sheets, accounts and names); making them seller-neutral is a later step, so a seller-neutral
 release of Ultron is `src/ultron` without `workings/`.
 
 ## Layout
 
 ```
-  pyproject.toml              the package: pip install .  ->  the `ultron` command
+  pyproject.toml              the package (uv.lock: its locked versions) ->  the `ultron` command
   package.json                worker/agent.js as an npm package, for a seller's own worker
   src/ultron/
     cli.py                    ultron serve | watch | chat | check | version
@@ -74,9 +76,11 @@ installed package names no seller.
 ## Install
 
 ```
-pip install "ultron[full] @ git+https://github.com/bindalbhikan/Ultron.git@v0.1.0"   # a release
-pip install -e ".[full]"                                                            # this checkout
+uv pip install "ultron[full] @ git+https://github.com/bindalbhikan/Ultron.git@v0.1.0"   # a release
+uv sync --extra full --frozen                                                         # this checkout, locked versions
 ```
+
+(uv: https://docs.astral.sh/uv/; plain `pip install` works the same where uv is not installed, e.g. Termux.)
 
 `[full]` adds pandas, openpyxl and cryptography (xlsx summaries, encrypted run artifacts); without
 it the install is pure Python (Android / Termux).
