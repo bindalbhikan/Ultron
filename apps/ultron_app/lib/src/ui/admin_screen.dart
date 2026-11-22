@@ -38,10 +38,11 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   }
   @override
   Widget build(BuildContext context)=>PageBody(maxWidth:1060,children:[
-    PageHeading(widget.rolesOnly?'Roles & permissions':'User management',subtitle:widget.rolesOnly?'Decide what each role can do in the app and agent.':'Review registrations, assign roles and suspend access.'),
+    PageHeading(widget.rolesOnly?'Roles & permissions':'User management',subtitle:widget.rolesOnly?'Decide what each role can do in the app and agent.':'Create accounts, review registrations, assign roles and suspend access.'),
     Wrap(spacing:10,runSpacing:10,children:[
       if(canAccess(ref,'users.manage')) OutlinedButton.icon(onPressed:()=>context.go('/app/admin'),icon:const Icon(LucideIcons.users,size:17),label:const Text('Users')),
       if(canAccess(ref,'roles.manage')) OutlinedButton.icon(onPressed:()=>context.go('/app/roles'),icon:const Icon(LucideIcons.shieldCheck,size:17),label:const Text('Roles & permissions')),
+      if(!widget.rolesOnly && canAccess(ref,'users.manage')) FilledButton.icon(onPressed:_createUser,icon:const Icon(LucideIcons.userPlus,size:17),label:const Text('Create user')),
       if(widget.rolesOnly && canAccess(ref,'roles.manage')) FilledButton.icon(onPressed:()=>_editRole(),icon:const Icon(LucideIcons.plus,size:17),label:const Text('Create role')),
       IconButton(onPressed:_loading?null:_load,tooltip:'Refresh access records',icon:const Icon(LucideIcons.refreshCw,size:19)),
     ]),
@@ -94,6 +95,36 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     if(changed==true && mounted){await ref.read(authProvider.notifier).refreshAccess();if(mounted)_load();}
   }
 
+  /// An administrator creates an active account; the person signs in with this password and should change it.
+  Future<void> _createUser() async {
+    final name=TextEditingController(), email=TextEditingController(), password=TextEditingController();
+    final roles=_roles.where((r)=>r.id!='pending').toList();
+    var roleId=roles.any((r)=>r.id=='viewer')?'viewer':(roles.isEmpty?'':roles.first.id), busy=false, hidden=true;
+    String? error;
+    final created=await showDialog<bool>(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setDialogState)=>AlertDialog(
+      title:const Text('Create user'),
+      content:SizedBox(width:440,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+        TextField(controller:name,enabled:!busy,decoration:const InputDecoration(labelText:'Full name')),
+        const SizedBox(height:14),TextField(controller:email,enabled:!busy,keyboardType:TextInputType.emailAddress,decoration:const InputDecoration(labelText:'Email')),
+        const SizedBox(height:14),TextField(controller:password,enabled:!busy,obscureText:hidden,decoration:InputDecoration(labelText:'First password (12+ characters)',
+          suffixIcon:IconButton(tooltip:hidden?'Show password':'Hide password',onPressed:()=>setDialogState(()=>hidden=!hidden),icon:Icon(hidden?LucideIcons.eye:LucideIcons.eyeOff,size:18)))),
+        const SizedBox(height:14),DropdownButtonFormField<String>(initialValue:roleId.isEmpty?null:roleId,isExpanded:true,decoration:const InputDecoration(labelText:'Role'),
+          items:roles.map((r)=>DropdownMenuItem(value:r.id,child:Text(r.name,overflow:TextOverflow.ellipsis))).toList(),onChanged:busy?null:(v)=>setDialogState(()=>roleId=v!)),
+        const SizedBox(height:14),const NotePanel('The account is active at once. Give the password to the person directly, never in a group chat, and ask them to change it after signing in.'),
+        if(error!=null) Padding(padding:const EdgeInsets.only(top:12),child:Text(error!,style:TextStyle(color:Theme.of(context).colorScheme.error))),
+      ]))),actions:[TextButton(onPressed:busy?null:()=>Navigator.pop(dialogContext),child:const Text('Cancel')),FilledButton(onPressed:busy?null:()async{
+        if(name.text.trim().length<2 || !email.text.contains('@') || password.text.length<12 || roleId.isEmpty){setDialogState(()=>error='Enter a name, an email, a password of 12+ characters and a role.');return;}
+        setDialogState((){busy=true;error=null;});
+        try{await ref.read(repositoryProvider).createUser(name:name.text,email:email.text,password:password.text,roleId:roleId);if(dialogContext.mounted)Navigator.pop(dialogContext,true);}
+        on FrontendException catch(e){if(dialogContext.mounted)setDialogState((){error=e.message;busy=false;});}
+        catch(_){if(dialogContext.mounted)setDialogState((){error='The account could not be created.';busy=false;});}
+      },child:Text(busy?'Creating…':'Create user'))],
+    )));
+    await Future<void>.delayed(const Duration(milliseconds:250));
+    name.dispose();email.dispose();password.dispose();
+    if(created==true && mounted)_load();
+  }
+
   Future<void> _editRole([AccessRole? role]) async {
     final name=TextEditingController(text:role?.name);
     final id=TextEditingController(text:role?.id);
@@ -107,7 +138,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         const SizedBox(height:16),if(role==null)TextField(controller:id,enabled:!busy,decoration:const InputDecoration(labelText:'Role ID',hintText:'warehouse-viewer')),
         const SizedBox(height:18),const NotePanel('App access is required for every feature. User and role management can grant administrative powers.'),
         const SizedBox(height:10),
-        for(final entry in accessPermissions.entries)CheckboxListTile(contentPadding:EdgeInsets.zero,value:selected.contains(entry.key),onChanged:busy?null:(value)=>setDialogState((){if(value!)selected.add(entry.key);else selected.remove(entry.key);}),title:Text(entry.value),subtitle:Text(entry.key,style:Theme.of(context).textTheme.bodySmall)),
+        for(final entry in accessPermissions.entries)CheckboxListTile(contentPadding:EdgeInsets.zero,value:selected.contains(entry.key),onChanged:busy?null:(value)=>setDialogState((){if(value!){selected.add(entry.key);}else{selected.remove(entry.key);}}),title:Text(entry.value),subtitle:Text(entry.key,style:Theme.of(context).textTheme.bodySmall)),
         if(error!=null)Text(error!,style:TextStyle(color:Theme.of(context).colorScheme.error)),
       ]))),actions:[TextButton(onPressed:busy?null:()=>Navigator.pop(dialogContext),child:const Text('Cancel')),FilledButton(onPressed:busy?null:()async{
         if(name.text.trim().length<2 || name.text.trim().length>80 || !RegExp(r'^[a-z][a-z0-9-]{1,39}$').hasMatch(id.text.trim())){setDialogState(()=>error='Enter a name (2–80 characters) and a lowercase role ID (2–40 letters, digits or hyphens).');return;}

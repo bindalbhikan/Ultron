@@ -103,4 +103,30 @@ class CloudflareRepository extends UnconfiguredRepository {
   Future<void> saveRole({required String id,required String name,required List<String> permissions,int? revision}) async {
     await _request('PUT','/api/admin/roles/${Uri.encodeComponent(id)}',body:{'name':name,'permissions':permissions,'revision':revision});
   }
+  @override
+  Future<AppUser> createUser({required String name,required String email,required String password,required String roleId}) async {
+    final response=await _request('POST','/api/admin/users',body:{'name':name.trim(),'email':email.trim(),'password':password,'roleId':roleId});
+    return AppUser.fromJson(Map<String,dynamic>.from(response.data['user'] as Map));
+  }
+  @override
+  Future<AgentSettings> agentSettings() async {
+    final response=await _request('GET','/api/agent/settings');
+    return AgentSettings.fromJson(Map<String,dynamic>.from(response.data['settings'] as Map));
+  }
+  @override
+  Future<AgentSettings> saveAgentSettings({required String model,required String tier,required List<String> order,required int revision}) async {
+    final response=await _request('PUT','/api/agent/settings',body:{'model':model.trim(),'tier':tier,'order':order,'revision':revision});
+    return AgentSettings.fromJson(Map<String,dynamic>.from(response.data['settings'] as Map));
+  }
+  @override
+  Future<AgentMemory> agentMemory({String kind='',String search=''}) async {
+    final query=Uri(queryParameters:{'kind':kind,'search':search}).query;
+    final response=await _request('GET','/api/agent/memory?$query');
+    return AgentMemory((response.data['notes'] as List).map((n)=>AgentNote.fromJson(Map<String,dynamic>.from(n as Map))).toList(),
+      counts:Map<String,int>.from((response.data['counts'] as Map? ?? const {}).map((k,v)=>MapEntry(k as String,(v as num).toInt()))));
+  }
+  @override
+  Future<void> forgetNote(String id) async {
+    await _request('DELETE','/api/agent/memory/${Uri.encodeComponent(id)}');
+  }
 }

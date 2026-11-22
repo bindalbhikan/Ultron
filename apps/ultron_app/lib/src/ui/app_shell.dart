@@ -32,6 +32,7 @@ const secondaryDestinations = <AppDestination>[
   (label: 'Phone Work', path: '/app/phone', icon: LucideIcons.smartphone),
   (label: 'Connections', path: '/app/connections', icon: LucideIcons.plug),
   (label: 'Schedule', path: '/app/schedule', icon: LucideIcons.calendarDays),
+  (label:'Control panel',path:'/app/control',icon:LucideIcons.slidersHorizontal),
   (label:'Users',path:'/app/admin',icon:LucideIcons.users),
   (label:'Roles',path:'/app/roles',icon:LucideIcons.shieldCheck),
 ];

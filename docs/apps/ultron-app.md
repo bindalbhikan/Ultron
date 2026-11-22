@@ -1,6 +1,6 @@
 # Ultron app — cross-platform frontend
 
-**Status:** Flutter frontend built in `apps/ultron_app/`; live app API/authentication and Android Phone service migration remain open. The Kotlin `android app/` remains active until its background work is migrated and verified.
+**Status:** Flutter frontend built in `apps/ultron_app/`. 22 Nov 2026: the **Control panel** (`/app/control`) and **Create user** (Users page) work against the app API (`docs/apps/app-api.md`). That API is tested but not deployed yet; the Android Phone service migration remains open. The Kotlin `android app/` remains active until its background work is migrated and verified.
 
 ## Product and toolchain
 
@@ -37,3 +37,19 @@ The Windows helper stages builds/previews outside Google Drive under the user's 
 Checks cover verification/route guards, sign-out, developer credits, source coverage, expired/already-decided approvals, fail-closed live mode, mobile/desktop layouts and large text. CI runs format, analysis, tests and web compilation on app changes and deploys nothing. It is excluded from bot command/watch checks by docs sync. Native runtime checks require actual native toolchains/devices; widget/web checks alone do not establish that behaviour.
 
 Local validation passed: formatting, Flutter analysis, 15 repository/widget tests and a release web build. The approved browser opened the built assets, completed demo sign-in/verification and rendered desktop/mobile dashboards without page errors.
+
+## Control panel and accounts (22 Nov 2026)
+
+* **Control panel** (`ui/control_screen.dart`, needs `agent.tools.read`) shows and sets the agent's model:
+  auto-select on or off (then one `provider:model` tried first), smart or fast tier, and the providers in
+  the order they are tried (drag to reorder, switch one off). Saving needs `agent.manage`. It also lists the
+  agent's memory by kind with a search; an administrator (`memory.manage`) removes a note. What is saved
+  reaches the agent within 5 minutes (`docs/bots/agent-models.md`).
+* **Create user** (Users page, `users.manage`) makes an active account with a first password and an
+  approved role. The person should change the password after signing in. Public registration still
+  starts pending.
+* `CloudflareRepository` calls `/api/admin/users` (POST), `/api/agent/settings` (GET / PUT, with the revision)
+  and `/api/agent/memory` (GET, DELETE); `test/control_test.dart` covers them. The demo repository answers
+  "This service is not connected" for these.
+* Flutter 3.50.0 is installed on the owner's PC at `%USERPROFILE%\.ultron	oolslutter`, on the user PATH,
+  checksum-verified; `tool/dev.ps1 analyze` / `test` find it there.

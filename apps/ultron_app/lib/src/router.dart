@@ -18,6 +18,7 @@ import 'ui/schedule_screen.dart';
 import 'ui/workflows_screen.dart';
 import 'ui/admin_screen.dart';
 import 'ui/account_screen.dart';
+import 'ui/control_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier(0);
@@ -107,6 +108,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(path:'/app/admin',builder:(context,state)=>const AdminScreen()),
           GoRoute(path:'/app/roles',builder:(context,state)=>const AdminScreen(rolesOnly:true)),
+          GoRoute(path:'/app/control',builder:(context,state)=>const ControlScreen()),
           GoRoute(path:'/app/denied',builder:(context,state)=>const AccountScreen(denied:true)),
         ],
       ),
