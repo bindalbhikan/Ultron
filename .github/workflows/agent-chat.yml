@@ -33,6 +33,11 @@ jobs:
       ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
       GITHUB_TOKEN: ${{ github.token }}
       AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+      # Drive: the business facts the agent answers sale / return / GMV questions from (tools/business.py)
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
       OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
       OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
       OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
