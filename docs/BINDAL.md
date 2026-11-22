@@ -94,7 +94,7 @@ Secrets never go in git: `.env`, `service_account.json` and all workbooks are ig
 ## Local run
 
 ```
-python -m venv .venv && .venv\Scripts\pip install -e ".[full,workings]"
+powershell -ExecutionPolicy Bypass -File scripts\local\setup_pc.ps1   (uv: .venv from uv.lock)
 .venv\Scripts\python run.py vms --no-telegram
 ```
 

@@ -18,6 +18,6 @@ renamed function argument); the fastest and most complete Python type checker.
   (`stream.reconfigure`, one sheet of `ExcelFile.parse`).
 * CI: `lint.yml` job `pyright` (pyright 1.1.414, on the bots' setup) on every push and pull request.
 
-**Use**: `python -m pyright` (after `pip install pyright`).
+**Use**: `.venv\Scripts\python -m pyright` (pyright is put in `.venv` by `scripts/local/setup_pc.ps1`).
 
 **Next**: `workings/` folder by folder — add each to `include` once it is clean.

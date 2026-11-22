@@ -9,10 +9,15 @@ $Spec = if ($env:ULTRON_SPEC) { $env:ULTRON_SPEC } else { "${Root}[full]" }
 if (-not (Test-Path "$Dir\agent.toml")) { throw "run this in the folder that holds agent.toml" }
 if (-not (Test-Path "$Dir\.env")) { Write-Host "note: no .env here yet - put the secrets in $Dir\.env (see Ultron's README.md)" }
 
-$py = if (Get-Command py -ErrorAction SilentlyContinue) { "py" } else { "python" }   # works in Windows PowerShell 5.1 too
-& $py -m venv .venv
-& "$Dir\.venv\Scripts\python.exe" -m pip install --upgrade pip | Out-Null
-& "$Dir\.venv\Scripts\pip.exe" install "$Spec"
+if (Get-Command uv -ErrorAction SilentlyContinue) {   # uv (docs/libraries/02-uv.md) when installed, else pip
+    uv venv -q .venv
+    uv pip install -q --python "$Dir\.venv\Scripts\python.exe" "$Spec"
+} else {
+    $py = if (Get-Command py -ErrorAction SilentlyContinue) { "py" } else { "python" }   # works in Windows PowerShell 5.1 too
+    & $py -m venv .venv
+    & "$Dir\.venv\Scripts\python.exe" -m pip install --upgrade pip | Out-Null
+    & "$Dir\.venv\Scripts\pip.exe" install "$Spec"
+}
 & "$Dir\.venv\Scripts\ultron.exe" check
 
 $action = New-ScheduledTaskAction -Execute "$PSScriptRoot\run_agent.bat" -WorkingDirectory $Dir

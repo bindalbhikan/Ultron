@@ -15,11 +15,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install "ruff==0.17.5"
-      - run: ruff check src tests run.py
+      - uses: astral-sh/setup-uv@v6
+      - run: uvx --python 3.12 ruff@0.17.5 check src tests run.py
 
   # docs/libraries/03-pyright.md: type check of the seller-neutral core ([tool.pyright] in pyproject.toml)
   pyright:

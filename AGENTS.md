@@ -83,18 +83,15 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   a supported app backend is connected. The owner wants Phone agent/SMS/OTP/POD work consolidated here;
   the existing `android app/` remains active until native migration and parity checks finish.
 
-- Project files sit on Google Drive (`G:\My Drive\...`), but Git metadata lives outside Drive at
-  `%USERPROFILE%\.ultron\git\AGENT-ULTRON-BINDAL.git`. The project's `.git` is a pointer file.
-  This prevents Drive's `desktop.ini` files from corrupting Git refs for any Git client; no cleanup
-  hook is needed. The pointer names `C:/ProgramData/Ultron/git/AGENT-ULTRON-BINDAL.git`, a junction
-  per PC made by `scripts/local/setup_pc.ps1` (the pointer syncs to every PC: never a `C:/Users/...` path).
-- **No PC is fixed** (owner, 22 Nov 2026): any PC may be the one in use, and any may be switched off for good.
-  Everything that matters stays on Drive (project files, `.env`, `service_account.json`, the coding agents'
-  memory in `AGENT-MEMORY/` next to this folder) or on GitHub (code history: **push before leaving a PC**;
-  never leave work only in local commits, stashes or branches). A PC holds only what
-  `scripts/local/setup_pc.ps1` rebuilds (Git metadata, the junctions, the venv in `%USERPROFILE%\.ultron\venv`);
-  on a new PC, or when Git says "not a git repository", run it first. Keep this local directory when moving or backing up the checkout. On another PC,
-  clone afresh rather than reuse the synced `.git` pointer. See `scripts/local/README.md`.
+- The project lives at **`D:\ULTRON`**, a normal Git clone off Google Drive (since 22 Nov 2026; the old Drive
+  folder `AGENT-ULTRON-BINDAL` is no longer worked in: Drive's `desktop.ini` broke Git refs there).
+- **No PC is fixed** (owner, 22 Nov 2026): any PC may be the one in use, and any may be switched off for good,
+  so nothing that matters lives only on a PC. Code history on GitHub (**push before leaving a PC**; never leave
+  work only in local commits, stashes or branches); `.env`, `service_account.json`, `myntra_session*.json` copied
+  to Drive `AGENT-PRIVATE/ULTRON` (`setup_pc.ps1 -Backup`); the coding agents' memory on Drive in
+  `AGENT-MEMORY/`. On a new PC: clone to `D:\ULTRON`, run `scripts/local/setup_pc.ps1` (`scripts/local/README.md`).
+- Python is **uv**: `.venv` in the project from `uv.lock` (`uv sync --all-extras --frozen`, done by
+  `setup_pc.ps1`); run with `.venv\Scripts\python`. Not plain `uv run` (it drops the extras), no pip.
 - Pull before you start (`git pull`): the Docs sync workflow may have committed on main.
 - In bash heredocs `\\n` / `\\b` become real control characters; write regexes with the Edit/Write tools.
 - Deploy the worker from `worker/` and the dashboard from `dashboard/` (`npx wrangler deploy`); the

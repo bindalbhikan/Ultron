@@ -8,16 +8,15 @@ Normally every bot runs on GitHub. To run one here (testing, or GitHub is down):
 powershell -ExecutionPolicy Bypass -File scripts\local\setup_pc.ps1
 ```
 
-(Git, the memory link and the venv: see "No PC is fixed" below. Run bots with
-`%USERPROFILE%\.ultron\venv\Scripts\python.exe`.)
+(Private files, the memory link and the uv venv: see "No PC is fixed" below.)
 
 `.env` (copy of `.env.example` with the logins) and `service_account.json` must be in the project
-folder.
+folder; the script restores them from Drive when they are missing.
 
 ## Run
 
 ```
-python run.py <bot> [options]
+.venv\Scripts\python run.py <bot> [options]
 ```
 
 Bots: `sale`, `vms`, `ajio-tat`, `ajio-spf`, `returns`, `myntra-spf`, `ajio-ads`.
@@ -36,40 +35,34 @@ Results and the log go to `output/<bot>/` (git-ignored, has customer data: delet
 
 ## Rules
 
-### Git metadata outside Google Drive
+### The project lives at `D:\ULTRON`, off Google Drive
 
-On this PC, Git metadata is stored at
-`%USERPROFILE%\.ultron\git\AGENT-ULTRON-BINDAL.git`; the repository's `.git` file points there.
-Google Drive previously inserted `desktop.ini` into Git refs, breaking pulls and fetches.
-Keeping metadata outside Drive prevents recurrence for all Git clients, without a cleanup hook
-or scheduled task. Normal `git pull`, `git fetch`, and `git push` commands work unchanged.
-
-The migration on 14 November 2026 verified the copied files and preserved the original metadata
-in ignored `output/git-metadata-backup-20261114`. The existing linked worktree was repaired to use
-the new metadata location. Local uncommitted changes were preserved.
-
-The `.git` pointer syncs through Drive to every PC, so it cannot name a per-user path: on 22 Nov 2026
-it named `C:/Users/<other user>/...` and Git failed on the second PC ("not a git repository"). It now
-points to `C:/ProgramData/Ultron/git/AGENT-ULTRON-BINDAL.git`, which on each PC is a junction to that
-user's own `%USERPROFILE%\.ultron\git\AGENT-ULTRON-BINDAL.git`. Do not edit `.git` to a
-`C:/Users/...` path again.
+Since 22 Nov 2026 the checkout is a normal Git clone at `D:\ULTRON`. It was on Google Drive before,
+where Drive's `desktop.ini` files broke Git refs and a Drive-synced `.git` pointer named one PC's user
+folder, so Git failed on the other PC. The old Drive folder (`AGENT\AGENT-ULTRON-BINDAL`) is no longer
+worked in.
 
 ### No PC is fixed: `setup_pc.ps1`
 
 Owner's rule (22 Nov 2026): any PC may be the one in use and any may be switched off for good, so nothing
-that matters lives only on a PC. On Drive: the project files, `.env`, `service_account.json`, and Claude
-Code's memory for this project (`..\AGENT-MEMORY\AGENT-ULTRON-BINDAL`). On GitHub: the code history, so
-**push before leaving a PC**. On a new PC (or when Git says "not a git repository") run once, no admin:
+that matters lives only on a PC:
+
+* code history: GitHub, so **push before leaving a PC** (no work left only in local commits or stashes);
+* private files (`.env`, `service_account.json`, `myntra_session*.json`): a copy on Drive in
+  `AGENT\AGENT-PRIVATE\ULTRON`; run the script with `-Backup` after changing one;
+* Claude Code's memory for this project: on Drive in `AGENT\AGENT-MEMORY\AGENT-ULTRON-BINDAL`, linked;
+* the venv: `.venv` in the project, rebuilt by uv from `uv.lock`.
+
+On a new PC, no admin:
 
 ```
-powershell -ExecutionPolicy Bypass -File scripts\local\setup_pc.ps1
+git clone https://github.com/bindalbhikan/Ultron.git D:\ULTRON
+powershell -ExecutionPolicy Bypass -File D:\ULTRON\scripts\local\setup_pc.ps1
 ```
 
-It rebuilds the Git metadata from GitHub if this PC has none (working files untouched; local edits show as
-changes), makes the `C:\ProgramData\Ultron` junction, links Claude Code's memory folder to Drive (notes
-already on the PC are copied there first), and builds the venv in `%USERPROFILE%\.ultron\venv` with uv.
-Safe to run again. Do not recreate a `.git` directory inside Drive or run cleanup commands that assume
-`.git` is a folder.
+It restores the private files from Drive, links the memory folder (notes already on the PC are copied to
+Drive first), installs uv if missing and builds `.venv` (all extras, plus pytest, ruff, pyright). Safe to
+run again. Do not set `UV_PROJECT_ENVIRONMENT`: the venv is the project's `.venv`.
 
 ### Bot runs
 

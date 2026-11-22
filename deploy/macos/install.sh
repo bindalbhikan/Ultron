@@ -10,9 +10,15 @@ ROOT=$(cd "$HERE/../.." && pwd)               # the Ultron checkout itself
 [ -f agent.toml ] || { echo "run this in the folder that holds agent.toml"; exit 1; }
 [ -f .env ] || echo "note: no .env here yet - put the secrets in $DIR/.env (see Ultron's README.md)"
 
-python3 -m venv .venv
-.venv/bin/pip install --upgrade pip >/dev/null
-.venv/bin/pip install "${ULTRON_SPEC:-$ROOT[full]}"
+# uv (docs/libraries/02-uv.md) when it is installed, else pip
+if command -v uv >/dev/null 2>&1; then
+  uv venv -q .venv
+  uv pip install -q --python .venv/bin/python "${ULTRON_SPEC:-$ROOT[full]}"
+else
+  python3 -m venv .venv
+  .venv/bin/pip install --upgrade pip >/dev/null
+  .venv/bin/pip install "${ULTRON_SPEC:-$ROOT[full]}"
+fi
 .venv/bin/ultron check
 
 PLIST="$HOME/Library/LaunchAgents/com.ultron.agent.plist"
