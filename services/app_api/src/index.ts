@@ -237,7 +237,7 @@ async function route(request: Request, env: Env) {
   if (roleMatch && request.method === 'PUT') return saveRole(request, env, user, roleMatch[1]);
   if (path === '/api/admin/audit' && request.method === 'GET') {
     requirePermission(user, 'users.manage');
-    const { results } = await env.DB.prepare('SELECT id,actor_id AS actorId,action,target_id AS targetId,detail,created_at AS createdAt FROM app_audit ORDER BY created_at DESC LIMIT 100').all();
+    const { results } = await env.DB.prepare('SELECT id,actor_id AS actorId,action,target_id AS targetId,detail,created_at AS createdAt FROM app_audit ORDER BY created_at DESC,rowid DESC LIMIT 100').all();
     return json({ events: results.map((row) => ({ ...row, detail: JSON.parse(String(row.detail)) })) });
   }
   // Explicit fail-closed gates for future operational adapters. No generic proxy or shared token reaches clients.

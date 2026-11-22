@@ -30,19 +30,22 @@ final routerProvider = Provider<GoRouter>((ref) {
       final phase = ref.read(authProvider).phase;
       final path = state.uri.path;
       final protected = path.startsWith('/app');
-      if (phase == SessionPhase.signedOut && (protected || path == '/verify' || path == '/access')) {
+      if (phase == SessionPhase.signedOut &&
+          (protected || path == '/verify' || path == '/access')) {
         return '/login';
       }
       if (phase == SessionPhase.verification && path != '/verify') {
         return '/verify';
       }
       if (phase == SessionPhase.signedIn) {
-        final user=ref.read(authProvider).user;
-        if(user?.hasAppAccess!=true && path!='/access')return '/access';
-        if(user?.hasAppAccess==true){
-          if(!protected)return '/app/home';
-          final permission=permissionForPath(path);
-          if(permission!=null && !user!.allows(permission))return '/app/denied';
+        final user = ref.read(authProvider).user;
+        if (user?.hasAppAccess != true && path != '/access') return '/access';
+        if (user?.hasAppAccess == true) {
+          if (!protected) return '/app/home';
+          final permission = permissionForPath(path);
+          if (permission != null && !user!.allows(permission)) {
+            return '/app/denied';
+          }
         }
       }
       return null;
@@ -50,8 +53,15 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/', redirect: (context, state) => '/login'),
       GoRoute(path: '/login', builder: (context, state) => const AuthScreen()),
-      GoRoute(path:'/register',builder:(context,state)=>const AuthScreen(mode:AuthScreenMode.register)),
-      GoRoute(path:'/access',builder:(context,state)=>const AccountScreen(pending:true)),
+      GoRoute(
+        path: '/register',
+        builder: (context, state) =>
+            const AuthScreen(mode: AuthScreenMode.register),
+      ),
+      GoRoute(
+        path: '/access',
+        builder: (context, state) => const AccountScreen(pending: true),
+      ),
       GoRoute(
         path: '/verify',
         builder: (context, state) =>
@@ -68,7 +78,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: '/app/home',
-            builder: (context, state) => ref.read(repositoryProvider).isDemo ? const HomeScreen() : const AccountScreen(),
+            builder: (context, state) => ref.read(repositoryProvider).isDemo
+                ? const HomeScreen()
+                : const AccountScreen(),
           ),
           GoRoute(
             path: '/app/agent',
@@ -92,7 +104,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/app/profile',
-            builder: (context, state) => ref.read(repositoryProvider).isDemo ? const ProfileScreen() : const AccountScreen(profile:true),
+            builder: (context, state) => ref.read(repositoryProvider).isDemo
+                ? const ProfileScreen()
+                : const AccountScreen(profile: true),
           ),
           GoRoute(
             path: '/app/connections',
@@ -106,10 +120,22 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/app/schedule',
             builder: (context, state) => const ScheduleScreen(),
           ),
-          GoRoute(path:'/app/admin',builder:(context,state)=>const AdminScreen()),
-          GoRoute(path:'/app/roles',builder:(context,state)=>const AdminScreen(rolesOnly:true)),
-          GoRoute(path:'/app/control',builder:(context,state)=>const ControlScreen()),
-          GoRoute(path:'/app/denied',builder:(context,state)=>const AccountScreen(denied:true)),
+          GoRoute(
+            path: '/app/admin',
+            builder: (context, state) => const AdminScreen(),
+          ),
+          GoRoute(
+            path: '/app/roles',
+            builder: (context, state) => const AdminScreen(rolesOnly: true),
+          ),
+          GoRoute(
+            path: '/app/control',
+            builder: (context, state) => const ControlScreen(),
+          ),
+          GoRoute(
+            path: '/app/denied',
+            builder: (context, state) => const AccountScreen(denied: true),
+          ),
         ],
       ),
     ],

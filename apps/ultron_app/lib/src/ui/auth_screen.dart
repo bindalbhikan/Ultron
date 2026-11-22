@@ -47,16 +47,28 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
     if (widget.mode == AuthScreenMode.register) {
-      setState(() { _resetBusy=true; _resetError=null; });
+      setState(() {
+        _resetBusy = true;
+        _resetError = null;
+      });
       try {
-        await ref.read(repositoryProvider).register(_name.text,_email.text,_password.text);
-        _password.clear(); _confirm.clear();
-        if (mounted) setState(() => _registered=true);
-      } on FrontendException catch(error) {
-        if (mounted) setState(() => _resetError=error.message);
+        await ref
+            .read(repositoryProvider)
+            .register(_name.text, _email.text, _password.text);
+        _password.clear();
+        _confirm.clear();
+        if (mounted) setState(() => _registered = true);
+      } on FrontendException catch (error) {
+        if (mounted) setState(() => _resetError = error.message);
       } catch (_) {
-        if (mounted) setState(() => _resetError='Registration could not finish. Try again.');
-      } finally { if (mounted) setState(() => _resetBusy=false); }
+        if (mounted) {
+          setState(
+            () => _resetError = 'Registration could not finish. Try again.',
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _resetBusy = false);
+      }
       return;
     }
     if (widget.mode == AuthScreenMode.verify) {
@@ -120,7 +132,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   const SizedBox(height: 54),
               ],
               Text(
-                register ? (_registered ? 'Registration received' : 'Create your account') : verify
+                register
+                    ? (_registered
+                          ? 'Registration received'
+                          : 'Create your account')
+                    : verify
                     ? 'Verify your sign-in'
                     : reset
                     ? (_resetSent ? 'Check your email' : 'Reset your password')
@@ -129,7 +145,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               ),
               const SizedBox(height: 7),
               Text(
-                register ? 'Your administrator decides your app and agent access.' : verify
+                register
+                    ? 'Your administrator decides your app and agent access.'
+                    : verify
                     ? 'Enter your 6-digit verification code.'
                     : reset
                     ? 'A fresh start for your workspace access.'
@@ -139,7 +157,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               ),
               const SizedBox(height: 27),
               if (_registered)
-                const NotePanel('Your account is awaiting administrator approval. Sign in to check your access status. Registration does not grant app or agent permissions.')
+                const NotePanel(
+                  'Your account is awaiting administrator approval. Sign in to check your access status. Registration does not grant app or agent permissions.',
+                )
               else if (_resetSent)
                 NotePanel(
                   demo
@@ -176,13 +196,28 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 ),
               ] else ...[
                 if (register) ...[
-                  const Text('Full name',style:TextStyle(fontWeight:FontWeight.w600)),
-                  const SizedBox(height:9),
-                  TextFormField(key: const Key('register-name'), controller:_name,
-                    autofillHints: const [AutofillHints.name],textInputAction:TextInputAction.next,
-                    decoration: const InputDecoration(hintText:'Your full name',prefixIcon:Icon(LucideIcons.userRound,size:19)),
-                    validator:(value)=>value!=null && value.trim().length>=2 && value.trim().length<=80 ? null : 'Enter your full name (2–80 characters).'),
-                  const SizedBox(height:22),
+                  const Text(
+                    'Full name',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 9),
+                  TextFormField(
+                    key: const Key('register-name'),
+                    controller: _name,
+                    autofillHints: const [AutofillHints.name],
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      hintText: 'Your full name',
+                      prefixIcon: Icon(LucideIcons.userRound, size: 19),
+                    ),
+                    validator: (value) =>
+                        value != null &&
+                            value.trim().length >= 2 &&
+                            value.trim().length <= 80
+                        ? null
+                        : 'Enter your full name (2–80 characters).',
+                  ),
+                  const SizedBox(height: 22),
                 ],
                 const Text(
                   'Work email',
@@ -223,7 +258,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     obscureText: !_visible,
                     enableSuggestions: false,
                     autocorrect: false,
-                    autofillHints: [register ? AutofillHints.newPassword : AutofillHints.password],
+                    autofillHints: [
+                      register
+                          ? AutofillHints.newPassword
+                          : AutofillHints.password,
+                    ],
                     textInputAction: TextInputAction.done,
                     decoration: InputDecoration(
                       hintText: 'Enter your password',
@@ -237,29 +276,51 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         ),
                       ),
                     ),
-                    validator: (value) => value != null && value.length >= (demo && !register ? 8 : 12) && value.length <= 128
+                    validator: (value) =>
+                        value != null &&
+                            value.length >= (demo && !register ? 8 : 12) &&
+                            value.length <= 128
                         ? null
-                        : demo && !register ? 'Use at least eight characters.' : 'Use 12–128 characters.',
+                        : demo && !register
+                        ? 'Use at least eight characters.'
+                        : 'Use 12–128 characters.',
                     onFieldSubmitted: (_) => busy ? null : _submit(),
                   ),
                   if (register) ...[
-                    const SizedBox(height:22),
-                    const Text('Confirm password',style:TextStyle(fontWeight:FontWeight.w600)),
-                    const SizedBox(height:9),
-                    TextFormField(key:const Key('register-confirm'),controller:_confirm,obscureText:!_visible,
-                      enableSuggestions:false,autocorrect:false,autofillHints:const [AutofillHints.newPassword],
-                      decoration:const InputDecoration(hintText:'Re-enter your password',prefixIcon:Icon(LucideIcons.lockKeyhole,size:19)),
-                      validator:(value)=>value==_password.text ? null : 'Passwords must match.'),
-                    const SizedBox(height:18),
-                    const NotePanel('New accounts have no access until an administrator approves a role. Verify your identity directly with your administrator; email verification is not configured yet.'),
-                  ],
-                  if (!register) Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: busy ? null : () => context.go('/reset'),
-                      child: const Text('Forgot password?'),
+                    const SizedBox(height: 22),
+                    const Text(
+                      'Confirm password',
+                      style: TextStyle(fontWeight: FontWeight.w600),
                     ),
-                  ),
+                    const SizedBox(height: 9),
+                    TextFormField(
+                      key: const Key('register-confirm'),
+                      controller: _confirm,
+                      obscureText: !_visible,
+                      enableSuggestions: false,
+                      autocorrect: false,
+                      autofillHints: const [AutofillHints.newPassword],
+                      decoration: const InputDecoration(
+                        hintText: 'Re-enter your password',
+                        prefixIcon: Icon(LucideIcons.lockKeyhole, size: 19),
+                      ),
+                      validator: (value) => value == _password.text
+                          ? null
+                          : 'Passwords must match.',
+                    ),
+                    const SizedBox(height: 18),
+                    const NotePanel(
+                      'New accounts have no access until an administrator approves a role. Verify your identity directly with your administrator; email verification is not configured yet.',
+                    ),
+                  ],
+                  if (!register)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: busy ? null : () => context.go('/reset'),
+                        child: const Text('Forgot password?'),
+                      ),
+                    ),
                 ],
               ],
               if (error != null) ...[
@@ -273,7 +334,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               if (!_resetSent && !_registered)
                 GradientButton(
                   key: const Key('auth-submit'),
-                  label: register ? 'Request an account' : verify
+                  label: register
+                      ? 'Request an account'
+                      : verify
                       ? 'Verify & sign in'
                       : reset
                       ? 'Send reset link'
@@ -282,8 +345,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   onPressed: _submit,
                 ),
               if (!verify && !reset && !register) ...[
-                const SizedBox(height:12),
-                TextButton(onPressed: busy ? null : () => context.go('/register'),child:const Text('Create an account')),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: busy ? null : () => context.go('/register'),
+                  child: const Text('Create an account'),
+                ),
               ],
               if (verify || reset || register) ...[
                 const SizedBox(height: 12),

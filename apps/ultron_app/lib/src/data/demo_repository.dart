@@ -26,11 +26,16 @@ class DemoRepository extends UltronRepository {
   AppUser? get currentUser => _signedIn ? demoAdmin : null;
 
   @override
-  Future<AppUser> refreshUser() async { _requireSession(); return demoAdmin; }
+  Future<AppUser> refreshUser() async {
+    _requireSession();
+    return demoAdmin;
+  }
 
   @override
   Future<void> register(String name, String email, String password) async {
-    throw const FrontendException('Registration needs the connected Cloudflare service. No account was created in this demo.');
+    throw const FrontendException(
+      'Registration needs the connected Cloudflare service. No account was created in this demo.',
+    );
   }
 
   @override

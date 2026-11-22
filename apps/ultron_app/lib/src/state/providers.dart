@@ -12,9 +12,14 @@ const appApiUrl = String.fromEnvironment('ULTRON_API_URL');
 final repositoryProvider = Provider<UltronRepository>((ref) {
   if (demoMode) return DemoRepository();
   if (appApiUrl.isEmpty) return UnconfiguredRepository();
-  final repository = CloudflareRepository(baseUrl: Uri.parse(appApiUrl), onUnauthorized: () {
-    Future.microtask(() { if (ref.mounted) ref.read(authProvider.notifier).expire(); });
-  });
+  final repository = CloudflareRepository(
+    baseUrl: Uri.parse(appApiUrl),
+    onUnauthorized: () {
+      Future.microtask(() {
+        if (ref.mounted) ref.read(authProvider.notifier).expire();
+      });
+    },
+  );
   ref.onDispose(repository.close);
   return repository;
 });
@@ -49,8 +54,11 @@ class AuthController extends Notifier<SessionState> {
           .signIn(email, password);
       if (!ref.mounted || request != _request) return;
       final user = ref.read(repositoryProvider).currentUser;
-      state = SessionState(phase: user == null ? SessionPhase.verification : SessionPhase.signedIn,
-        challenge: user == null ? challenge : null, user: user);
+      state = SessionState(
+        phase: user == null ? SessionPhase.verification : SessionPhase.signedIn,
+        challenge: user == null ? challenge : null,
+        user: user,
+      );
     } on FrontendException catch (error) {
       if (ref.mounted && request == _request) {
         state = SessionState(error: error.message);
@@ -76,7 +84,10 @@ class AuthController extends Notifier<SessionState> {
     try {
       await ref.read(repositoryProvider).verify(challenge, code);
       if (!ref.mounted || request != _request) return;
-      state = SessionState(phase: SessionPhase.signedIn, user: ref.read(repositoryProvider).currentUser);
+      state = SessionState(
+        phase: SessionPhase.signedIn,
+        user: ref.read(repositoryProvider).currentUser,
+      );
     } on FrontendException catch (error) {
       if (ref.mounted && request == _request) {
         state = SessionState(
@@ -103,23 +114,40 @@ class AuthController extends Notifier<SessionState> {
     if (ref.mounted) ref.invalidate(workspaceProvider);
   }
 
-  void expire() { ++_request; state = const SessionState(error: 'Your session ended. Sign in again.'); ref.invalidate(workspaceProvider); }
+  void expire() {
+    ++_request;
+    state = const SessionState(error: 'Your session ended. Sign in again.');
+    ref.invalidate(workspaceProvider);
+  }
 
   Future<void> refreshAccess() async {
     if (state.phase != SessionPhase.signedIn || state.busy) return;
-    final request=++_request;
-    final previous=state.user;
-    state=SessionState(phase:SessionPhase.signedIn,user:previous,busy:true);
+    final request = ++_request;
+    final previous = state.user;
+    state = SessionState(
+      phase: SessionPhase.signedIn,
+      user: previous,
+      busy: true,
+    );
     try {
-      final user=await ref.read(repositoryProvider).refreshUser();
-      if (ref.mounted && request==_request) state=SessionState(phase:SessionPhase.signedIn,user:user);
-    } on FrontendException catch(error) {
-      if (ref.mounted && request==_request) state=SessionState(phase:SessionPhase.signedIn,user:previous,error:error.message);
+      final user = await ref.read(repositoryProvider).refreshUser();
+      if (ref.mounted && request == _request) {
+        state = SessionState(phase: SessionPhase.signedIn, user: user);
+      }
+    } on FrontendException catch (error) {
+      if (ref.mounted && request == _request) {
+        state = SessionState(
+          phase: SessionPhase.signedIn,
+          user: previous,
+          error: error.message,
+        );
+      }
     }
   }
 }
 
-bool canAccess(WidgetRef ref, String permission) => ref.watch(authProvider).user?.allows(permission) ?? false;
+bool canAccess(WidgetRef ref, String permission) =>
+    ref.watch(authProvider).user?.allows(permission) ?? false;
 
 final workspaceProvider =
     AsyncNotifierProvider<WorkspaceController, WorkspaceData>(

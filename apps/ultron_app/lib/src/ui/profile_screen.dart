@@ -94,8 +94,18 @@ class ProfileScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 22),
         for (final destination in <(String, IconData, VoidCallback)>[
-          if(canAccess(ref,'users.manage'))('User management',LucideIcons.users,()=>context.go('/app/admin')),
-          if(canAccess(ref,'roles.manage'))('Roles & permissions',LucideIcons.shieldCheck,()=>context.go('/app/roles')),
+          if (canAccess(ref, 'users.manage'))
+            (
+              'User management',
+              LucideIcons.users,
+              () => context.go('/app/admin'),
+            ),
+          if (canAccess(ref, 'roles.manage'))
+            (
+              'Roles & permissions',
+              LucideIcons.shieldCheck,
+              () => context.go('/app/roles'),
+            ),
           (
             'Phone Work',
             LucideIcons.smartphone,
@@ -135,11 +145,7 @@ class ProfileScreen extends ConsumerWidget {
               const _NotificationSettings(),
             ),
           ),
-          (
-            'About Ultron',
-            LucideIcons.info,
-            () => showUltronAbout(context),
-          ),
+          ('About Ultron', LucideIcons.info, () => showUltronAbout(context)),
         ])
           ListTile(
             contentPadding: const EdgeInsets.symmetric(

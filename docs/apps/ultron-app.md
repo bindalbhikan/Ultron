@@ -51,5 +51,5 @@ Local validation passed: formatting, Flutter analysis, 15 repository/widget test
 * `CloudflareRepository` calls `/api/admin/users` (POST), `/api/agent/settings` (GET / PUT, with the revision)
   and `/api/agent/memory` (GET, DELETE); `test/control_test.dart` covers them. The demo repository answers
   "This service is not connected" for these.
-* Flutter 3.50.0 is installed on the owner's PC at `%USERPROFILE%\.ultron	oolslutter`, on the user PATH,
+* Flutter 3.50.0 is installed on the owner's PC at `%USERPROFILE%\.ultron\tools\flutter`, on the user PATH,lutter`, on the user PATH,
   checksum-verified; `tool/dev.ps1 analyze` / `test` find it there.

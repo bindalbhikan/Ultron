@@ -85,7 +85,7 @@ test('admin approves roles, revokes sessions immediately and retains the last ad
   assert.equal((await call('/api/agent/chat','POST',{},refreshed)).status,503);
   assert.equal((await call(`/api/admin/users/${member!.id}`,'PATCH',{status:'disabled',roleId:'viewer',revision:2},adminToken)).status,200);
   assert.equal((await call('/api/me','GET',undefined,refreshed)).status,401);
-  const audit=await db.prepare('SELECT action FROM app_audit ORDER BY created_at').all();
+  const audit=await db.prepare('SELECT action FROM app_audit ORDER BY created_at,rowid').all();
   assert.deepEqual(audit.results.map((r)=>r.action),['user.access','role.save','user.access']);
   assert.equal((await call('/api/admin/roles/admin','PUT',{name:'Unsafe',permissions:[],revision:1},adminToken)).status,400);
 });

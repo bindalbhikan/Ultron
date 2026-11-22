@@ -32,9 +32,13 @@ const secondaryDestinations = <AppDestination>[
   (label: 'Phone Work', path: '/app/phone', icon: LucideIcons.smartphone),
   (label: 'Connections', path: '/app/connections', icon: LucideIcons.plug),
   (label: 'Schedule', path: '/app/schedule', icon: LucideIcons.calendarDays),
-  (label:'Control panel',path:'/app/control',icon:LucideIcons.slidersHorizontal),
-  (label:'Users',path:'/app/admin',icon:LucideIcons.users),
-  (label:'Roles',path:'/app/roles',icon:LucideIcons.shieldCheck),
+  (
+    label: 'Control panel',
+    path: '/app/control',
+    icon: LucideIcons.slidersHorizontal,
+  ),
+  (label: 'Users', path: '/app/admin', icon: LucideIcons.users),
+  (label: 'Roles', path: '/app/roles', icon: LucideIcons.shieldCheck),
 ];
 
 class AppShell extends ConsumerWidget {
@@ -44,9 +48,12 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user=ref.watch(authProvider).user;
-    final navigation=destinations.where((item){final p=permissionForPath(item.path);return p==null || user?.allows(p)==true;}).toList();
-    final selected=navigation.indexWhere((item)=>item.path==location);
+    final user = ref.watch(authProvider).user;
+    final navigation = destinations.where((item) {
+      final p = permissionForPath(item.path);
+      return p == null || user?.allows(p) == true;
+    }).toList();
+    final selected = navigation.indexWhere((item) => item.path == location);
     final scheme = Theme.of(context).colorScheme;
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final rail = MediaQuery.sizeOf(context).width >= 650;
@@ -67,7 +74,9 @@ class AppShell extends ConsumerWidget {
               actions: [
                 IconButton(
                   tooltip: 'Approvals',
-                  onPressed: canAccess(ref,'approvals.read') ? () => context.go('/app/approvals') : null,
+                  onPressed: canAccess(ref, 'approvals.read')
+                      ? () => context.go('/app/approvals')
+                      : null,
                   icon: const Icon(LucideIcons.bell, size: 21),
                 ),
                 const SizedBox(width: 8),
@@ -110,7 +119,9 @@ class AppShell extends ConsumerWidget {
                       child: Row(
                         children: [
                           Text(
-                            ref.watch(repositoryProvider).isDemo?'Demo workspace':'Workspace',
+                            ref.watch(repositoryProvider).isDemo
+                                ? 'Demo workspace'
+                                : 'Workspace',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                           const Padding(
@@ -124,7 +135,9 @@ class AppShell extends ConsumerWidget {
                           const Spacer(),
                           IconButton(
                             tooltip: 'Review approvals',
-                            onPressed: canAccess(ref,'approvals.read') ? () => context.go('/app/approvals') : null,
+                            onPressed: canAccess(ref, 'approvals.read')
+                                ? () => context.go('/app/approvals')
+                                : null,
                             icon: const Icon(LucideIcons.bell, size: 20),
                           ),
                           const SizedBox(width: 12),
@@ -170,7 +183,7 @@ class AppShell extends ConsumerWidget {
       bottomNavigationBar: rail
           ? null
           : NavigationBar(
-              selectedIndex: selected<0?navigation.length-1:selected,
+              selectedIndex: selected < 0 ? navigation.length - 1 : selected,
               onDestinationSelected: (index) =>
                   context.go(navigation[index].path),
               destinations: navigation
@@ -216,7 +229,9 @@ class _Sidebar extends ConsumerWidget {
                 const SizedBox(width: 9),
                 Expanded(
                   child: Text(
-                    ref.watch(repositoryProvider).isDemo?'Demo workspace':'Workspace',
+                    ref.watch(repositoryProvider).isDemo
+                        ? 'Demo workspace'
+                        : 'Workspace',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -228,10 +243,16 @@ class _Sidebar extends ConsumerWidget {
           child: SingleChildScrollView(
             child: Column(
               children: [
-                for (final item in [
-                  ...destinations.take(4),
-                  ...secondaryDestinations,
-                ].where((item){final permission=permissionForPath(item.path);return permission==null || ref.watch(authProvider).user?.allows(permission)==true;}))
+                for (final item
+                    in [
+                      ...destinations.take(4),
+                      ...secondaryDestinations,
+                    ].where((item) {
+                      final permission = permissionForPath(item.path);
+                      return permission == null ||
+                          ref.watch(authProvider).user?.allows(permission) ==
+                              true;
+                    }))
                   _NavigationEntry(
                     item: item,
                     selected: item.path == location,
@@ -249,8 +270,11 @@ class _Sidebar extends ConsumerWidget {
             leading: extended ? const _OwnerAvatar() : null,
             title: extended
                 ? Text(
-                    ref.watch(authProvider).user?.name??'Account',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ref.watch(authProvider).user?.name ?? 'Account',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   )
                 : const Icon(LucideIcons.userRound, size: 21),
             subtitle: extended

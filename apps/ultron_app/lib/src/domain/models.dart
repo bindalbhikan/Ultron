@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+
 import 'access.dart';
 
 enum SessionPhase { signedOut, verification, signedIn }
