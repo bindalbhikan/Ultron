@@ -45,8 +45,10 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 - Never merge to main by yourself from CI; propose a PR (`ci-fix.yml`).
 - **Best-in-class libraries, built for any seller's scale** (owner, 16 Nov 2026): Ultron is sold to sellers
   far bigger than Bindal, so every library added or kept is the top choice for the job, not the familiar one.
-  Tables: **Polars** for new code (pandas is being moved out working by working, `docs/plan.md`); Excel read
-  with calamine, new files written with xlsxwriter, openpyxl only to edit an existing workbook in place.
+  Tables: **Polars** only (pandas is being moved out working by working, `docs/plan.md`); Excel read with
+  calamine (`pl.read_excel` through fastexcel, or python-calamine), written with xlsxwriter; no openpyxl in new code
+  (owner, 22 Nov 2026: only the top libraries, built for big data and speed): a workbook that changes is read and
+  written anew, not edited in place. No workaround either: the proper library way, from the root, even for small data.
   A switch never changes a number: the old and new code give the same output on the same input first.
   One page per library change, in order, with its status: `docs/libraries/` (run `python -m ruff check src tests run.py` before a commit).
 - **Centralise, do not copy**: a portal login comes from `workings/core/clients.py`, a retry from

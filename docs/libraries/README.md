@@ -11,18 +11,18 @@ seller-neutral core (`src/ultron/`, not `workings/`) still installs on Android (
 | # | Page | Change | Status |
 |---|---|---|---|
 | 1 | [01-ruff.md](01-ruff.md) | lint gate for bugs: **ruff** | ✅ 16 Nov 2026 |
-| 2 | [02-uv.md](02-uv.md) | installs and a lock file: **uv** | ✅ 16 Nov 2026 (cloud runners) |
-| 3 | [03-pyright.md](03-pyright.md) | type check: **pyright** | ✅ 16 Nov 2026 core (workings next) |
+| 2 | [02-uv.md](02-uv.md) | installs and a lock file: **uv** | ✅ 16 Nov 2026 cloud runners; 22 Nov 2026 everywhere (PC `.venv`, Lint, installers) |
+| 3 | [03-pyright.md](03-pyright.md) | type check: **pyright** | 🔧 16 Nov 2026 core; `workings/` folder by folder next |
 | 4 | [04-tenacity.md](04-tenacity.md) | one retry helper: **tenacity** (hand-written loops out) | ✅ 16 Nov 2026 |
 | 5 | [05-pydantic.md](05-pydantic.md) | portal answers checked: **pydantic v2** | ✅ 17 Nov 2026 |
-| 6 | [06-polars.md](06-polars.md) | tables: **Polars** instead of pandas, working by working | 🔧 in; benchmark; first working moved |
+| 6 | [06-polars.md](06-polars.md) | tables: **Polars** instead of pandas, working by working | 🔧 22 Nov 2026: business report, return analysis, grouping, zero TD, Flipkart price, ERP returns and the smaller workings moved (**fastexcel** in for `pl.read_excel`); left: AJIO / Flipkart TAT, OMSGuru `fetch_orders`, the `tables.py` bridge, then pandas out of `pyproject.toml` |
 | 7 | [07-duckdb-parquet.md](07-duckdb-parquet.md) | months / years of data: **DuckDB + Parquet** | ⏳ |
 | 8 | [08-httpx.md](08-httpx.md) | HTTP: **httpx** (curl_cffi kept where a bot check needs it) | ✅ 17 Nov 2026 |
 | 9 | [09-selectolax.md](09-selectolax.md) | HTML: **selectolax** instead of BeautifulSoup | ✅ 17 Nov 2026 |
 | 10 | [10-small.md](10-small.md) | **orjson**, **pypdfium2** text instead of pypdf, **pydantic-settings** | ✅ 17 Nov 2026 |
 | 11 | [11-flutter-frontend.md](11-flutter-frontend.md) | New Flutter frontend: Material UI, Riverpod, GoRouter, Lucide and bundled DM Sans | ✅ frontend dependencies added; live API/native migration pending |
+| 12 | (page with the first move) | xlsx without **openpyxl**: read by python-calamine / `pl.read_excel`, written by **xlsxwriter**, a workbook written anew instead of edited (owner, 22 Nov 2026: only the top libraries, built for big data) | 🔧 done in business report, return analysis, grouping; ~25 files left (SPF engines, AJIO ads, sale / VMS / Myntra reports workbooks, core helpers) |
 
 Kept as they are (already the top choice, or a hard rule): Patchright (browser, rule), Scrapy (Myntra buyer
-site, rule), python-calamine (xlsx read), xlsxwriter (new xlsx), openpyxl (only to edit an existing workbook in
-place: dashboards and charts stay), zxing-cpp, Pillow, pypdfium2, cryptography, PyNaCl, google-auth, gspread,
-curl_cffi.
+site, rule), python-calamine and fastexcel (xlsx read), xlsxwriter (xlsx write), zxing-cpp, Pillow, pypdfium2,
+cryptography, PyNaCl, google-auth, gspread, curl_cffi. openpyxl is on its way out (row 12).
