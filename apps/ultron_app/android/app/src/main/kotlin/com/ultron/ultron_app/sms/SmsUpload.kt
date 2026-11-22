@@ -22,8 +22,10 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Sends one SMS (with the POD of a courier SMS) to the worker's POST /api/sms, which records the phone and
- * passes the SMS to the SMS sheet with the phone's name. Runs only online; WorkManager retries with backoff.
- * The worker answers the sheet's own word: ok / duplicate / empty are done; 403 = this phone is blocked.
+ * passes the SMS to the SMS sheet with the phone's name. It waits while the phone is offline (a network
+ * constraint), survives reboots, and on any network or server trouble tries again with growing pauses
+ * (WorkManager caps them at 5 hours) - never giving up, so no SMS is lost to a long outage. It stops only on
+ * the worker's own refusal: 403 (this phone is blocked) or 400 (a bad request). ok / duplicate / empty are done.
  */
 class SmsUpload(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
@@ -38,10 +40,6 @@ class SmsUpload(context: Context, params: WorkerParameters) : CoroutineWorker(co
 
         if (worker.isBlank() || name.isBlank()) {
             SmsPrefs.addLog(ctx, "Not sent $from: SMS only mode is not set up")
-            return@withContext Result.failure()
-        }
-        if (runAttemptCount >= MAX_ATTEMPTS) {
-            SmsPrefs.addLog(ctx, "Gave up $from after $runAttemptCount tries")
             return@withContext Result.failure()
         }
 
@@ -80,12 +78,12 @@ class SmsUpload(context: Context, params: WorkerParameters) : CoroutineWorker(co
                     Result.failure()
                 }
                 else -> {
-                    SmsPrefs.addLog(ctx, "Retry $from: HTTP $code ${answer.take(40)}")
+                    SmsPrefs.addLog(ctx, "Retry $from (try ${runAttemptCount + 1}): HTTP $code ${answer.take(40)}")
                     Result.retry()
                 }
             }
         } catch (e: IOException) {
-            SmsPrefs.addLog(ctx, "Retry $from: ${e.javaClass.simpleName}")
+            SmsPrefs.addLog(ctx, "Retry $from (try ${runAttemptCount + 1}): no internet or worker (${e.javaClass.simpleName})")
             Result.retry()
         }
     }
@@ -114,7 +112,6 @@ class SmsUpload(context: Context, params: WorkerParameters) : CoroutineWorker(co
         private const val KEY_BODY = "body"
         private const val KEY_TIME = "time"
         private const val KEY_SIM = "sim"
-        private const val MAX_ATTEMPTS = 25
 
         fun enqueue(context: Context, from: String, body: String, timestamp: Long, sim: String) {
             val request = OneTimeWorkRequestBuilder<SmsUpload>()

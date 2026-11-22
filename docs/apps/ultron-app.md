@@ -116,6 +116,10 @@ How it works on the Android side (`android/app/src/main/kotlin/.../sms`, ported 
   network) fetches the POD of a courier SMS (`Pod`, PDFBox) and posts JSON to the worker's `POST /api/sms`.
 * `SmsService` is a foreground service ("ULTRON: SMS to sheet on") that keeps the process alive on phones that
   kill idle apps. `SmsBootReceiver` starts it again after a reboot or an update.
+* **Internet off**: an SMS waits on the phone until the network is back (also across reboots) and is then
+  sent; on any network or server trouble it tries again with growing pauses (up to 5 hours apart) and never gives
+  up. Only the worker's own refusal stops it: 403 (phone blocked) or 400 (bad request). Agent mode checks in every
+  minute while offline, and keeps sending a finished job's answers for up to 6 hours.
 * `SmsImport` sends the inbox of the last 60 days on a tap. The sheet skips SMS it already has.
 * `MainActivity`'s `ultron/sms` channel (`lib/src/data/sms_bridge.dart`) handles status, start, stop,
   permissions, battery and the old SMS.

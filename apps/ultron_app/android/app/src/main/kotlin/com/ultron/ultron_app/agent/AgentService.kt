@@ -140,16 +140,21 @@ class AgentService : Service() {
         }
     }
 
-    /** call() with a few tries: one dropped connection must not lose the answers of a job that took hours. */
+    /** call() until it goes through: the internet can be off for a while, and the answers of a job that took
+     *  hours must not be lost. Pauses grow to 10 minutes; after 6 hours the job is given up (the worker keeps
+     *  results a day and hands an unanswered job to a phone again). A revoked token stops at once. */
     private fun send(action: String, query: String, body: String) {
-        for (attempt in 1..SEND_TRIES) {
+        val started = System.currentTimeMillis()
+        var attempt = 0
+        while (true) {
             try {
                 call(action, query, body)
                 return
             } catch (e: Exception) {
-                if (attempt == SEND_TRIES || e is Refused) throw e
+                attempt++
+                if (e is Refused || System.currentTimeMillis() - started > SEND_FOR_MS) throw e
                 AgentPrefs.addLog(this, "Agent: sending answers failed (${e.javaClass.simpleName}), try $attempt")
-                Thread.sleep(30_000L * attempt)
+                Thread.sleep(minOf(30_000L * attempt, 600_000L))
             }
         }
     }
@@ -208,7 +213,7 @@ class AgentService : Service() {
         private const val NOTE_ID = 8
         private const val POLL_MS = 60_000L
         private const val PART = 300
-        private const val SEND_TRIES = 5
+        private const val SEND_FOR_MS = 6 * 60 * 60 * 1000L
         const val ACTION_STOP = "stop"
 
         fun start(context: Context) = ContextCompat.startForegroundService(context, Intent(context, AgentService::class.java))
