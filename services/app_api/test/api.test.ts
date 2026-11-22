@@ -155,3 +155,17 @@ test('the control panel lists the agent memory and an administrator drops a note
   assert.equal((await call('/api/agent/memory/d4e5f6','DELETE',undefined,adminToken)).status,404);
   assert.equal((await call('/api/agent/memory?kind=bogus','GET',undefined,adminToken)).status,400);
 });
+
+test('SMS-only phones are listed and an administrator blocks one',async()=>{
+  const adminToken=await signin('admin@example.test');
+  const id='0b7e3c1a-2f4d-4e5a-9b8c-1d2e3f4a5b6c';
+  await db.prepare("INSERT INTO sms_phone(id,name,first_seen,last_seen,sent) VALUES(?,'Ramesh SIM2',1,2,5)").bind(id).run();
+  const list=await call('/api/admin/phones','GET',undefined,adminToken);
+  const {phones}=await list.json() as {phones:{id:string;name:string;sent:number;blocked:boolean;revision:number}[]};
+  assert.equal(phones[0].name,'Ramesh SIM2'); assert.equal(phones[0].blocked,false); assert.equal(phones[0].sent,5);
+  assert.equal((await call(`/api/admin/phones/${id}`,'PATCH',{blocked:true,revision:1},adminToken)).status,200);
+  assert.equal((await db.prepare('SELECT blocked FROM sms_phone WHERE id=?').bind(id).first<{blocked:number}>())!.blocked,1);
+  assert.equal((await call(`/api/admin/phones/${id}`,'PATCH',{blocked:false,revision:1},adminToken)).status,409);
+  const viewerToken=await signin2('manager@example.test','a-long-public-test-pass');
+  assert.equal((await call('/api/admin/phones','GET',undefined,viewerToken)).status,200);   // managers have phone.manage
+});

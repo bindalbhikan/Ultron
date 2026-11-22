@@ -31,3 +31,9 @@ return %. The run strip shows every bot's last run (`run_<key>`, pushed by `core
 * `/api/memory/notes`, `/api/memory/chats/<chat>`, `GET /api/settings` (`DASHBOARD_TOKEN`): the agent's
   memory and the control panel's model settings in D1 (binding `AGENT_DB`, database `ultron`; tables from
   `services/app_api/migrations`). See `docs/bots/agent-models.md`.
+* `POST /api/sms` (no token): one SMS from a phone in the Ultron app's "SMS only" mode. The body is JSON:
+  `phone` (the app's random UUID), `name` (2-40 characters, typed once on the phone), `from`, `body`, `time`, `sim`,
+  and the POD fields `pdf`, `pdftext`, `pdferror`, `html`. The worker records the phone in D1 `sms_phone` and refuses
+  a blocked one (403) or more than 300 SMS an hour (429). It then posts the SMS to the SMS sheet's Apps Script
+  (worker secrets `SMS_WEBAPP_URL`, `SMS_WEBAPP_KEY`, the same values as in `.env`) with `user` = the name, and
+  answers the script's own word (`ok`, `duplicate`, `empty`, `error: ...`). The phone never holds the sheet's secret.

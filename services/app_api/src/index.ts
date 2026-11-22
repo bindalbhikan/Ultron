@@ -125,6 +125,28 @@ async function forgetNote(env: Env, actor: Identity, id: string) {
   return json({ deleted: id });
 }
 
+// The phones in "SMS only" mode (sms_phone, written by the Telegram worker's POST /api/sms): newest first;
+// a blocked phone's SMS are refused by the worker.
+async function smsPhones(env: Env) {
+  const { results } = await env.DB.prepare(`SELECT id,name,first_seen AS firstSeen,last_seen AS lastSeen,sent,
+    blocked,app_version AS appVersion,revision FROM sms_phone ORDER BY last_seen DESC LIMIT 200`).all();
+  return json({ phones: results.map((r) => ({ ...r, blocked: Boolean(r.blocked) })) });
+}
+async function blockPhone(request: Request, env: Env, actor: Identity, id: string) {
+  requirePermission(actor, 'phone.manage');
+  const input = await body(request);
+  if (typeof input.blocked !== 'boolean') throw new HttpError(400, 'Say whether the phone is blocked.');
+  const expected = revision(input.revision);
+  const results = await env.DB.batch([
+    env.DB.prepare('UPDATE sms_phone SET blocked=?,revision=revision+1 WHERE id=? AND revision=? RETURNING id')
+      .bind(input.blocked ? 1 : 0, id, expected),
+    env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) SELECT ?,?,'phone.block',?,? WHERE changes()=1`)
+      .bind(crypto.randomUUID(), actor.id, id, JSON.stringify({ blocked: input.blocked })),
+  ]);
+  if (results[0].results.length !== 1) throw new HttpError(409, 'This phone changed. Refresh before saving.');
+  return smsPhones(env);
+}
+
 async function roles(env: Env) {
   const { results } = await env.DB.prepare('SELECT id,name,permissions,revision FROM app_role ORDER BY name').all();
   return results.map((row) => ({ ...row, permissions: JSON.parse(String(row.permissions)) }));
@@ -229,6 +251,12 @@ async function route(request: Request, env: Env) {
     requirePermission(user, 'agent.tools.read');
     return agentMemory(env, url);
   }
+  if (path === '/api/admin/phones' && request.method === 'GET') {
+    requirePermission(user, 'phone.manage');
+    return smsPhones(env);
+  }
+  const phoneMatch = path.match(/^\/api\/admin\/phones\/([0-9a-f-]{36})$/);
+  if (phoneMatch && request.method === 'PATCH') return blockPhone(request, env, user, phoneMatch[1]);
   const noteMatch = path.match(/^\/api\/agent\/memory\/([a-f0-9]{6,16})$/);
   if (noteMatch && request.method === 'DELETE') return forgetNote(env, user, noteMatch[1]);
   const userMatch = path.match(/^\/api\/admin\/users\/([A-Za-z0-9_-]{1,128})$/);

@@ -17,7 +17,7 @@
 // rework=1 (scripts/phone/rework_sms.py): an SMS already on the SMS tab worked again, with its POD.
 
 const SHEET_NAME = 'SMS';
-const HEADERS = ['Received At', 'From', 'Message', 'Device Time', 'SIM', 'Agent', 'OTP SHEET'];
+const HEADERS = ['Received At', 'From', 'Message', 'Device Time', 'SIM', 'Agent', 'OTP SHEET', 'User'];
 const DEDUPE_LOOKBACK = 50;
 
 // Project Settings -> Script Properties: the ids are not in this public file (README, step 2)
@@ -50,6 +50,7 @@ function doPost(e) {
     const body = (p.body || '').trim();
     const deviceTime = (p.time || '').trim();
     const sim = (p.sim || '').trim();   // "SIM 1" / "SIM 2" (Ultron Phone 2.0+)
+    const user = (p.user || '').trim();  // the phone's name (the Ultron app's "SMS only" mode, through the worker)
 
     if (!body) {
       return respond('empty');
@@ -64,6 +65,7 @@ function doPost(e) {
       }
       sheet.appendRow([new Date(), asText(from), asText(body), asText(deviceTime), asText(sim)]);
       row = sheet.getLastRow();
+      if (user) sheet.getRange(row, 8).setValue(asText(user));
     }
     let done = { note: '', filled: null };
     try {
@@ -91,7 +93,7 @@ function getSheet() {
     sheet.appendRow(HEADERS);
     sheet.setFrozenRows(1);
   } else if (sheet.getRange(1, HEADERS.length).getValue() !== HEADERS[HEADERS.length - 1]) {
-    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);   // a sheet from before the Agent columns
+    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);   // a sheet from before the Agent / User columns
   }
   return sheet;
 }

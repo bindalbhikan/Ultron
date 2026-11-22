@@ -7,6 +7,10 @@
 //   /api/memory/notes[/<id>]    the agent's long-term notes (ultron.core.memory): GET all, PUT one, DELETE one
 //   /api/memory/chats/<chat>    the last messages of a chat: GET, POST one, DELETE all
 //   GET /api/settings   the model settings the app's control panel saved (core/llm.settings)
+//   POST /api/sms       one SMS from a phone in the app's "SMS only" mode (no account, no token): the
+//                       worker records the phone (D1 sms_phone), and passes the SMS to the SMS sheet's
+//                       Apps Script with SMS_WEBAPP_URL / SMS_WEBAPP_KEY (worker secrets), the phone's
+//                       name in the sheet's User column; it answers the script's word (ok / duplicate ...)
 //                       memory and settings live in the D1 database bound as `db` (tables in
 //                       services/app_api/migrations/0002_agent.sql); the old KV document is moved in once
 //   plain text          an owner's message starts the agent-chat workflow, which answers in the chat
@@ -35,6 +39,7 @@ export function makeAgent({
   ref = "main",
   models = FREE_MODELS,                  // Workers AI models allowed on /api/ai
   approvalHours = 24,
+  smsPerHour = 300,                      // SMS one phone may send in an hour ("SMS only" mode)
   userAgent = "ultron-worker",
 } = {}) {
   const allowedModels = new Set(models);
@@ -281,12 +286,59 @@ export function makeAgent({
     return Response.json(Object.fromEntries(results.map((r) => [r.key, JSON.parse(r.value)])));
   }
 
+  // "SMS only" phones: no account, so the phone never holds the sheet's secret; it sends its random id,
+  // the name its person typed, and the SMS. A blocked phone, a bad id or too many SMS in an hour is refused.
+  const PHONE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const SMS_FIELDS = ["from", "body", "time", "sim", "pdf", "pdftext", "pdferror", "html", "rework"];
+  async function sms(request, env) {
+    if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
+    if (!env.SMS_WEBAPP_URL || !env.SMS_WEBAPP_KEY) return bad("the SMS sheet is not set up on the worker", 503);
+    let m;
+    try {
+      m = await jsonBody(request, 15_000_000);         // a POD PDF rides along, base64
+    } catch (e) {
+      return e instanceof Response ? e : bad("not JSON");
+    }
+    const id = String(m.phone || "").toLowerCase();
+    const name = String(m.name || "").replace(/\s+/g, " ").trim();
+    if (!PHONE_ID.test(id)) return bad("bad phone id");
+    if (name.length < 2 || name.length > 40) return bad("a name of 2 to 40 characters");
+    if (typeof m.body !== "string" || m.body.length > 5000) return bad("bad message");
+    const now = Date.now(), hour = Math.floor(now / 3_600_000);
+    const row = await env[db].prepare(`INSERT INTO sms_phone(id,name,first_seen,last_seen,hour,hour_count,app_version)
+      VALUES(?,?,?,?,?,1,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,last_seen=excluded.last_seen,
+      app_version=COALESCE(NULLIF(excluded.app_version,''),sms_phone.app_version),
+      hour_count=CASE WHEN sms_phone.hour=excluded.hour THEN sms_phone.hour_count+1 ELSE 1 END,
+      hour=excluded.hour RETURNING blocked,hour_count`)
+      .bind(id, name, now, now, hour, String(m.version || "").slice(0, 20)).first();
+    if (row.blocked) return new Response("blocked", { status: 403 });
+    if (row.hour_count > smsPerHour) return new Response("error: too many SMS this hour", { status: 429 });
+    const form = new URLSearchParams({ key: env.SMS_WEBAPP_KEY, user: name });
+    for (const f of SMS_FIELDS) if (m[f] !== undefined && m[f] !== null) form.set(f, String(m[f]));
+    let res, text;
+    try {
+      res = await fetch(env.SMS_WEBAPP_URL, { method: "POST", body: form, redirect: "follow" });
+      text = (await res.text()).trim();
+    } catch (e) {
+      return new Response(`error: sheet not reached`, { status: 502 });
+    }
+    // only the script's own words count: Google's error page also comes with HTTP 200
+    const word = text.split(/\s/)[0].replace(/:$/, "");
+    if (!["ok", "duplicate", "empty", "error", "unauthorized"].includes(word)) {
+      return new Response(`error: the sheet answered HTTP ${res.status}`, { status: 502 });
+    }
+    if (word === "unauthorized") return new Response("error: the worker's SMS_WEBAPP_KEY is wrong", { status: 502 });
+    if (word === "ok") await env[db].prepare("UPDATE sms_phone SET sent=sent+1 WHERE id=?").bind(id).run();
+    return new Response(text.slice(0, 200), { status: word === "error" ? 502 : 200 });
+  }
+
   function route(request, env, path) {
     if (path === "/api/ai" || path === "/api/chat/completions") return runAI(request, env);
     if (path === "/api/models") return listModels(request, env);
     if (path === "/api/approval") return saveApproval(request, env);
     if (path === "/api/memory" || path.startsWith("/api/memory/")) return memory(request, env, path);
     if (path === "/api/settings" && request.method === "GET") return settings(request, env);
+    if (path === "/api/sms") return sms(request, env);
     return null;
   }
 
