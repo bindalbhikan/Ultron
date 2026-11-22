@@ -172,7 +172,7 @@ def merge(folder, work: Path, label: str, wanted, first: date, last: date) -> tu
                 acc.download(name, path)
             if path.exists():
                 # read as text, pandas' missing texts ("NA" ...) empty as before
-                df = read_text_csv(path, pandas_na=True)
+                df = read_text_csv(path, na_words=True)
                 frames.append(df.select(pl.lit(account).alias("ACCOUNT"), pl.lit(tag(start)).alias("MONTH"), pl.all()))
     if not frames:
         return None

@@ -44,7 +44,7 @@ def stock_of(csv_blobs: list[bytes]) -> Counter:
     from ..core.tables import pnum, read_text_csv
     stock: Counter = Counter()
     for blob in csv_blobs:
-        df = read_text_csv(blob, pandas_na=True)
+        df = read_text_csv(blob, na_words=True)
         # a line with no SKU is no SKU's stock (pandas kept it under NaN, looked up by no sold SKU); Qty cut to a whole number
         rows = df.select(pl.col("Item SkuCode").str.strip_chars().str.to_uppercase(), pnum(pl.col("Qty")))
         for sku, qty in rows.iter_rows():

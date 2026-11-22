@@ -234,9 +234,8 @@ def pdt(e: "pl.Expr") -> "pl.Expr":
 
 
 def _frame(df) -> "pl.DataFrame":
-    from ..core.tables import to_polars
     pl = _pl()
-    return pl.DataFrame() if df is None else to_polars(df)
+    return pl.DataFrame() if df is None else df
 
 
 def _get(df: "pl.DataFrame", name: str) -> "pl.Expr":

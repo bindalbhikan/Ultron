@@ -133,7 +133,7 @@ def sales_counts(sku_to_style: dict, dest: Path, months: int, accounts: list[str
         month = (month - timedelta(days=1)).replace(day=1)
         seen = set()
         for f in pr.load("MYNTRA", month, "sale", dest / f"orders_{month:%Y%m}"):
-            df = read_text_csv(f, pandas_na=True)
+            df = read_text_csv(f, na_words=True)
             df = df.select(*[(pl.col(c) if c in df.columns else pl.lit(None, dtype=pl.Utf8)).alias(c)
                              for c in ("seller id", "style id", "order status", "order line id")])
             seen.update(clean_id(s) for s in df["seller id"].drop_nulls().unique().to_list())

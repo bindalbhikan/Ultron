@@ -76,9 +76,8 @@ def _job(portal, label: str, rid: int, day: date, fresh: bool = False) -> dict:
 
 def ppmp_only(delivery) -> "pl.DataFrame":
     """The rows delivered to our own (PPMP) warehouses; FBM / SJIT returns go to Myntra's warehouses.
-    Polars (a pandas frame is taken too, docs/libraries/06-polars.md)."""
-    from ..core.tables import pclean_id, pcol, to_polars
-    delivery = to_polars(delivery)
+    Polars."""
+    from ..core.tables import pclean_id, pcol
     ours = set(csv_list("MYNTRA_PPMP_WAREHOUSES")) or PPMP_WAREHOUSES
     return delivery.filter(pclean_id(pcol(delivery, "warehouse_id")).is_in(sorted(ours)))
 
@@ -87,10 +86,10 @@ def order_status(orders) -> "pl.DataFrame | None":
     """(_id, _status) per order release id of an orders report, the first line's status; None without one."""
     import polars as pl
 
-    from ..core.tables import pclean_id, pcol, to_polars
+    from ..core.tables import pclean_id, pcol
     if orders is None or len(orders) == 0:
         return None
-    o = to_polars(orders)
+    o = orders
     return (o.select(pclean_id(pcol(o, "order release id")).alias("_id"), pcol(o, "order status").alias("_status"))
              .group_by("_id", maintain_order=True).agg(pl.col("_status").first()))
 
@@ -185,12 +184,10 @@ def window_rows(delivery, orders, first: date, last: date
                 ) -> tuple[dict[date, dict], list[date], date | None]:
     """({day: split} for the days first..last Myntra's data holds, [days after it: left blank],
     the last day with a PPMP delivery). A day before that last one with no delivery is a real 0.
-    Polars (pandas frames are taken too)."""
+    Polars."""
     import polars as pl
 
-    from ..core.tables import to_polars
     from ..portals import myntra as mp
-    delivery = to_polars(delivery)
     delivery = delivery.with_columns(delivery_day(delivery).alias("_day"))
     ours = ppmp_only(delivery)
     through = ours["_day"].drop_nulls().max() if ours.height else None

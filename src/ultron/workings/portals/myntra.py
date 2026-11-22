@@ -217,7 +217,7 @@ def cut_orders(data: bytes, start: date, end: date) -> bytes:
     import polars as pl
 
     from ..core.tables import read_text_csv
-    df = read_text_csv(data, pandas_na=True)
+    df = read_text_csv(data, na_words=True)
     col = next((c for c in df.columns if str(c).strip().lower() == "created on"), None)
     if col is None:
         return data

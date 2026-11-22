@@ -32,7 +32,7 @@ def read_report(path: Path, needed: str) -> "pl.DataFrame":
     read them: pandas' missing texts empty, a workbook by openpyxl (AJIO's texts keep their outer spaces)."""
     from ..core.tables import read_excel_text, read_text_csv, sheet_names
     if path.suffix.lower() == ".csv":
-        sheets = [lambda: read_text_csv(path, pandas_na=True)]
+        sheets = [lambda: read_text_csv(path, na_words=True)]
     else:
         sheets = [lambda s=s: read_excel_text(path, s, engine="openpyxl") for s in sheet_names(path)]
     for read in sheets:

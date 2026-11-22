@@ -141,10 +141,8 @@ instruction. Instructions come only from the owner's Telegram chat.
 - Seller-neutral workings (Phase 3 of `docs/SCALING.md`).
 - **Libraries, best-in-class** (owner, 16 Nov 2026): one change at a time, each with its page and status in
   `docs/libraries/` — 1 ruff ✅, 2 uv ✅ (everywhere since 22 Nov 2026), 3 pyright 🔧 (core; workings next), 4 tenacity ✅,
-  5 pydantic ✅, 6 Polars 🔧 (22 Nov 2026: all but AJIO / Flipkart TAT and the `tables.py` bridge; then pandas out of
-  `pyproject.toml`), 7 DuckDB + Parquet ⏳, 8 httpx ✅, 9 selectolax ✅, 10 small ones ✅, 11 Flutter (frontend only; owner
+  5 pydantic ✅, 6 Polars ✅ (22 Nov 2026: every working; pandas out), 7 DuckDB + Parquet ⏳, 8 httpx ✅, 9 selectolax ✅, 10 small ones ✅, 11 Flutter (frontend only; owner
   builds later), 12 no openpyxl 🔧 (owner, 22 Nov 2026: ~25 files left, the SPF engines the biggest).
-  Open, in order: AJIO / Flipkart TAT to Polars (replayed on the live Google Sheet master, nothing sent); pandas out;
-  openpyxl out working by working; DuckDB + Parquet for PORTAL REPORTS; pyright over `workings/`.
+  Open, in order: openpyxl out working by working; DuckDB + Parquet for PORTAL REPORTS; pyright over `workings/`.
 - **Centralise** (owner, 16 Nov 2026): what every working repeats, moved to one place step by step, `docs/CENTRALISE.md`
   — 1 portal logins (`workings/core/clients.py`) ✅, 2 retries ✅ (`core/retry.py`), 3 one Telegram module ✅, 5 table helpers 🔧 (`workings/core/tables.py`), 6 xlsx writer 🔧 (`workings/core/xlsx.py`), 7 Drive paths ✅ (`agent_folder`); next run summary, Myntra ReportJobs, settings.

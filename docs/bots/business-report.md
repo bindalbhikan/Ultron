@@ -28,8 +28,7 @@
   750 -> 909); September lost the returns after 14 Oct and the RTO the order report alone gave (a few units);
   no return / RTO of any portal dated outside its window.
 * The owner's sale / return / payment analysis (Drive `AGENT WORK/BUSINESS REPORTING`, the rules in
-  `docs/bots/business-report-context.md`, taken over from the hand-run scripts on 1 Nov 2026; the old
-  Myntra script is kept in `scripts/legacy/myntra_build_workbook.py`), one workbook per portal:
+  `docs/bots/business-report-context.md`, taken over from the hand-run scripts on 1 Nov 2026; the old Myntra script was removed on 22 Nov 2026), one workbook per portal:
   `<PORTAL> SALE RETURN ANALYSIS <FIRST MON-YY> TO <LAST MON-YY>.xlsx`; the portal's older one goes
   to the Drive trash.
 * Inputs: every month of Drive `AGENT WORK/PORTAL REPORTS` from `--from` (default 2025-01; a portal

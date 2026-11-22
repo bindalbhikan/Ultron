@@ -191,7 +191,7 @@ def guess_my_sku(van, my_skus):
 def _csv(path) -> pl.DataFrame:
     """A report CSV as text, read the way pandas' read_csv(dtype=str) did (its missing-value words are empty)."""
     from ..core.tables import read_text_csv
-    return read_text_csv(path, pandas_na=True)
+    return read_text_csv(path, na_words=True)
 
 
 def load_listings(master):

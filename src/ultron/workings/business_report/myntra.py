@@ -68,8 +68,6 @@ def payments_pl(p) -> "pl.DataFrame":
     """The payment lines once each (the monthly files and the old dumps overlap)."""
     import polars as pl
 
-    from ..core.tables import to_polars
-    p = to_polars(p)
     if not p.height:
         return p
     for c in ["return_id", "NOD_Comment", "Logistics_Commission", "IGST_TCS", "CGST_TCS", "SGST_TCS", "TDS", "Commission"]:
@@ -90,8 +88,6 @@ def payments_pl(p) -> "pl.DataFrame":
 def raw_data_pl(o, r, m, p) -> "pl.DataFrame":
     import polars as pl
 
-    from ..core.tables import to_polars
-    o, r, m, p = (to_polars(x) for x in (o, r, m, p))
     o = (o.with_columns(pids(pl.col("order line id")).alias("order line id"))
           .unique(subset=["order line id"], keep="last", maintain_order=True))
     mm = m.filter(pl.col("Channel Name").cast(pl.Utf8).str.starts_with("MYNTRA").fill_null(False))

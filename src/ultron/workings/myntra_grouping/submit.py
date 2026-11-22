@@ -175,7 +175,7 @@ def _report_rows(link: str) -> list[dict]:
 
     from ..core.tables import read_text_csv
     z = zipfile.ZipFile(io.BytesIO(http.get(link, timeout=60).content))
-    df = read_text_csv(z.open(z.namelist()[0]).read(), pandas_na=True)
+    df = read_text_csv(z.open(z.namelist()[0]).read(), na_words=True)
     df = df.rename({c: re.sub(r"[^a-z]", "", str(c).lower()) for c in df.columns}).fill_null("")
     out = []
     for r in df.iter_rows(named=True):

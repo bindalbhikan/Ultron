@@ -17,7 +17,9 @@ from __future__ import annotations
 import logging
 
 import gspread
-import pandas as pd
+from datetime import datetime
+
+import polars as pl
 
 from ..core.gauth import credentials
 from .tat_engine import DATA_COLS, REPORT_COLS, STATUS_COLS, TIME_COLS, normalize_master, summary_rows
@@ -41,19 +43,17 @@ FILLS = {"On Time": GREEN, "CORRECT": GREEN,
 
 
 def _cell(v):
-    if v is None or (not isinstance(v, str) and pd.isna(v)):
+    if v is None or (isinstance(v, float) and v != v):
         return ""
-    if isinstance(v, pd.Timestamp):
+    if isinstance(v, datetime):
         return v.strftime("%Y-%m-%d %H:%M:%S")
     if isinstance(v, bool):
         return "TRUE" if v else "FALSE"
-    if hasattr(v, "item"):  # numpy scalar
-        return v.item()
     return v
 
 
-def _grid(df: pd.DataFrame) -> list[list]:
-    return [list(df.columns)] + [[_cell(v) for v in row] for row in df.itertuples(index=False)]
+def _grid(df: pl.DataFrame) -> list[list]:
+    return [list(df.columns)] + [[_cell(v) for v in row] for row in df.iter_rows()]
 
 
 def summary_layout(grid: list[list]) -> dict[str, int]:
@@ -79,14 +79,20 @@ class MasterSheet:
             self.ws["Run Log"].update([RUN_LOG_HEADER], "A1")
 
     # ------------------------------------------------------------ read
-    def read_master(self) -> tuple[pd.DataFrame, pd.Timestamp | None]:
+    def read_master(self) -> tuple[pl.DataFrame, datetime | None]:
         values = self.ws["_data"].get_all_values()
         if len(values) < 2:
-            return pd.DataFrame(columns=DATA_COLS), None
-        m = normalize_master(pd.DataFrame(values[1:], columns=values[0]))
+            return normalize_master(None), None
+        head = values[0]
+        body = [(r + [""] * len(head))[:len(head)] for r in values[1:]]
+        m = normalize_master(pl.DataFrame({h: [r[i] or None for r in body] for i, h in enumerate(head)},
+                                          schema={h: pl.Utf8 for h in head}))
         meta = self.ws["_meta"].get_all_values()
-        as_of = pd.to_datetime(meta[1][0], errors="coerce") if len(meta) > 1 else None
-        return m, (None if as_of is None or pd.isna(as_of) else as_of)
+        try:
+            as_of = datetime.fromisoformat(meta[1][0].strip()) if len(meta) > 1 and meta[1][0].strip() else None
+        except ValueError:
+            as_of = None
+        return m, as_of
 
     # ------------------------------------------------------------ write
     def _replace(self, name: str, grid: list[list], raw: bool) -> None:
@@ -97,11 +103,11 @@ class MasterSheet:
         if grid:
             ws.update(grid, "A1", value_input_option="RAW" if raw else "USER_ENTERED")
 
-    def write_all(self, df: pd.DataFrame, as_of: pd.Timestamp, source_note: str, summary: dict) -> None:
-        report = df[REPORT_COLS]
-        late = report[report["TAT Result"] == "NOT CORRECT"]
+    def write_all(self, df: pl.DataFrame, as_of: datetime, source_note: str, summary: dict) -> None:
+        report = df.select(REPORT_COLS)
+        late = report.filter(pl.col("TAT Result") == "NOT CORRECT")
         # state first: if a later tab fails, the next run still has the full master
-        self._replace("_data", _grid(df[DATA_COLS]), raw=True)
+        self._replace("_data", _grid(df.select(DATA_COLS)), raw=True)
         self._replace("_meta", [["as_of"], [_cell(as_of)]], raw=True)
         self._replace("TAT Report", _grid(report), raw=False)
         self._replace("Late Orders", _grid(late), raw=False)

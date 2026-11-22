@@ -27,21 +27,20 @@ def test_ids_without_dot_zero_quote_or_nan():
 
 def test_rto_from_the_return_sheet_even_when_the_order_says_cancelled():
     """Owner, 17 Nov 2026: RTO / cancelled must match the return sheet (Myntra turns a returned RTO order to F)."""
-    import pandas as pd
-
     from ultron.workings.business_report.myntra import raw_data_pl
-    o = pd.DataFrame({"ACCOUNT": ["MAIN"] * 4, "order line id": ["1", "2", "3", "4"], "created on": ["2026-10-02"] * 4,
+    text = lambda d: pl.DataFrame(d, schema={k: (pl.Int64 if k == "_order" else pl.Utf8) for k in d})  # noqa: E731
+    o = text({"ACCOUNT": ["MAIN"] * 4, "order line id": ["1", "2", "3", "4"], "created on": ["2026-10-02"] * 4,
                       "order status": ["F", "F", "C", "C"], "store order id": ["s"] * 4, "order release id": ["r"] * 4,
                       **{c: [None] * 4 for c in ["style id", "myntra sku code", "seller sku code", "brand", "article type",
                                                   "size", "po_type", "total mrp", "discount", "final amount", "seller price",
                                                   "cancellation reason", "delivered on", "cancelled on", "rto creation date",
                                                   "courier code", "city", "state"]}})
-    r = pd.DataFrame({"order_line_id": ["1", "3"], "type": ["RTO", "Return"], "return_created_date": [None, "2026-10-20"],
+    r = text({"order_line_id": ["1", "3"], "type": ["RTO", "Return"], "return_created_date": [None, "2026-10-20"],
                       "order_rto_date": ["2026-10-10", None], "_order": [0, 0],
                       **{c: [None] * 2 for c in ["exchange_id", "return_id", "order_id", "return_reason", "status", "refunded_date"]}})
-    master = pd.DataFrame({"Channel Name": ["MYNTRA"], "MYNTRA SKU CODE": ["x"], "Channel Listing SKU Code": ["x"],
+    master = text({"Channel Name": ["MYNTRA"], "MYNTRA SKU CODE": ["x"], "Channel Listing SKU Code": ["x"],
                            **{c: ["v"] for c in m.MCOLS}})
-    d = raw_data_pl(o, r, master, pd.DataFrame())
+    d = raw_data_pl(o, r, master, pl.DataFrame())
     got = dict(zip(d["ORDER LINE ID"].to_list(), zip(d["FINAL STATUS"].to_list(), d["SUB STATUS"].to_list())))
     assert got["1"] == ("RTO", "RTO (order report: cancelled)")
     assert got["2"] == ("Cancelled", "Cancelled before dispatch")

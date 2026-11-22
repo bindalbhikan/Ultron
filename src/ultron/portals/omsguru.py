@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import pandas as pd
+    import polars as pl
 
 import io
 import json
@@ -290,7 +290,7 @@ class OmsGuruClient:
         only for orders not in skip_channel_orders (orders the master already has complete)."""
         whs = warehouse_ids or list(self.warehouses()) or [None]
         skip = skip_channel_orders or set()
-        import pandas as pd       # only the TAT-style exports need pandas (an optional install)
+        import polars as pl       # only the TAT-style exports need Polars (an optional install: the core stays pure Python)
         frames_o, frames_h, errors, seen = [], [], [], set()
         for wh in whs:
             if wh:
@@ -304,7 +304,7 @@ class OmsGuruClient:
             frames_o.append(o)
             frames_h.append(h)
             errors += err
-        return (pd.concat(frames_o, ignore_index=True), pd.concat(frames_h, ignore_index=True), errors)
+        return (pl.concat(frames_o, how="vertical_relaxed"), pl.concat(frames_h, how="vertical_relaxed"), errors)
 
     def list_order_ids(self, start: datetime, end: datetime, channel_ids: list[str]) -> list[str]:
         return list(self.list_orders(start, end, channel_ids))
@@ -362,8 +362,8 @@ class OmsGuruClient:
         time.sleep(self.delay)
         return parse_order_page(html, order_id)
 
-    def fetch_orders(self, order_ids: list[str]) -> tuple["pd.DataFrame", "pd.DataFrame", list[str]]:
-        import pandas as pd
+    def fetch_orders(self, order_ids: list[str]) -> tuple["pl.DataFrame", "pl.DataFrame", list[str]]:
+        import polars as pl
         orders, hist, errors = [], [], []
 
         def one(oid):
@@ -382,8 +382,10 @@ class OmsGuruClient:
                     hist += res[1]
                 if n % 50 == 0:
                     log.info("Fetched %d/%d order pages", n, len(order_ids))
-        o = pd.DataFrame(orders, columns=ORDER_COLS)
-        h = pd.DataFrame(hist, columns=HIST_COLS)
+        # every field as text, as the order page shows it (Qty a number); an order with no lines gives an empty table
+        o = pl.DataFrame([{c: r.get(c) for c in ORDER_COLS} for r in orders],
+                         schema={c: (pl.Int64 if c == "Qty" else pl.Utf8) for c in ORDER_COLS}, strict=False)
+        h = pl.DataFrame([{c: r.get(c) for c in HIST_COLS} for r in hist], schema={c: pl.Utf8 for c in HIST_COLS}, strict=False)
         return o, h, errors
 
 

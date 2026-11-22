@@ -1,7 +1,7 @@
 """9:30 AM is the one time the daily Myntra reports are asked for; the other workings reuse those jobs."""
 from datetime import date, datetime, timedelta
 
-import pandas as pd
+import polars as pl
 
 from ultron.workings.portals import myntra as mp
 
@@ -39,8 +39,8 @@ def test_covering_job_serves_a_shorter_range_and_is_cut():
     assert mp.covering_job(jobs, 4, date(2026, 11, 1), date(2026, 11, 15))["id"] == 7
     assert mp.covering_job(jobs, 4, date(2026, 10, 1), date(2026, 11, 15)) is None
     data = b"created on,x\n2026-10-31 10:00,1\n2026-11-01 10:00,2\n2026-11-15 23:00,3\n"
-    cut = pd.read_csv(__import__("io").BytesIO(mp.cut_orders(data, date(2026, 11, 1), date(2026, 11, 15))))
-    assert cut["x"].tolist() == [2, 3]
+    cut = pl.read_csv(mp.cut_orders(data, date(2026, 11, 1), date(2026, 11, 15)))
+    assert cut["x"].to_list() == [2, 3]
 
 
 def test_reports_without_asking_waits_for_the_daily_run_job(monkeypatch):
@@ -133,7 +133,7 @@ def test_myntra_reports_asks_anew_when_the_orders_data_is_short(monkeypatch):
 
 def test_workbook_rows_stop_where_myntras_data_stops():
     from ultron.workings.myntra_reports.pipeline import window_rows
-    delivery = pd.DataFrame({
+    delivery = pl.DataFrame({
         "warehouse_id": ["46148", "46148", "15774", "46148"],
         "type": ["Return", "RTO_or_Cancel", "Return", "Return"],
         "order_id": ["1", "2", "3", "4"],

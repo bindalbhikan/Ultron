@@ -43,7 +43,7 @@ def report_frame(files: list[tuple[str, bytes]], account: str) -> "pl.DataFrame"
         if data[:2] == b"PK":
             with zipfile.ZipFile(io.BytesIO(data)) as z:
                 data = z.read(next(n for n in z.namelist() if n.lower().endswith(".csv")))
-        frames.append(read_text_csv(data, pandas_na=True))
+        frames.append(read_text_csv(data, na_words=True))
     if not frames:
         return pl.DataFrame()
     df = pl.concat(frames, how="diagonal_relaxed").unique("order line id", keep="first", maintain_order=True)

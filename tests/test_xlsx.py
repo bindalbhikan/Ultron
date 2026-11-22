@@ -1,7 +1,6 @@
 """workings/core/xlsx.write_sheets (docs/CENTRALISE.md step 6): read back as the old openpyxl files are."""
 from datetime import date, datetime
 
-import pandas as pd
 from openpyxl import Workbook, load_workbook
 
 from ultron.workings.core.xlsx import sheet_name, write_sheets
@@ -12,36 +11,22 @@ ROWS = [
      "Day": date(2026, 11, 5), "Note": "=not a formula", "Flag": True},
     {"Order ID": "FN7654321", "AWB": None, "Amount": float("nan"), "Qty": 0, "Date": None, "Day": None,
      "Note": "https://example.com/x", "Flag": False},
-    {"Order ID": "42", "AWB": "00099", "Amount": -3, "Qty": None, "Date": pd.Timestamp("2026-11-06 09:00"),
-     "Day": pd.NaT, "Note": "", "Flag": None},
+    {"Order ID": "42", "AWB": "00099", "Amount": -3, "Qty": None, "Date": datetime(2026, 11, 6, 9, 0),
+     "Day": None, "Note": "", "Flag": None},
 ]
 
 
-def old_write(path, sheets):
-    """ajio_spf.inputs.write_xlsx before the move (openpyxl, write_only)."""
-    wb = Workbook(write_only=True)
-    for name, (headers, rows) in sheets.items():
-        ws = wb.create_sheet(name)
-        ws.append(headers)
-        for row in rows:
-            ws.append([None if (isinstance(row.get(h), float) and row.get(h) != row.get(h)) or row.get(h) is pd.NaT
-                       else row.get(h) for h in headers])
-    wb.save(path)
-
-
-def test_read_back_the_same_as_the_old_writer(tmp_path):
-    old, new = tmp_path / "old.xlsx", tmp_path / "new.xlsx"
-    old_write(old, {"Sheet1": (HEAD, ROWS)})
-    write_sheets(new, {"Sheet1": (HEAD, ROWS)})
-    for kw in ({}, {"dtype": str}):
-        a = pd.read_excel(old, sheet_name=None, **kw)
-        b = pd.read_excel(new, sheet_name=None, **kw)
-        assert list(a) == list(b)
-        # the one difference, on purpose: openpyxl made a text starting with "=" a formula (read back empty);
-        # the new writer keeps it as the text it was
-        assert pd.isna(a["Sheet1"].loc[0, "Note"]) and b["Sheet1"].loc[0, "Note"] == "=not a formula"
-        a["Sheet1"].loc[0, "Note"] = b["Sheet1"].loc[0, "Note"]
-        pd.testing.assert_frame_equal(a["Sheet1"], b["Sheet1"], check_dtype=False)
+def test_read_back_every_cell_as_written(tmp_path):
+    """Texts stay texts (an id keeps its zeros, "=..." is no formula), numbers and dates keep their kind, empty
+    values and NaN are empty cells."""
+    from python_calamine import CalamineWorkbook
+    path = write_sheets(tmp_path / "new.xlsx", {"Sheet1": (HEAD, ROWS)})
+    got = CalamineWorkbook.from_path(str(path)).get_sheet_by_name("Sheet1").to_python()
+    assert got[0] == HEAD
+    assert got[1] == ["FN1234567", "0123456789", 1999.5, 2.0, datetime(2026, 11, 5, 14, 30), date(2026, 11, 5),
+                      "=not a formula", True]
+    assert got[2] == ["FN7654321", "", "", 0.0, "", "", "https://example.com/x", False]
+    assert got[3] == ["42", "00099", -3.0, "", datetime(2026, 11, 6, 9, 0), "", "", ""]
 
 
 def test_text_stays_text_and_header_bold_frozen_wide(tmp_path):

@@ -35,7 +35,7 @@ FAIL_AT = re.compile(r"^([A-Z][a-z]+ \d{1,2}, \d{4} \d{1,2}:\d{2}:\d{2} [AP]M)")
 
 def table_of(blob: bytes) -> "pl.DataFrame":
     """The channel listing export as a Polars table (an empty text "nan", as pandas' astype(str) made it)."""
-    df = read_text_csv(blob, pandas_na=True)
+    df = read_text_csv(blob, na_words=True)
     names = {n: channel_line(n) for n in df["Channel Name"].fill_null("nan").unique().to_list()}
     return df.select(
         pl.col("Channel ID").fill_null("nan").str.strip_chars().alias("channel_id"),

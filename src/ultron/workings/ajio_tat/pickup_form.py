@@ -12,9 +12,8 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-import pandas as pd
 from ultron.core import http
 
 from ..core.config import env
@@ -43,15 +42,15 @@ def responses(done: list[dict], now) -> list[dict]:
     deadline (from the pickup ticket run's records): {courier, since, orders}."""
     out: dict[str, dict] = {}
     for d in done:
-        if d.get("Courier Site") != "not picked" or pd.isna(d.get("Pickup Deadline")):
+        if d.get("Courier Site") != "not picked" or d.get("Pickup Deadline") is None:
             continue          # picked up per the courier, or the courier's site not reachable
-        if pd.Timestamp(d["Pickup Deadline"]) >= now:
+        if d["Pickup Deadline"] >= now:
             continue          # still within its pickup time
         c = form_courier(d.get("Courier"))
         if not c:
             continue
-        r = out.setdefault(c, {"courier": c, "since": pd.Timestamp(d["Pickup Deadline"]), "orders": 0})
-        r["since"] = min(r["since"], pd.Timestamp(d["Pickup Deadline"]))
+        r = out.setdefault(c, {"courier": c, "since": d["Pickup Deadline"], "orders": 0})
+        r["since"] = min(r["since"], d["Pickup Deadline"])
         r["orders"] += 1
     return sorted(out.values(), key=lambda r: r["courier"])
 
@@ -64,10 +63,10 @@ def submit(courier: str, since) -> None:
         {"questionId": Q_CONTACT, "answer1": env("AJIO_FORM_CONTACT")},
         {"questionId": Q_ISSUE, "answer1": "Pick-up not done"},
         {"questionId": Q_COURIER, "answer1": json.dumps([courier])},
-        {"questionId": Q_SINCE, "answer1": f"{pd.Timestamp(since):%Y-%m-%d}"},
+        {"questionId": Q_SINCE, "answer1": f"{since:%Y-%m-%d}"},
     ]
     now = datetime.now(timezone.utc)
-    body = {"startDate": (now - pd.Timedelta(minutes=2)).isoformat().replace("+00:00", "Z"),
+    body = {"startDate": (now - timedelta(minutes=2)).isoformat().replace("+00:00", "Z"),
             "submitDate": now.isoformat().replace("+00:00", "Z"),
             "answers": json.dumps(answers), "submitLanguage": "en-US", "emailReceiptConsent": False}
     r = http.post(FORM_URL, json=body, timeout=60, headers={
@@ -79,7 +78,7 @@ def submit(courier: str, since) -> None:
                       "Chrome/141.0.0.0 Safari/537.36"})
     if r.status_code not in (200, 201):
         raise RuntimeError(f"form not accepted: HTTP {r.status_code} {r.text[:200]}")
-    log.info("Pickup form sent: %s since %s", courier, f"{pd.Timestamp(since):%d %b}")
+    log.info("Pickup form sent: %s since %s", courier, f"{since:%d %b}")
 
 
 def send_forms(done: list[dict], now, already: set[str]) -> tuple[list[str], set[str]]:

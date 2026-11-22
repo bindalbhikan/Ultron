@@ -120,7 +120,7 @@ def read_any(path: Path, sheet: str | int = 0, header: int | None = 0) -> pl.Dat
     """A report file as a Polars text table (core/tables: the same cells as pandas' readers gave)."""
     from ..core.tables import read_excel_text, read_text_csv
     if path.suffix.lower() == ".csv":
-        return read_text_csv(path, pandas_na=True)
+        return read_text_csv(path, na_words=True)
     return read_excel_text(path, sheet, header=header)
 
 

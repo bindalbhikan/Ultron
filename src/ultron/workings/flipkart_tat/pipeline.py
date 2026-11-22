@@ -17,7 +17,7 @@ import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from ..ajio_tat.pipeline import (XLSX, awbs_to_track, read_master_xlsx, save_master_xlsx, telegram_report,
                                  track, warehouse_ids)
@@ -43,17 +43,19 @@ def fetch_oms(start: datetime, end: datetime, skip_channel_orders: set[str]):
     channels = csv_list("FLIPKART_CHANNEL_IDS", "37863")
     log.info("Listing Flipkart orders %s -> %s (channels %s)", start, end, channels)
     o, hist, errors = client.fetch_window(start, end, channels, warehouse_ids(), skip_channel_orders)
-    log.info("%d Flipkart order lines fetched", len(o))
-    hist["ts"] = pd.to_datetime(hist["Timestamp"], format="%B %d, %Y %I:%M:%S %p", errors="coerce")
+    log.info("%d Flipkart order lines fetched", o.height)
+    hist = hist.with_columns(pl.col("Timestamp").cast(pl.Utf8).str.strip_chars()
+                             .str.to_datetime("%B %d, %Y %I:%M:%S %p", strict=False, time_unit="us").alias("ts"))
     return o, hist, errors
 
 
-def sla_deadlines(o: pd.DataFrame) -> pd.Series:
-    """Invoice No (OMSGuru's input identifier) -> the order's SLA Date."""
-    if o.empty:
-        return pd.Series(dtype="datetime64[ns]")
-    sla = o.drop_duplicates("Input Identifier").set_index("Input Identifier")["SLA Date"]
-    return parse_oms(sla).dropna()
+def sla_deadlines(o: pl.DataFrame) -> pl.DataFrame:
+    """Invoice No (OMSGuru's input identifier) -> the order's SLA Date (_sla), one row per invoice."""
+    if not o.height:
+        return pl.DataFrame(schema={"Invoice No": pl.Utf8, "_sla": pl.Datetime("us")})
+    return (o.unique("Input Identifier", keep="first", maintain_order=True)
+             .select(pl.col("Input Identifier").cast(pl.Utf8).alias("Invoice No"), parse_oms(pl.col("SLA Date")).alias("_sla"))
+             .filter(pl.col("_sla").is_not_null()))
 
 
 def master_folder():
@@ -79,11 +81,11 @@ def run(args) -> int:
 
     # 1) master
     old, old_as_of = read_master_xlsx(drive.download(copy, need_edit=True) if drive else copy)
-    log.info("Master loaded: %d orders", len(old))
+    log.info("Master loaded: %d orders", old.height)
 
     # 2) OMSGuru: order pages only for orders that are new or still open
-    old_status = apply_status(old, pd.Timestamp.now()) if len(old) else old.assign(**{"Pickup Status": None})
-    complete = set(old_status.loc[~needs_oms_refresh(old_status), "Order ID"].dropna().astype(str))
+    old_status = apply_status(old, datetime.now()) if old.height else old.with_columns(pl.lit(None, dtype=pl.Utf8).alias("Pickup Status"))
+    complete = set(old_status.filter(~needs_oms_refresh())["Order ID"].drop_nulls().cast(pl.Utf8).to_list())
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     end = (datetime.strptime(args.to_date, "%Y-%m-%d") if args.to_date else today) + timedelta(days=1)
     start = datetime.strptime(args.from_date, "%Y-%m-%d") if args.from_date else today - timedelta(days=args.days)
@@ -92,23 +94,24 @@ def run(args) -> int:
     # 3) Ekart tracking where the pickup is not confirmed yet
     (summ, ev), n_awbs, track_errors = track(awbs_to_track(o, old_status))
     errors += track_errors
-    new, as_of = (normalize_master(pd.DataFrame()), pd.Timestamp.now()) if o.empty else build_report(o, hist, summ, ev)
+    new, as_of = (normalize_master(None), datetime.now()) if not o.height else build_report(o, hist, summ, ev)
 
     # 4) merge; the deadline is Flipkart's SLA, not AJIO's 10:10 rule
-    new["Dispatch Deadline"] = new["Invoice No"].map(sla_deadlines(o))
+    new = (new.join(sla_deadlines(o), on="Invoice No", how="left", maintain_order="left")
+              .with_columns(pl.col("_sla").alias("Dispatch Deadline")).drop("_sla"))
     merged, stats = merge_master(old, new)
     merged = apply_tracking(merged, summ, ev)
-    no_sla = int(merged["Dispatch Deadline"].isna().sum())
+    no_sla = int(merged["Dispatch Deadline"].is_null().sum())
     if no_sla:
         log.warning("%d orders without an SLA Date in OMSGuru", no_sla)
-    if len(ev):
+    if ev.height:
         as_of = max(as_of, ev["ts"].max())
-    if old_as_of is not None and pd.notna(old_as_of):
+    if old_as_of is not None:
         as_of = max(as_of, old_as_of)
     df = apply_status(merged, as_of)
-    note = (f"OMSGuru Flipkart {start:%d-%b} to {end - timedelta(days=1):%d-%b} ({len(o)} lines read) "
+    note = (f"OMSGuru Flipkart {start:%d-%b} to {end - timedelta(days=1):%d-%b} ({o.height} lines read) "
             f"+ Ekart tracking ({n_awbs} open AWBs)")
-    log.info("Master after merge: %d (new %d, updated %d, kept %d)", len(df), stats["new"], stats["updated"],
+    log.info("Master after merge: %d (new %d, updated %d, kept %d)", df.height, stats["new"], stats["updated"],
              stats["kept (not in input)"])
 
     # 5) the sheet
@@ -128,7 +131,8 @@ def run(args) -> int:
         print(report)
     else:
         telegram.send(report)
-    print(df["TAT Result"].value_counts().to_string())
+    for result, n in df.group_by("TAT Result").len().sort("len", descending=True, maintain_order=True).iter_rows():
+        print(f"{result}  {n}")
     return 0
 
 

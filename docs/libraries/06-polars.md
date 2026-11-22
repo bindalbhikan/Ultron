@@ -1,8 +1,8 @@
 # 6. Polars — tables instead of pandas
 
-**Status**: 🔧 22 Nov 2026 — in (`polars>=1.30`, `fastexcel` for `pl.read_excel`); every working moved but AJIO TAT /
-Flipkart TAT (one engine), OMSGuru's `fetch_orders` that feeds them, and the pandas bridge of `core/tables.py`
-(`to_pandas`, `clean_id` of a Series); `scripts/legacy` is not run. When those go, pandas leaves `pyproject.toml`.
+**Status**: ✅ 22 Nov 2026 — every working on Polars (`polars>=1.30`, `fastexcel` for `pl.read_excel`); pandas and numpy
+are out of `pyproject.toml` and the lock; the bridge of `core/tables.py` (`to_pandas`, `to_polars`, `col`, `clean_id` of
+a column) is gone; the old hand-run `scripts/legacy/myntra_build_workbook.py` removed.
 
 **Why**: faster than pandas, multi-core, lazy queries, strict types (ids stay text: no more `46148.0`). For
 Bindal's files the gain is seconds; for a seller with 100x the orders it decides whether a run finishes.
@@ -19,9 +19,8 @@ sale report's work — read with ids as text, keep a date range, lines and amoun
 The totals were the same both ways at every size. (Python's memory tracer does not see Polars' Rust
 allocations, so no memory figure is claimed.)
 
-**Where pandas is now** (22 Nov 2026): 7 files, ~150 calls: `ajio_tat/` (pipeline, tat_engine, sheets, pickup_form),
-`flipkart_tat/pipeline.py`, `portals/omsguru.py` (`fetch_orders`), `core/tables.py` (the bridge); and
-`scripts/legacy/myntra_build_workbook.py` (not run by any working).
+**Where pandas is now**: nowhere (22 Nov 2026). All 178 modules import without it; tests no longer compare against it
+(they hold the expected values the parity runs fixed).
 
 **Shared helpers** (`workings/core/tables.py`): `read_text_csv(bytes)` (every column text), `to_polars(df)` (the
 pandas bridge while both live side by side), `pcol(df, name)` (a column by name whatever its case),
@@ -142,7 +141,13 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
     listings and the grouping sheet made from its report): the rows, the group states, the report, record, reasons,
     master and brand master and all 344 upload files the same.
 
-**Next, one by one, each with a parity test on real files**: the owner's monthly files and
+* 22 Nov 2026, the last ones: **AJIO TAT** and **Flipkart TAT** (one engine, `ajio_tat/`), OMSGuru's `fetch_orders`. The live
+  sources read once and kept (OMSGuru order pages, courier tracking, AJIO order report, ERP label prints, the Drive
+  masters), then the old and the new code on them at one frozen time (time-machine), nothing sent: AJIO 10,219 orders and
+  Flipkart 5,376, every master row, status, the Telegram reports, the scorecard and the dashboard the same; orders with
+  the same Order Time now keep a fixed order (pandas' quicksort left them in none); an empty text is an empty cell.
+
+**Was next** (kept for the record): the owner's monthly files and
 the business report workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the
 owner's OK. With it: a row-quality check of the OMSGuru order list (fields left at their defaults).

@@ -15,7 +15,7 @@ seller-neutral core (`src/ultron/`, not `workings/`) still installs on Android (
 | 3 | [03-pyright.md](03-pyright.md) | type check: **pyright** | 🔧 16 Nov 2026 core; `workings/` folder by folder next |
 | 4 | [04-tenacity.md](04-tenacity.md) | one retry helper: **tenacity** (hand-written loops out) | ✅ 16 Nov 2026 |
 | 5 | [05-pydantic.md](05-pydantic.md) | portal answers checked: **pydantic v2** | ✅ 17 Nov 2026 |
-| 6 | [06-polars.md](06-polars.md) | tables: **Polars** instead of pandas, working by working | 🔧 22 Nov 2026: business report, return analysis, grouping, zero TD, Flipkart price, ERP returns and the smaller workings moved (**fastexcel** in for `pl.read_excel`); left: AJIO / Flipkart TAT, OMSGuru `fetch_orders`, the `tables.py` bridge, then pandas out of `pyproject.toml` |
+| 6 | [06-polars.md](06-polars.md) | tables: **Polars** instead of pandas, working by working | ✅ 22 Nov 2026: every working, pandas and numpy out (**fastexcel** in for `pl.read_excel`) |
 | 7 | [07-duckdb-parquet.md](07-duckdb-parquet.md) | months / years of data: **DuckDB + Parquet** | ⏳ |
 | 8 | [08-httpx.md](08-httpx.md) | HTTP: **httpx** (curl_cffi kept where a bot check needs it) | ✅ 17 Nov 2026 |
 | 9 | [09-selectolax.md](09-selectolax.md) | HTML: **selectolax** instead of BeautifulSoup | ✅ 17 Nov 2026 |
