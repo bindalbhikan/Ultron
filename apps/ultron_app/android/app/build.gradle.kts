@@ -15,7 +15,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.ultron.ultron_app"
+        // The old Ultron Phone app's id (and its signing key, below): ULTRON installs over it as an update, so a
+        // phone that trusted that app takes this one as its new version, and the old one never needs removing.
+        applicationId = "com.bindal.ultronphone"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

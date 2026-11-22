@@ -81,6 +81,13 @@ Local validation passed: formatting, Flutter analysis, 15 repository/widget test
 
 ## Builds and downloads (22 Nov 2026)
 
+**Installs over the old Ultron Phone app (23 Nov 2026).** The Android app id is the old app's
+(`com.bindal.ultronphone`) and the signing key is the same, and the version code continues after it
+(`1<run number>`, the old one stopped at 23). A phone that had the old app takes ULTRON as its update: no
+uninstall, and Play Protect sees the app it already knew rather than a new unknown one asking for SMS. The Kotlin
+code keeps its own package (`com.ultron.ultron_app`). A phone without the old app may still be stopped by Play
+Protect's fraud protection (an SMS permission from a link): only an install from Google Play avoids that.
+
 The app is called **ULTRON** everywhere a person sees it: the Android launcher, the window titles, `ULTRON.exe`,
 `ULTRON.app`, the Linux binary and the web title.
 

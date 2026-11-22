@@ -112,7 +112,8 @@ def best(provider: Provider, tier: str, ids: list[str]) -> str:
     for family in provider.families[tier]:
         found = [i for i in usable if re.search(family, i)]
         if found:
-            return max(found, key=lambda i: (version(i), -len(i)))
+            # Google lists "models/gemini-..." but its chat endpoint wants the bare name (404 otherwise)
+            return max(found, key=lambda i: (version(i), -len(i))).removeprefix("models/")
     return provider.known[tier]
 
 
