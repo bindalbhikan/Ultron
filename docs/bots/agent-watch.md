@@ -4,8 +4,8 @@
 only when it did not succeed. By hand: run the workflow with a run id. The same workflow's
 `schedule` job updates the work schedule (`docs/bots/work-schedule.md`).
 
-* **Free model**: Cloudflare Workers AI `@cf/openai/gpt-oss-120b` (repo variable `AGENT_MODEL` to
-  change it) on the account's free daily allocation (10,000 neurons), through the Telegram
+* **Model** (22 Nov 2026): auto-selected across the providers with a key, with fallback
+  (`docs/bots/agent-models.md`); without a key, Cloudflare Workers AI `@cf/openai/gpt-oss-120b` on the account's free daily allocation (10,000 neurons), through the Telegram
   worker's `/api/ai` route with the `DASHBOARD_TOKEN` - no API key. 20 Oct 2026: a check is about
   13-20K tokens (~$0.005-0.008 of the ~$0.11 a day free), so ~15 checks a day fit. Models on the
   Workers Free plan with tool calling: gpt-oss-120b / -20b, qwen3.8-27b, nemotron-3-120b (GLM 5.x,

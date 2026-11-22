@@ -15,7 +15,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable
 
-DEFAULT_PRICES = {"@cf/openai/gpt-oss-120b": [0.35, 0.75]}
+# US$ per million tokens (input, output); a model not listed is logged without a cost
+DEFAULT_PRICES = {
+    "@cf/openai/gpt-oss-120b": [0.35, 0.75], "@cf/openai/gpt-oss-20b": [0.2, 0.3],
+    "claude-opus-5-5": [4.0, 20.0], "claude-sonnet-5-5": [2.0, 10.0], "claude-haiku-5-5": [0.1, 0.5],
+}
 
 
 def env(name: str, default: str = "") -> str:
@@ -56,7 +60,7 @@ class Config:
     repo: str
     ref: str
     docs: Path
-    model: str
+    model: str                             # "auto" or "provider:model" (core/models.py)
     prices: dict[str, list[float]]
     worker_url_env: str
     worker_token_env: str
@@ -74,6 +78,8 @@ class Config:
     channel_names: dict[str, str] = field(default_factory=dict)
     knowledge: tuple[str, ...] = ("docs/knowledge", "docs/PORTALS.md")
     memory: MemorySettings = field(default_factory=lambda: MemorySettings())
+    model_tier: str = "smart"
+    model_order: tuple[str, ...] = ("anthropic", "openai", "google", "nvidia", "groq", "cloudflare")
 
     @property
     def output(self) -> Path:
@@ -85,8 +91,6 @@ class Config:
         """(url, token) of the Cloudflare worker that serves the model and the approvals."""
         return env(self.worker_url_env).rstrip("/"), env(self.worker_token_env)
 
-    def model_name(self) -> str:
-        return env("AGENT_MODEL", self.model)
 
 
 def find(start: Path | None = None) -> Path:
@@ -123,7 +127,7 @@ def parse(path: Path) -> Config:
         repo=gh.get("repo") or env("GITHUB_REPOSITORY"),
         ref=gh.get("ref", "main"),
         docs=path.parent / gh.get("docs", "docs/bots"),
-        model=model.get("name", "@cf/openai/gpt-oss-120b"),
+        model=model.get("name", "auto"),
         prices={**DEFAULT_PRICES, **model.get("prices", {})},
         worker_url_env=worker.get("url_env", "AGENT_WORKER_URL"),
         worker_token_env=worker.get("token_env", "AGENT_WORKER_TOKEN"),
@@ -141,6 +145,8 @@ def parse(path: Path) -> Config:
         channel_names=dict(channels.get("names", {})),
         knowledge=tuple(raw.get("knowledge", {}).get("paths", ["docs/knowledge", "docs/PORTALS.md"])),
         memory=MemorySettings(**{k: v for k, v in mem.items() if k in MemorySettings.__dataclass_fields__}),
+        model_tier=model.get("tier", "smart"),
+        model_order=tuple(model.get("order", ("anthropic", "openai", "google", "nvidia", "groq", "cloudflare"))),
     )
 
 

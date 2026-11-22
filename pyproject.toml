@@ -19,6 +19,7 @@ dependencies = [
     "python-dotenv>=1.0",
     # where results go, outside the source code (ultron.core.paths): the OS's user data folder; pure Python
     "platformdirs>=4.2",
+    "openai>=1.60",
 ]
 
 [project.optional-dependencies]

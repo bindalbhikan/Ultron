@@ -12,12 +12,13 @@ started by the worker's `askAgent`; inputs `text`, `chat_id`, `reply_to`). Never
   never solved. CI installs it through the setup action (`browser: "true"`); on a seller's machine:
   `pip install -e ".[browser]"`, then `patchright install chromium`. `BROWSER_HEADLESS=0` shows the
   window; `BROWSER_CHANNEL=chrome` uses the installed Chrome.
-* The model is Cloudflare Workers AI (free allocation) reached through the worker's `/api/ai` with the
-  dashboard token; `AGENT_MODEL` (repo variable) overrides the model in `agent.toml`.
+* The model: the best of every provider with a key (Anthropic, OpenAI, Google AI Studio, NVIDIA, Groq),
+  Cloudflare Workers AI last as the free fallback; the next one answers when one fails
+  (`docs/bots/agent-models.md`). The control panel or `AGENT_MODEL*` variables override `agent.toml`.
 * Read-only. Anything to be done (start a report, add orders, push inventory) is proposed with
   `propose_action`: the owner gets Approve / Reject buttons and only an Approve tap starts it, from
   the fixed list in `agent.toml [actions]` (the worker's `AGENT_ACTIONS` must list the same).
-* Memory: notes and earlier incidents from the worker's KV (`[memory]` in `agent.toml`).
+* Memory: notes and earlier incidents from the worker's D1 database (`[memory]` in `agent.toml`).
 * One message at a time per chat (`concurrency: agent-chat-<chat id>`); about 15 minutes at most.
 * Not checked by the watcher (`[watch] skip`).
 * Locally: `ultron serve` answers the same messages by Telegram long polling (`host/polling.py`).

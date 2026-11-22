@@ -38,6 +38,13 @@ jobs:
       # the agent's free model (/api/ai) is reached through the worker
       DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
       DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      AGENT_MODEL_TIER: ${{ vars.AGENT_MODEL_TIER }}
+      AGENT_MODEL_ORDER: ${{ vars.AGENT_MODEL_ORDER }}
       AGENT_MODEL: ${{ vars.AGENT_MODEL }}
       IN_DAY: ${{ inputs.day }}
     steps:

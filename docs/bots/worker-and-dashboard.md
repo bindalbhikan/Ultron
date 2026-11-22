@@ -25,5 +25,9 @@ are `KEYS` in `dashboard/src/index.js` and must also be in the worker's `DASH_KE
 
 KPIs: sale, VMS %, AJIO pickup pending, AJIO open returns, Myntra claims eligible, last month's
 return %. The run strip shows every bot's last run (`run_<key>`, pushed by `core/app.py`).
-* `POST /api/ai` (`DASHBOARD_TOKEN`): one Workers AI chat-completions call for Ultron
-  (`ultron.core.llm`; routes in `ultron/worker/agent.js`), only its `FREE_MODELS`, on the free daily allocation (`[ai]` binding).
+* `POST /api/chat/completions` (also `/api/ai`) and `GET /api/models` (`DASHBOARD_TOKEN`): Workers AI in the
+  OpenAI shape for Ultron (`ultron.core.llm`, the OpenAI SDK; routes in `worker/agent.js`), only its
+  `FREE_MODELS`, on the free daily allocation (`[ai]` binding).
+* `/api/memory/notes`, `/api/memory/chats/<chat>`, `GET /api/settings` (`DASHBOARD_TOKEN`): the agent's
+  memory and the control panel's model settings in D1 (binding `AGENT_DB`, database `ultron`; tables from
+  `services/app_api/migrations`). See `docs/bots/agent-models.md`.

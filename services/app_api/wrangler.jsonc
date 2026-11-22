@@ -14,7 +14,7 @@
     {
       "binding": "DB",
       "database_name": "ultron",
-      "database_id": "00000000-0000-0000-0000-000000000001",
+      "database_id": "8b95a6a1-f6ac-45ed-adcd-a545914c03b2",
       "migrations_dir": "migrations"
     }
   ]

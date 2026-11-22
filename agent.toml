@@ -18,7 +18,14 @@ url_env = "DASHBOARD_URL"
 token_env = "DASHBOARD_TOKEN"
 
 [model]
-name = "@cf/openai/gpt-oss-120b"
+# "auto": the best model of every provider with a key, tried in `order` (core/models.py); or one
+# model first, "provider:model" (e.g. "anthropic:claude-sonnet-5-5"). The app's control panel and
+# AGENT_MODEL / AGENT_MODEL_TIER / AGENT_MODEL_ORDER override these.
+name = "auto"
+tier = "smart"          # smart | fast
+# keys: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY (Google AI Studio), NVIDIA_API_KEY, GROQ_API_KEY;
+# cloudflare = Workers AI through the worker (free daily allocation), always last as the safety net
+order = ["anthropic", "openai", "google", "nvidia", "groq", "cloudflare"]
 
 [model.prices]   # US$ per million tokens (input, output), for the cost line in the log
 "@cf/openai/gpt-oss-120b" = [0.35, 0.75]

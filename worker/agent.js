@@ -1,15 +1,22 @@
 // Ultron routes for a seller's Cloudflare worker (the same for every seller):
 //
-//   POST /api/ai        one chat-completions call to Workers AI for ultron.core.llm
+//   POST /api/chat/completions  one chat-completions call to Workers AI (ultron.core.llm, the OpenAI SDK;
+//                       /api/ai is the same, for older agents)
+//   GET  /api/models    the Workers AI models allowed, in the OpenAI list shape (core/models.py auto-select)
 //   POST /api/approval  ultron.agents.chat proposes an action: saved in KV, Approve / Reject buttons sent
-//   GET / PUT /api/memory  the agent's memory (ultron.core.memory), one versioned KV document
+//   /api/memory/notes[/<id>]    the agent's long-term notes (ultron.core.memory): GET all, PUT one, DELETE one
+//   /api/memory/chats/<chat>    the last messages of a chat: GET, POST one, DELETE all
+//   GET /api/settings   the model settings the app's control panel saved (core/llm.settings)
+//                       memory and settings live in the D1 database bound as `db` (tables in
+//                       services/app_api/migrations/0002_agent.sql); the old KV document is moved in once
 //   plain text          an owner's message starts the agent-chat workflow, which answers in the chat
 //   ap:<id> / rj:<id>   a tap on Approve / Reject: only Approve starts the saved action
 //
 // The seller's setup comes from the worker's env:
 //   AGENT_ACTIONS  (wrangler.toml [vars.AGENT_ACTIONS]) {name: {workflow, inputs: [..]}}: the only
 //                  workflows and inputs an approval can start; the same list as agent.toml [actions]
-//   GITHUB_TOKEN, TELEGRAM_BOT_TOKEN (secrets), the [ai] binding AI, the KV namespace passed as `kv`.
+//   GITHUB_TOKEN, TELEGRAM_BOT_TOKEN (secrets), the [ai] binding AI, the KV namespace passed as `kv`,
+//   the D1 database passed as `db`.
 //
 // Use: const agent = makeAgent({ repo: "owner/name", token: (env) => env.AGENT_TOKEN, allowedChat, kv: "DASH" });
 //      agent.route(request, env, path) -> Response | null;  agent.ask(env, chatId, messageId, text);
@@ -23,6 +30,7 @@ export function makeAgent({
   token = (env) => env.AGENT_TOKEN,      // bearer token the Python side sends
   allowedChat = (env, chatId) => String(env.ALLOWED_CHAT_IDS || "").split(",").map((s) => s.trim()).includes(String(chatId)),
   kv = "AGENT_KV",                       // KV binding name for pending approvals
+  db = "AGENT_DB",                       // D1 binding name for the memory and the settings
   chatWorkflow = "agent-chat.yml",
   ref = "main",
   models = FREE_MODELS,                  // Workers AI models allowed on /api/ai
@@ -157,39 +165,130 @@ export function makeAgent({
     }
   }
 
-  // The agent's memory (ultron.core.memory, WorkerStore): one JSON document in KV with a version
-  // number. GET returns {version, data}; PUT {version, data} is refused (409) when another run wrote
-  // a newer version first, and the agent then reads again and redoes its change.
-  const MEMORY_KEY = "agent:memory";
-  async function memory(request, env) {
+  function listModels(request, env) {
     if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
-    const saved = await env[kv].get(MEMORY_KEY, "json");
-    if (request.method === "GET") {
-      return saved ? Response.json(saved) : new Response("none", { status: 404 });
-    }
-    if (request.method !== "PUT") return new Response("method not allowed", { status: 405 });
-    const body = await request.text();
-    if (body.length > 5_000_000) return new Response("too large", { status: 413 });
-    let req;
+    return Response.json({ object: "list", data: models.map((id) => ({ id, object: "model", owned_by: "workers-ai" })) });
+  }
+
+  // The agent's memory (ultron.core.memory, WorkerStore) in D1: one row per note (agent_note) and
+  // per message (agent_turn), so two runs writing at once never overwrite each other.
+  const KINDS = new Set(["preference", "fact", "known_issue", "decision", "incident"]);
+  const OLD_MEMORY = "agent:memory", MOVED = "agent:memory:moved";
+  const TRIM = `DELETE FROM agent_note WHERE id IN (SELECT id FROM agent_note ORDER BY
+    CASE kind WHEN 'incident' THEN 0 WHEN 'known_issue' THEN 2 WHEN 'preference' THEN 3 ELSE 1 END, uses, updated
+    LIMIT (SELECT MAX(0, COUNT(*) - ?) FROM agent_note))`;
+  let moved = false;
+
+  const bad = (why, status = 400) => Response.json({ error: why }, { status });
+  async function jsonBody(request, limit = 20000) {
+    const text = await request.text();
+    if (text.length > limit) throw bad("too large", 413);
     try {
-      req = JSON.parse(body);
-    } catch {
-      return new Response("not JSON", { status: 400 });
+      const value = JSON.parse(text);
+      if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    } catch { /* below */ }
+    throw bad("not JSON");
+  }
+
+  // the KV document of older agents, copied into D1 once (then KV keeps a "moved" mark)
+  async function moveOldMemory(env) {
+    if (moved || await env[kv].get(MOVED)) { moved = true; return; }
+    const saved = await env[kv].get(OLD_MEMORY, "json");
+    const data = (saved && saved.data) || {};
+    const rows = [];
+    for (const n of data.notes || []) {
+      if (!KINDS.has(n.kind) || !n.text) continue;
+      const id = /^[a-f0-9]{6,16}$/.test(String(n.id)) ? String(n.id) : crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+      rows.push(env[db].prepare(`INSERT OR IGNORE INTO agent_note(id,kind,text,tags,source,uses,created,updated)
+        VALUES(?,?,?,?,?,?,?,?)`).bind(id, n.kind, String(n.text), JSON.stringify(n.tags || []),
+        String(n.source || ""), Number(n.uses) || 0, Number(n.created) || 0, Number(n.updated) || 0));
     }
-    const current = saved ? saved.version : 0;
-    if (Number(req.version) !== current) return Response.json({ error: "stale", version: current }, { status: 409 });
-    if (!req.data || typeof req.data !== "object") return new Response("no data", { status: 400 });
-    const next = { version: current + 1, data: req.data, at: new Date().toISOString() };
-    await env[kv].put(MEMORY_KEY, JSON.stringify(next));
-    return Response.json({ version: next.version });
+    for (const [chat, turns] of Object.entries(data.chats || {})) {
+      for (const t of turns || []) {
+        rows.push(env[db].prepare("INSERT INTO agent_turn(chat,at,q,a) VALUES(?,?,?,?)")
+          .bind(String(chat), Number(t.at) || 0, String(t.q || ""), String(t.a || "")));
+      }
+    }
+    for (let i = 0; i < rows.length; i += 50) await env[db].batch(rows.slice(i, i + 50));
+    await env[kv].put(MOVED, new Date().toISOString());
+    moved = true;
+  }
+
+  async function memory(request, env, path) {
+    if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+    if (path === "/api/memory") return bad("the memory moved to D1: update ultron", 410);
+    try {
+      await moveOldMemory(env);
+      const m = request.method;
+      const note = path.match(/^\/api\/memory\/notes(?:\/([a-f0-9]{6,16}))?$/);
+      if (note && !note[1] && m === "GET") {
+        const { results } = await env[db].prepare(
+          "SELECT id,kind,text,tags,source,uses,created,updated FROM agent_note ORDER BY created,id").all();
+        return Response.json({ notes: results.map((r) => ({ ...r, tags: JSON.parse(r.tags) })) });
+      }
+      if (note && note[1] && m === "PUT") {
+        const n = await jsonBody(request);
+        const tags = Array.isArray(n.tags) ? n.tags.filter((t) => typeof t === "string").map((t) => t.slice(0, 60)).slice(0, 20) : [];
+        if (!KINDS.has(n.kind) || typeof n.text !== "string" || !n.text.trim() || n.text.length > 2000) return bad("bad note");
+        const max = Math.min(Math.max(Number(n.max) || 400, 1), 5000);
+        await env[db].batch([
+          env[db].prepare(`INSERT INTO agent_note(id,kind,text,tags,source,uses,created,updated) VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,text=excluded.text,tags=excluded.tags,
+            uses=excluded.uses,updated=excluded.updated`).bind(note[1], n.kind, n.text, JSON.stringify(tags),
+            String(n.source || "").slice(0, 40), Number(n.uses) || 0, Number(n.created) || 0, Number(n.updated) || 0),
+          env[db].prepare(TRIM).bind(max),
+        ]);
+        return Response.json({ id: note[1] });
+      }
+      if (note && note[1] && m === "DELETE") {
+        const r = await env[db].prepare("DELETE FROM agent_note WHERE id=?").bind(note[1]).run();
+        return Response.json({ deleted: r.meta.changes > 0 });
+      }
+      const chat = path.match(/^\/api\/memory\/chats\/(-?[0-9A-Za-z_:-]{1,64})$/);
+      if (chat && m === "GET") {
+        const { results } = await env[db].prepare(
+          "SELECT at,q,a FROM agent_turn WHERE chat=? ORDER BY id DESC LIMIT 100").bind(chat[1]).all();
+        return Response.json({ turns: results.reverse() });
+      }
+      if (chat && m === "POST") {
+        const t = await jsonBody(request);
+        if (typeof t.q !== "string" || typeof t.a !== "string") return bad("bad turn");
+        const keep = Math.min(Math.max(Number(t.keep) || 10, 1), 100);
+        await env[db].batch([
+          env[db].prepare("INSERT INTO agent_turn(chat,at,q,a) VALUES(?,?,?,?)")
+            .bind(chat[1], Number(t.at) || Math.floor(Date.now() / 1000), t.q.slice(0, 1500), t.a.slice(0, 2500)),
+          env[db].prepare(`DELETE FROM agent_turn WHERE chat=? AND id NOT IN
+            (SELECT id FROM agent_turn WHERE chat=? ORDER BY id DESC LIMIT ?)`).bind(chat[1], chat[1], keep),
+        ]);
+        return Response.json({ ok: true });
+      }
+      if (chat && m === "DELETE") {
+        await env[db].prepare("DELETE FROM agent_turn WHERE chat=?").bind(chat[1]).run();
+        return Response.json({ ok: true });
+      }
+      return new Response("not found", { status: 404 });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return Response.json({ error: String(e && e.message || e) }, { status: 500 });
+    }
+  }
+
+  // The model settings the control panel saved (agent_setting: model, tier, order), for core/llm.settings.
+  async function settings(request, env) {
+    if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+    const { results } = await env[db].prepare(
+      "SELECT key,value FROM agent_setting WHERE key IN ('model','tier','order')").all();
+    return Response.json(Object.fromEntries(results.map((r) => [r.key, JSON.parse(r.value)])));
   }
 
   function route(request, env, path) {
-    if (path === "/api/ai") return runAI(request, env);
+    if (path === "/api/ai" || path === "/api/chat/completions") return runAI(request, env);
+    if (path === "/api/models") return listModels(request, env);
     if (path === "/api/approval") return saveApproval(request, env);
-    if (path === "/api/memory") return memory(request, env);
+    if (path === "/api/memory" || path.startsWith("/api/memory/")) return memory(request, env, path);
+    if (path === "/api/settings" && request.method === "GET") return settings(request, env);
     return null;
   }
 
-  return { route, ask, isTap, decide, runAI, saveApproval, memory };
+  return { route, ask, isTap, decide, runAI, saveApproval, memory, settings };
 }

@@ -3,7 +3,9 @@
 Status of 1 Nov 2026. The original plan of 20 Oct 2026 (Claude API Tool Runner, Opus, about
 $50–80 a month) was replaced by what was actually built: the free Cloudflare Workers AI model
 (`@cf/openai/gpt-oss-120b`, `[model]` in `agent.toml`) through the Telegram worker's `/api/ai`, on
-GitHub Actions; no paid model API. Code fixes use Claude Code on the owner's subscription, with Gemini CLI on the free
+GitHub Actions; no paid model API. 22 Nov 2026: any provider with a key (Anthropic, OpenAI, Google
+AI Studio, NVIDIA, Groq) is auto-selected first, Workers AI stays the free fallback, the memory moved to D1
+and the app gained a control panel (`docs/bots/agent-models.md`, `docs/apps/app-api.md`). Code fixes use Claude Code on the owner's subscription, with Gemini CLI on the free
 Gemini API key as fallback (`ci-fix.yml`). What comes next is in `docs/SCALING.md`. Every working and its run times:
 `docs/CONTEXT.md` (generated from the code).
 

@@ -63,3 +63,11 @@ binding = "AI"
 [[kv_namespaces]]
 binding = "DASH"
 id = "67db94fc82af438496705a09419c2ac3"
+
+# the agent's memory and the control panel's settings (worker/agent.js `db`); the same D1 database
+# as the app API's users (services/app_api, migrations there)
+[[d1_databases]]
+binding = "AGENT_DB"
+database_name = "ultron"
+database_id = "8b95a6a1-f6ac-45ed-adcd-a545914c03b2"
+migrations_dir = "../services/app_api/migrations"

@@ -24,7 +24,9 @@ def check() -> int:
     print(f"config:  {config.find()}")
     print(f"company: {cfg.company}")
     print(f"repo:    {cfg.repo or '(not set)'}")
-    print(f"model:   {cfg.model_name()} (worker: {cfg.worker_url_env} / {cfg.worker_token_env})")
+    from .core import llm
+    spec, tier, order = llm.settings()
+    print(f"model:   {spec} ({tier}); tried in order: {', '.join(str(c) for c in llm.choices()) or 'none: no key set'}")
     print(f"actions: {', '.join(cfg.actions) or '(none)'}")
     print(f"tools:   {', '.join(t.__name__ for t in tools())}")
     print(f"python:  {platform.python_version()} on {platform.system()} {platform.machine()}")

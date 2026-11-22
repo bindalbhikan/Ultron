@@ -237,8 +237,8 @@ def run(args) -> int:
         if status == "GARBLED":
             log.warning("The model's answer was garbled: plain alert instead")
             status, msg = "ALERT", plain_alert(info, why, errors, "the AI's answer was unreadable")
-        log.info("Run %s %s: %s (%s steps, %s in + %s out tokens, $%s at list price)", args.run_id,
-                 info["workflow"], status, usage["steps"], usage["input"], usage["output"], llm.cost(usage))
+        log.info("Run %s %s: %s (%s, %s steps, %s in + %s out tokens, %s)", args.run_id,
+                 info["workflow"], status, usage["model"], usage["steps"], usage["input"], usage["output"], llm.cost_text(usage))
     except llm.LLMError as exc:
         log.warning("Model not available: %s", exc)
         status, msg = "ALERT", plain_alert(info, why, errors, str(exc))

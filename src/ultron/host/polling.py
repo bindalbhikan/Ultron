@@ -81,7 +81,7 @@ def memory_command(cmd: str, arg: str, chat_id: str) -> str:
         if not arg:
             return "Use /forget <id>, with the id from /memory."
         return f"🧠 Forgot {telegram.esc(arg)}." if mem.forget(arg) else f"No note {telegram.esc(arg)}."
-    notes = mem.search(arg, k=30) if arg else mem.read()["notes"][-30:]
+    notes = mem.search(arg, k=30) if arg else mem.notes()[-30:]
     if not notes:
         return "🧠 Nothing in memory yet." if not arg else f"🧠 Nothing about {telegram.esc(arg)}."
     lines = [f"<code>{n['id']}</code> <i>{n['kind']}</i> {telegram.esc(n['text'])}" for n in notes]

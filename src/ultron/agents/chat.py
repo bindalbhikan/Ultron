@@ -113,8 +113,8 @@ def answer(question: str, chat: str = "") -> str:
             mem = None
     try:
         text, usage = llm.agent_loop(system, question, tools(), max_steps=cfg.chat_steps, history=history)
-        log.info("Answered in %s steps (%s earlier messages), %s in + %s out tokens ($%s at list price): %s",
-                 usage["steps"], len(history) // 2, usage["input"], usage["output"], llm.cost(usage), (text or "")[:300])
+        log.info("Answered by %s in %s steps (%s earlier messages), %s in + %s out tokens (%s): %s",
+                 usage["model"], usage["steps"], len(history) // 2, usage["input"], usage["output"], llm.cost_text(usage), (text or "")[:300])
     except llm.LLMError as exc:
         text, mem = f"Sorry, the agent's model is not available right now ({str(exc)[:150]}). Try again later.", None
     text = text or "Sorry, I could not find an answer."
