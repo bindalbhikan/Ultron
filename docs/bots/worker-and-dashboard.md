@@ -33,6 +33,9 @@ return %. The run strip shows every bot's last run (`run_<key>`, pushed by `core
   `services/app_api/migrations`). See `docs/bots/agent-models.md`.
 * `/api/phone/next` and `/api/phone/result` also take an Agent mode phone's own token (D1 `phone_agent`,
   made and revoked by the app API, `docs/apps/app-api.md`); `/api/phone/job` and `/collect` stay on `DASHBOARD_TOKEN`.
+* `GET /api/keys`, `POST /api/keys/report`, `PUT /api/models` (`DASHBOARD_TOKEN`): the app's model API keys,
+  decrypted (`KEYS_SECRET`) for the Python agent only; a key's limit / refusal reported back; the models each
+  provider offers, for the app's model picker (`docs/bots/agent-models.md`).
 * `POST /api/sms` (no token): one SMS from a phone in the Ultron app's "SMS only" mode. The body is JSON:
   `phone` (the app's random UUID), `name` (2-40 characters, typed once on the phone), `from`, `body`, `time`, `sim`,
   and the POD fields `pdf`, `pdftext`, `pdferror`, `html`. The worker records the phone in D1 `sms_phone` and refuses

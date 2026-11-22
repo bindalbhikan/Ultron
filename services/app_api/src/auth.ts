@@ -9,6 +9,8 @@ export interface Env {
   AUTH_SECRET: string;
   // SHA-256 (hex) of the one-time setup code that makes the first administrator (POST /api/setup)
   SETUP_CODE_HASH?: string;
+  // encrypts the agent's model API keys at rest (src/keys.ts); the Telegram worker holds the same secret
+  KEYS_SECRET?: string;
   AUTH_BASE_URL: string;
   APP_ORIGIN: string;
 }

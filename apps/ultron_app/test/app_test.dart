@@ -121,6 +121,49 @@ class FakeRepository extends UltronRepository {
   );
   @override
   Future<List<PhoneAgent>> phoneAgents() async => const [];
+  final keys = <ApiKey>[
+    ApiKey(
+      id: 'k1',
+      provider: 'groq',
+      label: 'Free 1',
+      last4: '1111',
+      status: 'limit',
+      restingUntil: DateTime.now().add(const Duration(hours: 1)),
+    ),
+    const ApiKey(
+      id: 'k2',
+      provider: 'groq',
+      label: 'Free 2',
+      last4: '2222',
+      status: 'ok',
+      restingUntil: null,
+    ),
+  ];
+  @override
+  Future<List<ApiKey>> apiKeys() async => keys;
+  @override
+  Future<List<ApiKey>> addApiKey({
+    required String provider,
+    required String key,
+    String label = '',
+  }) async {
+    keys.add(
+      ApiKey(
+        id: 'k3',
+        provider: provider,
+        label: label,
+        last4: key.substring(key.length - 4),
+        status: 'ok',
+        restingUntil: null,
+      ),
+    );
+    return keys;
+  }
+
+  @override
+  Future<Map<String, List<String>>> agentModels() async => {
+    'groq': ['openai/gpt-oss-120b'],
+  };
   @override
   Future<AgentMemory> agentMemory({
     String kind = '',
@@ -193,6 +236,28 @@ void main() {
       expect(find.text('Hello, Owner'), findsOneWidget);
     },
   );
+
+  testWidgets('Brain shows each key with its state and adds a new one', (
+    tester,
+  ) async {
+    final repo = await _open(tester, size: const Size(1280, 2400));
+    await _signIn(tester, 'Bhikan');
+    await tester.tap(find.text('Control').first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('••••1111'), findsOneWidget);
+    expect(find.textContaining('Limit · back'), findsOneWidget);
+    expect(find.text('Ready'), findsWidgets);
+    await tester.tap(find.byKey(const Key('add-key')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('api-key-field')),
+      'sk-test-abcdefghijklmnop9999',
+    );
+    await tester.tap(find.text('Add key').last);
+    await tester.pumpAndSettle();
+    expect(repo.keys.last.last4, '9999');
+    expect(find.textContaining('••••9999'), findsOneWidget);
+  });
 
   testWidgets('no setup button once an administrator exists', (tester) async {
     await _open(tester);

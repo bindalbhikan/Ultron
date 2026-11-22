@@ -219,3 +219,45 @@ class PhoneAgent {
     );
   }
 }
+
+/// One model API key added in the app (services/app_api /api/agent/keys); the key itself never comes back.
+@immutable
+class ApiKey {
+  const ApiKey({
+    required this.id,
+    required this.provider,
+    required this.label,
+    required this.last4,
+    required this.status,
+    required this.restingUntil,
+    this.lastError = '',
+  });
+  final String id, provider, label, last4, status, lastError;
+  final DateTime? restingUntil;
+  bool get resting =>
+      status == 'limit' && (restingUntil?.isAfter(DateTime.now()) ?? false);
+  factory ApiKey.fromJson(Map<String, dynamic> json) {
+    final until = (json['restingUntil'] as num? ?? 0).toInt();
+    return ApiKey(
+      id: json['id'] as String,
+      provider: json['provider'] as String,
+      label: json['label'] as String? ?? '',
+      last4: json['last4'] as String? ?? '',
+      status: json['status'] as String? ?? 'ok',
+      restingUntil: until > 0
+          ? DateTime.fromMillisecondsSinceEpoch(until)
+          : null,
+      lastError: json['lastError'] as String? ?? '',
+    );
+  }
+}
+
+/// A few known models per provider, for the picker before the agent has read the provider's own list.
+const knownModels = <String, List<String>>{
+  'anthropic': ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
+  'openai': ['gpt-5', 'gpt-5-mini'],
+  'google': ['gemini-2.5-pro', 'gemini-2.5-flash'],
+  'nvidia': ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
+  'groq': ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
+  'cloudflare': ['@cf/openai/gpt-oss-120b', '@cf/openai/gpt-oss-20b'],
+};

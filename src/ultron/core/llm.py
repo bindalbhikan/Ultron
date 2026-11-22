@@ -27,7 +27,6 @@ if TYPE_CHECKING:
 log = logging.getLogger("ultron")
 
 JSON_TYPES = {int: "integer", str: "string", float: "number", bool: "boolean"}
-COOLDOWN = 600          # seconds a provider that refused (key, credit, rate limit) is left out
 
 
 class LLMError(RuntimeError):
@@ -52,27 +51,95 @@ def tool(fn: Callable) -> Callable:
 
 
 _clients: dict[str, "OpenAI"] = {}
-_resting: dict[str, float] = {}
+_resting: dict[str, float] = {}         # key id -> until when it is left out (its limit, or a refusal)
 _lock = threading.Lock()
+LIMIT_REST = 3600                       # a key at its limit rests an hour unless the provider says how long
+_keys_cache: dict = {"at": 0.0, "keys": []}
 
 
-def client(provider: str) -> "OpenAI":
-    """The OpenAI SDK client of a provider (its OpenAI-compatible address and key)."""
+def worker_get(path: str):
+    """GET <worker><path> with the worker token; None when the worker is not set up or does not answer."""
+    from . import http
+    url, token = config.get().worker()
+    if not url or not token:
+        return None
+    try:
+        r = http.get(f"{url}{path}", headers={"Authorization": f"Bearer {token}"}, timeout=10)
+        r.raise_for_status()
+        return http.json_of(r)
+    except Exception as exc:  # noqa: BLE001 - the app's keys and settings are optional
+        log.info("worker %s not read (%s)", path, type(exc).__name__)
+        return None
+
+
+def worker_send(method: str, path: str, body: dict) -> None:
+    """A report to the worker (a key's state, the model lists); never fails the caller."""
+    from . import http
+    url, token = config.get().worker()
+    if not url or not token:
+        return
+    try:
+        http.request(method, f"{url}{path}", headers={"Authorization": f"Bearer {token}"}, json=body, timeout=10)
+    except Exception as exc:  # noqa: BLE001
+        log.info("worker %s not told (%s)", path, type(exc).__name__)
+
+
+def app_keys() -> list[dict]:
+    """The API keys added in the app (the worker's GET /api/keys: id, provider, key, restingUntil), read every
+    5 minutes; kept as last read when the worker does not answer."""
+    if time.time() - _keys_cache["at"] > 300:
+        got = worker_get("/api/keys")
+        if isinstance(got, dict) and isinstance(got.get("keys"), list):
+            _keys_cache["keys"] = got["keys"]
+        _keys_cache["at"] = time.time()
+    return _keys_cache["keys"]
+
+
+def keys() -> dict[str, list[tuple[str, str]]]:
+    """provider -> [(key id, secret)] in the order they are tried: the env var's key first, then the app's."""
+    out: dict[str, list[tuple[str, str]]] = {}
+    for name, p in models.PROVIDERS.items():
+        if name != "cloudflare" and p.key():
+            out.setdefault(name, []).append(("env", p.key()))
+    now_ms = time.time() * 1000
+    for k in app_keys():
+        if k.get("provider") in models.PROVIDERS and k.get("key"):
+            if float(k.get("restingUntil") or 0) > now_ms:
+                _resting[k["id"]] = max(_resting.get(k["id"], 0), float(k["restingUntil"]) / 1000)
+            out.setdefault(k["provider"], []).append((k["id"], k["key"]))
+    return out
+
+
+def client(provider: str, key_id: str = "") -> "OpenAI":
+    """The OpenAI SDK client of a provider at its OpenAI-compatible address, with one of its keys."""
     from openai import OpenAI
     with _lock:
-        if provider not in _clients:
+        name = f"{provider}|{key_id}"
+        if name not in _clients:
             p = models.PROVIDERS[provider]
             if provider == "cloudflare":
                 url, token = config.get().worker()
-                base, key = f"{url}/api", token
+                base, secret = f"{url}/api", token
             else:
-                base, key = p.base_url, p.key()
-            _clients[provider] = OpenAI(api_key=key, base_url=base, timeout=180, max_retries=1)
-        return _clients[provider]
+                found = dict(keys().get(provider, []))
+                secret = found.get(key_id) or next(iter(found.values()), "")
+                base = p.base_url
+            _clients[name] = OpenAI(api_key=secret, base_url=base, timeout=180, max_retries=1)
+        return _clients[name]
 
 
 def _list_ids(provider: str) -> list[str]:
-    return [m.id for m in client(provider).models.list()]
+    """A provider's model list, through its first key that is not resting."""
+    usable = [k for k, _ in keys().get(provider, []) if _resting.get(k, 0) <= time.time()] or [""]
+    return [m.id for m in client(provider, usable[0]).models.list()]
+
+
+def _rest(choice: models.Choice, status: str, error: str, until: float) -> None:
+    """Leave a key out until `until`, and tell the app (a key added there) why."""
+    _resting[choice.key] = until
+    if choice.key not in ("", "env", "worker"):
+        worker_send("POST", "/api/keys/report", {"id": choice.key, "status": status, "error": error[:200],
+                                                 "until": int(until * 1000)})
 
 
 _panel: dict = {"at": 0.0, "values": {}}
@@ -81,18 +148,10 @@ _panel: dict = {"at": 0.0, "values": {}}
 def panel() -> dict:
     """What the app's control panel saved (the worker's GET /api/settings: model, tier, order), read
     every 5 minutes; {} when the worker is not set up or does not answer (agent.toml then counts)."""
-    from . import http
-    url, token = config.get().worker()
-    if not url or not token:
-        return {}
     if time.time() - _panel["at"] > 300:
-        try:
-            r = http.get(f"{url}/api/settings", headers={"Authorization": f"Bearer {token}"}, timeout=10)
-            r.raise_for_status()
-            values = http.json_of(r)
-            _panel["values"] = values if isinstance(values, dict) else {}
-        except Exception as exc:  # noqa: BLE001 - the panel is optional; agent.toml still holds
-            log.info("control panel settings not read (%s): agent.toml counts", type(exc).__name__)
+        got = worker_get("/api/settings")
+        if got is not None:
+            _panel["values"] = got if isinstance(got, dict) else {}
         _panel["at"] = time.time()
     return _panel["values"]
 
@@ -108,14 +167,17 @@ def settings() -> tuple[str, str, tuple[str, ...]]:
 
 
 def choices(tier: str = "") -> list[models.Choice]:
-    """The models to try now, best first (providers resting after a refusal go last)."""
+    """The models to try now, best first: each provider once per key; a key resting after its limit or a
+    refusal goes last (still tried when nothing else is left)."""
     cfg = config.get()
     spec, default_tier, order = settings()
     url, token = cfg.worker()
-    lists = models.ModelLists(cfg.output / "agent" / "models.json", _list_ids)
-    found = models.candidates(models.parse(spec), order, tier or default_tier, bool(url and token), lists)
+    lists = models.ModelLists(cfg.output / "agent" / "models.json", _list_ids,
+                              fresh=lambda provider, ids: worker_send("PUT", "/api/models", {provider: ids}))
+    key_ids = {provider: [k for k, _ in found] for provider, found in keys().items()}
+    found = models.candidates(models.parse(spec), order, tier or default_tier, bool(url and token), lists, key_ids)
     now = time.time()
-    return sorted(found, key=lambda c: _resting.get(c.provider, 0) > now)
+    return sorted(found, key=lambda c: _resting.get(c.key, 0) > now)
 
 
 def chat(messages: list[dict], tools: Sequence[Callable] = (), model: str = "", max_tokens: int = 4000,
@@ -126,7 +188,10 @@ def chat(messages: list[dict], tools: Sequence[Callable] = (), model: str = "", 
     tried = choices(tier)
     if model:
         first = models.parse(model)
-        tried = [first, *[c for c in tried if c != first]] if first else tried
+        if first:
+            own = [c for c in tried if c.provider == first.provider]
+            pinned = [models.Choice(first.provider, first.model, c.key) for c in own] or [first]
+            tried = [*pinned, *[c for c in tried if c not in pinned]]
     if not tried:
         cfg = config.get()
         raise LLMError("no model: set a key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, NVIDIA_API_KEY, GROQ_API_KEY) "
@@ -137,11 +202,15 @@ def chat(messages: list[dict], tools: Sequence[Callable] = (), model: str = "", 
         if tools:
             body["tools"] = [t.schema for t in tools]
         try:
-            data = client(choice.provider).chat.completions.create(**body).model_dump()
+            data = client(choice.provider, choice.key).chat.completions.create(**body).model_dump()
         except openai.APIStatusError as exc:
             why = f"HTTP {exc.status_code} {str(exc.message)[:200]}"
-            if exc.status_code in (401, 402, 403, 429):
-                _resting[choice.provider] = time.time() + COOLDOWN
+            if exc.status_code in (402, 429):          # this key's limit: the next key of the provider goes on
+                wait = exc.response.headers.get("retry-after", "") if exc.response is not None else ""
+                until = time.time() + (float(wait) if wait.replace(".", "", 1).isdigit() else LIMIT_REST)
+                _rest(choice, "limit", why, until)
+            elif exc.status_code in (401, 403):        # the key refused: left out until it is fixed in the app
+                _rest(choice, "bad", why, time.time() + 24 * 3600)
         except openai.APIError as exc:          # not reached, timed out, an answer that is no JSON
             why = f"{type(exc).__name__}: {str(exc)[:200]}"
         else:

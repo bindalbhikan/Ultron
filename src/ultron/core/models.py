@@ -82,6 +82,7 @@ DEFAULT_ORDER = ("anthropic", "openai", "google", "nvidia", "groq", "cloudflare"
 class Choice:
     provider: str
     model: str
+    key: str = ""          # which of the provider's keys: "env" (its env var) or an app key's id; "" = any
 
     def __str__(self) -> str:
         return f"{self.provider}:{self.model}"
@@ -116,10 +117,11 @@ def best(provider: Provider, tier: str, ids: list[str]) -> str:
 
 
 class ModelLists:
-    """The model ids of each provider, read once a day (GET /models through the SDK)."""
+    """The model ids of each provider, read once a day (GET /models through the SDK); `fresh` is told of a
+    list just read (the agent passes it on for the app's model picker)."""
 
-    def __init__(self, path: Path, fetch):
-        self.path, self.fetch = path, fetch
+    def __init__(self, path: Path, fetch, fresh=None):
+        self.path, self.fetch, self.fresh = path, fetch, fresh
 
     def _saved(self) -> dict:
         try:
@@ -137,6 +139,11 @@ class ModelLists:
         except Exception:  # noqa: BLE001 - a provider without a list still has its known model
             return entry.get("ids") or []
         saved[provider] = {"at": int(time.time()), "ids": ids}
+        if self.fresh is not None:
+            try:
+                self.fresh(provider, ids)
+            except Exception:  # noqa: BLE001 - the picker's list is a convenience
+                pass
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(saved), encoding="utf-8")
@@ -145,26 +152,32 @@ class ModelLists:
         return ids
 
 
-def available(order: tuple[str, ...], worker_ready: bool) -> list[str]:
-    """The providers of `order` that can be used here: a key set (cloudflare: the worker set up)."""
+def available(order: tuple[str, ...], keys: dict[str, list[str]], worker_ready: bool) -> list[str]:
+    """The providers of `order` that can be used here: one with a key (cloudflare: the worker set up)."""
     out = []
     for name in order:
         if name not in PROVIDERS:
             raise ValueError(f"[model] order: unknown provider {name!r} ({', '.join(PROVIDERS)})")
-        p = PROVIDERS[name]
-        if (worker_ready if name == "cloudflare" else bool(p.key())) and name not in out:
+        if (worker_ready if name == "cloudflare" else bool(keys.get(name))) and name not in out:
             out.append(name)
     return out
 
 
 def candidates(pinned: Choice | None, order: tuple[str, ...], tier: str, worker_ready: bool,
-               lists: ModelLists) -> list[Choice]:
-    """The models to try, in order: the pinned one, then the best of every available provider."""
+               lists: ModelLists, keys: dict[str, list[str]]) -> list[Choice]:
+    """The models to try, in order: the pinned model on each of its provider's keys, then the best model of
+    every available provider, once per key (`keys`: provider -> key ids in the order they are tried)."""
     if tier not in TIERS:
         raise ValueError(f"[model] tier must be one of {', '.join(TIERS)}")
-    out = [pinned] if pinned else []
-    for name in available(order, worker_ready):
-        choice = Choice(name, best(PROVIDERS[name], tier, lists.ids(name)))
-        if choice not in out:
-            out.append(choice)
+
+    def on_keys(provider: str, model: str) -> list[Choice]:
+        if provider == "cloudflare":
+            return [Choice(provider, model, "worker")]
+        return [Choice(provider, model, k) for k in keys.get(provider, [])]
+
+    out = on_keys(pinned.provider, pinned.model) if pinned else []
+    for name in available(order, keys, worker_ready):
+        for choice in on_keys(name, best(PROVIDERS[name], tier, lists.ids(name))):
+            if choice not in out:
+                out.append(choice)
     return out

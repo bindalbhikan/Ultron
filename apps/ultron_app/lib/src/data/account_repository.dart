@@ -69,6 +69,23 @@ abstract class AccountRepository {
   Future<String> newPhoneAgent(String device) async => unavailable();
   Future<List<PhoneAgent>> revokePhoneAgent(String id) async => unavailable();
 
+  /// The agent's model API keys: several per provider, used in turn (the next when one hits its limit).
+  Future<List<ApiKey>> apiKeys() async => unavailable();
+  Future<List<ApiKey>> addApiKey({
+    required String provider,
+    required String key,
+    String label = '',
+  }) async => unavailable();
+  Future<List<ApiKey>> removeApiKey(String id) async => unavailable();
+  Future<List<ApiKey>> changeApiKey(
+    String id, {
+    String? move,
+    bool reset = false,
+  }) async => unavailable();
+
+  /// provider -> the model ids the agent last read from it.
+  Future<Map<String, List<String>>> agentModels() async => unavailable();
+
   Never unavailable() =>
       throw const FrontendException('This service is not connected.');
 }

@@ -368,4 +368,57 @@ class CloudflareRepository extends UltronRepository {
       authenticated: false,
     );
   }
+
+  List<ApiKey> _keys(Map<String, dynamic> data) => (data['keys'] as List)
+      .map((k) => ApiKey.fromJson(Map<String, dynamic>.from(k as Map)))
+      .toList();
+
+  @override
+  Future<List<ApiKey>> apiKeys() async =>
+      _keys((await _request('GET', '/api/agent/keys')).data);
+
+  @override
+  Future<List<ApiKey>> addApiKey({
+    required String provider,
+    required String key,
+    String label = '',
+  }) async => _keys(
+    (await _request(
+      'POST',
+      '/api/agent/keys',
+      body: {'provider': provider, 'key': key.trim(), 'label': label.trim()},
+    )).data,
+  );
+
+  @override
+  Future<List<ApiKey>> removeApiKey(String id) async => _keys(
+    (await _request(
+      'DELETE',
+      '/api/agent/keys/${Uri.encodeComponent(id)}',
+    )).data,
+  );
+
+  @override
+  Future<List<ApiKey>> changeApiKey(
+    String id, {
+    String? move,
+    bool reset = false,
+  }) async => _keys(
+    (await _request(
+      'PATCH',
+      '/api/agent/keys/${Uri.encodeComponent(id)}',
+      body: {'move': ?move, if (reset) 'reset': true},
+    )).data,
+  );
+
+  @override
+  Future<Map<String, List<String>>> agentModels() async {
+    final data =
+        (await _request('GET', '/api/agent/models')).data['models'] as Map? ??
+        const {};
+    return data.map(
+      (k, v) =>
+          MapEntry(k as String, List<String>.from((v as Map)['ids'] as List)),
+    );
+  }
 }

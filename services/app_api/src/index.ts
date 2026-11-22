@@ -1,4 +1,5 @@
 import { createAuth, type Env } from './auth';
+import { sealKey } from './keys';
 import { HttpError, identity, PERMISSIONS, requirePermission, rolePermissions, type Identity, type Permission } from './access';
 
 const json = (value: unknown, status = 200) => Response.json(value, { status });
@@ -224,6 +225,74 @@ async function firstAdmin(request: Request, env: Env) {
   return json({ ok: true, username: user }, 201);
 }
 
+// The agent's model API keys (api_key): several per provider, tried in order; a key at its limit rests, a
+// refused one is marked bad (the agent reports both). The app sees only the last four characters.
+const KEY_PROVIDERS = ['anthropic', 'openai', 'google', 'nvidia', 'groq'] as const;
+async function apiKeys(env: Env) {
+  const { results } = await env.DB.prepare(`SELECT id,provider,label,last4,position,status,resting_until AS restingUntil,
+    last_error AS lastError,last_used AS lastUsed,created_at AS createdAt FROM api_key ORDER BY provider,position,created_at`).all();
+  return json({ keys: results, providers: KEY_PROVIDERS });
+}
+async function addApiKey(request: Request, env: Env, actor: Identity) {
+  requirePermission(actor, 'agent.manage');
+  if (!env.KEYS_SECRET || env.KEYS_SECRET.length < 32) throw new HttpError(503, 'Key storage is not configured.');
+  const input = await body(request);
+  const provider = String(input.provider || '');
+  if (!KEY_PROVIDERS.includes(provider as typeof KEY_PROVIDERS[number])) throw new HttpError(400, 'Choose a provider.');
+  const key = typeof input.key === 'string' ? input.key.trim() : '';
+  if (key.length < 16 || key.length > 400 || /\s/.test(key)) throw new HttpError(400, 'Paste the whole API key (no spaces).');
+  const label = typeof input.label === 'string' ? input.label.trim().slice(0, 40) : '';
+  if (await env.DB.prepare('SELECT 1 FROM api_key WHERE provider=? AND last4=? AND label=?').bind(provider, key.slice(-4), label).first()) {
+    throw new HttpError(409, 'This key looks added already.');
+  }
+  const { iv, ciphertext } = await sealKey(env.KEYS_SECRET, key);
+  const next = await env.DB.prepare('SELECT COALESCE(MAX(position),-1)+1 AS p FROM api_key WHERE provider=?').bind(provider).first<{ p: number }>();
+  const id = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO api_key(id,provider,label,iv,ciphertext,last4,position,created_by,created_at)
+      VALUES(?,?,?,?,?,?,?,?,?)`).bind(id, provider, label, iv, ciphertext, key.slice(-4), next?.p ?? 0, actor.id, Date.now()),
+    env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'agent.key.add',?,?)`)
+      .bind(crypto.randomUUID(), actor.id, id, JSON.stringify({ provider, label, last4: key.slice(-4) })),
+  ]);
+  return apiKeys(env);
+}
+async function changeApiKey(request: Request, env: Env, actor: Identity, id: string) {
+  requirePermission(actor, 'agent.manage');
+  if (request.method === 'DELETE') {
+    const r = await env.DB.batch([
+      env.DB.prepare('DELETE FROM api_key WHERE id=? RETURNING id').bind(id),
+      env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) SELECT ?,?,'agent.key.remove',?,'{}' WHERE changes()=1`)
+        .bind(crypto.randomUUID(), actor.id, id),
+    ]);
+    if (r[0].results.length !== 1) throw new HttpError(404, 'This key is already gone.');
+    return apiKeys(env);
+  }
+  const input = await body(request);
+  if (input.move === 'up' || input.move === 'down') {
+    const me = await env.DB.prepare('SELECT provider,position FROM api_key WHERE id=?').bind(id).first<{ provider: string; position: number }>();
+    if (!me) throw new HttpError(404, 'This key is gone.');
+    const other = await env.DB.prepare(input.move === 'up'
+      ? 'SELECT id,position FROM api_key WHERE provider=? AND position<? ORDER BY position DESC LIMIT 1'
+      : 'SELECT id,position FROM api_key WHERE provider=? AND position>? ORDER BY position LIMIT 1')
+      .bind(me.provider, me.position).first<{ id: string; position: number }>();
+    if (other) {
+      await env.DB.batch([
+        env.DB.prepare('UPDATE api_key SET position=? WHERE id=?').bind(other.position, id),
+        env.DB.prepare('UPDATE api_key SET position=? WHERE id=?').bind(me.position, other.id),
+      ]);
+    }
+  } else if (input.reset === true) {          // try a rested or refused key again now
+    await env.DB.prepare(`UPDATE api_key SET status='ok',resting_until=0,last_error='' WHERE id=?`).bind(id).run();
+  } else {
+    throw new HttpError(400, 'Say what to change.');
+  }
+  return apiKeys(env);
+}
+async function agentModels(env: Env) {
+  const { results } = await env.DB.prepare('SELECT provider,ids,updated_at AS updatedAt FROM agent_model').all();
+  return json({ models: Object.fromEntries(results.map((r) => [r.provider, { ids: JSON.parse(String(r.ids)), updatedAt: r.updatedAt }])) });
+}
+
 async function roles(env: Env) {
   const { results } = await env.DB.prepare('SELECT id,name,permissions,revision FROM app_role ORDER BY name').all();
   return results.map((row) => ({ ...row, permissions: JSON.parse(String(row.permissions)) }));
@@ -346,6 +415,17 @@ async function route(request: Request, env: Env) {
   if (path === '/api/admin/phone-agents' && request.method === 'POST') return newPhoneAgent(request, env, user);
   const agentMatch = path.match(/^\/api\/admin\/phone-agents\/([0-9a-f-]{36})$/);
   if (agentMatch && request.method === 'DELETE') return revokePhoneAgent(env, user, agentMatch[1]);
+  if (path === '/api/agent/keys' && request.method === 'GET') {
+    requirePermission(user, 'agent.tools.read');
+    return apiKeys(env);
+  }
+  if (path === '/api/agent/keys' && request.method === 'POST') return addApiKey(request, env, user);
+  const keyMatch = path.match(/^\/api\/agent\/keys\/([0-9a-f-]{36})$/);
+  if (keyMatch && (request.method === 'DELETE' || request.method === 'PATCH')) return changeApiKey(request, env, user, keyMatch[1]);
+  if (path === '/api/agent/models' && request.method === 'GET') {
+    requirePermission(user, 'agent.tools.read');
+    return agentModels(env);
+  }
   const noteMatch = path.match(/^\/api\/agent\/memory\/([a-f0-9]{6,16})$/);
   if (noteMatch && request.method === 'DELETE') return forgetNote(env, user, noteMatch[1]);
   const userMatch = path.match(/^\/api\/admin\/users\/([A-Za-z0-9_-]{1,128})$/);

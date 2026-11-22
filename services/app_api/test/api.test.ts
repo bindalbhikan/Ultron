@@ -34,6 +34,7 @@ before(async () => {
   server=createTestHarness({workers:[{configPath:'wrangler.jsonc',
     vars:{AUTH_BASE_URL:'https://api.example.test',APP_ORIGIN:'https://app.example.test'},
     secrets:{AUTH_SECRET:'integration-tests-only-secret-32-characters-minimum',
+      KEYS_SECRET:'integration-tests-only-keys-secret-32-chars-min',
       SETUP_CODE_HASH:'5b02d4eb46b7e8525e3b26acb6b37563dcffc9981c86f352c70c2d4347fb5591'}}]});
   await server.listen();
   db=(await server.getWorker<{DB:D1Database}>().getEnv()).DB;
@@ -204,4 +205,32 @@ test('an administrator turns a phone into an agent with a token kept only as a h
   assert.equal((await call('/api/admin/phone-agents','POST',{device:'x'},adminToken)).status,400);
   const viewerToken=await signin2('owner.two','Eight@8c');            // a viewer: no phone.manage
   assert.equal((await call('/api/admin/phone-agents','POST',{device:'Some phone'},viewerToken)).status,403);
+});
+
+test('an administrator adds API keys (encrypted, shown by their last four), orders, resets and removes them',async()=>{
+  const adminToken=await signin('admin@example.test');
+  const add=(b:Record<string,unknown>,t=adminToken)=>call('/api/agent/keys','POST',b,t);
+  assert.equal((await add({provider:'groq',key:'gsk_test_aaaaaaaaaaaaaaaaaaaa1111',label:'first'})).status,200);
+  const second=await add({provider:'groq',key:'gsk_test_bbbbbbbbbbbbbbbbbbbb2222',label:'second'});
+  const {keys}=await second.json() as {keys:{id:string;provider:string;last4:string;position:number;status:string}[]};
+  assert.deepEqual(keys.map((k)=>[k.last4,k.position]),[['1111',0],['2222',1]]);
+  assert.ok(!JSON.stringify(keys).includes('gsk_test'));                        // the key never comes back
+  const row=await db.prepare('SELECT ciphertext FROM api_key WHERE last4=?').bind('1111').first<{ciphertext:string}>();
+  assert.ok(!row!.ciphertext.includes('gsk_test'));                             // encrypted at rest
+  assert.equal((await add({provider:'groq',key:'gsk_test_aaaaaaaaaaaaaaaaaaaa1111',label:'first'})).status,409);
+  assert.equal((await add({provider:'someone',key:'x'.repeat(20)})).status,400);
+  assert.equal((await add({provider:'groq',key:'short'})).status,400);
+  const moved=await call(`/api/agent/keys/${keys[1].id}`,'PATCH',{move:'up'},adminToken);
+  const after=(await moved.json() as {keys:{last4:string}[]}).keys;
+  assert.deepEqual(after.map((k)=>k.last4),['2222','1111']);
+  await db.prepare(`UPDATE api_key SET status='limit',resting_until=? WHERE last4='2222'`).bind(Date.now()+3600000).run();
+  const reset=await call(`/api/agent/keys/${keys[1].id}`,'PATCH',{reset:true},adminToken);
+  assert.equal((await reset.json() as {keys:{last4:string;status:string}[]}).keys[0].status,'ok');
+  assert.equal((await call(`/api/agent/keys/${keys[0].id}`,'DELETE',undefined,adminToken)).status,200);
+  const managerToken=await signin2('manager','a-long-public-test-pass');
+  assert.equal((await add({provider:'groq',key:'gsk_test_cccccccccccccccccccc3333'},managerToken)).status,403);
+  assert.equal((await call('/api/agent/keys','GET',undefined,managerToken)).status,200);
+  await db.prepare(`INSERT INTO agent_model(provider,ids,updated_at) VALUES('groq','["openai/gpt-oss-120b"]',1)`).run();
+  const models=await (await call('/api/agent/models','GET',undefined,adminToken)).json() as {models:Record<string,{ids:string[]}>};
+  assert.deepEqual(models.models.groq.ids,['openai/gpt-oss-120b']);
 });

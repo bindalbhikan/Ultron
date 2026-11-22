@@ -7,6 +7,9 @@
 //   /api/memory/notes[/<id>]    the agent's long-term notes (ultron.core.memory): GET all, PUT one, DELETE one
 //   /api/memory/chats/<chat>    the last messages of a chat: GET, POST one, DELETE all
 //   GET /api/settings   the model settings the app's control panel saved (core/llm.settings)
+//   GET /api/keys       the model API keys added in the app (D1 api_key, AES-GCM with KEYS_SECRET), decrypted
+//                       for the Python agent only; POST /api/keys/report marks one at its limit or refused
+//   PUT /api/models     the models each provider offers, as the agent read them (the app's model picker)
 //   POST /api/sms       one SMS from a phone in the app's "SMS only" mode (no account, no token): the
 //                       worker records the phone (D1 sms_phone), and passes the SMS to the SMS sheet's
 //                       Apps Script with SMS_WEBAPP_URL / SMS_WEBAPP_KEY (worker secrets), the phone's
@@ -332,6 +335,58 @@ export function makeAgent({
     return new Response(text.slice(0, 200), { status: word === "error" ? 502 : 200 });
   }
 
+  // The model API keys added in the app's control panel (services/app_api/src/keys.ts encrypts them with the same
+  // KEYS_SECRET): decrypted only here, only for the agent's token. A key the agent reported at its limit is
+  // still listed with its resting time, so the agent can tell how long to skip it.
+  async function aesKey(env) {
+    const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(env.KEYS_SECRET));
+    return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  }
+  const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+  async function keys(request, env, path) {
+    if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+    if (path === "/api/keys" && request.method === "GET") {
+      if (!env.KEYS_SECRET) return Response.json({ keys: [] });
+      const { results } = await env[db].prepare(`SELECT id,provider,iv,ciphertext,resting_until FROM api_key
+        WHERE status!='bad' ORDER BY provider,position,created_at`).all();
+      const key = await aesKey(env);
+      const out = [];
+      for (const r of results) {
+        try {
+          const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(r.iv) }, key, unb64(r.ciphertext));
+          out.push({ id: r.id, provider: r.provider, key: new TextDecoder().decode(plain), restingUntil: r.resting_until });
+        } catch {
+          /* a key sealed with another secret: left out, never sent broken */
+        }
+      }
+      return Response.json({ keys: out });
+    }
+    if (path === "/api/keys/report" && request.method === "POST") {
+      const m = await jsonBody(request).catch((e) => e);
+      if (m instanceof Response) return m;
+      const status = String(m.status || "");
+      if (!["ok", "limit", "bad"].includes(status) || typeof m.id !== "string") return bad("bad report");
+      const until = status === "limit" ? Math.max(Number(m.until) || 0, Date.now() + 60_000) : 0;
+      await env[db].prepare(`UPDATE api_key SET status=?,resting_until=?,last_error=?,last_used=? WHERE id=?`)
+        .bind(status, until, String(m.error || "").slice(0, 200), Date.now(), m.id).run();
+      return Response.json({ ok: true });
+    }
+    return new Response("not found", { status: 404 });
+  }
+
+  async function putModels(request, env) {
+    if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+    const m = await jsonBody(request, 400_000).catch((e) => e);
+    if (m instanceof Response) return m;
+    const rows = Object.entries(m).filter(([p, ids]) => /^[a-z]{3,12}$/.test(p) && Array.isArray(ids));
+    if (!rows.length) return bad("no models");
+    await env[db].batch(rows.map(([p, ids]) => env[db].prepare(`INSERT INTO agent_model(provider,ids,updated_at) VALUES(?,?,?)
+      ON CONFLICT(provider) DO UPDATE SET ids=excluded.ids,updated_at=excluded.updated_at`)
+      .bind(p, JSON.stringify(ids.filter((i) => typeof i === "string").slice(0, 500)), Date.now())));
+    return Response.json({ ok: true });
+  }
+
   function route(request, env, path) {
     if (path === "/api/ai" || path === "/api/chat/completions") return runAI(request, env);
     if (path === "/api/models") return listModels(request, env);
@@ -339,6 +394,8 @@ export function makeAgent({
     if (path === "/api/memory" || path.startsWith("/api/memory/")) return memory(request, env, path);
     if (path === "/api/settings" && request.method === "GET") return settings(request, env);
     if (path === "/api/sms") return sms(request, env);
+    if (path === "/api/keys" || path === "/api/keys/report") return keys(request, env, path);
+    if (path === "/api/models" && request.method === "PUT") return putModels(request, env);
     return null;
   }
 

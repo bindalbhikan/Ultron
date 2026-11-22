@@ -31,6 +31,21 @@ OpenAI-compatible address:
 * **Cloudflare** stays last as the free safety net: the worker's `/api/chat/completions` and
   `/api/models` (OpenAI shape; `/api/ai` is the same route, for older agents).
 
+### API keys: several per provider, rotated
+
+Keys come from two places, tried in this order for each provider: the env var (GitHub secret) first, then the keys
+added in the app (**Control -> Brain: API keys**), in the order set there. A key that hits its limit (HTTP 402 / 429)
+rests until the provider's `retry-after` (else an hour) and the next key of the same provider answers at once; a
+refused key (401 / 403) rests a day and shows *Refused* in the app until someone taps *Try again now* or removes it.
+The agent reports both to the app (worker `POST /api/keys/report`), so the app shows *Limit · back HH:MM*.
+
+App keys are stored in D1 `api_key`, AES-GCM encrypted with `KEYS_SECRET` (a secret of both the app API and the
+Telegram worker). The app sees only the last four characters. The worker decrypts them only for the agent's token
+(`GET /api/keys`, read every 5 minutes).
+
+The model picker (Brain: model, auto off) lists each provider's models as the agent last read them (the agent
+sends a fresh list to the worker's `PUT /api/models`; D1 `agent_model`), or a few known ones before that.
+
 ### Settings, in the order they count
 
 1. `AGENT_MODEL`, `AGENT_MODEL_TIER`, `AGENT_MODEL_ORDER` (repository variables / env)

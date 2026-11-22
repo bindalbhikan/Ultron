@@ -16,7 +16,7 @@ Every screen reads a live service; a person sees only what their role allows (`d
 | SMS only | `/sms` | none | Android: a name and a SIM, then every SMS goes to the sheet (below) |
 | Waiting for approval | `/access` | signed in | a pending or disabled account; "Check again" re-reads the access |
 | Home | `/app/home` | `app.access` | live numbers: registrations waiting, SMS phones (last SMS, sent), agent model, memory notes; a number that could not be read shows "—" and why, never 0 |
-| Control | `/app/control` | `agent.tools.read` | the agent's model (auto, tier, provider order), the SMS phones (block / unblock), Agent mode (turn this phone on, revoke a phone), the memory (remove a note) |
+| Control | `/app/control` | `agent.tools.read` | **Brain**: the model (auto, or a provider and one of its models from a list), the API keys (add several per provider, order, retry, remove; each shows Ready / Limit · back HH:MM / Refused), tier, provider order; the SMS phones (block / unblock), Agent mode (turn this phone on, revoke a phone), the memory (remove a note) |
 | Users | `/app/admin` | `users.manage` | search, **Approve** on a pending registration, change role / status, **Create user** (username, optional email) |
 | Roles | `/app/roles` | `roles.manage` | roles and their permissions |
 | Profile | `/app/profile` | `app.access` | role, permissions, appearance (dark / light / phone), sign out |

@@ -33,9 +33,14 @@ def test_only_providers_with_a_key_in_order_pinned_first(monkeypatch, tmp_path):
             monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GROQ_API_KEY", "g")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
-    lists = ModelLists(tmp_path / "m.json", lambda p: {"anthropic": ["claude-opus-5-5"], "groq": ["openai/gpt-oss-120b"]}[p])
-    got = candidates(Choice("groq", "x"), ("anthropic", "google", "groq", "cloudflare"), "smart", False, lists)
-    assert got == [Choice("groq", "x"), Choice("anthropic", "claude-opus-5-5"), Choice("groq", "openai/gpt-oss-120b")]
+    told = []
+    lists = ModelLists(tmp_path / "m.json", lambda p: {"anthropic": ["claude-opus-5-5"], "groq": ["openai/gpt-oss-120b"]}[p],
+                       fresh=lambda p, ids: told.append(p))
+    keys = {"anthropic": ["env"], "groq": ["env", "k2"]}
+    got = candidates(Choice("groq", "x"), ("anthropic", "google", "groq", "cloudflare"), "smart", False, lists, keys)
+    assert got == [Choice("groq", "x", "env"), Choice("groq", "x", "k2"), Choice("anthropic", "claude-opus-5-5", "env"),
+                   Choice("groq", "openai/gpt-oss-120b", "env"), Choice("groq", "openai/gpt-oss-120b", "k2")]
+    assert told == ["anthropic", "groq"]          # each fresh list is passed on (the app's model picker)
     assert json.loads((tmp_path / "m.json").read_text())["anthropic"]["ids"] == ["claude-opus-5-5"]
 
 
@@ -69,21 +74,24 @@ def _status(code):
 
 
 def test_the_next_model_answers_when_one_fails_and_a_refusing_provider_rests(monkeypatch):
-    order = [Choice("anthropic", "claude-opus-5-5"), Choice("google", "gemini-3.1-pro"), Choice("groq", "openai/gpt-oss-120b")]
+    order = [Choice("anthropic", "claude-opus-5-5", "env"), Choice("google", "gemini-3.1-pro", "env"),
+             Choice("groq", "openai/gpt-oss-120b", "env")]
     fakes = {"anthropic": FakeClient(_status(429)), "google": FakeClient(_status(500)), "groq": FakeClient("hi")}
     monkeypatch.setattr(llm, "choices", lambda tier="": list(order))
-    monkeypatch.setattr(llm, "client", lambda p: fakes[p])
+    monkeypatch.setattr(llm, "client", lambda p, k="": fakes[p])
     monkeypatch.setattr(llm, "_resting", {})
+    monkeypatch.setattr(llm, "worker_send", lambda *a: None)
     data = llm.chat([{"role": "user", "content": "x"}])
     assert data["model"] == "groq:openai/gpt-oss-120b" and data["choices"][0]["message"]["content"] == "hi"
-    assert set(llm._resting) == {"anthropic"}            # 429: left out for a while; a 500 is not
+    assert set(llm._resting) == {"env"}                  # 429: that key rests; a 500 does not
     assert fakes["anthropic"].calls[0]["model"] == "claude-opus-5-5"
 
 
 def test_every_model_failing_is_an_llm_error_naming_each(monkeypatch):
-    monkeypatch.setattr(llm, "choices", lambda tier="": [Choice("openai", "gpt-5.1")])
-    monkeypatch.setattr(llm, "client", lambda p: FakeClient(_status(401)))
+    monkeypatch.setattr(llm, "choices", lambda tier="": [Choice("openai", "gpt-5.1", "env")])
+    monkeypatch.setattr(llm, "client", lambda p, k="": FakeClient(_status(401)))
     monkeypatch.setattr(llm, "_resting", {})
+    monkeypatch.setattr(llm, "worker_send", lambda *a: None)
     with pytest.raises(llm.LLMError, match=r"openai:gpt-5.1 \(HTTP 401"):
         llm.chat([{"role": "user", "content": "x"}])
 
@@ -110,3 +118,31 @@ def test_env_beats_the_control_panel_which_beats_agent_toml(monkeypatch):
     monkeypatch.setattr(llm, "panel", lambda: {})
     monkeypatch.delenv("AGENT_MODEL")
     assert llm.settings()[0] == "auto"
+
+
+def test_a_key_at_its_limit_hands_over_to_the_next_key_of_the_same_provider(monkeypatch):
+    """Owner, 23 Nov 2026: several keys per provider; when one runs out the next is used at once."""
+    order = [Choice("groq", "openai/gpt-oss-120b", "k1"), Choice("groq", "openai/gpt-oss-120b", "k2"),
+             Choice("anthropic", "claude-opus-5-5", "env")]
+    fakes = {"k1": FakeClient(_status(429)), "k2": FakeClient("from key two"), "env": FakeClient("never")}
+    reports = []
+    monkeypatch.setattr(llm, "choices", lambda tier="": list(order))
+    monkeypatch.setattr(llm, "client", lambda p, k="": fakes[k])
+    monkeypatch.setattr(llm, "_resting", {})
+    monkeypatch.setattr(llm, "worker_send", lambda method, path, body: reports.append((path, body["id"], body["status"])))
+    data = llm.chat([{"role": "user", "content": "x"}])
+    assert data["choices"][0]["message"]["content"] == "from key two" and fakes["env"].calls == []
+    assert reports == [("/api/keys/report", "k1", "limit")]         # the app shows k1 resting
+    assert llm._resting["k1"] > 0
+
+
+def test_keys_env_first_then_the_apps_in_order(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "env-secret")
+    monkeypatch.setattr(llm, "_resting", {})
+    monkeypatch.setattr(llm, "app_keys", lambda: [
+        {"id": "a1", "provider": "groq", "key": "app-1", "restingUntil": 0},
+        {"id": "a2", "provider": "groq", "key": "app-2", "restingUntil": 9_999_999_999_999},
+        {"id": "x", "provider": "unknown", "key": "z"}])
+    got = llm.keys()
+    assert got["groq"] == [("env", "env-secret"), ("a1", "app-1"), ("a2", "app-2")] and "unknown" not in got
+    assert llm._resting["a2"] > 1e9                                   # resting as the app last said

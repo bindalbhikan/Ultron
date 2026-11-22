@@ -24,6 +24,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   AgentMemory? _memory;
   List<SmsPhone>? _phones;
   List<PhoneAgent>? _agents;
+  List<ApiKey> _keys = [];
+  Map<String, List<String>> _models = {};
+  String _pickProvider = 'anthropic';
+  String? _pickModel;
   AgentStatus? _agent;
   bool _agentBusy = false;
   static const _bridge = AgentBridge();
@@ -67,6 +71,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         _memory = memory;
         _apply(settings);
       });
+      await _loadBrain();
       await _loadPhones();
     } on FrontendException catch (e) {
       if (mounted && request == _request) setState(() => _error = e.message);
@@ -82,12 +87,179 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void _apply(AgentSettings s) {
     _auto = s.auto;
     _model.text = s.auto ? '' : s.model;
+    if (!s.auto && s.model.contains(':')) {
+      _pickProvider = s.model.substring(0, s.model.indexOf(':'));
+      _pickModel = s.model.substring(s.model.indexOf(':') + 1);
+    }
     _tier = s.tier;
     final all = s.providers.isEmpty
         ? providerLabels.keys.toList()
         : s.providers;
     _order = [...s.order, ...all.where((p) => !s.order.contains(p))];
     _off = all.where((p) => !s.order.contains(p)).toSet();
+  }
+
+  /// The API keys and the models the agent last read; neither failing hides the rest of the page.
+  Future<void> _loadBrain() async {
+    final repo = ref.read(repositoryProvider);
+    try {
+      final keys = await repo.apiKeys();
+      final models = await repo.agentModels();
+      if (mounted) {
+        setState(() {
+          _keys = keys;
+          _models = models;
+        });
+      }
+    } on FrontendException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
+  }
+
+  List<String> _modelsOf(String provider) {
+    final read = _models[provider] ?? const [];
+    return read.isNotEmpty ? read : (knownModels[provider] ?? const []);
+  }
+
+  Future<void> _keysDo(Future<List<ApiKey>> Function() action) async {
+    try {
+      final keys = await action();
+      if (mounted) setState(() => _keys = keys);
+    } on FrontendException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
+  }
+
+  Future<void> _addKey() async {
+    var provider = 'anthropic', hidden = true;
+    final label = TextEditingController(), key = TextEditingController();
+    final added = await showDialog<bool>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, set) => AlertDialog(
+          title: const Text('Add API key'),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: provider,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Provider'),
+                  items: [
+                    for (final p in providerLabels.keys.where(
+                      (p) => p != 'cloudflare',
+                    ))
+                      DropdownMenuItem(
+                        value: p,
+                        child: Text(providerLabels[p]!),
+                      ),
+                  ],
+                  onChanged: (v) => set(() => provider = v!),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: label,
+                  decoration: const InputDecoration(
+                    labelText: 'Name (optional)',
+                    hintText: 'e.g. Free key 2',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  key: const Key('api-key-field'),
+                  controller: key,
+                  obscureText: hidden,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    labelText: 'API key',
+                    helperText: 'Stored encrypted; the app only ever shows its last 4 characters',
+                    suffixIcon: IconButton(
+                      tooltip: hidden ? 'Show key' : 'Hide key',
+                      onPressed: () => set(() => hidden = !hidden),
+                      icon: Icon(
+                        hidden ? LucideIcons.eye : LucideIcons.eyeOff,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('Add key'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (added == true && mounted) {
+      await _keysDo(
+        () => ref
+            .read(repositoryProvider)
+            .addApiKey(provider: provider, key: key.text, label: label.text),
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    label.dispose();
+    key.dispose();
+  }
+
+  Widget _keyTile(ApiKey k, bool canManage) {
+    final repo = ref.read(repositoryProvider);
+    final (String word, Tone tone) = k.status == 'bad'
+        ? ('Refused', Tone.bad)
+        : k.resting
+        ? (
+            'Limit · back ${k.restingUntil!.toLocal().toString().substring(11, 16)}',
+            Tone.warn,
+          )
+        : ('Ready', Tone.good);
+    return Card(
+      child: ListTile(
+        leading: const Icon(LucideIcons.keyRound),
+        title: Text(
+          '${k.label.isEmpty ? providerLabels[k.provider] ?? k.provider : k.label}  ••••${k.last4}',
+        ),
+        subtitle: Align(
+          alignment: Alignment.centerLeft,
+          child: StatusPill(word, tone: tone),
+        ),
+        trailing: canManage
+            ? PopupMenuButton<String>(
+                tooltip: 'Key actions',
+                onSelected: (a) => _keysDo(
+                  () => switch (a) {
+                    'up' => repo.changeApiKey(k.id, move: 'up'),
+                    'down' => repo.changeApiKey(k.id, move: 'down'),
+                    'retry' => repo.changeApiKey(k.id, reset: true),
+                    _ => repo.removeApiKey(k.id),
+                  },
+                ),
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'up', child: Text('Try earlier')),
+                  const PopupMenuItem(value: 'down', child: Text('Try later')),
+                  if (k.status != 'ok')
+                    const PopupMenuItem(
+                      value: 'retry',
+                      child: Text('Try again now'),
+                    ),
+                  const PopupMenuItem(value: 'remove', child: Text('Remove')),
+                ],
+              )
+            : null,
+      ),
+    );
   }
 
   Future<void> _loadPhones() async {
@@ -299,7 +471,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Model', style: theme.textTheme.titleMedium),
+                  Text('Brain: model', style: theme.textTheme.titleMedium),
                   const SizedBox(height: 6),
                   Text(
                     'Auto picks the newest strong model of every provider that has a key, and moves to the next one when a model fails or runs out of credit.',
@@ -313,15 +485,60 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                         : null,
                     title: const Text('Auto-select the model'),
                   ),
-                  if (!_auto)
-                    TextField(
-                      controller: _model,
-                      enabled: canManage && !_saving,
-                      decoration: const InputDecoration(
-                        labelText: 'Model tried first',
-                        hintText: 'anthropic:claude-sonnet-5-5',
-                      ),
+                  if (!_auto) ...[
+                    DropdownButtonFormField<String>(
+                      key: const Key('pick-provider'),
+                      initialValue: _pickProvider,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Provider'),
+                      items: [
+                        for (final p in providerLabels.keys)
+                          DropdownMenuItem(
+                            value: p,
+                            child: Text(
+                              providerLabels[p]!,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: canManage && !_saving
+                          ? (v) => setState(() {
+                              _pickProvider = v!;
+                              _pickModel = _modelsOf(v).firstOrNull;
+                              _model.text =
+                                  '$_pickProvider:${_pickModel ?? ''}';
+                            })
+                          : null,
                     ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey('pick-model-$_pickProvider'),
+                      initialValue:
+                          _modelsOf(_pickProvider).contains(_pickModel)
+                          ? _pickModel
+                          : null,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Model',
+                        helperText: (_models[_pickProvider] ?? const []).isEmpty
+                            ? 'Known models; the full list appears once the agent has used this provider'
+                            : '${_models[_pickProvider]!.length} models this provider offers',
+                      ),
+                      items: [
+                        for (final m in _modelsOf(_pickProvider))
+                          DropdownMenuItem(
+                            value: m,
+                            child: Text(m, overflow: TextOverflow.ellipsis),
+                          ),
+                      ],
+                      onChanged: canManage && !_saving
+                          ? (v) => setState(() {
+                              _pickModel = v;
+                              _model.text = '$_pickProvider:$v';
+                            })
+                          : null,
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   SegmentedButton<String>(
                     segments: const [
@@ -411,6 +628,41 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
               ),
             ),
           ),
+          SectionHeading(
+            'Brain: API keys',
+            trailing: canAccess(ref, 'agent.manage')
+                ? FilledButton.tonalIcon(
+                    key: const Key('add-key'),
+                    onPressed: _addKey,
+                    icon: const Icon(LucideIcons.plus, size: 18),
+                    label: const Text('Add key'),
+                  )
+                : null,
+          ),
+          Text(
+            'Add as many keys as you like for each provider. The agent uses them in order; when a key hits its '
+            'limit it moves to the next key at once, then to the next provider. Free: Groq, Google AI Studio, '
+            'NVIDIA; Cloudflare Workers AI needs no key.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          if (_keys.isEmpty)
+            const NotePanel(
+              'No key added here yet. The agent uses the keys set on GitHub, and Cloudflare Workers AI.',
+            )
+          else
+            for (final p in providerLabels.keys)
+              if (_keys.any((k) => k.provider == p)) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, bottom: 6),
+                  child: Text(
+                    providerLabels[p]!,
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+                for (final k in _keys.where((k) => k.provider == p))
+                  _keyTile(k, canAccess(ref, 'agent.manage')),
+              ],
           if (canAccess(ref, 'phone.manage')) ...[
             const SectionHeading('SMS phones'),
             Text(

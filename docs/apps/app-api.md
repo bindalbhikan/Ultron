@@ -24,6 +24,7 @@ The database is called `ultron`. Its tables come from `services/app_api/migratio
 | Migration | Tables | Used by |
 |---|---|---|
 | `0001_identity.sql` | `user`, `session`, `account`, `verification`, `rate_limit` (better-auth), `app_role`, `app_access`, `app_audit` | app API |
+| `0006_api_keys.sql` | `api_key` (AES-GCM, `KEYS_SECRET`), `agent_model` | the app API adds / lists, the worker decrypts for the agent |
 | `0005_phone_agent.sql` | `phone_agent`: Agent mode phones (device, SHA-256 of the token, last seen, revoked) | the app API makes / revokes, the Telegram worker checks |
 | `0004_username.sql` | `user.username` (unique) and `display_username` | app API (sign-in by username) |
 | `0003_sms_phone.sql` | `sms_phone`: the phones in "SMS only" mode (name, last seen, SMS sent, blocked) | the Telegram worker writes, the app API lists and blocks |
@@ -45,6 +46,8 @@ through this API, with a signed-in user's session and permissions.
 | `GET /api/admin/audit` | `users.manage` | the last 100 changes |
 | `GET /api/agent/settings` | `agent.tools.read` | model (`auto` or `provider:model`), tier (`smart` / `fast`), provider order, revision |
 | `PUT /api/agent/settings` | `agent.manage` | save them; a stale revision is refused (409) |
+| `GET /api/agent/keys`; `POST` (provider, key, label); `PATCH /<id>` (move up / down, reset); `DELETE /<id>` | `agent.tools.read` to list, `agent.manage` to change | the agent's model API keys, several per provider; listed by their last four characters only |
+| `GET /api/agent/models` | `agent.tools.read` | each provider's models as the agent last read them (the model picker) |
 | `GET /api/agent/memory?kind=&search=` | `agent.tools.read` | the agent's notes, newest first (200), and the count of each kind |
 | `DELETE /api/agent/memory/<id>` | `memory.manage` | drop one note (audited) |
 | `GET /api/admin/phones` | `phone.manage` | the SMS-only phones, newest first: name, first / last seen, SMS sent, app version, blocked |
