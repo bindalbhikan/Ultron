@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../theme/app_theme.dart';
+
 /// The ULTRON mark (two linked rounded links) and, optionally, the wordmark.
 class BrandMark extends StatelessWidget {
   const BrandMark({super.key, this.size = 32, this.wordmark = false});
@@ -201,43 +203,191 @@ class NotePanel extends StatelessWidget {
   }
 }
 
-/// The page's main action: a full-width filled button that shows it is working.
+/// The page's main action: the emerald gradient button of the owner's reference, full width, busy while it works.
 class GradientButton extends StatelessWidget {
   const GradientButton({
     super.key,
     required this.label,
     required this.onPressed,
-    this.busy = false,
     this.icon = LucideIcons.arrowRight,
+    this.busy = false,
   });
   final String label;
   final VoidCallback? onPressed;
-  final bool busy;
   final IconData icon;
+  final bool busy;
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 52,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(14),
+      gradient: const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Color(0xFF07996E), Color(0xFF00624A)],
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Brand.green.withValues(alpha: .14),
+          blurRadius: 10,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    ),
+    child: FilledButton(
+      style: FilledButton.styleFrom(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: Colors.transparent,
+        disabledForegroundColor: Colors.white70,
+        shadowColor: Colors.transparent,
+      ),
+      onPressed: busy ? null : onPressed,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (busy)
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: Colors.white,
+                semanticsLabel: '$label, working',
+              ),
+            )
+          else ...[
+            Flexible(child: Text(label, textAlign: TextAlign.center)),
+            const SizedBox(width: 10),
+            Icon(icon, size: 18),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+class BrandIllustration extends StatelessWidget {
+  const BrandIllustration({super.key, this.height = 190});
+  final double height;
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 52,
-    child: FilledButton(
-      onPressed: busy ? null : onPressed,
-      child: busy
-          ? SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                semanticsLabel: '$label, working',
-                color: Theme.of(context).colorScheme.onPrimary,
+    height: height,
+    child: Center(
+      child: SizedBox(
+        width: 255,
+        height: height,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned(
+              bottom: 12,
+              child: Container(
+                width: 226,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD6F4E4),
+                  borderRadius: BorderRadius.circular(120),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Brand.green.withValues(alpha: .12),
+                      blurRadius: 32,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
               ),
-            )
-          : Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(label),
-                const SizedBox(width: 8),
-                Icon(icon, size: 18),
-              ],
             ),
+            for (final (left, top, angle, colors) in [
+              (38.0, 43.0, .55, [const Color(0xFF04A67C), Brand.deepGreen]),
+              (
+                111.0,
+                14.0,
+                .55,
+                [const Color(0xFFBCF5BC), const Color(0xFF37A96C)],
+              ),
+            ])
+              Positioned(
+                left: left,
+                top: top,
+                child: Transform.rotate(
+                  angle: angle,
+                  child: Container(
+                    width: 85,
+                    height: 128,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(32),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: colors,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Brand.deepGreen.withValues(alpha: .16),
+                          blurRadius: 16,
+                          offset: const Offset(4, 12),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 39,
+                        height: 77,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? const Color(0xFF18372A)
+                              : const Color(0xFFE8F9EF),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class EmeraldPanel extends StatelessWidget {
+  const EmeraldPanel({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(22),
+  });
+  final Widget child;
+  final EdgeInsets padding;
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: padding,
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(20),
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF079267), Color(0xFF006347), Color(0xFF004D3C)],
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Brand.green.withValues(alpha: .13),
+          blurRadius: 22,
+          offset: const Offset(0, 8),
+        ),
+      ],
+    ),
+    child: DefaultTextStyle.merge(
+      style: const TextStyle(color: Colors.white),
+      child: IconTheme(
+        data: const IconThemeData(color: Colors.white),
+        child: child,
+      ),
     ),
   );
 }

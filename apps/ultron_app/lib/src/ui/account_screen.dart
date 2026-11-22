@@ -108,14 +108,14 @@ class AccountScreen extends ConsumerWidget {
           SegmentedButton<ThemeMode>(
             segments: const [
               ButtonSegment(
-                value: ThemeMode.dark,
-                label: Text('Dark'),
-                icon: Icon(LucideIcons.moon, size: 16),
-              ),
-              ButtonSegment(
                 value: ThemeMode.light,
                 label: Text('Light'),
                 icon: Icon(LucideIcons.sun, size: 16),
+              ),
+              ButtonSegment(
+                value: ThemeMode.dark,
+                label: Text('Dark'),
+                icon: Icon(LucideIcons.moon, size: 16),
               ),
               ButtonSegment(
                 value: ThemeMode.system,

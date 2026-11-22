@@ -164,15 +164,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onRefresh: _load,
       child: PageBody(
         children: [
-          PageHeading(
-            'Hello, ${user?.name.split(' ').first ?? ''}',
-            subtitle: '${user?.roleName ?? ''} · what needs your attention',
-            action: IconButton(
-              tooltip: 'Refresh',
-              onPressed: _loading ? null : _load,
-              icon: const Icon(LucideIcons.refreshCw, size: 20),
+          EmeraldPanel(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Hello, ${user?.name.split(' ').first ?? ''}',
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${user?.roleName ?? ''} · what needs your attention today',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Color(0xFFE6F6EE),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _loading ? null : _load,
+                  icon: const Icon(
+                    LucideIcons.refreshCw,
+                    size: 20,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 18),
           if (_loading && cards.isEmpty)
             const Padding(
               padding: EdgeInsets.all(40),

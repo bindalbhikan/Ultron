@@ -128,7 +128,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 alignment: Alignment.centerLeft,
                 child: BrandMark(size: 36, wordmark: true),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 12),
+              const BrandIllustration(height: 150),
+              const SizedBox(height: 20),
             ],
             Semantics(
               header: true,
@@ -321,26 +323,39 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               children: [
                 Expanded(
                   child: Container(
-                    color: scheme.surfaceContainer,
                     padding: const EdgeInsets.all(48),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: theme.brightness == Brightness.dark
+                            ? const [Color(0xFF14302A), Color(0xFF0E1A16)]
+                            : const [
+                                Color(0xFFC9EBDD),
+                                Color(0xFFEAF7F1),
+                                Color(0xFFE3F1F4),
+                              ],
+                      ),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const BrandMark(size: 36, wordmark: true),
                         const Spacer(),
+                        const Center(child: BrandIllustration()),
+                        const Spacer(),
                         Text(
-                          'Operations, in one place.',
+                          'Your operations.\nOne connected workspace.',
                           style: theme.textTheme.headlineMedium,
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Users and access, the agent\'s model and memory, and the phones that send '
-                          'their SMS to the sheet.',
+                          'Workflows, reports and decisions,\nwith you in control.',
                           style: theme.textTheme.bodyLarge?.copyWith(
                             color: scheme.onSurfaceVariant,
                           ),
                         ),
-                        const Spacer(),
+                        const SizedBox(height: 40),
                         Text(
                           '${AppInfo.name} · Ecom Manager',
                           style: theme.textTheme.bodySmall,

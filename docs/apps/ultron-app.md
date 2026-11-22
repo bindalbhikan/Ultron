@@ -23,14 +23,15 @@ Every screen reads a live service; a person sees only what their role allows (`d
 
 Phones show at most five items in the bottom bar; wider screens get a side rail.
 
-## Design (23 Nov 2026)
+## Design
 
-The UI was reviewed with the ui-ux-pro-max skill (global skill, `~/.claude/skills/ui-ux-pro-max`) and rebuilt
-on its design system for an ops / admin product: a **dark operations look** (slate `#0F172A` surfaces, status
-green `#22C55E`), with a light variant of the same roles (green `#15803D` on white for 5:1 contrast). DM Sans
-(bundled, OFL) stays the font. Rules applied: body text 14-16px, 48dp touch targets, labels on every field,
-errors next to the form with an icon (never colour alone), status words with a dot, tabular numbers, safe
-areas. `test/app_test.dart` checks every screen at 320, 390, 760 and 1440px in dark and light without overflow.
+The owner's emerald / mint reference, as first built: emerald greens (`#007B57`), mint surfaces, the mint sign-in
+panel with the brand illustration ("Your operations. One connected workspace."), the emerald gradient button and
+the emerald hero panel on Home; light by default, with an emerald dark mode (Profile -> Appearance). 23 Nov 2026:
+a darker redesign was tried and taken back at the owner's word; the theme file is the original again. Text sizes
+follow the ui-ux-pro-max skill without enlarging the original: only the bottom bar label went from 11 to 12px, the
+smallest step of its type scale (12 14 16 18 24 32). `test/app_test.dart` checks every screen at 320, 390, 760
+and 1440px, light and dark, without overflow.
 
 Flutter 3.50.0 stable and bundled Dart 3.14.0, pinned. Android, iOS, Windows, macOS and Linux runners; web for
 local previews. `--dart-define=ULTRON_API_URL=...` points another seller's build at their own API.

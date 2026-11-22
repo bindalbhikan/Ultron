@@ -24,14 +24,14 @@ final repositoryProvider = Provider<UltronRepository>((ref) {
   return repository;
 });
 
-/// Dark by default (the ops look); Profile switches to light or the phone's setting.
+/// Light by default (the owner's emerald / mint reference); Profile switches to dark or the phone's setting.
 final themeModeProvider = NotifierProvider<AppearanceController, ThemeMode>(
   AppearanceController.new,
 );
 
 class AppearanceController extends Notifier<ThemeMode> {
   @override
-  ThemeMode build() => ThemeMode.dark;
+  ThemeMode build() => ThemeMode.light;
   void set(ThemeMode value) => state = value;
 }
 
