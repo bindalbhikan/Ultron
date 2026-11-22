@@ -5,9 +5,11 @@ Normally every bot runs on GitHub. To run one here (testing, or GitHub is down):
 ## Once
 
 ```
-python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
+powershell -ExecutionPolicy Bypass -File scripts\local\setup_pc.ps1
 ```
+
+(Git, the memory link and the venv: see "No PC is fixed" below. Run bots with
+`%USERPROFILE%\.ultron\venv\Scripts\python.exe`.)
 
 `.env` (copy of `.env.example` with the logins) and `service_account.json` must be in the project
 folder.
@@ -46,9 +48,28 @@ The migration on 14 November 2026 verified the copied files and preserved the or
 in ignored `output/git-metadata-backup-20261114`. The existing linked worktree was repaired to use
 the new metadata location. Local uncommitted changes were preserved.
 
-The external metadata directory is part of this checkout: back it up with the working files.
-On another machine, clone the repository afresh; the Drive-synced pointer is specific to this PC.
-Do not recreate a `.git` directory inside Drive or run cleanup commands that assume `.git` is a folder.
+The `.git` pointer syncs through Drive to every PC, so it cannot name a per-user path: on 22 Nov 2026
+it named `C:/Users/<other user>/...` and Git failed on the second PC ("not a git repository"). It now
+points to `C:/ProgramData/Ultron/git/AGENT-ULTRON-BINDAL.git`, which on each PC is a junction to that
+user's own `%USERPROFILE%\.ultron\git\AGENT-ULTRON-BINDAL.git`. Do not edit `.git` to a
+`C:/Users/...` path again.
+
+### No PC is fixed: `setup_pc.ps1`
+
+Owner's rule (22 Nov 2026): any PC may be the one in use and any may be switched off for good, so nothing
+that matters lives only on a PC. On Drive: the project files, `.env`, `service_account.json`, and Claude
+Code's memory for this project (`..\AGENT-MEMORY\AGENT-ULTRON-BINDAL`). On GitHub: the code history, so
+**push before leaving a PC**. On a new PC (or when Git says "not a git repository") run once, no admin:
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\local\setup_pc.ps1
+```
+
+It rebuilds the Git metadata from GitHub if this PC has none (working files untouched; local edits show as
+changes), makes the `C:\ProgramData\Ultron` junction, links Claude Code's memory folder to Drive (notes
+already on the PC are copied there first), and builds the venv in `%USERPROFILE%\.ultron\venv` with uv.
+Safe to run again. Do not recreate a `.git` directory inside Drive or run cleanup commands that assume
+`.git` is a folder.
 
 ### Bot runs
 

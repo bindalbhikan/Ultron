@@ -31,6 +31,10 @@ def setup_logging() -> None:
             pass
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
                         handlers=[logging.StreamHandler(sys.stdout)], force=True)
+    # httpx logs every request URL at INFO, and a Telegram Bot API URL holds the bot token
+    # (api.telegram.org/bot<token>/...): keep only its warnings and errors in run logs.
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def run(title: str, parser: argparse.ArgumentParser, fn: Callable[[argparse.Namespace], int], argv=None) -> int:

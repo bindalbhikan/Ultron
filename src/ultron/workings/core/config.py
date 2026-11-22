@@ -5,9 +5,7 @@ GitHub Secrets (Actions) or in the local .env behaves the same way.
 """
 from __future__ import annotations
 
-import logging
 import os
-import sys
 from pathlib import Path
 
 def _project_root() -> Path:
@@ -76,13 +74,9 @@ def load_dotenv() -> None:
 
 
 def setup_logging() -> None:
-    for stream in (sys.stdout, sys.stderr):  # Windows consoles default to cp1252; keep emoji printable
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
-            pass
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-                        handlers=[logging.StreamHandler(sys.stdout)], force=True)
+    """The agent's own logging setup (one place: utf-8 console, format, httpx URLs kept out)."""
+    from ultron.core.runtime import setup_logging as _setup
+    _setup()
 
 
 def output_dir(bot: str) -> Path:

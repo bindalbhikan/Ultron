@@ -86,7 +86,14 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 - Project files sit on Google Drive (`G:\My Drive\...`), but Git metadata lives outside Drive at
   `%USERPROFILE%\.ultron\git\AGENT-ULTRON-BINDAL.git`. The project's `.git` is a pointer file.
   This prevents Drive's `desktop.ini` files from corrupting Git refs for any Git client; no cleanup
-  hook is needed. Keep this local directory when moving or backing up the checkout. On another PC,
+  hook is needed. The pointer names `C:/ProgramData/Ultron/git/AGENT-ULTRON-BINDAL.git`, a junction
+  per PC made by `scripts/local/setup_pc.ps1` (the pointer syncs to every PC: never a `C:/Users/...` path).
+- **No PC is fixed** (owner, 22 Nov 2026): any PC may be the one in use, and any may be switched off for good.
+  Everything that matters stays on Drive (project files, `.env`, `service_account.json`, the coding agents'
+  memory in `AGENT-MEMORY/` next to this folder) or on GitHub (code history: **push before leaving a PC**;
+  never leave work only in local commits, stashes or branches). A PC holds only what
+  `scripts/local/setup_pc.ps1` rebuilds (Git metadata, the junctions, the venv in `%USERPROFILE%\.ultron\venv`);
+  on a new PC, or when Git says "not a git repository", run it first. Keep this local directory when moving or backing up the checkout. On another PC,
   clone afresh rather than reuse the synced `.git` pointer. See `scripts/local/README.md`.
 - Pull before you start (`git pull`): the Docs sync workflow may have committed on main.
 - In bash heredocs `\\n` / `\\b` become real control characters; write regexes with the Edit/Write tools.
