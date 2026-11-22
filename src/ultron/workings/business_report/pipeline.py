@@ -25,7 +25,7 @@ from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import output_dir
 from ..core.drive import API, DriveFolder, agent_folder
-from . import ajio, flipkart, myntra, oms
+from . import ajio, flipkart, myntra, oms, facts
 from .workbook import LOG_COLS, add_months, build, num, present  # noqa: F401 - LOG_COLS: the INPUT LOG columns
 
 log = logging.getLogger("bindal.business_report")
@@ -630,7 +630,8 @@ def run(args) -> int:
             lines.append(f"❌ <b>{portal}</b>: {telegram.esc((str(exc).splitlines() or [type(exc).__name__])[0][:200])}")
     lines.append(f"\n<i>Drive AGENT WORK/{FOLDER}</i>" + (" (test run: not uploaded)" if args.no_upload else ""))
     text = "\n".join(lines)
-    print(text) if args.no_telegram else telegram.send(text)
+    # a facts-only run changes no report: nothing for Telegram
+    print(text) if args.no_telegram or getattr(args, "facts_only", False) else telegram.send(text)
     if failed:
         raise RuntimeError(f"business report failed for {', '.join(failed)}")
     return 0
@@ -642,9 +643,13 @@ def finish(rep, out_dir: Path, args, first: date | None = None) -> Path:
     m0, m1 = rep.raw["ORDER MONTH"].min(), rep.raw["ORDER MONTH"].max()
     out = out_dir / f"{rep.portal} SALE RETURN ANALYSIS {m0:%b-%y} TO {m1:%b-%y}".upper()
     out = out.with_name(out.name + ".xlsx")
+    if getattr(args, "facts_only", False):    # only the agent's facts: the workbook on Drive is left as it is
+        facts.upload(rep, out_dir)
+        return out
     build(rep, out)
     if not args.no_upload:
         upload(out, rep.portal)
+        facts.upload(rep, out_dir)            # the agent's facts (tools/business.py), the report's own numbers
     return out
 
 
@@ -654,5 +659,7 @@ def main(argv=None) -> int:
     p.add_argument("--from", dest="from_month", default="2025-01", metavar="YYYY-MM", help="first order month (default 2025-01)")
     p.add_argument("--to", dest="to_month", default="", metavar="YYYY-MM", help="last order month (default: last month)")
     p.add_argument("--no-upload", action="store_true", help="build only, Drive not changed (test run)")
+    p.add_argument("--facts-only", action="store_true",
+                   help="only the agent's business facts (Drive AGENT WORK/BUSINESS FACTS); no workbook built or uploaded")
     p.add_argument("--work", default="", help="another folder for the local copies of the reports (default: the shared cache)")
     return run_bot("Business reporting", p, run, argv)

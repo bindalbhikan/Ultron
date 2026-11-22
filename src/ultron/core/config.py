@@ -37,6 +37,7 @@ class Action:
     inputs: tuple[str, ...]
     about: str
     command: tuple[str, ...] = ()
+    auto: bool = False             # only makes a report: the agent may run it at once, no Approve tap
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,7 @@ def parse(path: Path) -> Config:
         if not a.get("workflow") and not a.get("command"):
             raise ValueError(f"{path}: action {key!r} has no workflow or command")
         actions[key] = Action(a.get("workflow", ""), tuple(a.get("inputs", [])), a.get("about", ""),
-                              tuple(a.get("command", [])))
+                              tuple(a.get("command", [])), bool(a.get("auto", False)))
     return Config(
         root=path.parent,
         company=company["name"],
@@ -168,7 +169,8 @@ def channel_line(name: str) -> str:
 
 # tool sets every seller gets: name in agent.toml -> module
 BUILTIN_TOOLS = {"runs": "ultron.tools.runs", "omsguru": "ultron.tools.omsguru", "memory": "ultron.tools.memory",
-                 "knowledge": "ultron.tools.knowledge", "browser": "ultron.tools.browser"}
+                 "knowledge": "ultron.tools.knowledge", "browser": "ultron.tools.browser",
+                 "business": "ultron.tools.business"}
 
 
 def load_tools(names: tuple[str, ...]) -> list[Callable]:

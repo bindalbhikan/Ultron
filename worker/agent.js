@@ -4,6 +4,7 @@
 //                       /api/ai is the same, for older agents)
 //   GET  /api/models    the Workers AI models allowed, in the OpenAI list shape (core/models.py auto-select)
 //   POST /api/approval  ultron.agents.chat proposes an action: saved in KV, Approve / Reject buttons sent
+//   POST /api/run       ultron.agents.chat runs an action at once: only one marked auto (it only makes a report)
 //   /api/memory/notes[/<id>]    the agent's long-term notes (ultron.core.memory): GET all, PUT one, DELETE one
 //   /api/memory/chats/<chat>    the last messages of a chat: GET, POST one, DELETE all
 //   GET /api/settings   the model settings the app's control panel saved (core/llm.settings)
@@ -387,6 +388,22 @@ export function makeAgent({
     return Response.json({ ok: true });
   }
 
+  // An action the owner asked for that only makes a report (AGENT_ACTIONS auto = true): started at once, inputs
+  // limited to its list. Anything else is refused here, whatever the agent says: it goes through an approval.
+  async function runNow(request, env) {
+    if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+    const req = await jsonBody(request).catch((e) => e);
+    if (req instanceof Response) return req;
+    const action = actions(env)[req.action];
+    if (!action) return bad("unknown action");
+    if (!action.auto) return bad("this action needs the owner's approval", 403);
+    const inputs = Object.fromEntries(Object.entries(req.inputs || {})
+      .filter(([k]) => (action.inputs || []).includes(k)).map(([k, v]) => [k, String(v)]));
+    const res = await dispatch(env, action.workflow, inputs);
+    if (res.status !== 204) return Response.json({ error: `GitHub said ${res.status}` }, { status: 502 });
+    return Response.json({ started: action.workflow, inputs });
+  }
+
   function route(request, env, path) {
     if (path === "/api/ai" || path === "/api/chat/completions") return runAI(request, env);
     if (path === "/api/models") return listModels(request, env);
@@ -394,6 +411,7 @@ export function makeAgent({
     if (path === "/api/memory" || path.startsWith("/api/memory/")) return memory(request, env, path);
     if (path === "/api/settings" && request.method === "GET") return settings(request, env);
     if (path === "/api/sms") return sms(request, env);
+    if (path === "/api/run" && request.method === "POST") return runNow(request, env);
     if (path === "/api/keys" || path === "/api/keys/report") return keys(request, env, path);
     if (path === "/api/models" && request.method === "PUT") return putModels(request, env);
     return null;
