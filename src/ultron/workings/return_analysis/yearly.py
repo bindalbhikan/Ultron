@@ -274,6 +274,17 @@ def _month_input(raw: Path, month: date, inputs: Path) -> None:
             shutil.copytree(src, inputs / portal, dirs_exist_ok=True)
 
 
+def put_month(root: DriveFolder, month_tag: str, results: list[dict]) -> None:
+    """A rebuilt month's reports into Output/<MON-YY>/ and its templates into Template/, as the monthly run puts them."""
+    from ..core.drive import XLSX
+    out_folder = root.subfolder("Output", create=True).subfolder(month_tag, create=True)
+    template_folder = root.subfolder("Template", create=True)
+    for r in results:
+        out_folder.put(Path(r["report"]), XLSX)
+        if r.get("template"):
+            template_folder.put(Path(r["template"]), "text/csv")
+
+
 def backfill(root: DriveFolder, year: int, supporting: Path, work: Path, today: date,
              notes: list[str], portals: set[str] | None = None) -> tuple[list[date], list[dict]]:
     """Rebuild closed months from saved portal reports using the canonical business lines.
@@ -300,6 +311,7 @@ def backfill(root: DriveFolder, year: int, supporting: Path, work: Path, today: 
             notes.append(f"{tag(m)} {portal} left out: {reason[:80]}")
         if results:
             save_month_data(root, [r for r in results if r.get("df") is not None and r["month"] == tag(m)], work)
+            put_month(root, tag(m), results)
             filled.append(m)
     # Revalidate other portals too when rendering an existing year's combined workbook.
     results = rebuild_year(root, year, supporting, work, context=context)

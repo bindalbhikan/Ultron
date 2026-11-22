@@ -57,6 +57,9 @@ the canonical business lines, so old CSV return flags cannot reintroduce mismatc
 are named in the yearly notes. `--backfill-year 2026` now reuses archived PORTAL REPORTS, builds its
 canonical lines once, and renders closed months without requesting new portal jobs. A portal without
 both return reports is excluded; the old live-download backfill's fixed Jan-Jun Flipkart exclusion
-does not apply when complete archived sources exist.
+does not apply when complete archived sources exist. Each rebuilt month's reports and templates replace
+the ones in `Output/<MON-YY>/` and `Template/` (22 Nov 2026), so every month on Drive is the rebuilt one.
+Every figure is checked unit for unit against the business report's RAW DATA of the same order month and
+account (`reconciled.check_against_business`); one that differs is left out and named, never published.
 The analysis bridge keeps only its required columns and reuses each portal's frame across accounts
 and yearly months, avoiding repeated copies of payment/history columns.
