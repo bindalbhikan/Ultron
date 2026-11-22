@@ -45,6 +45,8 @@ workings = [
     "pydantic>=2.9", "pydantic-settings>=2.6",
     # tables (docs/libraries/06-polars.md): Polars for new code, pandas moved out working by working
     "polars>=1.30",
+    # pl.read_excel(engine="calamine"): typed sheets straight into Polars (Rust; docs/libraries/06-polars.md)
+    "fastexcel>=0.12",
 ]
 
 [project.scripts]

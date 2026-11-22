@@ -15,6 +15,9 @@ Telegram gets one message (per account the zero TD styles and their stock, the b
 one workbook: a tab per account with its ZERO TD and PART ZERO TD styles, SUMMARY, and NOT CHECKED
 when some styles had no answer. The workbook is also kept on Drive:
 AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/OCT-26/26-10-26/ZERO TD 26-10-26 10.00 AM.xlsx.
+
+Tables are Polars: the sheet read by pl.read_excel (calamine), the checks joined on STYLE ID; the workbook
+written by xlsxwriter (a style id is a link to its page).
 """
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from ..core import telegram
 from ..core.app import run_bot
@@ -39,28 +42,33 @@ ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
 SHEET_COLUMNS = ["ARTICLE TYPE", "BRAND", "STYLE ID", "MY SKU", "FINAL SKU", "COST", "LIQ STYLES"]
 CHECK_COLUMNS = ["STATUS", "MRP", "SELLING PRICE", "SIZES AT MRP", "STOCK AT MRP", "TOTAL STOCK",
                  "SELLER", "LINK"]
+CHECK_SCHEMA = {"STYLE ID": pl.Int64, "STATUS": pl.Utf8, "MRP": pl.Float64, "SELLING PRICE": pl.Float64,
+                "SIZES AT MRP": pl.Utf8, "STOCK AT MRP": pl.Int64, "TOTAL STOCK": pl.Int64, "SELLER": pl.Utf8,
+                "LINK": pl.Utf8, "ERROR": pl.Utf8}
 FLAGGED = ("ZERO TD", "PART ZERO TD")
 ALL_TAB = "ALL ACCOUNTS"
 TOP = 5               # styles named per account in the message
 MAX_UNCHECKED = 0.05  # more styles than this without an answer fails the run
+SKU = pl.coalesce("FINAL SKU", "MY SKU").alias("SKU")
 
 
-def read_source(path: Path, accounts: list[str]) -> dict[str, pd.DataFrame]:
-    """{account: its tab's rows, one per style id}; the last tab of each account wins."""
-    tabs = pd.read_excel(path, sheet_name=None, dtype=object)
-    out: dict[str, pd.DataFrame] = {}
+def read_source(path: Path, accounts: list[str]) -> dict[str, pl.DataFrame]:
+    """{account: its tab's rows (SHEET_COLUMNS), one per style id}; the last tab of each account wins."""
+    tabs = pl.read_excel(path, sheet_id=0, engine="calamine", raise_if_empty=False)
+    out: dict[str, pl.DataFrame] = {}
     for title, df in tabs.items():
         account = str(title).split("-")[0].strip().upper()
         if account not in accounts:
             continue
-        df.columns = [str(c).strip().upper() for c in df.columns]
+        df = df.rename({c: str(c).strip().upper() for c in df.columns})
         if "STYLE ID" not in df.columns:
             log.warning("Tab %s has no STYLE ID column: skipped", title)
             continue
-        ids = pd.to_numeric(df["STYLE ID"], errors="coerce")
-        df = df[ids.notna()].assign(**{"STYLE ID": ids[ids.notna()].astype("int64")})
-        out[account] = df.drop_duplicates("STYLE ID").reindex(columns=SHEET_COLUMNS)
-        log.info("%s: %d styles from tab %s", account, len(out[account]), title)
+        sid = pl.col("STYLE ID").cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False).cast(pl.Int64)
+        df = (df.with_columns(sid.alias("STYLE ID")).filter(pl.col("STYLE ID").is_not_null())
+                .unique("STYLE ID", keep="first", maintain_order=True))
+        out[account] = df.select(*[pl.col(c) if c in df.columns else pl.lit(None).alias(c) for c in SHEET_COLUMNS])
+        log.info("%s: %d styles from tab %s", account, out[account].height, title)
     missing = [a for a in accounts if a not in out]
     if len(missing) == len(accounts):
         raise RuntimeError(f"{SOURCE} has no tab of {', '.join(accounts)} (tabs: {', '.join(map(str, tabs))})")
@@ -133,52 +141,85 @@ def check(answer: dict | str) -> dict:
             "LINK": f"https://www.myntra.com/{answer.get('id')}"}
 
 
-def write_workbook(path: Path, checked: dict[str, pd.DataFrame], when: datetime) -> Path:
+def with_checks(sheets: dict[str, pl.DataFrame], found: dict[int, dict]) -> dict[str, pl.DataFrame]:
+    """Each style's sheet row with its check (CHECK_COLUMNS and ERROR; a field it has none of is empty)."""
+    checks = pl.DataFrame([{"STYLE ID": i, **c} for i, c in found.items()], schema=CHECK_SCHEMA, strict=False)
+    return {a: df.join(checks, on="STYLE ID", how="left", maintain_order="left") for a, df in sheets.items()}
+
+
+def flagged_of(df: pl.DataFrame) -> pl.DataFrame:
+    """The zero TD / part zero TD styles, most stock at MRP first (equal stock: the sheet's order)."""
+    return df.filter(pl.col("STATUS").is_in(FLAGGED)).sort("STOCK AT MRP", descending=True, nulls_last=True,
+                                                         maintain_order=True)
+
+
+def write_tab(wb, name: str, df: pl.DataFrame, link: str | None, head, link_f, when_f):
+    """One tab: a red header, the rows, the style id as a link to its page, filter, frozen header, widths."""
+    ws = wb.add_worksheet(name)
+    widths = [len(c) + 2 for c in df.columns]
+    for j, c in enumerate(df.columns):
+        ws.write_string(0, j, c, head)
+    for i, row in enumerate(df.iter_rows(), start=1):
+        for j, v in enumerate(row):
+            if i < 200:
+                widths[j] = max(widths[j], len(str(v or "")) + 2)
+            if v is None or (isinstance(v, float) and v != v):
+                continue
+            if df.columns[j] == link:
+                ws.write_url(i, j, f"https://www.myntra.com/{v}", link_f, string=str(v))
+            elif isinstance(v, datetime):
+                ws.write_datetime(i, j, v, when_f)
+            elif isinstance(v, bool):
+                ws.write_boolean(i, j, v)
+            elif isinstance(v, (int, float)):
+                ws.write_number(i, j, v)
+            else:
+                ws.write_string(i, j, str(v))
+    for j, w in enumerate(widths):
+        ws.set_column(j, j, min(45, max(10, w)))
+    ws.freeze_panes(1, 0)
+    if df.width:
+        ws.autofilter(0, 0, df.height, df.width - 1)
+    return ws
+
+
+def write_workbook(path: Path, checked: dict[str, pl.DataFrame], when: datetime) -> Path:
     """The workbook sent on Telegram: SUMMARY, ALL ACCOUNTS (every account's zero TD styles together:
     STYLE ID, SKU, SELLING PRICE, each style once), a tab per account (its zero TD styles, most
     stock at MRP first) and NOT CHECKED."""
-    from openpyxl.styles import Font, PatternFill
-    from openpyxl.utils import get_column_letter
-    summary = pd.DataFrame([summarise(a, df) for a, df in checked.items()])
-    unchecked = pd.concat([df[df["STATUS"] == "NOT CHECKED"].assign(ACCOUNT=a) for a, df in checked.items()])
-    flagged = {a: df[df["STATUS"].isin(FLAGGED)].sort_values("STOCK AT MRP", ascending=False)
-               for a, df in checked.items()}
-    merged = pd.concat(flagged.values())
-    merged = pd.DataFrame({"STYLE ID": merged["STYLE ID"], "SKU": merged["FINAL SKU"].fillna(merged["MY SKU"]),
-                           "SELLING PRICE": merged["SELLING PRICE"]}).drop_duplicates("STYLE ID")
-    with pd.ExcelWriter(path, engine="openpyxl") as xl:
-        summary.to_excel(xl, sheet_name="SUMMARY", index=False)
-        merged.to_excel(xl, sheet_name=ALL_TAB, index=False)
-        for account, df in flagged.items():
-            df.reindex(columns=SHEET_COLUMNS + CHECK_COLUMNS).to_excel(xl, sheet_name=account, index=False)
-        if len(unchecked):
-            unchecked.reindex(columns=["ACCOUNT", "STYLE ID", "MY SKU", "ERROR"]).to_excel(xl, sheet_name="NOT CHECKED", index=False)
-        head, fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="C0392B")
-        for ws in xl.book.worksheets:
-            for cell in ws[1]:
-                cell.font, cell.fill = head, fill
-            ws.freeze_panes = "A2"
-            ws.auto_filter.ref = ws.dimensions
-            for i, col in enumerate(ws.iter_cols(min_row=1, max_row=min(ws.max_row, 200)), 1):
-                ws.column_dimensions[get_column_letter(i)].width = min(45, max(10, *(len(str(c.value or "")) + 2 for c in col)))
-            if ws.title in checked or ws.title == ALL_TAB:
-                link = 1 if ws.title == ALL_TAB else SHEET_COLUMNS.index("STYLE ID") + 1
-                for row in ws.iter_rows(min_row=2, min_col=link, max_col=link):
-                    row[0].hyperlink = f"https://www.myntra.com/{row[0].value}"
-                    row[0].font = Font(color="0563C1", underline="single")
-        xl.book["SUMMARY"]["A" + str(len(summary) + 3)] = f"Checked on www.myntra.com at {when:%d %b %Y %I:%M %p} IST"
+    import xlsxwriter
+    summary = pl.DataFrame([summarise(a, df) for a, df in checked.items()])
+    flagged = {a: flagged_of(df).select(SHEET_COLUMNS + CHECK_COLUMNS) for a, df in checked.items()}
+    merged = (pl.concat(list(flagged.values()), how="diagonal_relaxed")
+              .select("STYLE ID", SKU, "SELLING PRICE").unique("STYLE ID", keep="first", maintain_order=True))
+    unchecked = pl.concat([df.filter(pl.col("STATUS") == "NOT CHECKED")
+                             .select(pl.lit(a).alias("ACCOUNT"), "STYLE ID", "MY SKU", "ERROR")
+                           for a, df in checked.items()], how="diagonal_relaxed")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb = xlsxwriter.Workbook(str(path), {"strings_to_numbers": False, "strings_to_formulas": False,
+                                         "strings_to_urls": False, "nan_inf_to_errors": True})
+    looks = (wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#C0392B", "pattern": 1}),
+             wb.add_format({"font_color": "#0563C1", "underline": 1}), wb.add_format({"num_format": "yyyy-mm-dd hh:mm:ss"}))
+    ws = write_tab(wb, "SUMMARY", summary, None, *looks)
+    ws.write_string(summary.height + 2, 0, f"Checked on www.myntra.com at {when:%d %b %Y %I:%M %p} IST")
+    write_tab(wb, ALL_TAB, merged, "STYLE ID", *looks)
+    for account, df in flagged.items():
+        write_tab(wb, account, df, "STYLE ID", *looks)
+    if unchecked.height:
+        write_tab(wb, "NOT CHECKED", unchecked, None, *looks)
+    wb.close()
     return path
 
 
-def summarise(account: str, df: pd.DataFrame) -> dict:
-    status = df["STATUS"].value_counts()
-    return {"ACCOUNT": account, "STYLES": len(df), "ZERO TD": int(status.get("ZERO TD", 0)),
-            "PART ZERO TD": int(status.get("PART ZERO TD", 0)), "STOCK AT MRP": int(df["STOCK AT MRP"].fillna(0).sum()),
-            "DISCOUNTED": int(status.get("DISCOUNTED", 0)), "OUT OF STOCK": int(status.get("OUT OF STOCK", 0)),
-            "NOT FOUND": int(status.get("NOT FOUND", 0)), "NOT CHECKED": int(status.get("NOT CHECKED", 0))}
+def summarise(account: str, df: pl.DataFrame) -> dict:
+    status = dict(df.group_by("STATUS").len().iter_rows())
+    return {"ACCOUNT": account, "STYLES": df.height, "ZERO TD": status.get("ZERO TD", 0),
+            "PART ZERO TD": status.get("PART ZERO TD", 0), "STOCK AT MRP": int(df["STOCK AT MRP"].fill_null(0).sum()),
+            "DISCOUNTED": status.get("DISCOUNTED", 0), "OUT OF STOCK": status.get("OUT OF STOCK", 0),
+            "NOT FOUND": status.get("NOT FOUND", 0), "NOT CHECKED": status.get("NOT CHECKED", 0)}
 
 
-def message(checked: dict[str, pd.DataFrame], when: datetime) -> str:
+def message(checked: dict[str, pl.DataFrame], when: datetime) -> str:
     rows = [summarise(a, df) for a, df in checked.items()]
     flagged = sum(r["ZERO TD"] + r["PART ZERO TD"] for r in rows)
     out = [f"🏷 <b>Myntra zero TD · {when:%d %b, %I:%M %p}</b>", ""]
@@ -187,9 +228,8 @@ def message(checked: dict[str, pd.DataFrame], when: datetime) -> str:
         n = r["ZERO TD"] + r["PART ZERO TD"]
         out += ["", f"<b>{account}</b>: {n} at MRP" + (f" ({r['PART ZERO TD']} some sizes)" if r["PART ZERO TD"] else "")
                 + (f", {r['STOCK AT MRP']:,} pcs" if n else "")]
-        top = df[df["STATUS"].isin(FLAGGED)].sort_values("STOCK AT MRP", ascending=False).head(TOP)
-        for _, s in top.iterrows():
-            sku = telegram.esc(str(s["FINAL SKU"] if pd.notna(s["FINAL SKU"]) else s["MY SKU"] or "")[:22])
+        for s in flagged_of(df).with_columns(SKU).head(TOP).iter_rows(named=True):
+            sku = telegram.esc(str(s["SKU"] or "")[:22])
             out.append(f'• <a href="{s["LINK"]}">{s["STYLE ID"]}</a> {sku}: ₹{s["MRP"]:,.0f}, {int(s["STOCK AT MRP"]):,} pcs')
     checked_n = sum(r["STYLES"] - r["NOT CHECKED"] for r in rows)
     unchecked = sum(r["NOT CHECKED"] for r in rows)
@@ -218,6 +258,7 @@ def save_to_drive(path: Path, when: datetime) -> str:
 
 def run(args) -> int:
     import tempfile
+    from collections import Counter
     accounts = [a.upper() for a in (csv_list("MYNTRA_ZERO_TD_ACCOUNTS") or ACCOUNTS)]
     if args.source:
         source = Path(args.source)
@@ -231,18 +272,16 @@ def run(args) -> int:
     if args.limit:
         sheets = {a: df.head(args.limit) for a, df in sheets.items()}
 
-    ids = sorted({int(i) for df in sheets.values() for i in df["STYLE ID"]})
+    ids = sorted({i for df in sheets.values() for i in df["STYLE ID"].to_list()})
     log.info("Looking up %d styles on www.myntra.com", len(ids))
     answers = lookup(ids)
     found = {i: check(a) for i, a in answers.items()}
     unchecked = sum(1 for c in found.values() if c["STATUS"] == "NOT CHECKED")
     if unchecked == len(ids):
-        errors = pd.Series([c["ERROR"] for c in found.values()]).value_counts().head(3)
-        raise RuntimeError("www.myntra.com answered no style: " + "; ".join(f"{e} x{n}" for e, n in errors.items()))
+        errors = Counter(c["ERROR"] for c in found.values()).most_common(3)
+        raise RuntimeError("www.myntra.com answered no style: " + "; ".join(f"{e} x{n}" for e, n in errors))
 
-    checked = {a: pd.concat([df.reset_index(drop=True),
-                             pd.DataFrame([found[int(i)] for i in df["STYLE ID"]]).reindex(columns=[*CHECK_COLUMNS, "ERROR"])], axis=1)
-               for a, df in sheets.items()}
+    checked = with_checks(sheets, found)
     when = datetime.now()
     path = write_workbook(output_dir("myntra-zero-td") / file_name(when), checked, when)
     msg = message(checked, when)

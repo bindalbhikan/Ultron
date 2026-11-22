@@ -113,10 +113,10 @@ def read_excel_text(path, sheet: str | int = 0, header: int | None = 0, engine: 
 
 def to_polars(df) -> "pl.DataFrame":
     """A pandas frame (the bridge while both live side by side) or a Polars one, as Polars text columns."""
-    import pandas as pd
     import polars as pl
     if isinstance(df, pl.DataFrame):
         return df
+    import pandas as pd
     cols = [str(c) for c in df.columns]
     return pl.DataFrame({c: [None if pd.isna(v) else str(v) for v in df[orig]] for c, orig in zip(cols, df.columns)},
                         schema={c: pl.Utf8 for c in cols})

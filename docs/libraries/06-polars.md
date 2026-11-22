@@ -108,6 +108,19 @@ pandas bridge while both live side by side), `pcol(df, name)` (a column by name 
   table library (each value keeps its kind; two full test runs: all 19,952 tickets, every sheet and the message the same;
   column widths 0.7 of a character wider, as xlsxwriter stores widths the way Excel shows them).
 
+* 22 Nov 2026, no pandas left in these three, each old vs new code side by side (`git worktree` of the commit before):
+  * **Myntra zero TD** (`myntra_zero_td/pipeline.py`): the sheet read by `pl.read_excel` (calamine, through
+    **fastexcel**, now a dependency), the checks joined on STYLE ID, the workbook by xlsxwriter. A test sheet of 4
+    tabs (ids as numbers and as text, a repeated id, a word in the id column) and fixed buyer-side answers: every
+    row and the Telegram message the same; the order of styles with equal stock at MRP is now the sheet's (pandas'
+    quicksort left it in none), and STYLE ID in the link column is a text cell (an id is text; xlsxwriter's link).
+  * **Flipkart price** (`flipkart_price/pipeline.py`): targets, the run workbook, the merge of the matrix parts
+    and the message: all the same on a test file and two parts.
+  * **ERP to OMSGuru returns** (`erp_oms_return/pipeline.py`): the ERP's answer typed once at the edge
+    (`report_table`), the sheet's memory, the jobs, the answers and the SUMMARY formulas in Polars. On the real
+    sheet (32,313 GRN lines, OMSGuru's answers fixed by the AWB, nothing sent): the workbook every cell, formula
+    and format the same, the message the same.
+
 **Next, one by one, each with a parity test on real files**: the owner's monthly files and
 the business report workbook (the last pandas there), return analysis,
 Myntra history, then the daily ones. The owners' engines (SPF `engine.py`, grouping engine) only with the

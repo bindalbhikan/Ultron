@@ -25,7 +25,7 @@ import zlib
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 from ..core import telegram
 from ..core.app import run_bot
@@ -52,16 +52,48 @@ LIMIT_DOWN = re.compile(r"reduce the Bank Settlement Value by a maximum of (\d+)
 def read_targets(path: Path) -> dict[str, int]:
     """FSN -> Final TP (whole rupees) from the target workbook; rows without a number are skipped.
     An FSN listed twice with different TPs raises: the owner has to say which one."""
-    df = pd.read_excel(path, dtype={"Flipkart Serial Number": str})
-    df = df[["Flipkart Serial Number", "Final TP"]].dropna()
-    df["Final TP"] = pd.to_numeric(df["Final TP"], errors="coerce")
-    df = df.dropna()
-    df["fsn"] = df["Flipkart Serial Number"].str.strip().str.upper()
-    df["tp"] = df["Final TP"].map(lambda v: int(math.floor(v + 0.5)))
-    clash = df.groupby("fsn")["tp"].nunique()
-    if (clash > 1).any():
-        raise RuntimeError(f"Final TP file: FSNs with two different TPs: {', '.join(clash[clash > 1].index[:10])}")
-    return dict(zip(df["fsn"], df["tp"]))
+    df = pl.read_excel(path, engine="calamine", schema_overrides={"Flipkart Serial Number": pl.Utf8}, raise_if_empty=False)
+    if not {"Flipkart Serial Number", "Final TP"} <= set(df.columns):
+        return {}
+    tp = pl.col("Final TP").cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
+    df = (df.select(pl.col("Flipkart Serial Number").str.strip_chars().str.to_uppercase().alias("fsn"),
+                    ((tp + 0.5).floor()).cast(pl.Int64).alias("tp"))
+            .filter(pl.col("fsn").is_not_null() & pl.col("tp").is_not_null()))
+    clash = df.group_by("fsn").agg(pl.col("tp").n_unique()).filter(pl.col("tp") > 1).sort("fsn")["fsn"].to_list()
+    if clash:
+        raise RuntimeError(f"Final TP file: FSNs with two different TPs: {', '.join(clash[:10])}")
+    return dict(df.iter_rows())
+
+
+def frame(rows: list[dict]) -> pl.DataFrame:
+    """Records as a table: every key a column, in the order the keys first appear."""
+    return pl.from_dicts(rows, infer_schema_length=None, strict=False) if rows else pl.DataFrame()
+
+
+def write_run(out: Path, summary: pl.DataFrame, steps: pl.DataFrame, not_live) -> Path:
+    """The run's workbook: Listings, Steps, Not live (core/xlsx.write_sheets)."""
+    from ..core.xlsx import write_sheets
+    return write_sheets(out, [("Listings", summary.columns, summary.iter_rows()), ("Steps", steps.columns, steps.iter_rows()),
+                              ("Not live", ["FSN not live on Flipkart"], [[f] for f in not_live])], bold_header=True)
+
+
+def read_run(path: Path) -> tuple[pl.DataFrame, pl.DataFrame, list[str]]:
+    """A part's workbook back: (Listings, Steps, the FSNs not live)."""
+    book = pl.read_excel(path, sheet_name=["Listings", "Steps", "Not live"], engine="calamine", raise_if_empty=False)
+    live = book["Not live"]
+    gone = live[live.columns[0]].drop_nulls().cast(pl.Utf8).to_list() if live.width else []
+    return book["Listings"], book["Steps"], gone
+
+
+def why(status: pl.Expr) -> pl.Expr:
+    """Why a listing is still not at its TP, in words."""
+    s, low = status.cast(pl.Utf8).fill_null("None"), status.cast(pl.Utf8).fill_null("None").str.to_lowercase()
+    return (pl.when(low.str.contains("increase", literal=True) & (s.str.contains("2 times", literal=True) | s.str.contains("today", literal=True)))
+              .then(pl.lit("2 increases done today: continues next run"))
+              .when(s.str.contains("fee slab gap", literal=True)).then(pl.lit("TP falls in a fee-slab gap (no exact price)"))
+              .when(s.str.contains("discount", literal=True)).then(pl.lit("TP too low for the MRP (over 90% discount)"))
+              .when(s.str.contains("dry run", literal=True)).then(pl.lit("dry run"))
+              .otherwise(s.str.replace_all("refused: ", "Flipkart refused: ", literal=True).str.slice(0, 80)))
 
 
 def next_settlement(current: int, target: int, up: float = UP, down: float = DOWN) -> int:
@@ -336,17 +368,14 @@ def run(args) -> int:
     reached = sum(1 for it in todo if it["esp"] == it["tp"])
     moved = sum(1 for it in todo if it["steps"] and it["esp"] != it["tp"])
     left = [it for it in todo if it["esp"] != it["tp"]]
-    summary = pd.DataFrame([{"FSN": it["fsn"], "SKU": it["sku"], "Vertical": it["vertical"], "MRP": it["mrp"],
-                             "Final TP": it["tp"], "Settlement start": it["start_esp"], "Price start": it["start_ssp"],
-                             "Settlement now": it["esp"], "Price now": it["ssp"], "Steps": it["steps"],
-                             "Status": "at TP" if it["esp"] == it["tp"] else it.get("done", "not reached")}
-                            for it in todo])
+    summary = frame([{"FSN": it["fsn"], "SKU": it["sku"], "Vertical": it["vertical"], "MRP": it["mrp"],
+                      "Final TP": it["tp"], "Settlement start": it["start_esp"], "Price start": it["start_ssp"],
+                      "Settlement now": it["esp"], "Price now": it["ssp"], "Steps": it["steps"],
+                      "Status": "at TP" if it["esp"] == it["tp"] else it.get("done", "not reached")}
+                     for it in todo])
     tag = f" part {part} of {parts}" if parts > 1 else ""
     out = output_dir("flipkart-price") / f"Flipkart Final TP update {started:%Y-%m-%d %H%M}{tag}.xlsx"
-    with pd.ExcelWriter(out) as xw:
-        summary.to_excel(xw, sheet_name="Listings", index=False)
-        pd.DataFrame(log_rows).to_excel(xw, sheet_name="Steps", index=False)
-        pd.DataFrame({"FSN not live on Flipkart": not_live}).to_excel(xw, sheet_name="Not live", index=False)
+    write_run(out, summary, frame(log_rows), not_live)
     meta = {"started": f"{started:%Y-%m-%d %H:%M}", "file": path.name, "fsns": len(targets), "matched": matched,
             "todo": len(todo), "reached": reached, "moved": moved, "dry_run": bool(args.dry_run), "part": part, "parts": parts}
     out.with_suffix(".json").write_text(json.dumps(meta), encoding="utf-8")
@@ -354,32 +383,23 @@ def run(args) -> int:
     if parts > 1:                    # the report job (--merge) joins the parts and sends one message
         log.info("Part %d of %d done: %d at TP, %d moved, %d left", part, parts, reached, moved, len(left))
         return 0
-    return report([meta], summary, pd.DataFrame(log_rows), not_live, out, args)
+    return report([meta], summary, frame(log_rows), not_live, out, args)
 
 
-def report(metas: list[dict], summary: pd.DataFrame, steps: pd.DataFrame, not_live: list[str],
+def report(metas: list[dict], summary: pl.DataFrame, steps: pl.DataFrame, not_live: list[str],
            out: Path, args) -> int:
     m0 = metas[0]
     dry = m0["dry_run"]
     todo = sum(m["todo"] for m in metas)
     reached = sum(m["reached"] for m in metas)
-    changed = int((summary["Steps"] > 0).sum()) if len(summary) else 0
-    left = summary[summary["Status"] != "at TP"] if len(summary) else summary
-    untouched = left[left["Steps"] == 0] if len(left) else left
+    if not summary.height:
+        summary = pl.DataFrame(schema={"Steps": pl.Int64, "Status": pl.Utf8})
+    changed = int((summary["Steps"].fill_null(0) > 0).sum())
+    left = summary.filter(pl.col("Status").ne_missing("at TP"))
+    untouched = left.filter(pl.col("Steps").fill_null(0) == 0)
 
-    def why(status: str) -> str:
-        s = str(status)
-        if "increase" in s.lower() and ("2 times" in s or "today" in s):
-            return "2 increases done today: continues next run"
-        if "fee slab gap" in s:
-            return "TP falls in a fee-slab gap (no exact price)"
-        if "discount" in s:
-            return "TP too low for the MRP (over 90% discount)"
-        if "dry run" in s:
-            return "dry run"
-        return s.replace("refused: ", "Flipkart refused: ")[:80]
-
-    pending_why = left["Status"].map(why).value_counts() if len(left) else pd.Series(dtype=int)
+    pending_why = (left.group_by(why(pl.col("Status")).alias("why"), maintain_order=True).len()
+                       .sort("len", descending=True, maintain_order=True).rows())
     parts = f" · {len(metas)} of {m0['parts']} parts" if m0["parts"] > 1 else ""
     when = f"{m0['started'][8:10]}/{m0['started'][5:7]} {m0['started'][11:]}"
     msg = [f"💸 <b>Flipkart Final TP update · {when}</b>" + (" (dry run: nothing changed)" if dry else ""),
@@ -388,20 +408,20 @@ def report(metas: list[dict], summary: pd.DataFrame, steps: pd.DataFrame, not_li
            f"🔄 <b>Price updated today: {changed:,}</b>" if not dry else f"📝 <b>To change: {todo:,}</b>",
            f"⏳ <b>Still pending: {len(left):,}</b>"
            + ("" if dry else f" ({len(left) - len(untouched):,} moved closer, {len(untouched):,} not changed)"),
-           *[f"   • {telegram.esc(r)}: {n:,}" for r, n in pending_why.head(6).items()],
+           *[f"   • {telegram.esc(r)}: {n:,}" for r, n in pending_why[:6]],
            f"❔ Not live on Flipkart: {len(not_live):,}"]
     if m0["parts"] > 1 and len(metas) < m0["parts"]:
         msg += ["", f"⚠️ Only {len(metas)} of {m0['parts']} parts finished: the others are left out (named in the run)"]
     # the master sheet (owner, 14 Nov): FSN | SKU | Final TP | per day Old TP / New TP; it is the file
     # sent on Telegram. A dry run or --no-upload leaves it alone and sends the run's own Excel.
     send = out
-    if not dry and not getattr(args, "no_upload", False) and len(summary):
+    if not dry and not getattr(args, "no_upload", False) and summary.height:
         try:
             from . import master
             day = datetime.strptime(m0["started"][:10], "%Y-%m-%d").date()
             rows = [{"fsn": r["FSN"], "sku": r["SKU"], "tp": int(r["Final TP"]),
                      "old": int(r["Settlement start"]), "new": int(r["Settlement now"])}
-                    for _, r in summary.iterrows()]
+                    for r in summary.iter_rows(named=True)]
             send, link = master.sync(day, rows, out.parent)
             msg.append(f'📒 <a href="{link}">TP update master</a>')
         except Exception as exc:  # noqa: BLE001 - the update itself is done; name the miss
@@ -425,17 +445,16 @@ def merge(folder: Path, args) -> int:
         if not xl.exists():
             continue
         metas.append(meta)
-        sums.append(pd.read_excel(xl, sheet_name="Listings"))
-        steps.append(pd.read_excel(xl, sheet_name="Steps"))
-        not_live |= set(pd.read_excel(xl, sheet_name="Not live").iloc[:, 0].dropna().astype(str))
+        listings, done, gone = read_run(xl)
+        sums.append(listings)
+        steps.append(done)
+        not_live |= set(gone)
     if not metas:
         raise RuntimeError(f"No part results under {folder}: every part of the matrix failed")
-    summary, step_df = pd.concat(sums, ignore_index=True), pd.concat(steps, ignore_index=True)
     out = output_dir("flipkart-price") / f"Flipkart Final TP update {metas[0]['started'].replace(':', '')}.xlsx"
-    with pd.ExcelWriter(out) as xw:
-        summary.to_excel(xw, sheet_name="Listings", index=False)
-        step_df.to_excel(xw, sheet_name="Steps", index=False)
-        pd.DataFrame({"FSN not live on Flipkart": sorted(not_live)}).to_excel(xw, sheet_name="Not live", index=False)
+    summary = pl.concat([x for x in sums if x.width], how="diagonal_relaxed") if any(x.width for x in sums) else pl.DataFrame()
+    step_df = pl.concat([x for x in steps if x.width], how="diagonal_relaxed") if any(x.width for x in steps) else pl.DataFrame()
+    write_run(out, summary, step_df, sorted(not_live))
     return report(metas, summary, step_df, sorted(not_live), out, args)
 
 
