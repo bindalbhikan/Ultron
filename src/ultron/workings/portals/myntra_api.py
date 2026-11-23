@@ -172,7 +172,6 @@ class MyntraApi:
         the times and amounts of its order detail (`LINE_FIELDS`, customer data left out). An order is
         read once even when it shows under two statuses. A range longer than the API's 7 days ("EndDate cannot be
         greater than 7 days from startDate") is asked for in 7-day windows."""
-        from concurrent.futures import ThreadPoolExecutor
         from datetime import timedelta
         windows, a = [], start
         while a < end:
@@ -188,10 +187,27 @@ class MyntraApi:
                         if so and so not in seen:
                             seen.add(so)
                             ids.append(so)
+        return self.lines_of(ids, workers)
+
+    def lines_of(self, seller_order_ids: list[str], workers: int = 6, skip_failed: bool = False) -> list[dict]:
+        """The order lines of these orders, open or closed (the detail call reads delivered, cancelled and RTO
+        orders too: tested 23 Nov 2026), customer data left out. skip_failed: an order whose detail still fails
+        after the retries is left out (the caller counts what it got) instead of stopping the whole read."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        def one(so: str):
+            try:
+                return self._detail_with_retry(so)
+            except MyntraApiError:
+                if not skip_failed:
+                    raise
+                return None
         with ThreadPoolExecutor(max(1, workers)) as pool:
-            details = list(pool.map(self._detail_with_retry, ids))
+            details = list(pool.map(one, seller_order_ids))
         out: list[dict] = []
-        for so, detail in zip(ids, details):
+        for so, detail in zip(seller_order_ids, details):
+            if not detail:
+                continue
             data = detail.get("data") if isinstance(detail.get("data"), dict) else detail
             for entry in data.get("orderLineEntries") or []:
                 out.append(order_line(so, entry))

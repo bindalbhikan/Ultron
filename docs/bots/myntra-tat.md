@@ -7,8 +7,12 @@
 * Pickup: the partner portal's Seller_Orders_Report of MAIN, DBCC and FMCC (`MYNTRA_TAT_ACCOUNTS`),
   column "fmpu date" (first-mile pickup); reports already on the portal are reused (the Myntra SPF
   run asks for 60 days every morning), a missing day gets a new one (waited for 15 minutes).
-* Deadline: OMSGuru's SLA Date of the same order, matched on the report's "order tracking number"
-  (OMSGuru's AWB for Myntra).
+* Deadline: Myntra's own pack-by time from the **Myntra Seller API** (owner, 23 Nov 2026: the API is the main
+  source, OMSGuru the backup), read by seller order id for every PPMP order of the window (the order detail reads
+  delivered and RTO orders too; `myntra_sla`, `portals/myntra_api.py`, token read live from OMSGuru). Else
+  OMSGuru's SLA Date of the same order, matched on the report's "order tracking number" (OMSGuru's AWB for Myntra):
+  SJIT / FBM orders (not in the API), an order the API did not answer, an account whose API failed (named).
+  Checked on 23 Nov 2026: 1,259 orders scored and 58 late both ways, every SLA equal; the API read took 79 s.
 * Orders created in the last `MYNTRA_TAT_DAYS` (7) complete days (up to the day before yesterday),
   cancelled left out. Late = picked after the SLA or still not picked past it; our side = packed
   after the SLA. Per account and courier code: orders, late, on-time %.

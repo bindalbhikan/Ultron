@@ -52,20 +52,55 @@ def report_frame(files: list[tuple[str, bytes]], account: str) -> "pl.DataFrame"
         pl.col("order tracking number").fill_null("").str.strip_chars().str.to_uppercase().alias("awb"),
         pl.col("courier code").fill_null("?").str.strip_chars().str.to_uppercase().alias("courier"),
         pl.col("order status").fill_null("").alias("status"),
+        pl.col("seller order id").fill_null("").str.strip_chars().alias("so"),
+        pl.col("po_type").fill_null("").str.strip_chars().str.to_uppercase().alias("po"),
         _when("created on").alias("created"), _when("packed on").alias("packed"),
         _when("fmpu date").alias("pickup"), _when("cancelled on").alias("cancelled"))
 
 
-def score(rep: "pl.DataFrame", sla: dict[str, datetime], first: date, last: date, now: datetime) -> "pl.DataFrame":
-    """The orders of first..last with an SLA, each with on_time / late / ours (packed late)."""
+def score(rep: "pl.DataFrame", sla: dict[str, datetime], first: date, last: date, now: datetime,
+          api_sla: dict[str, datetime] | None = None) -> "pl.DataFrame":
+    """The orders of first..last with an SLA, each with on_time / late / ours (packed late). The SLA is Myntra's
+    own pack-by time from the Seller API (`api_sla`, by seller order id) and OMSGuru's SLA (by AWB) when the API
+    has none for the order (owner, 23 Nov 2026: the API is the main source, OMSGuru the backup)."""
+    api_sla = api_sla or {}
     df = rep.filter(pl.col("created").dt.date().is_between(first, last) & pl.col("cancelled").is_null() & (pl.col("awb") != ""))
-    df = df.with_columns(pl.Series("sla", [sla.get(a) for a in df["awb"].to_list()], dtype=pl.Datetime("us")))
+    sos = df["so"].to_list() if "so" in df.columns else [""] * df.height
+    df = df.with_columns(pl.Series("sla", [api_sla.get(s) or sla.get(a) for s, a in zip(sos, df["awb"].to_list())],
+                                   dtype=pl.Datetime("us")))
     df = df.filter(pl.col("sla").is_not_null()).unique(["account", "awb"], keep="first", maintain_order=True)
     on_time = pl.col("pickup").is_not_null() & (pl.col("pickup") <= pl.col("sla"))
     df = df.with_columns(on_time.fill_null(False).alias("on_time"))
     df = df.with_columns((~pl.col("on_time") & (pl.col("pickup").is_not_null() | (pl.col("sla") < now))).alias("late"))
     return df.with_columns((pl.col("late") & (pl.col("packed").is_null() | (pl.col("packed") > pl.col("sla"))).fill_null(False))
                            .alias("ours"))
+
+
+def myntra_sla(client, rep: "pl.DataFrame", first: date, last: date, notes: list[str]) -> dict[str, datetime]:
+    """{seller order id: Myntra's pack-by time} of each account's PPMP orders of first..last, from the Seller API
+    (the order detail reads delivered and RTO orders too). It equals OMSGuru's SLA (285 of 285 on 23 Nov 2026);
+    SJIT / FBM are not in the API and keep OMSGuru's. An account whose API fails keeps OMSGuru's SLA (named)."""
+    from ..portals.myntra_api import MyntraApi
+    out: dict[str, datetime] = {}
+    if not rep.height or "po" not in rep.columns:
+        return out
+    window = rep.filter(pl.col("created").dt.date().is_between(first, last) & pl.col("cancelled").is_null()
+                        & (pl.col("po") == "PPMP") & (pl.col("so") != ""))
+    for account in sorted(set(window["account"].to_list())):
+        sos = sorted(set(window.filter(pl.col("account") == account)["so"].to_list()))
+        try:
+            got = MyntraApi.for_account(account, client).lines_of(sos, skip_failed=True)
+        except Exception as exc:  # noqa: BLE001 - OMSGuru's SLA stays for the account
+            log.warning("Myntra TAT: %s Seller API failed, OMSGuru's SLA used: %s", account, exc)
+            notes.append(f"{account}: Seller API failed, OMSGuru's SLA used ({str(exc)[:60]})")
+            continue
+        for x in got:
+            if x["packByTime"]:
+                out.setdefault(str(x["sellerOrderId"]), x["packByTime"])
+        missing = len(sos) - len({str(x["sellerOrderId"]) for x in got})
+        if missing:
+            notes.append(f"{account}: {missing} of {len(sos)} PPMP orders not read from the Seller API (OMSGuru's SLA used)")
+    return out
 
 
 def message(df: "pl.DataFrame", first: date, last: date, matched: int, total: int) -> str:
@@ -89,7 +124,7 @@ def message(df: "pl.DataFrame", first: date, last: date, matched: int, total: in
     lines += ["<pre>" + telegram.esc("\n".join(table)) + "</pre>",
               f"Late: <b>{late.height}</b> · our side (packed after the SLA) {ours} · "
               f"courier side {late.height - ours}",
-              f"<i>{matched} of {total} report orders found in OMSGuru with an SLA</i>"]
+              f"<i>{matched} of {total} report orders with an SLA (Myntra's pack-by time, else OMSGuru's)</i>"]
     return "\n".join(lines)
 
 
@@ -125,8 +160,9 @@ def run(args) -> int:
     client = clients.omsguru()
     lines, _ = order_lines(client, [first - timedelta(days=1) + timedelta(days=i) for i in range(len(days) + 2)])
     sla = {l["awb"]: l["sla"] for l in lines if l["awb"] and l["sla"]}
+    api_sla = myntra_sla(client, rep, first, last, notes)
     total = rep.filter(pl.col("created").dt.date().is_between(first, last) & pl.col("cancelled").is_null()).height
-    df = score(rep, sla, first, last, now)
+    df = score(rep, sla, first, last, now, api_sla)
     text = message(df, first, last, df.height, total) + ("\n\n⚠️ " + "\n⚠️ ".join(telegram.esc(n) for n in notes) if notes else "")
     log.info("Myntra TAT: %d orders scored of %d, %d late", df.height, total, int(df["late"].sum()))
     print(text) if args.no_telegram else telegram.send(text)
