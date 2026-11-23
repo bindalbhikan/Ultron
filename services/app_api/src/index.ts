@@ -1,5 +1,5 @@
 import { createAuth, type Env } from './auth';
-import { sealKey } from './keys';
+import { openKey, sealKey } from './keys';
 import { HttpError, identity, PERMISSIONS, requirePermission, rolePermissions, type Identity, type Permission } from './access';
 
 const json = (value: unknown, status = 200) => Response.json(value, { status });
@@ -246,6 +246,8 @@ async function addApiKey(request: Request, env: Env, actor: Identity) {
     throw new HttpError(409, 'This key looks added already.');
   }
   const { iv, ciphertext } = await sealKey(env.KEYS_SECRET, key);
+  const models = await readModels(provider, key);   // the provider's models, read with the new key at once
+  if (models && models.length) await saveModels(env, provider, models);
   const next = await env.DB.prepare('SELECT COALESCE(MAX(position),-1)+1 AS p FROM api_key WHERE provider=?').bind(provider).first<{ p: number }>();
   const id = crypto.randomUUID();
   await env.DB.batch([
@@ -288,7 +290,57 @@ async function changeApiKey(request: Request, env: Env, actor: Identity, id: str
   }
   return apiKeys(env);
 }
+// The models each provider offers, read with one of its keys (the provider's own GET /models): when a key is
+// added, when the list is a day old, or on Refresh. The list is replaced, so a new model appears and a retired
+// one goes. Only chat models are kept (embeddings, speech, images, moderation left out).
+const MODEL_LIST: Record<string, string> = {
+  anthropic: 'https://api.anthropic.com/v1/models?limit=1000',
+  openai: 'https://api.openai.com/v1/models',
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai/models',
+  nvidia: 'https://integrate.api.nvidia.com/v1/models',
+  groq: 'https://api.groq.com/openai/v1/models',
+};
+const NOT_CHAT = /embed|tts|whisper|audio|image|dall-e|moderation|realtime|transcribe|search|rerank|guard/i;
+async function readModels(provider: string, key: string): Promise<string[] | null> {
+  const headers: Record<string, string> = provider === 'anthropic'
+    ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' } : { Authorization: `Bearer ${key}` };
+  try {
+    const r = await fetch(MODEL_LIST[provider], { headers, signal: AbortSignal.timeout(10000) });
+    if (!r.ok) return null;
+    const data = await r.json() as { data?: { id?: string }[] };
+    const ids = (data.data || []).map((m) => String(m.id || '').replace(/^models\//, '')).filter((id) => id && !NOT_CHAT.test(id));
+    return [...new Set(ids)].sort();
+  } catch { return null; }
+}
+async function saveModels(env: Env, provider: string, ids: string[]) {
+  await env.DB.prepare(`INSERT INTO agent_model(provider,ids,updated_at) VALUES(?,?,?)
+    ON CONFLICT(provider) DO UPDATE SET ids=excluded.ids,updated_at=excluded.updated_at`)
+    .bind(provider, JSON.stringify(ids.slice(0, 1000)), Date.now()).run();
+}
+// One usable key per provider (the first not refused), opened with KEYS_SECRET.
+async function firstKeys(env: Env): Promise<Record<string, string>> {
+  if (!env.KEYS_SECRET) return {};
+  const { results } = await env.DB.prepare(`SELECT provider,iv,ciphertext FROM api_key WHERE status!='bad'
+    ORDER BY provider,position,created_at`).all<{ provider: string; iv: string; ciphertext: string }>();
+  const out: Record<string, string> = {};
+  for (const r of results) {
+    if (out[r.provider]) continue;
+    try { out[r.provider] = await openKey(env.KEYS_SECRET, r.iv, r.ciphertext); } catch { /* sealed with another secret */ }
+  }
+  return out;
+}
+async function refreshModels(env: Env, onlyStale: boolean) {
+  const keys = await firstKeys(env);
+  const { results } = await env.DB.prepare('SELECT provider,updated_at FROM agent_model').all<{ provider: string; updated_at: number }>();
+  const age = Object.fromEntries(results.map((r) => [r.provider, r.updated_at]));
+  await Promise.all(Object.entries(keys).map(async ([provider, key]) => {
+    if (onlyStale && Date.now() - (age[provider] || 0) < 24 * 3600 * 1000) return;
+    const ids = await readModels(provider, key);
+    if (ids && ids.length) await saveModels(env, provider, ids);
+  }));
+}
 async function agentModels(env: Env) {
+  await refreshModels(env, true);
   const { results } = await env.DB.prepare('SELECT provider,ids,updated_at AS updatedAt FROM agent_model').all();
   return json({ models: Object.fromEntries(results.map((r) => [r.provider, { ids: JSON.parse(String(r.ids)), updatedAt: r.updatedAt }])) });
 }
@@ -424,6 +476,11 @@ async function route(request: Request, env: Env) {
   if (keyMatch && (request.method === 'DELETE' || request.method === 'PATCH')) return changeApiKey(request, env, user, keyMatch[1]);
   if (path === '/api/agent/models' && request.method === 'GET') {
     requirePermission(user, 'agent.tools.read');
+    return agentModels(env);
+  }
+  if (path === '/api/agent/models/refresh' && request.method === 'POST') {
+    requirePermission(user, 'agent.manage');
+    await refreshModels(env, false);
     return agentModels(env);
   }
   const noteMatch = path.match(/^\/api\/agent\/memory\/([a-f0-9]{6,16})$/);
