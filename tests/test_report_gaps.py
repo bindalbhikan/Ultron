@@ -48,6 +48,8 @@ class SalesMonths(unittest.TestCase):
         self.assertEqual(missing, ["Oct-26 (DBCC)", "Sep-26 (MAIN, DBCC)"])
 
 
+# these cases are about three accounts' files; a fourth active account (EXIM since 23 Nov 2026) is its own case below
+@mock.patch.object(bp.myntra, "ACCOUNT_OF", {"19170": "MAIN", "32207": "DBCC", "35426": "FMCC"})
 class MyntraReports(unittest.TestCase):
     def test_gaps_per_account(self):
         files = [{"kind": "ORDER", "account": a, "month": date(2026, m, 1)}
@@ -66,3 +68,10 @@ class MyntraReports(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_an_account_with_no_report_yet_is_named_whole():
+    """EXIM (joined 23 Nov 2026): no monthly report yet -> named as a whole kind, never shown as 0."""
+    files = [{"kind": k, "account": "MAIN", "month": date(2026, 10, 1)} for k in ("ORDER", "RETURN")]
+    with mock.patch.object(bp.myntra, "ACCOUNT_OF", {"19170": "MAIN", "109704": "EXIM"}):
+        assert bp.missing_myntra_reports(files, date(2026, 10, 1)) == ["EXIM ORDER: none", "EXIM RETURN: none"]

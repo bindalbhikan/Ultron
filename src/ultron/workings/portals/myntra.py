@@ -37,7 +37,8 @@ PORTAL = "https://partners.myntrainfo.com"
 SELLERS = {"MAIN": 19170, "DBCC": 32207, "FMCC": 35426, "EXIM": 109704}
 # The accounts the portal workings run on, each with its own saved portal login. An account joins here once its
 # login is saved (`python scripts/myntra/myntra_session.py EXIM`): before that every working would stop on it.
-ACCOUNTS = {a: SELLERS[a] for a in ("MAIN", "DBCC", "FMCC")}
+# EXIM's login was saved on 23 Nov 2026 and it joined that day.
+ACCOUNTS = {a: SELLERS[a] for a in ("MAIN", "DBCC", "FMCC", "EXIM")}
 REPORT_ID = 4                       # Seller_Orders_Report
 RETURNS_REPORT_ID = 12              # Seller_Returns_Report (same queryParams; one job = max 1 month)
 # After a report is requested the portal refuses the same report for 15 minutes (coolDownPeriod).

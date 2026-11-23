@@ -15,5 +15,4 @@
   Telegram hears only when there is a code the sheet did not have (or no code of today at all).
 * Failures: a logged-out account ("session expired") needs a new login
   (`python scripts/myntra/myntra_session.py [MAIN|DBCC|FMCC|EXIM]`); one account failing does not stop the others.
-  EXIM (BINDAL EXIM, 23 Nov 2026) is known but joins the workings (`portals/myntra.py` `ACCOUNTS`) only after its
-  login is saved.
+  EXIM (BINDAL EXIM, partner 109704) joined on 23 Nov 2026 (`portals/myntra.py` `ACCOUNTS`), its login saved that day.

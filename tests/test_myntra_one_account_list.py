@@ -19,7 +19,7 @@ def test_no_working_keeps_its_own_copy_of_the_accounts():
     assert copies == []
 
 
-def test_exim_is_known_and_joins_the_workings_once_its_login_is_saved():
+def test_exim_is_known_and_in_the_workings_since_its_login_was_saved():
     assert mp.SELLERS["EXIM"] == 109704
-    assert list(mp.ACCOUNTS) == ["MAIN", "DBCC", "FMCC"]
+    assert list(mp.ACCOUNTS) == ["MAIN", "DBCC", "FMCC", "EXIM"]
     assert all(mp.ACCOUNTS[a] == mp.SELLERS[a] for a in mp.ACCOUNTS)
