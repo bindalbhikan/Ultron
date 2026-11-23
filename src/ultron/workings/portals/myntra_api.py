@@ -17,10 +17,12 @@ from the account's channel (`CHANNELS`) at every run, in memory only, never stor
 What it holds (tested 23 Nov 2026): the account's PPMP orders while open (WP / PK / RFR / SH), live,
 line for line the portal report's PPMP lines; SJIT / FBM and closed orders are only in the portal.
 
-Settings (GitHub secrets / `.env`):
+Settings: none per account. Every account (MAIN, DBCC, FMCC, EXIM) gets its token from its OMSGuru Myntra
+channel through the bots' OMSGuru login (OMSGURU_EMAIL / OMSGURU_PASSWORD). Optional:
+  MYNTRA_OMSGURU_CHANNELS  an account's OMSGuru channel when it changes or is new ("EXIM=64106,...")
+  MYNTRA_API_STORE         the `x-partner-store` header (default C45111W17453; the token picks the seller)
   MYNTRA_API_DOMAIN        https://api-integration.myntra.com
-  MYNTRA_API_STORE         the store code, e.g. C45111W17453 (the `x-partner-store` header)
-  MYNTRA_API_ACCESS_TOKEN  the access token borrowed from OMSGuru
+No merchant id, secret key or access token is kept anywhere (generate_token is never called).
 
 Read-only by rule: this client never calls a write endpoint (inventory/order/discount/store
 updates). OMSGuru is the only writer; a second writer would clash (AGENTS.md).
@@ -69,17 +71,12 @@ class MyntraApi:
 
     def __init__(self, token: str, store: str, domain: str = DEFAULT_DOMAIN):
         if not token:
-            raise MyntraApiError("MYNTRA_API_ACCESS_TOKEN is not set")
+            raise MyntraApiError("no Myntra API token (MyntraApi.for_account reads it from OMSGuru)")
         if not store:
-            raise MyntraApiError("MYNTRA_API_STORE is not set")
+            raise MyntraApiError("no x-partner-store code (MYNTRA_API_STORE)")
         self.token = token
         self.store = store
         self.domain = domain.rstrip("/")
-
-    @classmethod
-    def from_env(cls) -> "MyntraApi":
-        return cls(env("MYNTRA_API_ACCESS_TOKEN"), env("MYNTRA_API_STORE"),
-                   env("MYNTRA_API_DOMAIN", DEFAULT_DOMAIN))
 
     # ---- transport -------------------------------------------------------
     def _call(self, method: str, path: str, partner: str | None = None,

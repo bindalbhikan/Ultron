@@ -55,6 +55,7 @@ Instead we reuse the token OMSGuru already holds:
 | Secret / `.env` | Value |
 |---|---|
 | `MYNTRA_API_DOMAIN` | `https://api-integration.myntra.com` |
+| (none per account) | MAIN, DBCC, FMCC, EXIM: token from each OMSGuru channel; no merchant id / secret / token kept |
 | `MYNTRA_API_STORE` | store code, default `C45111W17453` (the `x-partner-store` header) |
 | `MYNTRA_OMSGURU_CHANNELS` | optional: the OMSGuru channel of an account, `EXIM=64106,...` |
 | (`OMSGURU_EMAIL` / `OMSGURU_PASSWORD`) | the bots' OMSGuru login that reads the token |
