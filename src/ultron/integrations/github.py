@@ -67,9 +67,11 @@ def _minutes(run: dict) -> float | None:
 def local_time(utc: str | None) -> str | None:
     """A GitHub time (UTC, "...Z") in this machine's time zone (the seller's: the workflows set TZ), as the
     owner reads it: "2026-11-23 09:30 +0530". The model told the owner UTC times as theirs (23 Nov 2026)."""
+    if not utc:
+        return None
     try:
         return datetime.fromisoformat(utc.replace("Z", "+00:00")).astimezone().strftime("%Y-%m-%d %H:%M %z")
-    except (AttributeError, TypeError, ValueError):
+    except ValueError:
         return None
 
 
