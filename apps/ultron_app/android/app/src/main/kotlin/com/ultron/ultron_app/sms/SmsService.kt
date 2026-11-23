@@ -28,6 +28,7 @@ class SmsService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!SmsPrefs.isOn(this)) {
+            alive = false
             stopSelf()
             return START_NOT_STICKY
         }
@@ -48,12 +49,28 @@ class SmsService : Service() {
             .build()
         val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
         ServiceCompat.startForeground(this, ID, note, type)
+        alive = true
+        com.ultron.ultron_app.KeepAlive.schedule(this)
         return START_STICKY
+    }
+
+    // swiped away from the recent apps: some phones then stop the service; checked again in a minute
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (SmsPrefs.isOn(this)) com.ultron.ultron_app.KeepAlive.soon(this)
+        super.onTaskRemoved(rootIntent)
+    }
+
+    override fun onDestroy() {
+        alive = false
+        super.onDestroy()
     }
 
     companion object {
         private const val CHANNEL = "sms"
         private const val ID = 7
+
+        /** Running in this process (KeepAlive starts it only when not). */
+        @Volatile var alive = false
 
         fun start(context: Context) = ContextCompat.startForegroundService(context, Intent(context, SmsService::class.java))
 
@@ -65,7 +82,6 @@ class SmsService : Service() {
 class SmsBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in listOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED)) return
-        if (SmsPrefs.isOn(context)) SmsService.start(context)
-        if (com.ultron.ultron_app.agent.AgentPrefs.isOn(context)) com.ultron.ultron_app.agent.AgentService.start(context)
+        com.ultron.ultron_app.KeepAlive.ensure(context, "phone restarted or app updated")
     }
 }

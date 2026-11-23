@@ -14,6 +14,7 @@ import com.ultron.ultron_app.agent.AgentService
 import com.ultron.ultron_app.sms.SmsImport
 import com.ultron.ultron_app.sms.SmsPrefs
 import com.ultron.ultron_app.sms.SmsService
+import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -34,6 +35,12 @@ class MainActivity : FlutterActivity() {
         }.toTypedArray()
 
     private fun granted(p: String) = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+
+    // opening the app brings SMS only / Agent mode back if the phone had stopped them
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        KeepAlive.ensure(this, "app opened")
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

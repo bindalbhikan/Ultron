@@ -65,10 +65,13 @@ class AgentService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP || !AgentPrefs.isOn(this)) {
             running = false
+            alive = false
             stopSelf()
             return START_NOT_STICKY
         }
         foreground("Waiting for work")
+        alive = true
+        com.ultron.ultron_app.KeepAlive.schedule(this)
         if (!running) {
             running = true
             thread = Thread({ loop() }, "ultron-agent").apply { start() }
@@ -76,7 +79,14 @@ class AgentService : Service() {
         return START_STICKY
     }
 
+    // swiped away from the recent apps: some phones then stop the service; checked again in a minute
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (AgentPrefs.isOn(this)) com.ultron.ultron_app.KeepAlive.soon(this)
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
+        alive = false
         running = false
         thread?.interrupt()
         super.onDestroy()
@@ -215,6 +225,9 @@ class AgentService : Service() {
         private const val PART = 300
         private const val SEND_FOR_MS = 6 * 60 * 60 * 1000L
         const val ACTION_STOP = "stop"
+
+        /** Running in this process (KeepAlive starts it only when not). */
+        @Volatile var alive = false
 
         fun start(context: Context) = ContextCompat.startForegroundService(context, Intent(context, AgentService::class.java))
 

@@ -65,6 +65,16 @@ class SmsBridge {
 
   Future<SmsStatus> status() => _call('status');
 
+  /// Whether SMS only is on, for the first screen: false off Android or when Android does not answer in time.
+  Future<bool> isOn() async {
+    if (!supported) return false;
+    try {
+      return (await status().timeout(const Duration(seconds: 2))).on;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Asks for the SMS (and, Android 13+, notification) permissions; the status after the answer.
   Future<SmsStatus> askPermissions() => _call('permissions');
 

@@ -24,7 +24,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier(0);
   ref.listen(authProvider, (previous, next) => refresh.value++);
   final router = GoRouter(
-    initialLocation: '/login',
+    initialLocation: ref.read(startPathProvider),
     refreshListenable: refresh,
     redirect: (context, state) {
       final path = state.uri.path;

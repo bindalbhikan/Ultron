@@ -124,7 +124,9 @@ Version: `0.1.<run number>`, the run number is also the Android version code.
 The sign-in screen's **SMS only (no account)** opens `/sms` (`ui/sms_only_screen.dart`). There the person types a
 name (2-40 characters) and picks Both / SIM 1 / SIM 2, then taps Start. The app asks for SMS (and, on Android 13+,
 notification) permission. From then on, every SMS that phone receives goes to the SMS sheet with that name. It keeps
-working after the app is closed and after a reboot.
+working after the app is closed and after a reboot. While SMS only is on, opening the app goes straight to
+`/sms`, not sign-in (`main.dart` asks Android first; `startPathProvider`); that screen also shows Agent mode
+(Myntra) with its last check-in when it is on (23 Nov 2026).
 
 How it works on the Android side (`android/app/src/main/kotlin/.../sms`, ported from `android app/`):
 
@@ -132,6 +134,10 @@ How it works on the Android side (`android/app/src/main/kotlin/.../sms`, ported 
   network) fetches the POD of a courier SMS (`Pod`, PDFBox) and posts JSON to the worker's `POST /api/sms`.
 * `SmsService` is a foreground service ("ULTRON: SMS to sheet on") that keeps the process alive on phones that
   kill idle apps. `SmsBootReceiver` starts it again after a reboot or an update.
+* `KeepAlive` (with `AgentService` too): if a phone maker stops either service, it is started again when the app
+  opens, one minute after the app is swiped from recent apps, and by a 15-minute WorkManager check. On Android 12+
+  that restart from the background needs "battery: don't optimise" (the SMS only screen's button); a refused restart
+  is written to the Activity log.
 * **Internet off**: an SMS waits on the phone until the network is back (also across reboots) and is then
   sent; on any network or server trouble it tries again with growing pauses (up to 5 hours apart) and never gives
   up. Only the worker's own refusal stops it: 403 (phone blocked) or 400 (bad request). Agent mode checks in every

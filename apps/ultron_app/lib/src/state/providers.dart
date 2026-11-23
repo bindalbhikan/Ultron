@@ -11,6 +11,10 @@ const appApiUrl = String.fromEnvironment(
   defaultValue: 'https://ultron-app-api.bhikan-serein.workers.dev',
 );
 
+/// The first screen: '/sms' when SMS only is on on this phone (main.dart asks Android before the app starts),
+/// so closing and opening the app does not land on sign-in; otherwise '/login'.
+final startPathProvider = Provider<String>((ref) => '/login');
+
 final repositoryProvider = Provider<UltronRepository>((ref) {
   final repository = CloudflareRepository(
     baseUrl: Uri.parse(appApiUrl),

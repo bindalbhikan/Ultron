@@ -101,4 +101,40 @@ void main() {
     expect(find.textContaining('Allow SMS for ULTRON'), findsOneWidget);
     expect(calls.any((c) => c.method == 'start'), isFalse);
   });
+
+  testWidgets(
+    'Agent mode on this phone shows its line, with the last check-in',
+    (tester) async {
+      const agent = MethodChannel('ultron/agent');
+      final poll = DateTime(2026, 11, 23, 10, 45);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            agent,
+            (call) async => {
+              'on': true,
+              'device': 'Xiaomi 13',
+              'lastPoll': poll.millisecondsSinceEpoch,
+              'lastJob': '',
+              'log': '',
+            },
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(agent, null),
+      );
+      await open(tester);
+      expect(
+        find.text('Agent mode (Myntra) on · last check-in 2026-11-23 10:45'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('without Agent mode in the app the line is left out', (
+    tester,
+  ) async {
+    await open(tester); // ultron/agent not answered: MissingPluginException
+    expect(find.textContaining('Agent mode'), findsNothing);
+    expect(find.text('Start sending SMS'), findsOneWidget);
+  });
 }

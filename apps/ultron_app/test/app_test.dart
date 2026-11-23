@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -332,6 +333,39 @@ Future<void> _signIn(WidgetTester tester, String username) async {
 }
 
 void main() {
+  testWidgets('with SMS only on, the app opens on SMS only, not sign-in', (
+    tester,
+  ) async {
+    const sms = MethodChannel('ultron/sms');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          sms,
+          (call) async => {
+            'on': true,
+            'name': 'Store phone',
+            'smsAllowed': true,
+          },
+        );
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(sms, null),
+    );
+    final repo = FakeRepository(Map.of(_accounts));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          repositoryProvider.overrideWithValue(repo),
+          startPathProvider.overrideWithValue('/sms'),
+        ],
+        child: const UltronApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('SMS only'), findsOneWidget);
+    expect(find.textContaining('On: Store phone'), findsOneWidget);
+    expect(find.byKey(const Key('auth-username')), findsNothing);
+  });
+
   testWidgets(
     'first-time setup: the code makes the administrator, who lands signed in',
     (tester) async {

@@ -3,14 +3,20 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../data/agent_bridge.dart';
 import '../data/sms_bridge.dart';
 import 'components.dart';
 
 /// "SMS only": no account and no password. The person types a name once and chooses the SIM; from then
 /// every SMS that phone receives goes to the SMS sheet with that name, also after a reboot.
 class SmsOnlyScreen extends StatefulWidget {
-  const SmsOnlyScreen({super.key, this.bridge = const SmsBridge()});
+  const SmsOnlyScreen({
+    super.key,
+    this.bridge = const SmsBridge(),
+    this.agent = const AgentBridge(),
+  });
   final SmsBridge bridge;
+  final AgentBridge agent;
   @override
   State<SmsOnlyScreen> createState() => _SmsOnlyScreenState();
 }
@@ -18,6 +24,7 @@ class SmsOnlyScreen extends StatefulWidget {
 class _SmsOnlyScreenState extends State<SmsOnlyScreen> {
   final _name = TextEditingController();
   SmsStatus? _status;
+  AgentStatus? _agent;
   String _sim = '';
   bool _busy = false;
   String? _error, _note;
@@ -51,9 +58,16 @@ class _SmsOnlyScreenState extends State<SmsOnlyScreen> {
 
   Future<void> _refresh() => _run(() async {
     final s = await widget.bridge.status();
+    AgentStatus? a;
+    try {
+      a = await widget.agent.status().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // no answer (an app or test without Agent mode): the line is left out
+    }
     if (!mounted) return;
     setState(() {
       _status = s;
+      _agent = a;
       if (_name.text.isEmpty) _name.text = s.name;
       _sim = s.sim;
     });
@@ -193,6 +207,11 @@ class _SmsOnlyScreenState extends State<SmsOnlyScreen> {
                             : LucideIcons.triangleAlert,
                         s.smsAllowed ? 'SMS allowed' : 'SMS not allowed yet',
                       ),
+                      if (_agent?.on == true)
+                        _line(
+                          LucideIcons.bot,
+                          'Agent mode (Myntra) on${_agent!.lastPoll == null ? '' : ' · last check-in ${_agent!.lastPoll!.toLocal().toString().substring(0, 16)}'}',
+                        ),
                       if (!s.batteryFree)
                         TextButton.icon(
                           onPressed: _busy
