@@ -1,9 +1,12 @@
 import 'dart:math' as math;
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_theme.dart';
+import '../domain/models.dart';
+import '../state/providers.dart';
 
 /// The ULTRON mark (two linked rounded links) and, optionally, the wordmark.
 class BrandMark extends StatelessWidget {
@@ -106,7 +109,13 @@ class PageBody extends StatelessWidget {
 }
 
 class PageHeading extends StatelessWidget {
-  const PageHeading(this.title, {super.key, this.subtitle, this.action});
+  const PageHeading(
+    this.title, {
+    super.key,
+    this.subtitle,
+    Widget? action,
+    Widget? trailing,
+  }) : action = action ?? trailing;
   final String title;
   final String? subtitle;
   final Widget? action;
@@ -147,9 +156,19 @@ class PageHeading extends StatelessWidget {
 }
 
 class SectionHeading extends StatelessWidget {
-  const SectionHeading(this.title, {super.key, this.trailing});
+  const SectionHeading(
+    this.title, {
+    super.key,
+    this.trailing,
+    this.action,
+    this.onAction,
+  });
   final String title;
   final Widget? trailing;
+
+  /// A text button at the end (when [trailing] is not given).
+  final String? action;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -162,7 +181,13 @@ class SectionHeading extends StatelessWidget {
             child: Text(title, style: Theme.of(context).textTheme.titleMedium),
           ),
         ),
-        ?trailing,
+        if (trailing != null)
+          trailing!
+        else if (action != null)
+          TextButton(
+            onPressed: onAction,
+            child: Text(action!, style: const TextStyle(fontSize: 12)),
+          ),
       ],
     ),
   );
@@ -170,9 +195,19 @@ class SectionHeading extends StatelessWidget {
 
 /// A short message in a tinted panel: information, or a warning (never colour alone: an icon too).
 class NotePanel extends StatelessWidget {
-  const NotePanel(this.text, {super.key, this.warning = false});
+  const NotePanel(
+    this.text, {
+    super.key,
+    this.warning = false,
+    this.action,
+    this.onAction,
+  });
   final String text;
   final bool warning;
+
+  /// A text button under the message.
+  final String? action;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +230,18 @@ class NotePanel extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(text, style: Theme.of(context).textTheme.bodyMedium),
+                if (action != null)
+                  TextButton(
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                    onPressed: onAction,
+                    child: Text(action!, style: const TextStyle(fontSize: 12)),
+                  ),
+              ],
+            ),
           ),
         ],
       ),
@@ -512,3 +558,139 @@ class StatCard extends StatelessWidget {
 void showNotice(BuildContext context, String message) =>
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+
+class DataGate extends ConsumerWidget {
+  const DataGate({super.key, required this.builder});
+  final Widget Function(WorkspaceData) builder;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ref
+      .watch(workspaceProvider)
+      .when(
+        data: builder,
+        loading: () => const Center(
+          child: Padding(
+            padding: EdgeInsets.all(48),
+            child: CircularProgressIndicator(),
+          ),
+        ),
+        error: (error, stack) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(LucideIcons.cloudOff, size: 36),
+                const SizedBox(height: 14),
+                Text(
+                  error is FrontendException
+                      ? error.message
+                      : 'The workspace could not load.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton(
+                  onPressed: () => ref.invalidate(workspaceProvider),
+                  child: const Text('Try again'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+class PortalIcon extends StatelessWidget {
+  const PortalIcon(this.marketplace, {super.key, this.icon, this.size = 40});
+  final String marketplace;
+  final IconData? icon;
+  final double size;
+  @override
+  Widget build(BuildContext context) {
+    final (background, foreground, letter) = switch (marketplace) {
+      'Myntra' => (const Color(0xFFFFE9EC), const Color(0xFFE45872), 'M'),
+      'AJIO' => (const Color(0xFF25343A), Colors.white, 'A'),
+      'Flipkart' => (const Color(0xFFFFDE65), const Color(0xFF1764AD), 'f'),
+      _ => (Brand.mint, Brand.green, ''),
+    };
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      alignment: Alignment.center,
+      child: icon != null || letter.isEmpty
+          ? Icon(
+              icon ?? LucideIcons.fileText,
+              size: size * .47,
+              color: foreground,
+            )
+          : Text(
+              letter,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: size * .55,
+                color: foreground,
+              ),
+            ),
+    );
+  }
+}
+
+class StatusBadge extends StatelessWidget {
+  const StatusBadge({super.key, required this.status});
+  final RunStatus status;
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (status) {
+      RunStatus.completed => Brand.green,
+      RunStatus.running => const Color(0xFF207E9A),
+      RunStatus.partial || RunStatus.blocked => Brand.amber,
+      RunStatus.failed => const Color(0xFFC0392B),
+      RunStatus.never => const Color(0xFF6B7280),
+    };
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: dark ? .24 : .10),
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Text(
+        status.label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: dark ? Color.lerp(color, Colors.white, .45) : color,
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> showDetail(BuildContext context, String title, Widget child) =>
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(child: child),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+
+/// Up to two capital letters of a person's name ("Bhikan Deshmukh" -> "BD"); "U" when it is empty.
+String initialsOf(String name) {
+  final words = name.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
+  return words.isEmpty
+      ? 'U'
+      : words.take(2).map((w) => w[0].toUpperCase()).join();
+}

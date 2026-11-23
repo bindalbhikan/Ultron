@@ -73,11 +73,13 @@ class AuthController extends Notifier<SessionState> {
     ++_request;
     state = const SessionState();
     await ref.read(repositoryProvider).signOut();
+    if (ref.mounted) ref.invalidate(workspaceProvider);
   }
 
   void expire() {
     ++_request;
     state = const SessionState(error: 'Your session ended. Sign in again.');
+    ref.invalidate(workspaceProvider);
   }
 
   Future<void> refreshAccess() async {
@@ -108,3 +110,43 @@ class AuthController extends Notifier<SessionState> {
 
 bool canAccess(WidgetRef ref, String permission) =>
     ref.watch(authProvider).user?.allows(permission) ?? false;
+
+/// The live workspace (workflows, runs, approvals, reports, connections) and its actions.
+final workspaceProvider =
+    AsyncNotifierProvider<WorkspaceController, WorkspaceData>(
+      WorkspaceController.new,
+    );
+
+class WorkspaceController extends AsyncNotifier<WorkspaceData> {
+  final Set<String> _operations = {};
+
+  @override
+  Future<WorkspaceData> build() =>
+      ref.watch(repositoryProvider).loadWorkspace();
+
+  Future<void> _perform(
+    String key,
+    Future<WorkspaceData> Function(UltronRepository) operation,
+  ) async {
+    if (!_operations.add(key)) {
+      throw const FrontendException('This request is already in progress.');
+    }
+    try {
+      final data = await operation(ref.read(repositoryProvider));
+      if (ref.mounted) state = AsyncData(data);
+    } finally {
+      _operations.remove(key);
+    }
+  }
+
+  Future<void> requestRun(String id, {required bool preview}) => _perform(
+    'run:$id',
+    (repository) => repository.requestRun(id, preview: preview),
+  );
+
+  Future<void> decide(String id, ApprovalStatus decision) =>
+      _perform('approval:$id', (repository) => repository.decide(id, decision));
+
+  Future<void> sendMessage(String text) =>
+      _perform('message', (repository) => repository.sendMessage(text));
+}

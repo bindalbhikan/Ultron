@@ -21,6 +21,13 @@ const accessPermissions = <String, String>{
 };
 
 String? permissionForPath(String path) => switch (path) {
+  '/app/agent' => 'agent.chat',
+  '/app/workflows' => 'workflows.read',
+  '/app/reports' => 'reports.read',
+  '/app/approvals' => 'approvals.read',
+  '/app/analytics' => 'analytics.read',
+  '/app/connections' => 'connections.read',
+  '/app/schedule' => 'schedule.read',
   '/app/admin' => 'users.manage',
   '/app/roles' => 'roles.manage',
   '/app/control' => 'agent.tools.read',

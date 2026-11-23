@@ -16,6 +16,15 @@ const _all = [
   'agent.manage',
   'memory.manage',
   'phone.manage',
+  'agent.chat',
+  'workflows.read',
+  'workflows.run',
+  'reports.read',
+  'approvals.read',
+  'approvals.decide',
+  'analytics.read',
+  'connections.read',
+  'schedule.read',
 ];
 
 AppUser _user(
@@ -44,6 +53,111 @@ class FakeRepository extends UltronRepository {
 
   @override
   AppUser? get currentUser => _me;
+
+  /// The live workspace, as the worker sends it through the app API.
+  final started = <String>[];
+  final decided = <String>[];
+  var pending = true;
+  WorkspaceData get _workspace => WorkspaceData(
+    workflows: const [
+      Workflow(
+        id: 'sale',
+        name: 'Daily sale report',
+        marketplace: 'All',
+        schedule: 'Report · runs at once',
+        description: 'sale.yml',
+        status: RunStatus.completed,
+        updated: '5 min ago',
+        action: 'sale',
+        auto: true,
+      ),
+      Workflow(
+        id: 'myntra-spf',
+        name: 'Myntra SPF run',
+        marketplace: 'Myntra',
+        schedule: 'Needs approval',
+        description: 'myntra-spf.yml',
+        status: RunStatus.failed,
+        updated: '2 h ago',
+        action: 'myntraspf',
+      ),
+    ],
+    runs: const [
+      WorkflowRun(
+        id: '1',
+        workflow: 'Daily sale report',
+        marketplace: 'All',
+        status: RunStatus.completed,
+        started: '5 min ago',
+        duration: '2 min',
+        note: 'success',
+      ),
+      WorkflowRun(
+        id: '2',
+        workflow: 'Myntra SPF run',
+        marketplace: 'Myntra',
+        status: RunStatus.failed,
+        started: '2 h ago',
+        duration: '12 min',
+        note: 'failure',
+      ),
+    ],
+    reports: const [
+      ReportFile(
+        id: 'sale',
+        name: 'Sale report',
+        period: '5 min ago',
+        updated: '5 min ago',
+        sources: [],
+      ),
+    ],
+    approvals: [
+      if (pending)
+        ApprovalRequest(
+          id: 'abc123def456',
+          title: 'Run the Myntra SPF master for October',
+          additions: 1,
+          destination: 'myntra-spf.yml',
+          expiresAt: DateTime(2030),
+        ),
+    ],
+    connections: const [
+      PortalConnection('Myntra MAIN', 'session saved today'),
+      PortalConnection('Agent mode phone', 'Pixel · last seen now'),
+    ],
+    messages: const [],
+    schedule: const [
+      ScheduleItem(
+        time: '9:30 AM',
+        when: 'daily',
+        name: 'Morning sale report',
+        portal: 'All',
+      ),
+      ScheduleItem(
+        time: '5:30 PM',
+        when: 'daily',
+        name: 'Myntra VMS',
+        portal: 'Myntra',
+      ),
+    ],
+  );
+  @override
+  Future<WorkspaceData> loadWorkspace() async => _workspace;
+  @override
+  Future<WorkspaceData> requestRun(
+    String workflowId, {
+    required bool preview,
+  }) async {
+    started.add(workflowId);
+    return _workspace;
+  }
+
+  @override
+  Future<WorkspaceData> decide(String id, ApprovalStatus decision) async {
+    decided.add('$id:${decision.name}');
+    pending = false;
+    return _workspace;
+  }
 
   @override
   Future<void> signIn(String username, String password) async {
@@ -161,8 +275,19 @@ class FakeRepository extends UltronRepository {
   }
 
   @override
-  Future<Map<String, List<String>>> agentModels() async => {
+  Future<Map<String, List<String>>> agentModels() async => models;
+  var models = <String, List<String>>{
     'groq': ['openai/gpt-oss-120b'],
+  };
+  @override
+  Future<Map<String, List<String>>> refreshModels() async => models = {
+    ...models,
+    'anthropic': [
+      'claude-haiku-5-5',
+      'claude-opus-5-5',
+      'claude-sonnet-5-5',
+      'claude-new-model',
+    ],
   };
   @override
   Future<AgentMemory> agentMemory({
@@ -233,7 +358,7 @@ void main() {
       await tester.enterText(find.byKey(const Key('setup-code')), 'GOOD-CODE');
       await tester.tap(find.byKey(const Key('auth-submit')));
       await tester.pumpAndSettle();
-      expect(find.text('Hello, Owner'), findsOneWidget);
+      expect(find.textContaining('Hello, '), findsOneWidget);
     },
   );
 
@@ -242,7 +367,7 @@ void main() {
   ) async {
     final repo = await _open(tester, size: const Size(1280, 2400));
     await _signIn(tester, 'Bhikan');
-    await tester.tap(find.text('Control').first);
+    container(tester).read(routerProvider).go('/app/control');
     await tester.pumpAndSettle();
     expect(find.textContaining('••••1111'), findsOneWidget);
     expect(find.textContaining('Limit · back'), findsOneWidget);
@@ -286,15 +411,31 @@ void main() {
     (tester) async {
       await _open(tester);
       await _signIn(tester, 'Bhikan');
-      expect(find.text('Hello, Bhikan'), findsOneWidget);
-      expect(find.text('Waiting for approval'), findsOneWidget);
+      expect(find.text('Hello, Bhikan Person'), findsOneWidget);
+      expect(find.text('Daily sale report'), findsWidgets); // a live run
       expect(
-        find.text('1'),
-        findsWidgets,
-      ); // one pending registration, one active phone
-      expect(find.text('Agent model'), findsOneWidget);
-      for (final label in ['Home', 'Control', 'Users', 'Roles', 'Profile']) {
-        expect(find.text(label), findsWidgets);
+        find.text('Run the Myntra SPF master for October'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Morning sale report'),
+        findsOneWidget,
+      ); // the worker's schedule
+      for (final label in [
+        'Home',
+        'Agent',
+        'Workflows',
+        'Reports',
+        'Approvals',
+        'Analytics',
+        'Connections',
+        'Schedule',
+        'Control panel',
+        'Users',
+        'Roles',
+        'Profile & settings',
+      ]) {
+        expect(find.text(label), findsWidgets, reason: label);
       }
     },
   );
@@ -322,8 +463,10 @@ void main() {
     await _open(tester);
     await _signIn(tester, 'viewer');
     expect(find.text('Users'), findsNothing);
-    expect(find.text('Control'), findsNothing);
-    expect(find.text('Profile'), findsWidgets);
+    expect(find.text('Control panel'), findsNothing);
+    expect(find.text('Workflows'), findsNothing);
+    expect(find.text('Approvals'), findsNothing);
+    expect(find.text('Home'), findsWidgets);
   });
 
   for (final width in [320.0, 390.0, 760.0, 1440.0]) {
@@ -339,6 +482,13 @@ void main() {
         await tester.pumpAndSettle();
         await _signIn(tester, 'Bhikan');
         for (final path in [
+          '/app/agent',
+          '/app/workflows',
+          '/app/reports',
+          '/app/approvals',
+          '/app/analytics',
+          '/app/connections',
+          '/app/schedule',
           '/app/control',
           '/app/admin',
           '/app/roles',
@@ -352,4 +502,42 @@ void main() {
       });
     }
   }
+
+  testWidgets('an approval decided in the app reaches the server', (
+    tester,
+  ) async {
+    final repo = await _open(tester);
+    await _signIn(tester, 'Bhikan');
+    container(tester).read(routerProvider).go('/app/approvals');
+    await tester.pumpAndSettle();
+    expect(find.text('Run the Myntra SPF master for October'), findsWidgets);
+    await tester.tap(find.text('Review changes').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Approve').last); // the confirm step
+    await tester.pumpAndSettle();
+    expect(repo.decided, ['abc123def456:approved']);
+  });
+
+  testWidgets('a refreshed model list is searched and picked', (tester) async {
+    await _open(tester, size: const Size(1280, 2400));
+    await _signIn(tester, 'Bhikan');
+    container(tester).read(routerProvider).go('/app/control');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Auto-select the model'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('refresh-models')));
+    await tester.pumpAndSettle();
+    expect(find.text('4 models this provider offers'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pick-model-anthropic')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('model-search')), 'new');
+    await tester.pumpAndSettle();
+    expect(find.text('1 of 4'), findsOneWidget);
+    await tester.tap(find.text('claude-new-model'));
+    await tester.pumpAndSettle();
+    expect(find.text('claude-new-model'), findsOneWidget);
+  });
 }
+
+ProviderContainer container(WidgetTester tester) =>
+    ProviderScope.containerOf(tester.element(find.byType(UltronApp)));

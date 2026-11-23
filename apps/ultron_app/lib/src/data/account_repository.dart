@@ -86,6 +86,9 @@ abstract class AccountRepository {
   /// provider -> the model ids the agent last read from it.
   Future<Map<String, List<String>>> agentModels() async => unavailable();
 
+  /// Reads every provider's model list again with its key (new models appear, retired ones go).
+  Future<Map<String, List<String>>> refreshModels() async => unavailable();
+
   Never unavailable() =>
       throw const FrontendException('This service is not connected.');
 }

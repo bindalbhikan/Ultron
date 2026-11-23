@@ -116,6 +116,36 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     }
   }
 
+  bool _refreshing = false;
+
+  /// Every provider's list read again with its key: a new model appears, a retired one goes.
+  Future<void> _refreshModels() async {
+    setState(() => _refreshing = true);
+    try {
+      final models = await ref.read(repositoryProvider).refreshModels();
+      if (mounted) setState(() => _models = models);
+    } on FrontendException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  /// The provider's models with a search box.
+  Future<void> _searchModel() async {
+    final all = _modelsOf(_pickProvider);
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (context) => _ModelSearch(models: all, selected: _pickModel),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _pickModel = picked;
+        _model.text = '$_pickProvider:$picked';
+      });
+    }
+  }
+
   List<String> _modelsOf(String provider) {
     final read = _models[provider] ?? const [];
     return read.isNotEmpty ? read : (knownModels[provider] ?? const []);
@@ -124,7 +154,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   Future<void> _keysDo(Future<List<ApiKey>> Function() action) async {
     try {
       final keys = await action();
-      if (mounted) setState(() => _keys = keys);
+      // a key added or removed changes which models can be listed: the app API read them with the key
+      final models = await ref
+          .read(repositoryProvider)
+          .agentModels()
+          .catchError((_) => _models);
+      if (mounted) {
+        setState(() {
+          _keys = keys;
+          _models = models;
+        });
+      }
     } on FrontendException catch (e) {
       if (mounted) setState(() => _error = e.message);
     }
@@ -511,32 +551,45 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                           : null,
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
+                    InkWell(
                       key: ValueKey('pick-model-$_pickProvider'),
-                      initialValue:
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: canManage && !_saving ? _searchModel : null,
+                      child: InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: 'Model',
+                          suffixIcon: const Icon(LucideIcons.search, size: 18),
+                          helperText:
+                              (_models[_pickProvider] ?? const []).isEmpty
+                              ? 'Known models; add a key for this provider to load its full list'
+                              : '${_models[_pickProvider]!.length} models this provider offers',
+                        ),
+                        child: Text(
                           _modelsOf(_pickProvider).contains(_pickModel)
-                          ? _pickModel
-                          : null,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        labelText: 'Model',
-                        helperText: (_models[_pickProvider] ?? const []).isEmpty
-                            ? 'Known models; the full list appears once the agent has used this provider'
-                            : '${_models[_pickProvider]!.length} models this provider offers',
+                              ? _pickModel!
+                              : 'Choose a model',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      items: [
-                        for (final m in _modelsOf(_pickProvider))
-                          DropdownMenuItem(
-                            value: m,
-                            child: Text(m, overflow: TextOverflow.ellipsis),
-                          ),
-                      ],
-                      onChanged: canManage && !_saving
-                          ? (v) => setState(() {
-                              _pickModel = v;
-                              _model.text = '$_pickProvider:$v';
-                            })
-                          : null,
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        key: const Key('refresh-models'),
+                        onPressed: canManage && !_refreshing
+                            ? _refreshModels
+                            : null,
+                        icon: _refreshing
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(LucideIcons.refreshCw, size: 15),
+                        label: const Text('Refresh models'),
+                      ),
                     ),
                   ],
                   const SizedBox(height: 16),
@@ -847,6 +900,79 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
               ),
             ),
         ],
+      ],
+    );
+  }
+}
+
+/// A provider's models, filtered as the owner types.
+class _ModelSearch extends StatefulWidget {
+  const _ModelSearch({required this.models, this.selected});
+  final List<String> models;
+  final String? selected;
+  @override
+  State<_ModelSearch> createState() => _ModelSearchState();
+}
+
+class _ModelSearchState extends State<_ModelSearch> {
+  String _query = '';
+  @override
+  Widget build(BuildContext context) {
+    final words = _query
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty);
+    final shown = widget.models
+        .where((m) => words.every(m.toLowerCase().contains))
+        .toList();
+    return AlertDialog(
+      title: const Text('Choose a model'),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      content: SizedBox(
+        width: 440,
+        height: 420,
+        child: Column(
+          children: [
+            TextField(
+              key: const Key('model-search'),
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'Search models',
+                prefixIcon: Icon(LucideIcons.search, size: 18),
+              ),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '${shown.length} of ${widget.models.length}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            Expanded(
+              child: shown.isEmpty
+                  ? const Center(child: Text('No model matches.'))
+                  : ListView.builder(
+                      itemCount: shown.length,
+                      itemBuilder: (context, i) => ListTile(
+                        dense: true,
+                        title: Text(shown[i], overflow: TextOverflow.ellipsis),
+                        trailing: shown[i] == widget.selected
+                            ? const Icon(LucideIcons.check, size: 16)
+                            : null,
+                        onTap: () => Navigator.pop(context, shown[i]),
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
       ],
     );
   }

@@ -6,9 +6,16 @@ import 'domain/access.dart';
 import 'domain/models.dart';
 import 'state/providers.dart';
 import 'ui/account_screen.dart';
+import 'ui/agent_screen.dart';
+import 'ui/analytics_screen.dart';
+import 'ui/approvals_screen.dart';
+import 'ui/reports_screen.dart';
+import 'ui/schedule_screen.dart';
+import 'ui/workflows_screen.dart';
 import 'ui/admin_screen.dart';
 import 'ui/app_shell.dart';
 import 'ui/auth_screen.dart';
+import 'ui/connections_screen.dart';
 import 'ui/control_screen.dart';
 import 'ui/home_screen.dart';
 import 'ui/sms_only_screen.dart';
@@ -62,6 +69,34 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/app/home',
             builder: (context, state) => const HomeScreen(),
+          ),
+          GoRoute(
+            path: '/app/agent',
+            builder: (context, state) => const AgentScreen(),
+          ),
+          GoRoute(
+            path: '/app/workflows',
+            builder: (context, state) => const WorkflowsScreen(),
+          ),
+          GoRoute(
+            path: '/app/reports',
+            builder: (context, state) => const ReportsScreen(),
+          ),
+          GoRoute(
+            path: '/app/approvals',
+            builder: (context, state) => const ApprovalsScreen(),
+          ),
+          GoRoute(
+            path: '/app/analytics',
+            builder: (context, state) => const AnalyticsScreen(),
+          ),
+          GoRoute(
+            path: '/app/connections',
+            builder: (context, state) => const ConnectionsScreen(),
+          ),
+          GoRoute(
+            path: '/app/schedule',
+            builder: (context, state) => const ScheduleScreen(),
           ),
           GoRoute(
             path: '/app/control',

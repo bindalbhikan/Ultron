@@ -234,3 +234,14 @@ test('an administrator adds API keys (encrypted, shown by their last four), orde
   const models=await (await call('/api/agent/models','GET',undefined,adminToken)).json() as {models:Record<string,{ids:string[]}>};
   assert.deepEqual(models.models.groq.ids,['openai/gpt-oss-120b']);
 });
+
+test('workspace, run and decide check the role before reaching the operations service',async()=>{
+  const adminToken=await signin('admin@example.test');
+  // the test worker has no operations service: an allowed user gets 503, a refused one 403 first
+  assert.equal((await call('/api/workspace','GET',undefined,adminToken)).status,503);
+  assert.equal((await call('/api/workflows/run','POST',{action:'sale'},adminToken)).status,503);
+  assert.equal((await call('/api/workflows/run','POST',{action:'BAD ACTION'},adminToken)).status,400);
+  const viewerToken=await signin2('owner.two','Eight@8c');            // a viewer: app.access only
+  assert.equal((await call('/api/workflows/run','POST',{action:'sale'},viewerToken)).status,403);
+  assert.equal((await call('/api/approvals/decide','POST',{id:'abcdef123456',approve:true},viewerToken)).status,403);
+});

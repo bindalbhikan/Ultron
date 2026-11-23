@@ -887,7 +887,9 @@ async function phoneApi(request, env, action) {
 // inputs listed there. /api/ai serves its model (Workers AI, free daily allocation), /api/memory
 // its memory.
 const agent = makeAgent({ repo: `${OWNER}/${REPO}`, token: (env) => env.DASHBOARD_TOKEN, allowedChat, kv: "DASH",
-                          userAgent: "bindal-ultron-worker" });
+                          userAgent: "bindal-ultron-worker",
+                          schedule: SCHEDULE.map((s) => ({ ist: s.ist, name: s.label || COMMANDS[s.cmd]?.name || s.cmd,
+                                                           portal: COMMANDS[s.cmd]?.portal || "all" })) });
 
 // Dashboard sign-in: a link carrying a token signed with SESSION_KEY (shared with the dashboard
 // worker), valid 10 minutes and usable once. Only allowed chats ever reach this.

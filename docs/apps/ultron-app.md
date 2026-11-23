@@ -15,13 +15,20 @@ Every screen reads a live service; a person sees only what their role allows (`d
 | Ask for an account | `/register` | none | name, username, password; waits as *pending* until an administrator approves |
 | SMS only | `/sms` | none | Android: a name and a SIM, then every SMS goes to the sheet (below) |
 | Waiting for approval | `/access` | signed in | a pending or disabled account; "Check again" re-reads the access |
-| Home | `/app/home` | `app.access` | live numbers: registrations waiting, SMS phones (last SMS, sent), agent model, memory notes; a number that could not be read shows "—" and why, never 0 |
-| Control | `/app/control` | `agent.tools.read` | **Brain**: the model (auto, or a provider and one of its models from a list), the API keys (add several per provider, order, retry, remove; each shows Ready / Limit · back HH:MM / Refused), tier, provider order; the SMS phones (block / unblock), Agent mode (turn this phone on, revoke a phone), the memory (remove a note) |
+| Home | `/app/home` | `app.access` | greeting by name, runs completed / running / needing attention, recent activity, the first pending approval, the next two scheduled workings, the Agent mode phone |
+| Agent | `/app/agent` | `agent.chat` | chat screen (in-app chat answers "use Telegram" until `/api/agent/chat` is connected) |
+| Workflows | `/app/workflows` | `workflows.read` | every working on GitHub with its last run; **Run** on one the worker allows (`workflows.run`) |
+| Reports | `/app/reports` | `reports.read` | the reports the workings published, with their time and notes |
+| Approvals | `/app/approvals` | `approvals.read` | the agent's pending proposals; Approve / Decline (`approvals.decide`) starts or drops them, and Telegram is told |
+| Analytics | `/app/analytics` | `analytics.read` | run counts by status and marketplace from the recent runs |
+| Connections | `/app/connections` | `connections.read` | Myntra MAIN / DBCC / FMCC sessions and the Agent mode phone: connected or needs login |
+| Schedule | `/app/schedule` | `schedule.read` | the worker's cron schedule (IST), as it runs |
+| Control panel | `/app/control` | `agent.tools.read` | **Brain**: the model (auto, or a provider and one of its models, chosen in a search box; **Refresh models** reads the providers' lists again), the API keys (add several per provider, order, retry, remove; each shows Ready / Limit · back HH:MM / Refused), tier, provider order; the SMS phones (block / unblock), Agent mode (turn this phone on, revoke a phone), the memory (remove a note) |
 | Users | `/app/admin` | `users.manage` | search, **Approve** on a pending registration, change role / status, **Create user** (username, optional email) |
 | Roles | `/app/roles` | `roles.manage` | roles and their permissions |
 | Profile | `/app/profile` | `app.access` | role, permissions, appearance (dark / light / phone), sign out |
 
-Phones show at most five items in the bottom bar; wider screens get a side rail.
+Phones show Home, Agent, Workflows, Reports and Profile in the bottom bar and the rest in the menu; wider screens get a side bar with everything. These screens were restored on 23 Nov 2026 with live data in place of the old demo data.
 
 ## Design
 

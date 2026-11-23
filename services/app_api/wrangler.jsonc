@@ -8,7 +8,8 @@
   "observability": { "enabled": false },
   "vars": {
     "APP_ORIGIN": "http://127.0.0.1:8788",
-    "AUTH_BASE_URL": "https://ultron-app-api.bhikan-serein.workers.dev"
+    "AUTH_BASE_URL": "https://ultron-app-api.bhikan-serein.workers.dev",
+    "WORKER_URL": "https://bindal-telegram-bot.bhikan-serein.workers.dev"
   },
   "d1_databases": [
     {

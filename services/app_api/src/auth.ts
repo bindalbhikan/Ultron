@@ -11,6 +11,9 @@ export interface Env {
   SETUP_CODE_HASH?: string;
   // encrypts the agent's model API keys at rest (src/keys.ts); the Telegram worker holds the same secret
   KEYS_SECRET?: string;
+  // the Telegram worker (workflows, runs, approvals, reports, connections): its URL and its DASHBOARD_TOKEN
+  WORKER_URL?: string;
+  WORKER_TOKEN?: string;
   AUTH_BASE_URL: string;
   APP_ORIGIN: string;
 }

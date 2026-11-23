@@ -412,13 +412,170 @@ class CloudflareRepository extends UltronRepository {
   );
 
   @override
-  Future<Map<String, List<String>>> agentModels() async {
+  Future<Map<String, List<String>>> agentModels() =>
+      _models('GET', '/api/agent/models');
+
+  @override
+  Future<Map<String, List<String>>> refreshModels() =>
+      _models('POST', '/api/agent/models/refresh');
+
+  Future<Map<String, List<String>>> _models(String method, String path) async {
     final data =
-        (await _request('GET', '/api/agent/models')).data['models'] as Map? ??
-        const {};
+        (await _request(method, path)).data['models'] as Map? ?? const {};
     return data.map(
       (k, v) =>
           MapEntry(k as String, List<String>.from((v as Map)['ids'] as List)),
     );
   }
+
+  // ---- the workspace, live from the worker through the app API (services/app_api /api/workspace)
+  WorkspaceData? _workspace;
+
+  static String _when(Object? iso) {
+    final t = iso is String ? DateTime.tryParse(iso)?.toLocal() : null;
+    if (t == null) return '-';
+    final d = DateTime.now().difference(t);
+    if (d.inMinutes < 60) return '${d.inMinutes} min ago';
+    if (d.inHours < 24) return '${d.inHours} h ago';
+    return '${t.day.toString().padLeft(2, '0')}-${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][t.month - 1]} '
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  }
+
+  static RunStatus _status(Object? s) => switch (s) {
+    'completed' => RunStatus.completed,
+    'running' => RunStatus.running,
+    'partial' => RunStatus.partial,
+    'failed' => RunStatus.failed,
+    _ => RunStatus.never,
+  };
+
+  @override
+  Future<WorkspaceData> loadWorkspace() async {
+    final d = (await _request('GET', '/api/workspace')).data;
+    List<Map<String, dynamic>> list(String k) => (d[k] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    return _workspace = WorkspaceData(
+      workflows: [
+        for (final w in list('workflows'))
+          Workflow(
+            id: w['id'] as String,
+            name: w['name'] as String,
+            marketplace: w['marketplace'] as String? ?? 'All',
+            schedule: w['auto'] == true
+                ? 'Report · runs at once'
+                : (w['action'] != null ? 'Needs approval' : 'Scheduled'),
+            description: w['file'] as String? ?? '',
+            status: _status(w['status']),
+            updated: _when(w['updated']),
+            action: w['action'] as String?,
+            auto: w['auto'] == true,
+          ),
+      ],
+      runs: [
+        for (final r in list('runs'))
+          WorkflowRun(
+            id: r['id'] as String,
+            workflow: r['workflow'] as String,
+            marketplace: r['marketplace'] as String? ?? 'All',
+            status: _status(r['status']),
+            started: _when(r['started']),
+            duration: r['minutes'] == null ? 'running' : '${r['minutes']} min',
+            note: r['note'] as String? ?? '',
+          ),
+      ],
+      reports: [
+        for (final r in list('reports'))
+          ReportFile(
+            id: r['id'] as String,
+            name: r['name'] as String,
+            period: _when(r['updated']),
+            updated: _when(r['updated']),
+            sources: [
+              for (final n in (r['notes'] as List? ?? const []))
+                SourceCoverage(n.toString(), available: true),
+            ],
+          ),
+      ],
+      approvals: [
+        for (final a in list('approvals'))
+          ApprovalRequest(
+            id: a['id'] as String,
+            title: (a['summary'] as String? ?? '').isEmpty
+                ? '${a['action']}'
+                : a['summary'] as String,
+            additions: (a['inputs'] as Map? ?? const {}).length,
+            destination: a['workflow'] as String? ?? '${a['action']}',
+            expiresAt: a['expires'] == null
+                ? DateTime.now().add(const Duration(hours: 24))
+                : DateTime.fromMillisecondsSinceEpoch(
+                    (a['expires'] as num).toInt(),
+                  ),
+          ),
+      ],
+      connections: [
+        for (final c in list('connections'))
+          PortalConnection(
+            c['name'] as String,
+            c['detail'] as String? ?? '',
+            available: c['available'] == true,
+          ),
+      ],
+      messages: _workspace?.messages ?? const [],
+      schedule: [
+        for (final s in list('schedule'))
+          if (RegExp(r'^(\d{1,2}:\d{2} [AP]M)\s*(.*)$')
+                  .firstMatch(s['ist'] as String? ?? '')
+              case final m?)
+            ScheduleItem(
+              time: m.group(1)!,
+              when: m.group(2)!,
+              name: s['name'] as String? ?? '',
+              portal: switch (s['portal']) {
+                'myntra' => 'Myntra',
+                'ajio' => 'AJIO',
+                'flipkart' => 'Flipkart',
+                _ => 'All',
+              },
+            ),
+      ]..sort((a, b) => a.minutes.compareTo(b.minutes)),
+    );
+  }
+
+  @override
+  Future<WorkspaceData> requestRun(
+    String workflowId, {
+    required bool preview,
+  }) async {
+    final w = (_workspace ?? await loadWorkspace()).workflows
+        .where((w) => w.id == workflowId)
+        .firstOrNull;
+    if (w?.action == null) {
+      throw const FrontendException(
+        'This working runs on its own schedule; it cannot be started from the app.',
+      );
+    }
+    await _request(
+      'POST',
+      '/api/workflows/run',
+      body: {'action': w!.action, 'inputs': <String, Object?>{}},
+    );
+    return loadWorkspace();
+  }
+
+  @override
+  Future<WorkspaceData> decide(String id, ApprovalStatus decision) async {
+    await _request(
+      'POST',
+      '/api/approvals/decide',
+      body: {'id': id, 'approve': decision == ApprovalStatus.approved},
+    );
+    return loadWorkspace();
+  }
+
+  @override
+  Future<WorkspaceData> sendMessage(String text) async =>
+      throw const FrontendException(
+        'Chat with the agent on Telegram for now; in-app chat is coming next.',
+      );
 }

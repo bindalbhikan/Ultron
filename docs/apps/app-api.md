@@ -47,15 +47,20 @@ through this API, with a signed-in user's session and permissions.
 | `GET /api/agent/settings` | `agent.tools.read` | model (`auto` or `provider:model`), tier (`smart` / `fast`), provider order, revision |
 | `PUT /api/agent/settings` | `agent.manage` | save them; a stale revision is refused (409) |
 | `GET /api/agent/keys`; `POST` (provider, key, label); `PATCH /<id>` (move up / down, reset); `DELETE /<id>` | `agent.tools.read` to list, `agent.manage` to change | the agent's model API keys, several per provider; listed by their last four characters only |
-| `GET /api/agent/models` | `agent.tools.read` | each provider's models as the agent last read them (the model picker) |
+| `GET /api/agent/models` | `agent.tools.read` | each provider's models (the model picker). The app API reads them from the provider's own `GET /models` with one of its keys: at once when a key is added, again when the list is a day old. The list is replaced, so a new model appears and a retired one goes; only chat models are kept |
+| `POST /api/agent/models/refresh` | `agent.manage` | read every provider's list again now (the **Refresh models** button) |
+| `GET /api/workspace` | `app.access` | the live workspace from the Telegram worker (`worker/agent.js` `/api/app/workspace`, 2 minute cache): GitHub workflows with their last run, the last 40 runs, pending approvals, the reports' publish times, portal sessions and the Agent mode phone (time only, never cookies), and the cron schedule |
+| `POST /api/workflows/run` (action) | `workflows.run` | start a working in the worker's `AGENT_ACTIONS`; the tap is the approval; Telegram is told who started it; audited |
+| `POST /api/approvals/decide` (id, approve) | `approvals.decide` | approve or decline a pending agent proposal, as a tap on Telegram would; audited |
 | `GET /api/agent/memory?kind=&search=` | `agent.tools.read` | the agent's notes, newest first (200), and the count of each kind |
 | `DELETE /api/agent/memory/<id>` | `memory.manage` | drop one note (audited) |
 | `GET /api/admin/phones` | `phone.manage` | the SMS-only phones, newest first: name, first / last seen, SMS sent, app version, blocked |
 | `GET` / `POST /api/admin/phone-agents`, `DELETE /api/admin/phone-agents/<id>` | `phone.manage` | Agent mode phones: list; make a token for this phone (shown once, only its SHA-256 kept); revoke one. The worker's `/api/phone/next` and `/result` accept it until revoked |
 | `PATCH /api/admin/phones/<id>` | `phone.manage` | block or unblock one (revision checked, audited); the worker then refuses its SMS (403) |
 
-The operational routes (`/api/reports`, `/api/workflows`, `/api/agent/chat` ...) check the permission
-and then answer 503 until their services are connected.
+The app API reaches the worker with `WORKER_URL` (in `wrangler.jsonc`) and the secret `WORKER_TOKEN`
+(the worker's `DASHBOARD_TOKEN`); the app never holds that token. The other operational routes
+(`/api/agent/chat` ...) check the permission and then answer 503 until their services are connected.
 
 What the panel saves reaches the agent within 5 minutes. The order is: the `AGENT_MODEL*` env vars first,
 then the panel, then `[model]` in `agent.toml` (`ultron.core.llm.settings`, `src/ultron/core/models.py`).

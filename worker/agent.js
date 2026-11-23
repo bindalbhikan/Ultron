@@ -5,6 +5,8 @@
 //   GET  /api/models    the Workers AI models allowed, in the OpenAI list shape (core/models.py auto-select)
 //   POST /api/approval  ultron.agents.chat proposes an action: saved in KV, Approve / Reject buttons sent
 //   POST /api/run       ultron.agents.chat runs an action at once: only one marked auto (it only makes a report)
+//   GET  /api/app/workspace   the ULTRON app's workflows, runs, approvals, reports and connections (live, 2 min cache)
+//   POST /api/app/run, /api/app/decide   a signed-in app user's run / approval decision (the app API checked their role)
 //   /api/memory/notes[/<id>]    the agent's long-term notes (ultron.core.memory): GET all, PUT one, DELETE one
 //   /api/memory/chats/<chat>    the last messages of a chat: GET, POST one, DELETE all
 //   GET /api/settings   the model settings the app's control panel saved (core/llm.settings)
@@ -45,6 +47,7 @@ export function makeAgent({
   approvalHours = 24,
   smsPerHour = 300,                      // SMS one phone may send in an hour ("SMS only" mode)
   userAgent = "ultron-worker",
+  schedule = [],                         // [{ist, name, portal}]: what the cron triggers start, for the app
 } = {}) {
   const allowedModels = new Set(models);
 
@@ -113,7 +116,8 @@ export function makeAgent({
     const chat = String(req.chat_id || "");
     if (!allowedChat(env, chat)) return Response.json({ error: "chat not allowed" }, { status: 400 });
     const id = crypto.randomUUID().slice(0, 12);
-    await env[kv].put(`approval:${id}`, JSON.stringify({ action: req.action, inputs, chat }),
+    await env[kv].put(`approval:${id}`, JSON.stringify({ action: req.action, inputs, chat,
+                                                          summary: String(req.summary || "").slice(0, 600), at: Date.now() }),
                       { expirationTtl: approvalHours * 3600 });
     const args = Object.entries(inputs).map(([k, v]) => `${k} = ${v}`).join("\n") || "(no inputs)";
     await send(env, chat,
@@ -404,6 +408,119 @@ export function makeAgent({
     return Response.json({ started: action.workflow, inputs });
   }
 
+  // ---- the ULTRON app (services/app_api calls these with this worker's token, after checking the user's role)
+  const PLUMBING = new Set(["tests.yml", "lint.yml", "docs-sync.yml", "ci-fix.yml", "agent-chat.yml", "agent-watch.yml",
+                            "flutter-app.yml"]);
+  const portalOf = (name) => /myntra/i.test(name) ? "Myntra" : /ajio/i.test(name) ? "AJIO" : /flipkart|fk/i.test(name) ? "Flipkart" : "All";
+  const runStatus = (r) => r.status !== "completed" ? "running"
+    : r.conclusion === "success" ? "completed" : r.conclusion === "cancelled" || r.conclusion === "skipped" ? "partial" : "failed";
+  const REPORT_KEYS = { sale: "Sale report", sale_today: "Sale today", vms: "Myntra VMS", vms_erp: "VMS vs ERP", returns: "Returns",
+    returns_year: "Returns (year)", ajio_tat: "AJIO TAT", ajio_spf: "AJIO SPF", myntra_spf: "Myntra SPF", ajio_ads: "AJIO ads" };
+  const SESSIONS = { myntra_session: "Myntra MAIN", myntra_session_dbcc: "Myntra DBCC", myntra_session_fmcc: "Myntra FMCC" };
+
+  async function workspace(request, env) {
+    if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+    const cached = await env[kv].get("app:workspace", "json");
+    if (cached && Date.now() - cached.at < 120_000) return Response.json(cached);
+    const allowed = actions(env);
+    const byFile = Object.fromEntries(Object.entries(allowed).map(([k, a]) => [a.workflow, { key: k, auto: Boolean(a.auto) }]));
+    const [wfRes, runRes] = await Promise.all([
+      github(env, `/repos/${repo}/actions/workflows?per_page=100`),
+      github(env, `/repos/${repo}/actions/runs?per_page=80&exclude_pull_requests=true`),
+    ]);
+    const wfs = wfRes.ok ? (await wfRes.json()).workflows || [] : [];
+    const runs = runRes.ok ? (await runRes.json()).workflow_runs || [] : [];
+    const latest = {};
+    for (const r of runs) if (!latest[r.workflow_id]) latest[r.workflow_id] = r;
+    const file = (w) => String(w.path || "").split("/").pop();
+    // a working whose last run is older than this page of runs: its own latest run (one call each, then cached)
+
+    await Promise.all(wfs.filter((w) => w.state === "active" && !PLUMBING.has(file(w)) && !latest[w.id]).map(async (w) => {
+      const r = await github(env, `/repos/${repo}/actions/workflows/${w.id}/runs?per_page=1&exclude_pull_requests=true`);
+      const one = r.ok ? ((await r.json()).workflow_runs || [])[0] : null;
+      if (one) { latest[w.id] = one; runs.push(one); }
+    }));
+    runs.sort((x, y) => Date.parse(y.run_started_at || y.created_at) - Date.parse(x.run_started_at || x.created_at));
+    const workflows = wfs.filter((w) => w.state === "active" && !PLUMBING.has(file(w))).map((w) => {
+      const r = latest[w.id];
+      return { id: file(w).replace(/\.ya?ml$/, ""), name: w.name, file: file(w), marketplace: portalOf(w.name),
+               status: r ? runStatus(r) : "none", updated: r ? r.updated_at : null,
+               action: byFile[file(w)]?.key || null, auto: byFile[file(w)]?.auto || false };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+    const names = Object.fromEntries(wfs.map((w) => [w.id, w.name]));
+    const recent = runs.filter((r) => !PLUMBING.has(String(r.path || "").split("/").pop())).slice(0, 40).map((r) => ({
+      id: String(r.id), workflow: names[r.workflow_id] || r.name, marketplace: portalOf(r.name), status: runStatus(r),
+      started: r.run_started_at || r.created_at,
+      minutes: r.status === "completed" ? Math.max(0, Math.round((Date.parse(r.updated_at) - Date.parse(r.run_started_at || r.created_at)) / 60000)) : null,
+      note: r.conclusion || r.status, url: r.html_url }));
+    const approvals = [];
+    for (const k of (await env[kv].list({ prefix: "approval:" })).keys) {
+      const a = await env[kv].get(k.name, "json");
+      if (!a) continue;
+      approvals.push({ id: k.name.slice("approval:".length), action: a.action, inputs: a.inputs || {}, summary: a.summary || "",
+                       workflow: allowed[a.action]?.workflow || "", at: a.at || null,
+                       expires: k.expiration ? k.expiration * 1000 : null });
+    }
+    const reports = [];
+    for (const [key, name] of Object.entries(REPORT_KEYS)) {
+      const v = await env[kv].get(key, "json");
+      if (v) reports.push({ id: key, name, updated: v.published_at || null, notes: Array.isArray(v.notes) ? v.notes.slice(0, 5) : [] });
+    }
+    const connections = [];
+    for (const [key, name] of Object.entries(SESSIONS)) {       // the session's time only: its cookies never leave
+      const v = await env[kv].get(key, "json");
+      connections.push({ name, available: Boolean(v && v.cookies), detail: v?.savedAt ? `session saved ${v.savedAt}` : "no session" });
+    }
+    const phone = await env[kv].get("phone_seen", "json");
+    connections.push({ name: "Agent mode phone", available: Boolean(phone && Date.now() - phone.at < 15 * 60 * 1000),
+                       detail: phone ? `${phone.device || "phone"} · last seen ${new Date(phone.at).toISOString()}` : "never seen" });
+    const out = { at: Date.now(), workflows, runs: recent, approvals, reports, connections, schedule,
+                  github: wfRes.ok && runRes.ok ? "ok" : `GitHub said ${wfRes.status}/${runRes.status}` };
+    await env[kv].put("app:workspace", JSON.stringify(out), { expirationTtl: 600 });
+    return Response.json(out);
+  }
+
+  // A run asked by an app user with workflows.run (the app API checked it): their tap is the approval.
+  async function appRun(request, env) {
+    if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+    const req = await jsonBody(request).catch((e) => e);
+    if (req instanceof Response) return req;
+    const action = actions(env)[req.action];
+    if (!action) return bad("this working cannot be started from the app");
+    const inputs = Object.fromEntries(Object.entries(req.inputs || {})
+      .filter(([k]) => (action.inputs || []).includes(k)).map(([k, v]) => [k, String(v).slice(0, 1000)]));
+    const res = await dispatch(env, action.workflow, inputs);
+    if (res.status !== 204) return Response.json({ error: `GitHub said ${res.status}` }, { status: 502 });
+    await env[kv].delete("app:workspace");
+    const chat = String(env.ALLOWED_CHAT_IDS || "").split(",")[0].trim();
+    if (chat) await send(env, chat, `▶️ <b>${esc(action.workflow)}</b> started from the ULTRON app by ${esc(req.by || "someone")}.`);
+    return Response.json({ started: action.workflow });
+  }
+
+  // An approval decided in the app (approvals.decide checked by the app API): as a tap on Telegram would.
+  async function appDecide(request, env) {
+    if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+    const req = await jsonBody(request).catch((e) => e);
+    if (req instanceof Response) return req;
+    const key = `approval:${String(req.id || "")}`;
+    const saved = await env[kv].get(key, "json");
+    if (!saved) return bad("expired or already decided", 404);
+    await env[kv].delete(key);
+    await env[kv].delete("app:workspace");
+    const who = esc(req.by || "someone");
+    if (!req.approve) {
+      await send(env, saved.chat, `✖️ <b>Rejected</b> in the ULTRON app by ${who}: ${esc(saved.action)}.`);
+      return Response.json({ rejected: saved.action });
+    }
+    const action = actions(env)[saved.action];
+    if (!action) return bad("action no longer allowed");
+    const res = await dispatch(env, action.workflow, saved.inputs);
+    await send(env, saved.chat, res.status === 204
+      ? `✅ <b>Approved</b> in the ULTRON app by ${who}: ${esc(action.workflow)} started.`
+      : `❌ Approved in the app by ${who}, but GitHub said ${res.status}.`);
+    return res.status === 204 ? Response.json({ started: action.workflow }) : Response.json({ error: `GitHub said ${res.status}` }, { status: 502 });
+  }
+
   function route(request, env, path) {
     if (path === "/api/ai" || path === "/api/chat/completions") return runAI(request, env);
     if (path === "/api/models") return listModels(request, env);
@@ -412,6 +529,9 @@ export function makeAgent({
     if (path === "/api/settings" && request.method === "GET") return settings(request, env);
     if (path === "/api/sms") return sms(request, env);
     if (path === "/api/run" && request.method === "POST") return runNow(request, env);
+    if (path === "/api/app/workspace" && request.method === "GET") return workspace(request, env);
+    if (path === "/api/app/run" && request.method === "POST") return appRun(request, env);
+    if (path === "/api/app/decide" && request.method === "POST") return appDecide(request, env);
     if (path === "/api/keys" || path === "/api/keys/report") return keys(request, env, path);
     if (path === "/api/models" && request.method === "PUT") return putModels(request, env);
     return null;

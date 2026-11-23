@@ -345,6 +345,41 @@ async function agentModels(env: Env) {
   return json({ models: Object.fromEntries(results.map((r) => [r.provider, { ids: JSON.parse(String(r.ids)), updatedAt: r.updatedAt }])) });
 }
 
+// The workspace (workflows, runs, approvals, reports, connections) and its actions, from the Telegram worker
+// (worker/agent.js /api/app/*), after the user's own permission is checked here.
+async function worker(env: Env, path: string, init: RequestInit = {}) {
+  if (!env.WORKER_URL || !env.WORKER_TOKEN) throw new HttpError(503, 'The operations service is not connected.');
+  let r: Response;
+  try {
+    r = await fetch(`${env.WORKER_URL}${path}`, { ...init, signal: AbortSignal.timeout(60000),
+      headers: { Authorization: `Bearer ${env.WORKER_TOKEN}`, 'Content-Type': 'application/json' } });
+  } catch { throw new HttpError(502, 'The operations service did not answer. Try again.'); }
+  const data = await r.json().catch(() => ({})) as Record<string, unknown>;
+  if (!r.ok) throw new HttpError(r.status === 404 ? 404 : 502, String(data.error || `The operations service said ${r.status}.`));
+  return data;
+}
+async function workflowRun(request: Request, env: Env, actor: Identity) {
+  requirePermission(actor, 'workflows.run');
+  const input = await body(request);
+  if (typeof input.action !== 'string' || !/^[a-z0-9]{2,40}$/.test(input.action)) throw new HttpError(400, 'Choose a working.');
+  const inputs = input.inputs && typeof input.inputs === 'object' && !Array.isArray(input.inputs) ? input.inputs : {};
+  const out = await worker(env, '/api/app/run', { method: 'POST', body: JSON.stringify({ action: input.action, inputs, by: actor.name }) });
+  await env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'workflow.run',?,?)`)
+    .bind(crypto.randomUUID(), actor.id, input.action, JSON.stringify({ inputs })).run();
+  return json(out);
+}
+async function approvalDecide(request: Request, env: Env, actor: Identity) {
+  requirePermission(actor, 'approvals.decide');
+  const input = await body(request);
+  if (typeof input.id !== 'string' || !/^[0-9a-f-]{6,40}$/.test(input.id) || typeof input.approve !== 'boolean') {
+    throw new HttpError(400, 'Choose an approval and a decision.');
+  }
+  const out = await worker(env, '/api/app/decide', { method: 'POST', body: JSON.stringify({ id: input.id, approve: input.approve, by: actor.name }) });
+  await env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'approval.decide',?,?)`)
+    .bind(crypto.randomUUID(), actor.id, input.id, JSON.stringify({ approve: input.approve })).run();
+  return json(out);
+}
+
 async function roles(env: Env) {
   const { results } = await env.DB.prepare('SELECT id,name,permissions,revision FROM app_role ORDER BY name').all();
   return results.map((row) => ({ ...row, permissions: JSON.parse(String(row.permissions)) }));
@@ -483,6 +518,12 @@ async function route(request: Request, env: Env) {
     await refreshModels(env, false);
     return agentModels(env);
   }
+  if (path === '/api/workspace' && request.method === 'GET') {
+    requirePermission(user, 'app.access');
+    return json(await worker(env, '/api/app/workspace'));
+  }
+  if (path === '/api/workflows/run' && request.method === 'POST') return workflowRun(request, env, user);
+  if (path === '/api/approvals/decide' && request.method === 'POST') return approvalDecide(request, env, user);
   const noteMatch = path.match(/^\/api\/agent\/memory\/([a-f0-9]{6,16})$/);
   if (noteMatch && request.method === 'DELETE') return forgetNote(env, user, noteMatch[1]);
   const userMatch = path.match(/^\/api\/admin\/users\/([A-Za-z0-9_-]{1,128})$/);
@@ -496,8 +537,8 @@ async function route(request: Request, env: Env) {
   }
   // Explicit fail-closed gates for future operational adapters. No generic proxy or shared token reaches clients.
   const operational: Record<string, Permission> = {
-    '/api/workspace': 'app.access', '/api/reports': 'reports.read', '/api/workflows': 'workflows.read',
-    '/api/workflows/run': 'workflows.run', '/api/approvals': 'approvals.read', '/api/approvals/decide': 'approvals.decide',
+    '/api/reports': 'reports.read', '/api/workflows': 'workflows.read',
+    '/api/approvals': 'approvals.read', 
     '/api/analytics': 'analytics.read', '/api/connections': 'connections.read', '/api/phone': 'phone.manage',
     '/api/schedule': 'schedule.read', '/api/agent/chat': 'agent.chat', '/api/agent/tools': 'agent.tools.read',
     '/api/agent/execute': 'agent.tools.execute',
