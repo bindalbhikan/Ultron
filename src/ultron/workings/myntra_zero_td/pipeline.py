@@ -21,6 +21,7 @@ written by xlsxwriter (a style id is a link to its page).
 """
 from __future__ import annotations
 
+from ..portals.myntra import ACCOUNTS as MYNTRA_ACCOUNTS  # the one account list
 import argparse
 import logging
 import time
@@ -38,7 +39,7 @@ log = logging.getLogger("bindal.myntra_zero_td")
 AREA = "MYNTRA"   # the agent's folder is kept by portal: AGENT WORK/MYNTRA (since 29 Oct 2026)
 SOURCE = "MYNTRA ZERO TD UPDATE SHEET.xlsx"
 FOLDER = "MYNTRA ZERO TD SHEETS"   # AGENT WORK/MYNTRA/<FOLDER>/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx
-ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
+ACCOUNTS = list(MYNTRA_ACCOUNTS)
 SHEET_COLUMNS = ["ARTICLE TYPE", "BRAND", "STYLE ID", "MY SKU", "FINAL SKU", "COST", "LIQ STYLES"]
 CHECK_COLUMNS = ["STATUS", "MRP", "SELLING PRICE", "SIZES AT MRP", "STOCK AT MRP", "TOTAL STOCK",
                  "SELLER", "LINK"]

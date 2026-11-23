@@ -14,4 +14,6 @@
 * `--retry` (11:40 AM): a courier often has no trip yet at 11 AM, so the codes are read again;
   Telegram hears only when there is a code the sheet did not have (or no code of today at all).
 * Failures: a logged-out account ("session expired") needs a new login
-  (`python scripts/myntra/myntra_session.py`); one account failing does not stop the others.
+  (`python scripts/myntra/myntra_session.py [MAIN|DBCC|FMCC|EXIM]`); one account failing does not stop the others.
+  EXIM (BINDAL EXIM, 23 Nov 2026) is known but joins the workings (`portals/myntra.py` `ACCOUNTS`) only after its
+  login is saved.

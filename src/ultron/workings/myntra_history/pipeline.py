@@ -15,6 +15,7 @@ run cut short (6 h limit) is simply run again.
 """
 from __future__ import annotations
 
+from ..portals.myntra import ACCOUNTS as MYNTRA_ACCOUNTS  # the one account list
 import argparse
 import logging
 import tempfile
@@ -34,7 +35,7 @@ from ..core.tables import read_text_csv
 log = logging.getLogger("bindal.myntra_history")
 
 AREA = "MYNTRA"   # the agent's folder is kept by portal: AGENT WORK/MYNTRA (since 29 Oct 2026)
-ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
+ACCOUNTS = list(MYNTRA_ACCOUNTS)
 CSV = "text/csv"
 GAP = 16 * 60            # seconds between two requests of the same report of an account
 TRIES = 3           # refused 3 times, each 16 minutes after the last request and the last report done: not kept

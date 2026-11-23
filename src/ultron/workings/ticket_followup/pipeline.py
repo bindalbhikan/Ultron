@@ -16,6 +16,7 @@ Who follows up, so that no ticket gets two bots:
 """
 from __future__ import annotations
 
+from ..portals.myntra import ACCOUNTS as MYNTRA_ACCOUNTS  # the one account list
 import argparse
 import logging
 import tempfile
@@ -35,7 +36,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 COLS = ["PORTAL", "ACCOUNT", "TYPE", "TICKET ID", "PARTICULAR", "ORDER ID", "RAISED ON", "LAST UPDATE", "AGE DAYS", "STATUS", "OPEN",
         "FOLLOWED UP BY", "LAST FOLLOW-UP", "CHECKED ON"]
 SHEET_COLS = ["DATE", "PORTAL", "PARTICULAR", "TICKET ID", "STATUS"]
-ACCOUNTS = ("MAIN", "DBCC", "FMCC")
+ACCOUNTS = tuple(MYNTRA_ACCOUNTS)
 AJIO_CLOSED = {"RESOLVED", "CLOSED", "COMPLETED", "CANCELLED", "CANCELED", "REJECTED", "AUTO_CLOSED", "WITHDRAWN"}
 MYNTRA_CLOSED = {"REJECT", "PAYMENT_COMPLETED", "CLOSED"}
 HAND_CLOSED = AJIO_CLOSED | MYNTRA_CLOSED | {"DONE", "SOLVED"}

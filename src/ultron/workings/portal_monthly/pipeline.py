@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import polars as pl
 
+from ..portals.myntra import ACCOUNTS as _MYNTRA_ACCOUNTS  # the one account list
 import argparse
 import calendar
 import logging
@@ -39,7 +40,7 @@ from ..core.config import env, num
 
 log = logging.getLogger("bindal.portal_reports")
 
-MYNTRA_ACCOUNTS = ("MAIN", "DBCC", "FMCC")
+MYNTRA_ACCOUNTS = list(_MYNTRA_ACCOUNTS)
 FRESH_FROM: date | None = None     # --fresh: only report jobs made from this day on are reused
 
 

@@ -32,8 +32,12 @@ log = logging.getLogger(__name__)
 
 API = "https://partnersapi.myntrainfo.com/api/partners"
 PORTAL = "https://partners.myntrainfo.com"
-# The three Myntra seller accounts, each with its own portal login (partner id)
-ACCOUNTS = {"MAIN": 19170, "DBCC": 32207, "FMCC": 35426}
+# Every Myntra seller account and its partner id: the one list (docs/CENTRALISE.md), read by every Myntra working.
+# EXIM = BINDAL EXIM PVT LTD (its OMSGuru channel was added on 23 Nov 2026; the Seller API already serves it).
+SELLERS = {"MAIN": 19170, "DBCC": 32207, "FMCC": 35426, "EXIM": 109704}
+# The accounts the portal workings run on, each with its own saved portal login. An account joins here once its
+# login is saved (`python scripts/myntra/myntra_session.py EXIM`): before that every working would stop on it.
+ACCOUNTS = {a: SELLERS[a] for a in ("MAIN", "DBCC", "FMCC")}
 REPORT_ID = 4                       # Seller_Orders_Report
 RETURNS_REPORT_ID = 12              # Seller_Returns_Report (same queryParams; one job = max 1 month)
 # After a report is requested the portal refuses the same report for 15 minutes (coolDownPeriod).

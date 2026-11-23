@@ -31,6 +31,7 @@ last full run. --only-changes: nothing written or sent unless a job changed.
 """
 from __future__ import annotations
 
+from ..portals.myntra import ACCOUNTS as MYNTRA_ACCOUNTS  # the one account list
 import argparse
 import logging
 import shutil
@@ -52,7 +53,7 @@ from ..core.tables import clean_id, read_text_csv
 log = logging.getLogger("bindal.myntra_grouping")
 
 FOLDER = ("MYNTRA", "LISTING GROUPING")
-SELLER_OF = {"MAIN": "19170", "DBCC": "32207", "FMCC": "35426"}
+SELLER_OF = {acc: str(pid) for acc, pid in MYNTRA_ACCOUNTS.items()}
 ACCOUNT_OF = {v: k for k, v in SELLER_OF.items()}
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 

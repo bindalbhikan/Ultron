@@ -19,6 +19,7 @@ master replaces the Drive file in place (Drive keeps the old versions).
 """
 from __future__ import annotations
 
+from ..portals.myntra import ACCOUNTS as MYNTRA_ACCOUNTS  # the one account list
 import argparse
 import logging
 import os
@@ -40,7 +41,7 @@ from . import payments, tickets
 log = logging.getLogger("bindal.myntra_spf")
 
 MASTER_NAME = "MYNTRA SPF MASTER.xlsx"
-ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
+ACCOUNTS = list(MYNTRA_ACCOUNTS)
 DELIVERY_REPORT_ID = 84            # Return_Delivery_Report
 COOLDOWN_SECONDS = 15 * 60 + 45
 

@@ -11,6 +11,7 @@ final. A source that fails or stops short is left out and named: its cells stay 
 """
 from __future__ import annotations
 
+from ..portals.myntra import ACCOUNTS as MYNTRA_ACCOUNTS  # the one account list
 import argparse
 import calendar
 import copy
@@ -38,7 +39,7 @@ from . import numbers as n
 from ..core import clients
 
 BOOK_NAME = "PORTAL SALE REPORT.xlsx"
-ACCOUNTS = ("MAIN", "DBCC", "FMCC")
+ACCOUNTS = tuple(MYNTRA_ACCOUNTS)
 BLOCKS = ["AZ/FX/FBA", "COCOBLU", "MEESHO", "AJIO B2C", "FLIPKART", "FBF", "MYNTRA", "SJIT", "NYKAA"]
 OMS_BLOCKS = {"AZ/FX/FBA", "COCOBLU", "MEESHO", "NYKAA"}
 METRICS = ("GROSS", "RETURN", "CANCEL")

@@ -10,6 +10,7 @@ portals for the slow reports, so the 2 PM run finds them ready.
 """
 from __future__ import annotations
 
+from ..portals.myntra import ACCOUNTS as _MYNTRA_ACCOUNTS  # the one account list
 import argparse
 import logging
 import shutil
@@ -26,7 +27,7 @@ from . import sources
 
 log = logging.getLogger("bindal.returns")
 
-MYNTRA_ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
+MYNTRA_ACCOUNTS = list(_MYNTRA_ACCOUNTS)
 SHORT = {"MYNTRA MAIN": "Myn MAIN", "MYNTRA DBCC": "Myn DBCC", "MYNTRA FMCC": "Myn FMCC", "AJIO": "Ajio",
          "FLIPKART": "Flipkart", "MYNTRA COMBINED": "Myntra", "ALL PORTAL": "ALL"}
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

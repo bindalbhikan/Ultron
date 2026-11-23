@@ -24,13 +24,14 @@ from datetime import datetime
 
 from typing import TYPE_CHECKING
 
+from ..portals.myntra import ACCOUNTS as MYNTRA_ACCOUNTS  # the one account list
 from .workbook import Report
 
 if TYPE_CHECKING:
     import polars as pl
 
 log = logging.getLogger("bindal.business_report")
-ACCOUNT_OF = {"19170": "MAIN", "32207": "DBCC", "35426": "FMCC"}
+ACCOUNT_OF = {str(pid): acc for acc, pid in MYNTRA_ACCOUNTS.items()}
 MCOLS = ["MY SKU", "FINAL SKU", "FINAL MY SKU", "DESIGN-NO"]
 V = "SALE PRICE (FINAL AMOUNT)"
 

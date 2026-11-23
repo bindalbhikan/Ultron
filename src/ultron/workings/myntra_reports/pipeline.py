@@ -21,6 +21,7 @@ each report made, or why not.
 """
 from __future__ import annotations
 
+from ..portals.myntra import ACCOUNTS as MYNTRA_ACCOUNTS, SELLERS as MYNTRA_SELLERS  # the one account list
 import argparse
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -39,10 +40,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("bindal.myntra_reports")
 
-ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
+ACCOUNTS = list(MYNTRA_ACCOUNTS)
 AREA = "MYNTRA"   # the agent's folder is kept by portal: AGENT WORK/MYNTRA (since 29 Oct 2026)
 WORKBOOK = "MYNTRA DAILY RETURN DELIVERY REPORT.xlsx"
-PORTALS = {"MAIN": "MYNTRA MAIN", "DBCC": "MYNTRA DBCC", "FMCC": "MYNTRA FMCC"}
+PORTALS = {a: f"MYNTRA {a}" for a in MYNTRA_SELLERS}
 DELIVERY_COLUMNS = ["CUSTOMER RETURN", "RTO", "CANCELLED", "TOTAL"]
 # our own warehouses (PPMP orders): MAIN 46148 and 24504, DBCC 50829, FMCC 56765. The delivery report
 # also has FBM / SJIT returns to Myntra's warehouses (28, 36, 81 ...): not counted in the workbook.

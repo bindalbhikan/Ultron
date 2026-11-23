@@ -8,6 +8,7 @@ left out. Late on our side = packed after the SLA. Telegram only, nothing writte
 """
 from __future__ import annotations
 
+from ..portals.myntra import ACCOUNTS as MYNTRA_ACCOUNTS  # the one account list
 import argparse
 import io
 import logging
@@ -26,7 +27,7 @@ from ..core import clients
 
 log = logging.getLogger("bindal.myntra_tat")
 
-ACCOUNTS = ["MAIN", "DBCC", "FMCC"]
+ACCOUNTS = list(MYNTRA_ACCOUNTS)
 
 
 def _when(c: str) -> "pl.Expr":

@@ -19,6 +19,7 @@
 """
 from __future__ import annotations
 
+from ..portals.myntra import ACCOUNTS as MYNTRA_ACCOUNTS  # the one account list
 import io
 import logging
 import re
@@ -37,7 +38,7 @@ log = logging.getLogger("bindal.myntra_grouping")
 RECORD = "GROUPING SUBMISSIONS.xlsx"
 COLS = ["SUBMITTED ON", "TIME", "ACCOUNT", "SELLER ID", "UNIQUE ID", "BRAND", "ARTICLE TYPE", "FILE", "STYLES",
         "STYLE IDS", "JOB ID", "JOB STATUS", "TOTAL RECORDS", "PROCESSED RECORDS", "ERRED RECORDS", "BY", "PORTAL REMARK"]
-SELLER_OF = {"MAIN": "19170", "DBCC": "32207", "FMCC": "35426"}
+SELLER_OF = {acc: str(pid) for acc, pid in MYNTRA_ACCOUNTS.items()}
 ACCOUNT_OF = {v: k for k, v in SELLER_OF.items()}
 FINISHED = {"COMPLETED", "PARTIAL_COMPLETE", "FAILED", "REJECTED"}
 # An approved job can take days to show on myntra.com (2 Nov 2026: 35 of 143 jobs approved that day were

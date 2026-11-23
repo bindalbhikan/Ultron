@@ -3,7 +3,7 @@
 
     python scripts/myntra/myntra_session.py                  every account with a file in scripts/myntra/:
                                                       main.txt (MAIN 19170), dbcc.txt (DBCC 32207),
-                                                      fmcc.txt (FMCC 35426)
+                                                      fmcc.txt (FMCC 35426), exim.txt (EXIM 109704)
     python scripts/myntra/myntra_session.py ACCOUNT          that account: its .txt file, else the clipboard
     python scripts/myntra/myntra_session.py ACCOUNT FILE     that account from FILE
 
@@ -32,10 +32,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ultron.workings.portals.myntra import ACCOUNTS, MyntraPortal, SessionExpired, parse_session  # noqa: E402
+from ultron.workings.portals.myntra import SELLERS as ACCOUNTS, MyntraPortal, SessionExpired, parse_session  # noqa: E402
 
 REPO = "bindalbhikan/Ultron"
-DROP = ROOT / "scripts" / "myntra"  # main.txt, dbcc.txt, fmcc.txt: request headers copied from DevTools
+DROP = ROOT / "scripts" / "myntra"  # main.txt, dbcc.txt, fmcc.txt, exim.txt: request headers copied from DevTools
 
 
 def clipboard() -> str:
@@ -151,7 +151,7 @@ def main(argv: list[str]) -> int:
         tried += 1
         done += save(account, text, where, push_it)
     if not tried:
-        print("Nothing to do: put the copied request headers in scripts/myntra/main.txt, dbcc.txt or fmcc.txt")
+        print("Nothing to do: put the copied request headers in scripts/myntra/main.txt, dbcc.txt, fmcc.txt or exim.txt")
         return 1
     print(f"{done} of {tried} account(s) saved." + (" Delete the .txt files now: they hold live logins." if done else ""))
     return 0 if done == tried else 1

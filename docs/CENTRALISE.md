@@ -19,6 +19,7 @@ on a saved input first). The seller-neutral core (`src/ultron/`, not `workings/`
 | 8 | Myntra report jobs: ensure / wait / reuse a covering job / cut to days / stale check, spread over daily reports, SPF, sale, portal sale, TAT, grouping | `portals/myntra.py` `ReportJobs` (one API: `get(report, first, last, ask=)`), the 9:30 rule inside it | ⏳ |
 | 9 | Run summary on Telegram: "✅ / ⚠️ / ❌ lines, notes, exit 1 when a part failed" built by hand in each `run()` | `workings/core/app.py` `Summary` collected by `run_bot` | ⏳ |
 | 10 | Customer returns counted differently in Return Analysis and Business Reporting | Business Reporting's existing portal builders; `return_analysis/reconciled.py` only selects and renders their canonical lines | ✅ 19 Nov 2026: same archived snapshots, order month, return-sheet window and partial quantities; monthly/yearly parity tests, missing sources excluded |
+| 11 | The Myntra accounts (MAIN / DBCC / FMCC and their partner ids) copied into 14 workings | `portals/myntra.py`: `SELLERS` (every account and partner id, EXIM 109704 included) and `ACCOUNTS` (the ones the portal workings run on); the Seller API's OMSGuru channels in `portals/myntra_api.py` `CHANNELS` | ✅ 23 Nov 2026: all 14 moved, a test stops a new copy (`tests/test_myntra_one_account_list.py`). EXIM joins `ACCOUNTS` once its portal login is saved |
 
 Order: 1 → 2 → 5 → 6 → 7 → 3 → 9 → 8 → 4 (most repeated and lowest risk first; Myntra jobs and settings touch
 the most and come when the shared pieces under them are in place).
