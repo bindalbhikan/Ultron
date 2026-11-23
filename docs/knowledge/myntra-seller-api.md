@@ -18,8 +18,12 @@ A second way into Myntra's seller data, separate from the partner-portal report 
 | Data | CSV report jobs, 15-min cooldown, stale before ~9 AM | live, immediate |
 | Runs from GitHub runner | often 403 → the ULTRON app's Agent mode | yes (no session, no reCAPTCHA) |
 
-So for live order status (SJIT, TAT, portal sale, morning) this API avoids the report-job cooldown
-and the once-a-day stale copy. The portal stays for anything the API will not give us.
+**What it holds (tested 23 Nov 2026): the PPMP orders only, live, and only while open.** MAIN's open lines created
+22 Nov were the portal report's open PPMP lines of that day, 97 of 98 line for line; none of its SJIT / FBM lines
+(Myntra's warehouse fulfils those, they are not in this API). Open = WP, PK, RFR, SH; delivered, cancelled, lost,
+RTO (C / F / L / RTO) answer HTTP 500. So this API is the live source for PPMP orders to pick / pack / ship and their
+pack-by and ship-by times; the portal reports stay for SJIT and for every closed order (delivered, RTO, returns,
+prices over a month). Owner, 23 Nov 2026: the API is the main source where it holds the data, the portal the backup.
 
 ## 2. Base and authentication
 
@@ -36,19 +40,24 @@ token can end OMSGuru's and stop its sync. So Ultron **does not call `generate_t
 Instead we reuse the token OMSGuru already holds:
 
 - It is in OMSGuru's Myntra channel settings, field `data[ChannelCompany][api_token]`, a JSON
-  `{access_token, refresh_token}` — page `client.omsguru.com/channel_companies/edit/45111/1/1` (MAIN).
-- The access token is a 30-day JWT (`origin: OMSGURU-V4`); OMSGuru refreshes it about monthly.
-- When it nears expiry, re-read that field and update the secret `MYNTRA_API_ACCESS_TOKEN`.
-- The token and the merchant credentials are **secrets**: GitHub secrets / local `.env` only, never
-  committed or logged.
+  `{access_token, refresh_token}` — page `client.omsguru.com/channel_companies/edit/<channel>/1/1`.
+- The access token is a 30-day JWT (`origin: OMSGURU-V4`) that OMSGuru renews itself, so a copied token goes stale
+  (the 7 Nov copy died on 8 Nov 18:57; OMSGuru renewed at 19:00). **Since 23 Nov 2026 it is read live at every run**
+  (`MyntraApi.for_account`, `borrowed_token`: the bots' OMSGuru login opens the channel page; the token is used in
+  memory, never stored or logged). `MYNTRA_API_ACCESS_TOKEN` is no longer needed.
+- One OMSGuru channel per Myntra account: MAIN 45111 (seller 19170), DBCC 47460 (32207), FMCC 49234 (35426),
+  EXIM 64106 (BINDAL EXIM PVT LTD, 109704, added 23 Nov 2026); `Myntra PPMP` 39078 gives MAIN's own data.
+  `MYNTRA_OMSGURU_CHANNELS` (`EXIM=64106,...`) changes or adds one. The `x-partner-store` header can stay MAIN's
+  store code for every account: the token decides the seller.
 
 ### Settings
 
 | Secret / `.env` | Value |
 |---|---|
 | `MYNTRA_API_DOMAIN` | `https://api-integration.myntra.com` |
-| `MYNTRA_API_STORE` | store code, e.g. `C45111W17453` (the `x-partner-store` header) |
-| `MYNTRA_API_ACCESS_TOKEN` | the access token copied from OMSGuru |
+| `MYNTRA_API_STORE` | store code, default `C45111W17453` (the `x-partner-store` header) |
+| `MYNTRA_OMSGURU_CHANNELS` | optional: the OMSGuru channel of an account, `EXIM=64106,...` |
+| (`OMSGURU_EMAIL` / `OMSGURU_PASSWORD`) | the bots' OMSGuru login that reads the token |
 
 ## 3. Common request rules
 
