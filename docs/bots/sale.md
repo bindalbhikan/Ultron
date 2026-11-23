@@ -20,6 +20,13 @@ the SJIT orders come from the 30-day order report the 9:30 AM `myntra-reports` r
   report is usually old): a stale portal report gets a new job at 3:30 PM, and the newest data wins
   per order line. On 5 Nov 2026 a stale report gave 4 Nov 5 SJIT lines instead of 64. A day no report covers stays blank, shows `-` on Telegram, is left out of the totals and is named in the notes; never a 0.
 * RETURN is typed by hand and never touched.
+* `/sale today` (Telegram only): MYNTRA so far today from the **Myntra Seller API** (owner, 23 Nov 2026: the API is
+  the main source, OMSGuru the backup): the open lines created today per account (MAIN, DBCC, FMCC, EXIM; token read
+  live from OMSGuru, `portals/myntra_api.py`) plus OMSGuru's cancelled units (the API holds no cancelled order;
+  GROSS keeps cancellations as always), so the line also shows Myntra's Cancel. An account whose API call fails, or a
+  Myntra channel without an API account, counts OMSGuru's GROSS and is named; a difference between the two is named.
+  Checked live on 23 Nov 2026: GROSS 118 both ways, Cancel 6. The API holds PPMP orders only, so SJIT is still not in
+  today's report (no live source for it).
 
 **Notes**: Since Oct 2026 a COCOBLU block follows AZ/FX/FBA and there is no SNAPDEAL block; older
 sheets keep their layout. The run also keeps the DBCC / FMCC Myntra sessions alive and alerts on

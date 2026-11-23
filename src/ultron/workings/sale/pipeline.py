@@ -23,7 +23,7 @@ from ..core.app import run_bot
 from ..core.config import ROOT, csv_list, env, num, output_dir
 from ..core.drive import DriveFile
 from ..core.files import replace_atomically
-from .oms_sales import OMS_BLOCKS, gross_by_day
+from .oms_sales import OMS_BLOCKS, blocks_of, gross_by_day
 from .workbook import SaleWorkbook
 from ..core import clients
 
@@ -238,13 +238,54 @@ def dashboard_data(book: SaleWorkbook, day: date, notes: list[str]) -> dict:
     return {"day": day, "channels": [SHORT.get(b, b.title()) for b in REPORT_ORDER], "days": days, "notes": notes}
 
 
+def myntra_live(client, today: date, units: Counter, cancel: Counter, names: dict[str, str],
+                notes: list[str]) -> tuple[int, int]:
+    """MYNTRA so far today: (GROSS, Cancel). The Seller API is the main source (owner, 23 Nov 2026): its open lines
+    created today, live, per account, plus OMSGuru's cancelled units (the API holds no cancelled order; GROSS keeps
+    cancellations, as always). An account whose API call fails, and a Myntra channel with no account in the API,
+    count OMSGuru's GROSS (named). The API and OMSGuru agreed line for line on 23 Nov (open = GROSS - cancelled)."""
+    from ..portals.myntra_api import MyntraApi, channels
+    account_of = {cid: acc for acc, cid in channels().items()}
+    gross = canc = 0
+    for (day, chid), qty in units.items():
+        if day != today or "myntra" not in names.get(chid, "").casefold():
+            continue
+        cancelled = cancel[(day, chid)]
+        canc += cancelled
+        acc = account_of.get(chid)
+        if not acc:
+            gross += qty
+            notes.append(f"Myntra {names.get(chid, chid)}: OMSGuru (no Seller API account)")
+            continue
+        try:
+            lines = MyntraApi.for_account(acc, client).open_lines(today, today + timedelta(days=1))
+            open_units = sum(int(x["quantity"] or 1) for x in lines if x["createdOn"] and x["createdOn"].date() == today)
+        except Exception as exc:  # noqa: BLE001 - the backup still counts
+            log.warning("Myntra %s Seller API failed, OMSGuru used: %s", acc, exc)
+            gross += qty
+            notes.append(f"Myntra {acc}: Seller API failed, OMSGuru used ({str(exc)[:60]})")
+            continue
+        if open_units != qty - cancelled:
+            notes.append(f"Myntra {acc}: Seller API {open_units} open, OMSGuru {qty - cancelled} (live orders since)")
+        gross += open_units + cancelled
+    return gross, canc
+
+
 def run_today(args) -> int:
     """Today so far, channel-wise, Telegram only - the workbook is not touched."""
+    from ultron.portals.omsguru_orders import units_by_channel
     today = date.today()
     notes: list[str] = []
-    gross, unmapped = oms_source([today])
+    client = clients.omsguru()
+    units, cancel, names = units_by_channel(client, [today])
+    gross, unmapped = blocks_of(units, names)
     counts = {b: gross[(today, b)] for b in OMS_BLOCKS}
     cancels: dict[str, int] = {}
+    try:
+        counts["MYNTRA"], cancels["MYNTRA"] = myntra_live(client, today, units, cancel, names, notes)
+    except Exception as exc:  # noqa: BLE001 - OMSGuru's MYNTRA stays
+        log.warning("Myntra live count failed, OMSGuru kept: %s", exc)
+        notes.append(f"Myntra live count failed, OMSGuru used ({str(exc)[:60]})")
     if unmapped:
         notes.append("unmapped OMS channels: " + ", ".join(f"{k} {v}" for k, v in unmapped.items()))
     try:

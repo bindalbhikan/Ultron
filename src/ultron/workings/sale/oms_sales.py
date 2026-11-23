@@ -40,6 +40,11 @@ def block_for(channel_name: str) -> str | None:
 def gross_by_day(client: OmsGuruClient, days: list[date], max_pages: int = 80):
     """(Counter[(day, block)] of units, Counter of unmapped channel units)."""
     units, _, names = units_by_channel(client, days, max_pages)
+    return blocks_of(units, names)
+
+
+def blocks_of(units: Counter, names: dict[str, str]):
+    """units_by_channel's Counter[(day, channel id)] as (Counter[(day, block)], Counter of unmapped channel units)."""
     gross: Counter = Counter()
     unmapped: Counter = Counter()
     for (day, chid), qty in units.items():
