@@ -2,7 +2,9 @@
 
 **Status**: ✅ 22 Nov 2026 — every working on Polars (`polars>=1.30`, `fastexcel` for `pl.read_excel`); pandas and numpy
 are out of `pyproject.toml` and the lock; the bridge of `core/tables.py` (`to_pandas`, `to_polars`, `col`, `clean_id` of
-a column) is gone; the old hand-run `scripts/legacy/myntra_build_workbook.py` removed.
+a column) is gone (23 Nov 2026: the portal sale report still imported `to_polars` inside its counters and left
+Myntra, AJIO and Flipkart out, run 45170263771; fixed, and `tests/test_imports_resolve.py` now checks every lazy
+`from ultron… import` names something that exists); the old hand-run `scripts/legacy/myntra_build_workbook.py` removed.
 
 **Why**: faster than pandas, multi-core, lazy queries, strict types (ids stay text: no more `46148.0`). For
 Bindal's files the gain is seconds; for a seller with 100x the orders it decides whether a run finishes.
@@ -22,8 +24,7 @@ allocations, so no memory figure is claimed.)
 **Where pandas is now**: nowhere (22 Nov 2026). All 178 modules import without it; tests no longer compare against it
 (they hold the expected values the parity runs fixed).
 
-**Shared helpers** (`workings/core/tables.py`): `read_text_csv(bytes)` (every column text), `to_polars(df)` (the
-pandas bridge while both live side by side), `pcol(df, name)` (a column by name whatever its case),
+**Shared helpers** (`workings/core/tables.py`): `read_text_csv(bytes)` (every column text), `pcol(df, name)` (a column by name whatever its case),
 `pclean_id(expr)` (no ".0"; nulls stay null).
 
 **Moved**

@@ -53,7 +53,7 @@ def _unique(names: list[str]) -> list[str]:
     return out
 
 
-# The counting is Polars (docs/libraries/06-polars.md); the reports may come as pandas or Polars frames.
+# The counting is Polars (docs/libraries/06-polars.md); the reports come as Polars frames (read_report).
 
 def _count(frame: "pl.DataFrame", qty: "pl.Expr", block: "pl.Expr | str") -> Counter:
     """Counter[(order day, block)] of qty, the frame having a date column "_day"; days missing or qty 0 left out."""
@@ -95,8 +95,7 @@ def _text(column: str) -> "pl.Expr":
 def myntra_orders(df) -> dict[str, Counter]:
     import polars as pl
 
-    from ..core.tables import to_polars
-    d = to_polars(df).with_columns(_iso("created on").alias("_day"))
+    d = df.with_columns(_iso("created on").alias("_day"))
     block = pl.when(_text("po_type").is_in(sorted(SJIT_MODELS))).then(pl.lit("SJIT")).otherwise(pl.lit("MYNTRA"))
     status = _text("order status")
     cancel = status == "F"
@@ -110,8 +109,7 @@ def myntra_orders(df) -> dict[str, Counter]:
 def flipkart_orders(df) -> dict[str, Counter]:
     import polars as pl
 
-    from ..core.tables import to_polars
-    d = to_polars(df).with_columns(_iso("order_date").alias("_day"))
+    d = df.with_columns(_iso("order_date").alias("_day"))
     qty = _qty("quantity")
     kind = pl.col("fulfilment_type").cast(pl.Utf8).fill_null("nan").str.replace_all(r"[\s_]", "").str.to_uppercase()
     block = pl.when(kind == "FBF").then(pl.lit("FBF")).otherwise(pl.lit("FLIPKART"))
@@ -124,11 +122,10 @@ def flipkart_orders(df) -> dict[str, Counter]:
 def ajio_orders(orders, rtv) -> dict[str, Counter]:
     import polars as pl
 
-    from ..core.tables import to_polars
-    o = to_polars(orders).with_columns(_ajio_date("cust order date").alias("_day"))
+    o = orders.with_columns(_ajio_date("cust order date").alias("_day"))
     first_day = (o.select(pl.col("cust order no"), pl.col("_day")).drop_nulls()
                   .group_by("cust order no").agg(pl.col("_day").min()))
-    r = to_polars(rtv)
+    r = rtv
     r = r.filter(~pl.col("3pl delivery status").cast(pl.Utf8).fill_null("nan").str.to_lowercase().str.contains("cancel"))
     r = r.unique(subset=["return order number", "seller sku"], keep="first", maintain_order=True)
     matched = r.join(first_day, on="cust order no", how="inner")
