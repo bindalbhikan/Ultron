@@ -263,7 +263,7 @@ class ApiKey {
 const knownModels = <String, List<String>>{
   'anthropic': ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
   'openai': ['gpt-5', 'gpt-5-mini'],
-  'google': ['gemini-2.5-pro', 'gemini-2.5-flash'],
+  'google': ['gemini-pro-latest', 'gemini-2.5-flash'],   // gemini-2.5-pro retired (404), 23 Nov 2026
   'nvidia': ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
   'groq': ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
   'cloudflare': ['@cf/openai/gpt-oss-120b', '@cf/openai/gpt-oss-20b'],

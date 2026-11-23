@@ -55,6 +55,16 @@ def change(now: int, before: int) -> str:
     return f"{pct:+d}%"
 
 
+def change_cell(now: int, before: int) -> str:
+    """change() in at most 4 characters, for the 28-wide phone tables: a rise of 100% or more as a multiple
+    ("+317%" ran into the number before it: "24+317%"; now "4.2x")."""
+    text = change(now, before)
+    if len(text) <= 4:
+        return text
+    times = now / before
+    return f"{times:.1f}x" if times < 9.95 else f"{min(round(times), 999)}x"
+
+
 def table(gross: dict, canc: dict, day: date, before: date) -> str:
     lines = sorted(gross, key=lambda n: (ORDER.index(n) if n in ORDER else len(ORDER), n))
     out = [f"{'Channel':<11}{format(day, '%d%b'):>6}{format(before, '%d%b'):>6}{'±':>5}"]   # 28 wide: a phone
@@ -64,8 +74,8 @@ def table(gross: dict, canc: dict, day: date, before: date) -> str:
         if not now and not prev:
             continue
         tot_now, tot_before, tot_cancel = tot_now + now, tot_before + prev, tot_cancel + canc.get(n, {}).get(day, 0)
-        out.append(f"{n[:11]:<11}{now:>6}{prev:>6}{change(now, prev):>5}")
-    out.append(f"{'Total':<11}{tot_now:>6}{tot_before:>6}{change(tot_now, tot_before):>5}")
+        out.append(f"{n[:11]:<11}{now:>6}{prev:>6}{change_cell(now, prev):>5}")
+    out.append(f"{'Total':<11}{tot_now:>6}{tot_before:>6}{change_cell(tot_now, tot_before):>5}")
     pct = f" ({tot_cancel * 100 // tot_now}%)" if tot_now else ""
     return "<pre>" + telegram.esc("\n".join(out)) + "</pre>" + f"\nCancelled yesterday: <b>{tot_cancel}</b>{pct}"
 

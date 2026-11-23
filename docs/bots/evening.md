@@ -5,7 +5,8 @@
 **Result**: one Telegram message, nothing written.
 
 * Today's sale so far per channel (OMSGuru order lines, units by order time) against the same
-  weekday last week up to the same time of day, with today's cancels.
+  weekday last week up to the same time of day (the change as in the morning report: % or, from +100%, `4.2x`),
+  with today's cancels.
 * Orders due today and still not ready to ship (the SLA warning's rule), with how many passed their SLA.
 * Every bot that ran today (GitHub Actions runs of the day in IST): runs and failures, with links
   to failed runs. Cancelled runs are not failures.

@@ -15,6 +15,8 @@ def test_best_is_the_newest_of_the_best_family_without_previews_or_snapshots():
     assert best(PROVIDERS["anthropic"], "fast", ids + ["claude-haiku-5-5", "claude-haiku-4-5"]) == "claude-haiku-5-5"
     g = ["models/gemini-2.5-pro", "models/gemini-3.1-pro", "models/gemini-3.5-pro-preview", "models/gemini-3.1-flash"]
     assert best(PROVIDERS["google"], "smart", g) == "gemini-3.1-pro"          # bare: the chat endpoint 404s on "models/"
+    # Google's list still has the retired gemini-2.5-pro (404): its "-latest" alias goes first
+    assert best(PROVIDERS["google"], "smart", ["models/gemini-2.5-pro", "models/gemini-pro-latest"]) == "gemini-pro-latest"
     assert best(PROVIDERS["openai"], "smart", ["gpt-5", "gpt-5.1", "gpt-5.1-mini", "gpt-5-2025-08-07"]) == "gpt-5.1"
     assert best(PROVIDERS["groq"], "smart", []) == "openai/gpt-oss-120b"        # no list: the known model
 

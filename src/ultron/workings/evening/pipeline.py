@@ -15,7 +15,7 @@ from ultron.core.style import MOBILE, tidy
 from ..core import telegram
 from ..core.app import run_bot
 from ..core.config import num
-from ..morning.pipeline import channel_line, change
+from ..morning.pipeline import channel_line, change_cell
 from ..sale.oms_sales import CANCELLED, order_lines
 from ..sla.pipeline import at_risk
 from ..core import clients
@@ -81,8 +81,8 @@ def sale_table(lines: list[dict], names: dict[str, str], today: date, before: da
     for c in chans:
         now, prev = units[(c, today)], units[(c, before)]
         t_now, t_before = t_now + now, t_before + prev
-        rows.append(f"{c[:11]:<11}{now:>6}{prev:>6}{change(now, prev):>5}")
-    rows.append(f"{'Total':<11}{t_now:>6}{t_before:>6}{change(t_now, t_before):>5}")
+        rows.append(f"{c[:11]:<11}{now:>6}{prev:>6}{change_cell(now, prev):>5}")
+    rows.append(f"{'Total':<11}{t_now:>6}{t_before:>6}{change_cell(t_now, t_before):>5}")
     return "\n".join(rows), t_now, cancel
 
 

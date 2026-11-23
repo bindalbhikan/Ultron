@@ -3,7 +3,8 @@
 **When**: 9:30 AM IST daily (`morning.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: run the workflow, optionally with a `day`.
 
 **Result**: one Telegram message, nothing written anywhere: yesterday's sale in units per channel
-against the same weekday a week before, with the change in %, the total and yesterday's cancels.
+against the same weekday a week before, with the change in % (a rise of 100% or more as a multiple, `4.2x`, so the 28-wide phone table keeps its
+columns), the total and yesterday's cancels.
 
 * OMSGuru: every channel on its own line, the Myntra accounts apart (MAIN = channel MYNTRA, PPMP,
   DBCC = DressBerry CC, FMCC = Fashfun Murcia CC); units by order date, each day read on its own

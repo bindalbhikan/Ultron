@@ -13,7 +13,7 @@ OpenAI-compatible address:
 |---|---|---|---|
 | `anthropic` | `ANTHROPIC_API_KEY` | newest `claude-opus-*`, else `claude-sonnet-*` | newest `claude-haiku-*` |
 | `openai` | `OPENAI_API_KEY` | newest `gpt-N` / `gpt-N.N` | newest `gpt-…-mini` |
-| `google` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`), Google AI Studio | newest `gemini-…-pro` | newest `gemini-…-flash` |
+| `google` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`), Google AI Studio | `gemini-pro-latest` (Google still lists the retired `gemini-2.5-pro`, which answers 404), else the newest `gemini-…-pro` | newest `gemini-…-flash` |
 | `nvidia` | `NVIDIA_API_KEY` | `openai/gpt-oss-120b`, else a Nemotron Ultra / Super | `openai/gpt-oss-20b`, Nemotron Nano |
 | `groq` | `GROQ_API_KEY` | `openai/gpt-oss-120b` | `openai/gpt-oss-20b` |
 | `cloudflare` | none: the worker (`DASHBOARD_URL` / `DASHBOARD_TOKEN`) | `@cf/openai/gpt-oss-120b` | `@cf/openai/gpt-oss-20b` |

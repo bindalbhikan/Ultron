@@ -952,8 +952,10 @@ def probe(args) -> int:
         if ids and not sample:
             sample = ids[:3]
             o, h, err = client.fetch_orders(sample)
-            print(o[["Input Identifier", "Channel Order ID", "Item Status", "Order Date", "Invoice Date",
-                 "Dispatch Log", "AWB / Shipment Tracker", "Shipping Company"]].to_string())
+            shown = [c for c in ("Input Identifier", "Channel Order ID", "Item Status", "Order Date", "Invoice Date",
+                                 "Dispatch Log", "AWB / Shipment Tracker", "Shipping Company") if c in o.columns]
+            with pl.Config(tbl_cols=-1, tbl_width_chars=250, fmt_str_lengths=60):
+                print(o.select(shown))
             print(f"{len(h)} status-history rows; errors: {err}")
     print("Login OK.")
     return 0

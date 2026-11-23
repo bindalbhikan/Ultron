@@ -61,8 +61,11 @@ PROVIDERS: dict[str, Provider] = {p.name: p for p in (
              {"smart": "gpt-5", "fast": "gpt-5-mini"}),
     Provider("google", "Google AI Studio", "https://generativelanguage.googleapis.com/v1beta/openai/",
              ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
-             {"smart": (r"^(models/)?gemini-\d+(\.\d+)?-pro$",), "fast": (r"^(models/)?gemini-\d+(\.\d+)?-flash$",)},
-             {"smart": "gemini-2.5-pro", "fast": "gemini-2.5-flash"}),
+             # Google keeps listing a pro it has retired (gemini-2.5-pro: 404 "no longer available", 23 Nov 2026)
+             # and has no newer non-preview pro, so its "-latest" alias (the current pro) comes first
+             {"smart": (r"^(models/)?gemini-pro-latest$", r"^(models/)?gemini-\d+(\.\d+)?-pro$"),
+              "fast": (r"^(models/)?gemini-\d+(\.\d+)?-flash$",)},
+             {"smart": "gemini-pro-latest", "fast": "gemini-2.5-flash"}),
     Provider("nvidia", "NVIDIA", "https://integrate.api.nvidia.com/v1", ("NVIDIA_API_KEY",),
              {"smart": (r"^openai/gpt-oss-120b$", r"^nvidia/.*nemotron.*(ultra|super).*$"),
               "fast": (r"^openai/gpt-oss-20b$", r"^nvidia/.*nemotron.*nano.*$")},
