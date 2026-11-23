@@ -209,6 +209,10 @@ const SCHEDULE = [
   // couriers that had no trip yet at 11 (sent only when a new code came)
   { ist: "11:00 AM daily", cron: "30 5 * * *", cmd: "myntraotp" },
   { ist: "9:30 AM daily", cron: "0 4 * * *", cmd: "myntrareports" },
+  // 12:30 PM: once more only when today's run did not succeed (owner, 23 Nov 2026: Myntra's FMCC data was a day
+  // late and its report server refused): the reports already made are reused, only the missing ones are asked for
+  { ist: "12:30 PM daily, if the 9:30 AM run failed", cron: "0 7 * * *", cmd: "myntrareports",
+    label: "Myntra daily reports (second try)", ifFailedToday: true },
   { ist: "11:40 AM daily", cron: "10 6 * * *", cmd: "myntraotp", label: "Myntra OTP retry", inputs: { retry: "1" } },
   // Myntra zero TD: styles live at MRP on www.myntra.com, every 2 hours 7 AM - 7 PM, Monday to Saturday
   ...[["7:00 AM", 1], ["9:00 AM", 3], ["11:00 AM", 5], ["1:00 PM", 7], ["3:00 PM", 9], ["5:00 PM", 11],
@@ -533,6 +537,10 @@ export default {
         due.map(async (s) => {
           const cmd = COMMANDS[s.cmd];
           try {
+            if (s.ifFailedToday && !(await failedToday(env, cmd, ist))) {
+              console.log(`cron ${s.cmd}: today's run succeeded or is running, second try not needed`);
+              return;
+            }
             const res = await dispatch(env, cmd, s.inputs || {});
             console.log(`cron ${event.cron} -> ${cmd.workflow} ${res.status}`);
             if (res.status !== 204) throw new Error(`GitHub said ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -908,6 +916,18 @@ async function sendDashboardLink(env, chatId, replyTo) {
 
 function b64url(bytes) {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// A second try is due when no run of the working today (IST) succeeded: none ran, or the newest finished
+// without success. Not while one is still running. When GitHub does not answer, it is tried.
+async function failedToday(env, cmd, ist) {
+  const res = await github(env, `/repos/${OWNER}/${REPO}/actions/workflows/${cmd.workflow}/runs?per_page=10&exclude_pull_requests=true`);
+  if (!res.ok) return true;
+  const day = ist.toISOString().slice(0, 10);
+  const today = ((await res.json()).workflow_runs || [])
+    .filter((r) => new Date(Date.parse(r.created_at) + 5.5 * 3600 * 1000).toISOString().slice(0, 10) === day);
+  if (today.some((r) => r.status !== "completed")) return false;
+  return !today.some((r) => r.conclusion === "success");
 }
 
 async function dispatch(env, cmd, inputs) {

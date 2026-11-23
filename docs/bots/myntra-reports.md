@@ -1,6 +1,9 @@
 # Myntra daily reports — `python run.py myntra-reports`
 
 **When**: 9:30 AM IST daily (`myntra-reports.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`).
+A second try at 12:30 PM, only when no run of the day succeeded (`ifFailedToday`; owner, 23 Nov 2026, after
+Myntra's FMCC orders data was a day late and its report server refused jobs): the jobs already made are reused,
+so only the missing reports are asked for.
 Since 16 Nov 2026 (owner) **the one time of day any bot asks Myntra for its daily reports**: the other
 workings use these jobs and never ask for the same report again. (Not before ~9 AM: a report asked for at 7 AM
 had only 23 of the day's 239 MAIN orders.) By hand: run the workflow (`date` = another day, YYYY-MM-DD).
