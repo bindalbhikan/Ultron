@@ -293,7 +293,25 @@ class MyntraPortal:
                                   path=c.get("path") or "/")
         self.timeout = timeout
 
+    # "Authorization could not be completed": a passing refusal of a login that works (9, 12 and 21 Nov 2026: MAIN
+    # stopped in the middle of a run, minutes after the same login had downloaded a report, and the next run worked
+    # with it unchanged). Asked again after these pauses before it counts as logged out; HTTP 401 / 403 and the login
+    # page are a real logout at once.
+    AUTH_RETRY_PAUSES = (10, 30, 60)
+
     def _call(self, method: str, path: str, **kw) -> dict:
+        import time
+        for pause in (*self.AUTH_RETRY_PAUSES, None):
+            try:
+                return self._call_once(method, path, **kw)
+            except SessionExpired as exc:
+                if pause is None or not str(exc).startswith("portal: ") or "could not be completed" not in str(exc):
+                    raise
+                log.warning("Myntra portal %s: %s; asking again in %d s", path, exc, pause)
+                time.sleep(pause)
+        raise AssertionError("unreachable")
+
+    def _call_once(self, method: str, path: str, **kw) -> dict:
         url = path if path.startswith("http") else f"{API}{path}"
         r = self.http.request(method, url, headers=HEADERS, timeout=self.timeout, **kw)
         if r.status_code in (401, 403):
