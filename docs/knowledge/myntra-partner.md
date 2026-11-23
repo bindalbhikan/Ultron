@@ -17,6 +17,8 @@ agent without the owner's approval, and only through a working built for it.
 | `GET /api/location/otc?trip&warehouse` | Read | `myntra-otp`: courier pickup / return OTPs (`otcDetails[]: courierCode, otc`) |
 | `GET /api/partners/report/summary/payment-history` | Read | `myntra-spf`: payments (`payments[]: paymentMethod, utrNumber, paymentDate, amount, adviceId`) |
 | `GET /api/spf/v2/fetchClaimByTicketId`, `GET /api/file-manager/getUploadToken/spfJob`, `POST /api/spf/createRnrBulkTickets` | Read / Changes | `myntra-spf`: claims read, bulk SPF tickets (file uploaded to the signed link, then the job) |
+| `GET /api/spf/getComments?fwTicketId` | Read | `myntra-spf` (`spf_comments`): the Seller Support replies on a claim taken up there (`fwTicketId` of fetchClaimByTicketId): `data[]: comment (HTML), user, createdOn` (MM-DD-YYYY HH:MM:SS IST), newest first. The SPF ticket comments come from here, not from fetchClaimByTicketId (its `history` is status -> time only) |
+| `PUT /api/spf/updateClaim` | Changes | `myntra-spf` (`spf_reply`): answers a claim in AWAITING_SELLER_RESPONSE: the whole claim sent back unchanged (minus styleInfo / sellerId) with status OPEN, replyComment, no attachments |
 
 | `GET /api/file-manager/getUploadToken/cms`, `POST /api/diy-cataloguing/style-grouping/bulk-upload/submit`, `.../find/entries`, `.../export/report` | Read / Changes | `myntra-grouping`: colour group uploads, their jobs and result reports |
 
