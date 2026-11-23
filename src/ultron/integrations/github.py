@@ -64,10 +64,20 @@ def _minutes(run: dict) -> float | None:
         return None
 
 
+def local_time(utc: str | None) -> str | None:
+    """A GitHub time (UTC, "...Z") in this machine's time zone (the seller's: the workflows set TZ), as the
+    owner reads it: "2026-11-23 09:30 +0530". The model told the owner UTC times as theirs (23 Nov 2026)."""
+    try:
+        return datetime.fromisoformat(utc.replace("Z", "+00:00")).astimezone().strftime("%Y-%m-%d %H:%M %z")
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 def brief(run: dict) -> dict:
     return {"id": run["id"], "workflow": run.get("name"), "status": run.get("status"),
             "conclusion": run.get("conclusion"), "event": run.get("event"),
-            "started": run.get("run_started_at"), "minutes": _minutes(run),
+            "started": run.get("run_started_at"), "started_local": local_time(run.get("run_started_at")),
+            "minutes": _minutes(run),
             "commit": (run.get("head_sha") or "")[:7], "url": run.get("html_url"),
             "attempt": int(run.get("run_attempt") or 1)}
 

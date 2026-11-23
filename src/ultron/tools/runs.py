@@ -39,6 +39,8 @@ def _out(run_id: int) -> Path:
 def recent_runs(workflow_file: str, count: int = 10) -> str:
     """Recent runs of one bot workflow, newest first: id, conclusion, event, start, minutes, commit.
     Use it to compare a run with the ones before it (usual duration, how often it fails).
+    "started" is UTC; tell the owner "started_local" (their time) and count "today" by it. Count every run
+    of the day: a bot that runs every 2 hours fails on several of them.
 
     Args:
         workflow_file: workflow file name, e.g. "ajio-tat.yml", "myntra-spf.yml", "inv-push.yml".
