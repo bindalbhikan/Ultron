@@ -5,15 +5,19 @@ import 'package:http/http.dart' as http;
 import '../domain/access.dart';
 import '../domain/models.dart';
 import 'repository.dart';
+import 'session_store.dart';
 
-/// The live app API (services/app_api). Tokens live only in memory: relaunching the app asks to sign in.
+/// The live app API (services/app_api). The session is kept in [store] (the device's key store in the app),
+/// so a signed-in user stays signed in after the app is closed, until they sign out or the session ends.
 class CloudflareRepository extends UltronRepository {
   CloudflareRepository({
     required Uri baseUrl,
     http.Client? client,
     this.onUnauthorized,
+    SessionStore? store,
   }) : _base = baseUrl,
-       _client = client ?? http.Client() {
+       _client = client ?? http.Client(),
+       _store = store ?? MemorySessionStore() {
     if ((baseUrl.scheme != 'https' &&
             !(baseUrl.scheme == 'http' &&
                 ['127.0.0.1', 'localhost'].contains(baseUrl.host))) ||
@@ -29,6 +33,7 @@ class CloudflareRepository extends UltronRepository {
   final Uri _base;
   final http.Client _client;
   final void Function()? onUnauthorized;
+  final SessionStore _store;
   String? _token;
   AppUser? _user;
   int _epoch = 0;
@@ -67,6 +72,7 @@ class CloudflareRepository extends UltronRepository {
         if (response.statusCode == 401 && authenticated) {
           _token = null;
           _user = null;
+          await _store.clear();
           onUnauthorized?.call();
         }
         final message = decoded['error'] ?? decoded['message'];
@@ -95,7 +101,7 @@ class CloudflareRepository extends UltronRepository {
       body: {
         'username': username.trim(),
         'password': password,
-        'rememberMe': false,
+        'rememberMe': true,
       },
       authenticated: false,
     );
@@ -109,8 +115,25 @@ class CloudflareRepository extends UltronRepository {
     } catch (_) {
       _token = null;
       _user = null;
+      await _store.clear();
       rethrow;
     }
+  }
+
+  /// The session kept from an earlier run: its user at once (also offline). The caller checks it again
+  /// with [refreshUser]; a 401 there clears it and asks to sign in.
+  @override
+  Future<AppUser?> restoreSession() async {
+    final saved = await _store.read();
+    if (saved == null) return null;
+    try {
+      _user = AppUser.fromJson(saved.user);
+    } catch (_) {
+      await _store.clear();
+      return null;
+    }
+    _token = saved.token;
+    return _user;
   }
 
   @override
@@ -133,6 +156,7 @@ class CloudflareRepository extends UltronRepository {
     ++_epoch;
     _token = null;
     _user = null;
+    await _store.clear();
     if (token != null) {
       try {
         final request = http.Request(
@@ -157,9 +181,11 @@ class CloudflareRepository extends UltronRepository {
   @override
   Future<AppUser> refreshUser() async {
     final response = await _request('GET', '/api/me');
-    return _user = AppUser.fromJson(
-      response.data['user'] as Map<String, dynamic>,
-    );
+    final json = response.data['user'] as Map<String, dynamic>;
+    final user = _user = AppUser.fromJson(json);
+    final token = _token;
+    if (token != null) await _store.save(token, json);
+    return user;
   }
 
   @override

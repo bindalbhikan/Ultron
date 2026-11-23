@@ -1,3 +1,4 @@
+import '../domain/access.dart';
 import '../domain/models.dart';
 import 'account_repository.dart';
 
@@ -6,6 +7,9 @@ import 'account_repository.dart';
 abstract class UltronRepository extends AccountRepository {
   Future<void> signIn(String username, String password);
   Future<void> signOut();
+
+  /// The session kept on the device from an earlier run, or null: sign in.
+  Future<AppUser?> restoreSession() async => null;
   Future<WorkspaceData> loadWorkspace() async => unavailable();
   Future<WorkspaceData> requestRun(
     String workflowId, {

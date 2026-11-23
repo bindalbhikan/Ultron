@@ -26,7 +26,8 @@ export function createAuth(env: Env) {
     database: drizzleAdapter(drizzle(env.DB), { provider: 'sqlite', schema, transaction: false }),
     trustedOrigins: env.APP_ORIGIN.split(',').map((origin) => origin.trim()),
     emailAndPassword: { enabled: true, minPasswordLength: 8, maxPasswordLength: 128, autoSignIn: false },
-    session: { expiresIn: 60 * 60 * 12, updateAge: 60 * 60, cookieCache: { enabled: false } },
+    // the app keeps the session on the phone (stay signed in): 30 days, renewed once a day while it is used
+    session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: false } },
     rateLimit: { enabled: true, storage: 'database', window: 60, max: 60,
       customRules: { '/sign-in/email': { window: 60, max: 5 }, '/sign-in/username': { window: 60, max: 5 },
         '/sign-up/email': { window: 3600, max: 5 } } },

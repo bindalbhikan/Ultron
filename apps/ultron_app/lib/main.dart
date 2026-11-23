@@ -13,12 +13,17 @@ Future<void> main() async {
     final license = await rootBundle.loadString('assets/fonts/OFL.txt');
     yield LicenseEntryWithLineBreaks(['DM Sans'], license);
   });
-  // SMS only on: open its screen, not sign-in (it needs no account)
+  // no one signed in and SMS only on: open its screen, not sign-in (it needs no account)
   final start = await const SmsBridge().isOn() ? '/sms' : '/login';
+  final container = ProviderContainer(
+    overrides: [startPathProvider.overrideWithValue(start)],
+  );
+  // a user signed in on an earlier run stays signed in: the kept session is read before the first screen
+  await container
+      .read(authProvider.notifier)
+      .restore()
+      .timeout(const Duration(seconds: 3), onTimeout: () {});
   runApp(
-    ProviderScope(
-      overrides: [startPathProvider.overrideWithValue(start)],
-      child: const UltronApp(),
-    ),
+    UncontrolledProviderScope(container: container, child: const UltronApp()),
   );
 }

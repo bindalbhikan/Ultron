@@ -170,7 +170,15 @@ class FakeRepository extends UltronRepository {
   }
 
   @override
-  Future<void> signOut() async => _me = null;
+  Future<void> signOut() async {
+    _me = null;
+    kept = null;
+  }
+
+  /// The session kept on the device from an earlier run (null: none).
+  AppUser? kept;
+  @override
+  Future<AppUser?> restoreSession() async => _me = kept;
   bool setup = false;
   @override
   Future<bool> setupNeeded() async => setup;
@@ -332,7 +340,57 @@ Future<void> _signIn(WidgetTester tester, String username) async {
   await tester.pumpAndSettle();
 }
 
+/// The app as main.dart starts it: [start] when no one is signed in, the kept session restored first.
+Future<void> _start(
+  WidgetTester tester,
+  FakeRepository repo, {
+  String start = '/login',
+}) async {
+  final container = ProviderContainer(
+    overrides: [
+      repositoryProvider.overrideWithValue(repo),
+      startPathProvider.overrideWithValue(start),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(authProvider.notifier).restore();
+  await tester.pumpWidget(
+    UncontrolledProviderScope(container: container, child: const UltronApp()),
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  testWidgets(
+    'a user signed in before stays signed in when the app opens again',
+    (tester) async {
+      final repo = FakeRepository(Map.of(_accounts))
+        ..kept = _accounts['bhikan'];
+      await _start(tester, repo);
+      expect(find.byKey(const Key('auth-username')), findsNothing);
+      expect(find.textContaining('Bhikan'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'a signed-in user never gets the SMS only screen, even with SMS only on',
+    (tester) async {
+      final repo = FakeRepository(Map.of(_accounts))
+        ..kept = _accounts['bhikan'];
+      await _start(tester, repo, start: '/sms');
+      expect(find.text('Start sending SMS'), findsNothing);
+      expect(find.textContaining('Turn SMS only off'), findsNothing);
+      expect(find.byKey(const Key('auth-username')), findsNothing);
+    },
+  );
+
+  testWidgets('with no one signed in and nothing kept, sign-in opens', (
+    tester,
+  ) async {
+    await _start(tester, FakeRepository(Map.of(_accounts)));
+    expect(find.byKey(const Key('auth-username')), findsOneWidget);
+  });
+
   testWidgets('with SMS only on, the app opens on SMS only, not sign-in', (
     tester,
   ) async {

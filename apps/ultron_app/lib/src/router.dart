@@ -28,9 +28,11 @@ final routerProvider = Provider<GoRouter>((ref) {
     refreshListenable: refresh,
     redirect: (context, state) {
       final path = state.uri.path;
-      // SMS only needs no account: it opens whatever the session
-      if (path == '/sms') return null;
       final session = ref.read(authProvider);
+      // SMS only is for a phone with no one signed in; a signed-in user has the app itself
+      if (path == '/sms') {
+        return session.phase == SessionPhase.signedIn ? '/app/home' : null;
+      }
       final protected = path.startsWith('/app') || path == '/access';
       if (session.phase == SessionPhase.signedOut) {
         return protected ? '/login' : null;

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../data/cloudflare_repository.dart';
 import '../data/repository.dart';
+import '../data/session_store.dart';
 import '../domain/models.dart';
 
 /// The app API (services/app_api). A seller's own build passes theirs with --dart-define=ULTRON_API_URL=...
@@ -11,13 +14,14 @@ const appApiUrl = String.fromEnvironment(
   defaultValue: 'https://ultron-app-api.bhikan-serein.workers.dev',
 );
 
-/// The first screen: '/sms' when SMS only is on on this phone (main.dart asks Android before the app starts),
-/// so closing and opening the app does not land on sign-in; otherwise '/login'.
+/// The first screen when no one is signed in: '/sms' when SMS only is on on this phone (main.dart asks Android
+/// before the app starts), otherwise '/login'. A signed-in user always opens the app itself.
 final startPathProvider = Provider<String>((ref) => '/login');
 
 final repositoryProvider = Provider<UltronRepository>((ref) {
   final repository = CloudflareRepository(
     baseUrl: Uri.parse(appApiUrl),
+    store: const SecureSessionStore(),
     onUnauthorized: () {
       Future.microtask(() {
         if (ref.mounted) ref.read(authProvider.notifier).expire();
@@ -71,6 +75,17 @@ class AuthController extends Notifier<SessionState> {
         );
       }
     }
+  }
+
+  /// Signed in on an earlier run: the kept user at once, then checked with the app API in the background
+  /// (a session that ended there signs out with "Your session ended").
+  Future<void> restore() async {
+    final user = await ref.read(repositoryProvider).restoreSession();
+    if (user == null || !ref.mounted || state.phase == SessionPhase.signedIn) {
+      return;
+    }
+    state = SessionState(phase: SessionPhase.signedIn, user: user);
+    unawaited(refreshAccess());
   }
 
   Future<void> signOut() async {

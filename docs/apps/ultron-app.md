@@ -45,8 +45,12 @@ local previews. `--dart-define=ULTRON_API_URL=...` points another seller's build
 
 ## Data and access boundaries
 
-`CloudflareRepository` is the only repository: every call is authorised by the server, and the session token
-lives in memory (closing the app asks to sign in again). Telegram chat access and dashboard cookies do not sign
+`CloudflareRepository` is the only repository: every call is authorised by the server. The session token and
+the user are kept in the device's key store (`data/session_store.dart`, flutter_secure_storage: Android Keystore),
+so a signed-in user stays signed in after the app is closed; the next start shows them at once and checks
+`/api/me` again (a 401 forgets the session and asks to sign in). Sign-out forgets it. Sessions last 30 days on
+the server, renewed once a day while the app is used. A signed-in user never gets the SMS only screen: that is
+only for a phone with no one signed in (23 Nov 2026). Telegram chat access and dashboard cookies do not sign
 in to this app. No secret is built into the app: the SMS sheet's link and key stay on the worker.
 
 ## Phone Work migration map
