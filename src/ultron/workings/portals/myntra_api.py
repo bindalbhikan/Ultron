@@ -44,6 +44,8 @@ TIMEOUT = 60
 
 # getOrderList statuses that answer (C / F / L / RTO give HTTP 500: closed orders are only in the portal reports)
 OPEN_STATUSES = ("WP", "PK", "RFR", "SH")
+# getOrderList answers at most 7 days at a time (HTTP 400 "EndDate cannot be greater than 7 days from startDate")
+MAX_WINDOW_DAYS = 7
 # x-partner-store: MAIN's seller warehouse; the token decides the seller, so it serves every account (tested 23 Nov 2026)
 DEFAULT_STORE = "C45111W17453"
 # The OMSGuru Myntra channel of each account, whose API token Ultron borrows. PPMP (39078) is MAIN's own data.
@@ -168,15 +170,24 @@ class MyntraApi:
         """Every order line now open (to pick, packed, ready, shipped) with activity between start and end
         (getOrderList's range is the latest activity, not the order date: its end is exclusive), each with
         the times and amounts of its order detail (`LINE_FIELDS`, customer data left out). An order is
-        read once even when it shows under two statuses."""
+        read once even when it shows under two statuses. A range longer than the API's 7 days ("EndDate cannot be
+        greater than 7 days from startDate") is asked for in 7-day windows."""
         from concurrent.futures import ThreadPoolExecutor
+        from datetime import timedelta
+        windows, a = [], start
+        while a < end:
+            windows.append((a, min(end, a + timedelta(days=MAX_WINDOW_DAYS))))
+            a = windows[-1][1]
         ids: list[str] = []
+        seen: set[str] = set()
         for status in statuses:
-            for row in self.order_list(status, start, end):
-                for line in row.get("orderLines") or []:
-                    so = str(line.get("sellerOrderId") or "")
-                    if so and so not in ids:
-                        ids.append(so)
+            for w_start, w_end in windows:
+                for row in self.order_list(status, w_start, w_end):
+                    for line in row.get("orderLines") or []:
+                        so = str(line.get("sellerOrderId") or "")
+                        if so and so not in seen:
+                            seen.add(so)
+                            ids.append(so)
         with ThreadPoolExecutor(max(1, workers)) as pool:
             details = list(pool.map(self._detail_with_retry, ids))
         out: list[dict] = []

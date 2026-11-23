@@ -1,5 +1,6 @@
 """SLA warning (12 PM and 3 PM): orders on every channel whose dispatch SLA is today or already
 passed and that are still not ready to ship (OMSGuru status New / Pending / Processing / Packed).
+Myntra (MAIN, DBCC, FMCC, EXIM) from the Seller API since 23 Nov 2026 (WP lines, SLA = pack-by time), OMSGuru the backup.
 
 Telegram only, and only when there are such orders; nothing is written. Every order is listed in
 the message when it fits in one, otherwise they come in an attached Excel.
@@ -9,7 +10,7 @@ from __future__ import annotations
 import argparse
 import logging
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from ultron.portals.omsguru_orders import OPEN, at_risk  # noqa: F401
 
@@ -23,7 +24,30 @@ from ..core import clients
 log = logging.getLogger("bindal.sla")
 
 
-def message(risk: list[dict], names: dict[str, str], now: datetime) -> list:
+def myntra_from_api(client, lines: list[dict], since: date, now: datetime, notes: list[str]) -> list[dict]:
+    """The Myntra accounts' lines from the Seller API instead of OMSGuru (owner, 23 Nov 2026: the API is the main
+    source, OMSGuru the backup): its WP lines (to pack, OMSGuru's "New") with Myntra's own pack-by time as the SLA.
+    Checked live on 23 Nov 2026: OMSGuru's 285 open Myntra lines were the API's 285 WP lines, each SLA = packByTime
+    (and "Ready to ship" = PK). An account whose API call fails keeps OMSGuru's lines and is named."""
+    from ..portals.myntra_api import MyntraApi, channels
+    out = list(lines)
+    for account, cid in channels().items():
+        try:
+            api = MyntraApi.for_account(account, client).open_lines(since, now.date() + timedelta(days=1),
+                                                                   statuses=("WP",))
+        except Exception as exc:  # noqa: BLE001 - OMSGuru's lines of the account stay
+            log.warning("SLA: Myntra %s Seller API failed, OMSGuru used: %s", account, exc)
+            notes.append(f"Myntra {account}: Seller API failed, OMSGuru used ({str(exc)[:60]})")
+            continue
+        out = [r for r in out if r["channel"] != cid]
+        out += [{"channel": cid, "order": x["sellerOrderId"], "awb": "", "status": "New", "sla": x["packByTime"],
+                 "day": x["createdOn"].date() if x["createdOn"] else None, "ordered": x["createdOn"],
+                 "qty": int(x["quantity"] or 1), "skus": x["sku"] or "", "value": x["lineFinalAmount"]}
+                for x in api if x["status_code"] == "WP"]
+    return out
+
+
+def message(risk: list[dict], names: dict[str, str], now: datetime, notes: list[str] | None = None) -> list:
     """Counts per channel (overdue / due later today), then the orders channel by channel
     (a telegram report: the orders inline when they fit in one message, else in an Excel)."""
     def chan(r):
@@ -49,6 +73,7 @@ def message(risk: list[dict], names: dict[str, str], now: datetime) -> list:
         "<pre>" + telegram.esc("\n".join(table)) + "</pre>",
         telegram.Listing("", listed, rows, "SLA orders"),
         "",
+        *[f"<i>{telegram.esc(n)}</i>" for n in notes or []],
         "<i>Over = SLA already passed; Today = due later today. Pack them and mark them ready to ship first.</i>"]
 
 
@@ -57,12 +82,14 @@ def run(args) -> int:
     days = [now.date() - timedelta(days=i) for i in range(int(num("SLA_ORDER_DAYS", 8)))]
     client = clients.omsguru()
     lines, names = order_lines(client, days)
+    notes: list[str] = []
+    lines = myntra_from_api(client, lines, days[-1], now, notes)
     risk = at_risk(lines, now)
     log.info("SLA: %d order lines read, %d due today or overdue and not ready to ship", len(lines), len(risk))
     if not risk:
         log.info("Nothing at risk: nothing sent")
         return 0
-    telegram.send_report(message(risk, names, now), "SLA_orders", dry=args.no_telegram)
+    telegram.send_report(message(risk, names, now, notes), "SLA_orders", dry=args.no_telegram)
     return 0
 
 
