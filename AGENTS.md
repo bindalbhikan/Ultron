@@ -89,9 +89,16 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 
 ## Working on this machine (owner's Windows PC)
 
-- New control app: `apps/ultron_app/` (`docs/apps/ultron-app.md`). Its sign-in/data are demo-only until
-  a supported app backend is connected. The owner wants Phone agent/SMS/OTP/POD work consolidated here;
-  The old Kotlin `android app/` was removed on 23 Nov 2026: SMS only and Agent mode live in `apps/ultron_app`.
+- The ULTRON app: `apps/ultron_app/` (`docs/apps/ultron-app.md`), live on the app API (`services/app_api`,
+  username sign-in). The old Kotlin `android app/` was removed on 23 Nov 2026: SMS only and Agent mode live here.
+  Owner rules (23 Nov 2026): a signed-in user stays signed in (session in the device key store, 30-day server
+  sessions) and never sees the SMS only screen; SMS only is only for a phone with no one signed in, and opens by
+  itself when it is on. SMS only and Agent mode keep running in the background (`KeepAlive.kt`).
+- **One Worker calling another** (the app API -> the Telegram worker): a service binding (`OPS` in
+  `services/app_api/wrangler.jsonc`), never its workers.dev URL: Cloudflare answers that fetch with its own 404
+  (error 1042; the app showed "The operations service said 404", 23 Nov 2026).
+- Daily OTP sheet (team sheet): the agent's rows show only the phone's user name in the name column, no
+  `Agent ·` (owner, 23 Nov 2026); `services/sms_sheet/Code.gs` knows its rows by the note `ULTRON app` on that cell.
 
 - The project lives at **`D:\ULTRON`**, a normal Git clone off Google Drive (since 22 Nov 2026; the old Drive
   folder `AGENT-ULTRON-BINDAL` is no longer worked in: Drive's `desktop.ini` broke Git refs there).
@@ -104,6 +111,12 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   `setup_pc.ps1`); run with `.venv\Scripts\python`. Not plain `uv run` (it drops the extras), no pip.
 - Pull before you start (`git pull`): the Docs sync workflow may have committed on main.
 - In bash heredocs `\\n` / `\\b` become real control characters; write regexes with the Edit/Write tools.
-- Deploy the worker from `worker/` and the dashboard from `dashboard/` (`npx wrangler deploy`); the
-  repo root has no `wrangler.toml`.
-- Decrypt a run's log: `python scripts/github/run_output.py <run id>`.
+- Deploy the worker from `worker/`, the dashboard from `dashboard/` and the app API from `services/app_api/`
+  (`npx wrangler deploy`); the repo root has no `wrangler.toml`. The SMS sheet's Apps Script (`services/sms_sheet/
+  Code.gs`): clasp (`npx @google/clasp`), a new version of the same web app deployment so its URL stays (ids in the
+  agent memory, not in this public repo); compare the live code with the repo before pushing.
+- Decrypt a run's log: `python scripts/github/run_output.py <run id>` (ARTIFACT_KEY from `.env`). When GitHub's
+  artifact has expired, the same failure log is in Drive `AGENT WORK/AGENT LOGS/<MON-YY>/<dd-mm-yy>/`
+  (`<BOT> <time> FAIL #<run id>.log`).
+- **Every edit updates the docs and the memory** (owner, 23 Nov 2026): this file and the pages in the same commit,
+  `python scripts/docs/sync_docs.py` before it, and the agent memory note right after (not only at the end).
