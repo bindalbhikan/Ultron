@@ -107,8 +107,9 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   work only in local commits, stashes or branches); `.env`, `service_account.json`, `myntra_session*.json` copied
   to Drive `AGENT-PRIVATE/ULTRON` (`setup_pc.ps1 -Backup`); the coding agents' memory on Drive in
   `AGENT-MEMORY/`. On a new PC: clone to `D:\ULTRON`, run `scripts/local/setup_pc.ps1` (`scripts/local/README.md`).
-- Python is **uv**: `.venv` in the project from `uv.lock` (`uv sync --all-extras --frozen`, done by
-  `setup_pc.ps1`); run with `.venv\Scripts\python`. Not plain `uv run` (it drops the extras), no pip.
+- Python is **uv**: `.venv` in the project from `uv.lock` (`uv sync --all-extras --frozen --managed-python --python 3.12`,
+  done by `setup_pc.ps1`: uv's own Python 3.12 as on GitHub, never the Microsoft Store one, which quietly moves
+  `%LOCALAPPDATA%` writes into its package folder); run with `.venv\Scripts\python`. Not plain `uv run` (it drops the extras), no pip.
 - Pull before you start (`git pull`): the Docs sync workflow may have committed on main.
 - In bash heredocs `\\n` / `\\b` become real control characters; write regexes with the Edit/Write tools.
 - Deploy the worker from `worker/`, the dashboard from `dashboard/` and the app API from `services/app_api/`

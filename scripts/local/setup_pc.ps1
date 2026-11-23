@@ -66,7 +66,14 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 Remove-Item Env:UV_PROJECT_ENVIRONMENT -ErrorAction SilentlyContinue  # the venv is the project's .venv
 Push-Location $root
 try {
-    uv sync --all-extras --frozen --quiet
+    # uv's own Python, never the Microsoft Store one: the Store Python quietly writes %LOCALAPPDATA% into its
+    # package folder, so the bots' output (%LOCALAPPDATA%\Ultron\output) landed out of sight (23 Nov 2026)
+    $cfg = Join-Path $root ".venv\pyvenv.cfg"
+    if ((Test-Path $cfg) -and (Select-String -Path $cfg -Pattern "WindowsApps|cpython-3.1[3-9]" -Quiet)) {
+        Write-Output "venv not on uv's own Python 3.12: rebuilt"
+        Remove-Item -Recurse -Force (Join-Path $root ".venv")
+    }
+    uv sync --all-extras --frozen --quiet --managed-python --python 3.12   # the version GitHub runs (setup action)
     uv pip install --quiet pytest ruff "pyright==1.1.414"
 } finally { Pop-Location }
 Write-Output "venv: $root\.venv (run bots with .venv\Scripts\python run.py <bot>; not plain 'uv run', which drops the extras)"
