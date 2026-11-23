@@ -19,7 +19,8 @@ before(async () => {
   server = createTestHarness({ workers: [{ configPath: 'wrangler.jsonc',
     vars: { AUTH_BASE_URL: 'https://api.example.test', APP_ORIGIN: 'https://app.example.test' },
     secrets: { AUTH_SECRET: 'integration-tests-only-secret-32-characters-minimum',
-      SETUP_CODE_HASH: createHash('sha256').update(CODE).digest('hex') } }] });
+      SETUP_CODE_HASH: createHash('sha256').update(CODE).digest('hex') } },
+    { configPath: 'test/ops_stub/wrangler.jsonc' }] });       // the OPS binding's worker
   await server.listen();
   db = (await server.getWorker<{ DB: D1Database }>().getEnv()).DB;
   for (const file of readdirSync('migrations').filter((f) => f.endsWith('.sql')).sort()) {

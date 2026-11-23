@@ -35,7 +35,9 @@ before(async () => {
     vars:{AUTH_BASE_URL:'https://api.example.test',APP_ORIGIN:'https://app.example.test'},
     secrets:{AUTH_SECRET:'integration-tests-only-secret-32-characters-minimum',
       KEYS_SECRET:'integration-tests-only-keys-secret-32-chars-min',
-      SETUP_CODE_HASH:'5b02d4eb46b7e8525e3b26acb6b37563dcffc9981c86f352c70c2d4347fb5591'}}]});
+      SETUP_CODE_HASH:'5b02d4eb46b7e8525e3b26acb6b37563dcffc9981c86f352c70c2d4347fb5591',
+      WORKER_TOKEN:'test-worker-token'}},
+    {configPath:'test/ops_stub/wrangler.jsonc'}]});
   await server.listen();
   db=(await server.getWorker<{DB:D1Database}>().getEnv()).DB;
   // the migrations in order, as `wrangler d1 migrations apply` runs them
@@ -235,11 +237,18 @@ test('an administrator adds API keys (encrypted, shown by their last four), orde
   assert.deepEqual(models.models.groq.ids,['openai/gpt-oss-120b']);
 });
 
-test('workspace, run and decide check the role before reaching the operations service',async()=>{
+test('workspace, run and decide check the role, then reach the operations service by its binding',async()=>{
   const adminToken=await signin('admin@example.test');
-  // the test worker has no operations service: an allowed user gets 503, a refused one 403 first
-  assert.equal((await call('/api/workspace','GET',undefined,adminToken)).status,503);
-  assert.equal((await call('/api/workflows/run','POST',{action:'sale'},adminToken)).status,503);
+  // the OPS binding reaches the stand-in worker (test/ops_stub) with WORKER_TOKEN; a refused user gets 403 first
+  const ws=await call('/api/workspace','GET',undefined,adminToken);
+  assert.equal(ws.status,200);
+  assert.equal(((await ws.json()) as {github:string}).github,'ok');
+  const run=await call('/api/workflows/run','POST',{action:'sale'},adminToken);
+  assert.equal(run.status,200);
+  assert.equal(((await run.json()) as {started:string}).started,'sale.yml');
+  const gone=await call('/api/approvals/decide','POST',{id:'abcdef123456',approve:true},adminToken);
+  assert.equal(gone.status,404);
+  assert.equal(((await gone.json()) as {error:string}).error,'expired or already decided');
   assert.equal((await call('/api/workflows/run','POST',{action:'BAD ACTION'},adminToken)).status,400);
   const viewerToken=await signin2('owner.two','Eight@8c');            // a viewer: app.access only
   assert.equal((await call('/api/workflows/run','POST',{action:'sale'},viewerToken)).status,403);

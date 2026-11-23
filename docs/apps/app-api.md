@@ -58,8 +58,10 @@ through this API, with a signed-in user's session and permissions.
 | `GET` / `POST /api/admin/phone-agents`, `DELETE /api/admin/phone-agents/<id>` | `phone.manage` | Agent mode phones: list; make a token for this phone (shown once, only its SHA-256 kept); revoke one. The worker's `/api/phone/next` and `/result` accept it until revoked |
 | `PATCH /api/admin/phones/<id>` | `phone.manage` | block or unblock one (revision checked, audited); the worker then refuses its SMS (403) |
 
-The app API reaches the worker with `WORKER_URL` (in `wrangler.jsonc`) and the secret `WORKER_TOKEN`
-(the worker's `DASHBOARD_TOKEN`); the app never holds that token. The other operational routes
+The app API reaches the worker through the `OPS` service binding (in `wrangler.jsonc`) with the secret
+`WORKER_TOKEN` (the worker's `DASHBOARD_TOKEN`); the app never holds that token. Not through `WORKER_URL`:
+one Worker fetching another Worker of the same account by its workers.dev URL gets Cloudflare's 404
+(error 1042), which the app showed as "The operations service said 404". `WORKER_URL` is only the fallback. The other operational routes
 (`/api/agent/chat` ...) check the permission and then answer 503 until their services are connected.
 
 What the panel saves reaches the agent within 5 minutes. The order is: the `AGENT_MODEL*` env vars first,

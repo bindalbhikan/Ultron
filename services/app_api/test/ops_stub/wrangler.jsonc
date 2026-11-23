@@ -1,0 +1,6 @@
+// A stand-in for the Telegram worker (bindal-telegram-bot) in the tests: the app API's OPS binding needs it.
+{
+  "name": "bindal-telegram-bot",
+  "main": "index.js",
+  "compatibility_date": "2026-11-17"
+}

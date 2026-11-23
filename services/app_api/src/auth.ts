@@ -13,6 +13,8 @@ export interface Env {
   KEYS_SECRET?: string;
   // the Telegram worker (workflows, runs, approvals, reports, connections): its URL and its DASHBOARD_TOKEN
   WORKER_URL?: string;
+  // service binding to that worker (wrangler.jsonc "services"): the way one Worker reaches another
+  OPS?: Fetcher;
   WORKER_TOKEN?: string;
   AUTH_BASE_URL: string;
   APP_ORIGIN: string;

@@ -11,6 +11,8 @@
     "AUTH_BASE_URL": "https://ultron-app-api.bhikan-serein.workers.dev",
     "WORKER_URL": "https://bindal-telegram-bot.bhikan-serein.workers.dev"
   },
+  // the Telegram worker, reached by binding (a workers.dev fetch between two Workers gets a 404)
+  "services": [{ "binding": "OPS", "service": "bindal-telegram-bot" }],
   "d1_databases": [
     {
       "binding": "DB",

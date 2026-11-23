@@ -347,12 +347,16 @@ async function agentModels(env: Env) {
 
 // The workspace (workflows, runs, approvals, reports, connections) and its actions, from the Telegram worker
 // (worker/agent.js /api/app/*), after the user's own permission is checked here.
+// Through the OPS service binding: a Worker that fetches another Worker of the same account by its
+// workers.dev URL gets Cloudflare's 404 (error 1042), never the worker. WORKER_URL is only the fallback.
 async function worker(env: Env, path: string, init: RequestInit = {}) {
-  if (!env.WORKER_URL || !env.WORKER_TOKEN) throw new HttpError(503, 'The operations service is not connected.');
+  if ((!env.OPS && !env.WORKER_URL) || !env.WORKER_TOKEN) throw new HttpError(503, 'The operations service is not connected.');
   let r: Response;
   try {
-    r = await fetch(`${env.WORKER_URL}${path}`, { ...init, signal: AbortSignal.timeout(60000),
-      headers: { Authorization: `Bearer ${env.WORKER_TOKEN}`, 'Content-Type': 'application/json' } });
+    const url = `${env.WORKER_URL || 'https://operations.internal'}${path}`;
+    const req: RequestInit = { ...init, signal: AbortSignal.timeout(60000),
+      headers: { Authorization: `Bearer ${env.WORKER_TOKEN}`, 'Content-Type': 'application/json' } };
+    r = env.OPS ? await env.OPS.fetch(url, req) : await fetch(url, req);
   } catch { throw new HttpError(502, 'The operations service did not answer. Try again.'); }
   const data = await r.json().catch(() => ({})) as Record<string, unknown>;
   if (!r.ok) throw new HttpError(r.status === 404 ? 404 : 502, String(data.error || `The operations service said ${r.status}.`));
