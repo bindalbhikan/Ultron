@@ -30,10 +30,22 @@ const POD_HEADERS = ['DATE', 'PORTAL', 'COURIER', 'AWB', 'OTP', 'STATUS', 'TYPE'
 const P = { day: 0, portal: 1, awb: 3, ref: 9 };                      // POD_HEADERS columns used to match
 const LOG_TAB = 'OTP LOG';
 const LOG_HEADERS = ['REF', 'DATE', 'PORTAL', 'STATUS', 'OTP', 'COUNT', 'SMS TIME', 'UPDATED'];
-const OTP_NAME = 'Agent';   // the name column of the agent's own rows: 'Agent', or 'Agent · <phone name>'
-// A row of the Daily OTP sheet the agent wrote (any phone); the team's rows are never changed.
-function ours(name) {
-  return name === OTP_NAME || String(name).startsWith(OTP_NAME + ' · ');
+// The agent's own rows of the Daily OTP sheet: the name column holds only the phone's user name (owner,
+// 23 Nov 2026), and the name cell carries the note OTP_MARK, which is how a row is known as ours. Rows
+// written before then still read 'Agent' or 'Agent · <name>'. The team's rows are never changed.
+const OTP_NAME = 'Agent';          // the name when the phone has no user name
+const OTP_MARK = 'ULTRON app';     // the note on the name cell of the agent's rows
+// r: a row of otpRowsOf (r[5] the name, r[6] the name cell's note)
+function ours(r) {
+  const name = String(r[5] || '');
+  return r[6] === OTP_MARK || name === OTP_NAME || name.startsWith(OTP_NAME + ' · ');
+}
+// The Daily OTP rows (DATE ... Name) with the name cell's note added at r[6].
+function otpRowsOf(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6);
+  const notes = range.getNotes();
+  return range.getDisplayValues().map((r, i) => r.concat([notes[i][5]]));
 }
 const OTP_DAYS = 2;
 const TZ = 'Asia/Kolkata';
@@ -259,7 +271,7 @@ function returns(from, body, deviceTime, p) {
   const day = Utilities.formatDate(when, TZ, 'dd-MM-yyyy');
   const time = Utilities.formatDate(when, TZ, 'HH:mm');
   const otpSheet = sms.otp ? SpreadsheetApp.openById(OTP_SHEET_ID).getSheets()[0] : null;
-  const otpRows = otpSheet && otpSheet.getLastRow() > 1 ? otpSheet.getRange(2, 1, otpSheet.getLastRow() - 1, 6).getDisplayValues() : [];
+  const otpRows = otpRowsOf(otpSheet);
   if (sms.courier === 'Ekart' && EKART_SELLERS[sms.seller] === 'Myntra') {
     return { note: 'Myntra Ekart: left to the Myntra OTP bot', filled: otpRows.some(r => r[0] === day && r[3] === sms.otp) };
   }
@@ -349,7 +361,7 @@ function returns(from, body, deviceTime, p) {
       if (put === 'not in the sheet') filled = false;
     } else if (logged && logged[4] && count && fresh && !myntra && sheetable) {   // final POD: the count only
       const sheet = SpreadsheetApp.openById(OTP_SHEET_ID).getSheets()[0];
-      const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getDisplayValues() : [];
+      const rows = otpRowsOf(sheet);
       putOtp(sheet, rows, day, sp, sms.status, logged[4], count, logged, true, p.user);
     }
     const entry = [ref, day, sp, sms.status, otp, count, sms.otp ? deviceTime : (logged ? logged[6] : ''), new Date()];
@@ -376,19 +388,19 @@ function returns(from, body, deviceTime, p) {
 
 // One OTP row of the team's sheet: the row of the earlier code of this REF updated (a resend), a row
 // the team already wrote left alone, else a new row. Older SMS (write = false) are only looked up.
-// user: the phone's name (SMS-only mode), shown in the name column as 'Agent · <name>'.
+// user: the phone's user name (SMS-only mode), the only thing in the name column (OTP_NAME without one).
 function putOtp(sheet, rows, day, portal, status, otp, count, logged, write, user) {
-  const name = (user || '').trim() ? OTP_NAME + ' · ' + String(user).trim() : OTP_NAME;
+  const name = String(user || '').trim() || OTP_NAME;
   const at = (code) => rows.findIndex(r => r[0] === day && r[1] === portal && r[3] === code && r[4].toUpperCase() === status);
   const old = logged && logged[4] ? at(logged[4]) : -1;
   if (old >= 0 && write) {
     const team = rows.findIndex((r, i) => i !== old && r[0] === day && r[1] === portal && r[3] === otp && r[4].toUpperCase() === status);
-    if (team >= 0 && ours(rows[old][5])) {                // the team already wrote the new code: ours goes
+    if (team >= 0 && ours(rows[old])) {                // the team already wrote the new code: ours goes
       sheet.deleteRow(old + 2);
       rows.splice(old, 1);
       return 'resent, ' + otp + ' already in the sheet (removed our ' + logged[4] + ')';
     }
-    if (!ours(rows[old][5])) {                              // a row the team wrote: never changed
+    if (!ours(rows[old])) {                              // a row the team wrote: never changed
       return logged[4] === otp ? 'already in the sheet' : 'resent ' + otp + ': not written, the team\'s row has ' + logged[4];
     }
     sheet.getRange(old + 2, 3, 1, 2).setValues([[count, otp]]);
@@ -398,10 +410,11 @@ function putOtp(sheet, rows, day, portal, status, otp, count, logged, write, use
   }
   // the team's own row of this code (their portal name may differ); the agent's rows of other portals
   // with the same code (one POD, several portals) do not count
-  if (at(otp) >= 0 || rows.some(r => r[0] === day && r[3] === otp && !ours(r[5]))) return 'already in the sheet';
+  if (at(otp) >= 0 || rows.some(r => r[0] === day && r[3] === otp && !ours(r))) return 'already in the sheet';
   if (!write) return 'not in the sheet';
   sheet.appendRow([day, portal, count, otp, status, name, '']);
-  rows.push([day, portal, count, otp, status, name]);
+  sheet.getRange(sheet.getLastRow(), 6).setNote(OTP_MARK);       // under the script lock: this row is the last
+  rows.push([day, portal, count, otp, status, name, OTP_MARK]);
   return 'added';
 }
 
