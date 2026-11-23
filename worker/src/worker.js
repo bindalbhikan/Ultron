@@ -754,11 +754,13 @@ async function pushDashboard(request, env, key) {
   return new Response("stored");
 }
 
-// Myntra partner portal login cookies, one per seller account (?account=main|dbcc|fmcc; main =
+// Myntra partner portal login cookies, one per seller account (?account=main|dbcc|fmcc|exim; main =
 // the SJIT report's account). Saved by scripts/myntra_session.py when someone pastes a new login
 // (announced on Telegram) and by the bot's runs with the cookies the portal renewed (quiet).
 // Same DASHBOARD_TOKEN; kept in KV under keys the dashboard never reads.
-const MYNTRA_ACCOUNTS = { main: "myntra_session", dbcc: "myntra_session_dbcc", fmcc: "myntra_session_fmcc" };
+// exim: BINDAL EXIM PVT LTD (partner 109704), added 23 Nov 2026 (src/ultron/workings/portals/myntra.py SELLERS)
+const MYNTRA_ACCOUNTS = { main: "myntra_session", dbcc: "myntra_session_dbcc", fmcc: "myntra_session_fmcc",
+                          exim: "myntra_session_exim" };
 const myntraAccount = (request) => new URL(request.url).searchParams.get("account") || "main";
 
 function authorised(request, env) {

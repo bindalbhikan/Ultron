@@ -416,7 +416,8 @@ export function makeAgent({
     : r.conclusion === "success" ? "completed" : r.conclusion === "cancelled" || r.conclusion === "skipped" ? "partial" : "failed";
   const REPORT_KEYS = { sale: "Sale report", sale_today: "Sale today", vms: "Myntra VMS", vms_erp: "VMS vs ERP", returns: "Returns",
     returns_year: "Returns (year)", ajio_tat: "AJIO TAT", ajio_spf: "AJIO SPF", myntra_spf: "Myntra SPF", ajio_ads: "AJIO ads" };
-  const SESSIONS = { myntra_session: "Myntra MAIN", myntra_session_dbcc: "Myntra DBCC", myntra_session_fmcc: "Myntra FMCC" };
+  const SESSIONS = { myntra_session: "Myntra MAIN", myntra_session_dbcc: "Myntra DBCC", myntra_session_fmcc: "Myntra FMCC",
+                     myntra_session_exim: "Myntra EXIM" };
 
   async function workspace(request, env) {
     if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
