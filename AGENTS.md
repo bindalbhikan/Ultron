@@ -115,6 +115,10 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   (`npx wrangler deploy`); the repo root has no `wrangler.toml`. The SMS sheet's Apps Script (`services/sms_sheet/
   Code.gs`): clasp (`npx @google/clasp`), a new version of the same web app deployment so its URL stays (ids in the
   agent memory, not in this public repo); compare the live code with the repo before pushing.
+- **`.env` = GitHub** (owner, 23 Nov 2026: "kabhi manual run karna hua to env hi kaam aayegi"): every repository
+  variable has the same value in `.env`, live switches included (`SPF_DRY_RUN`, `MYNTRA_SPF_*`, `AJIO_PICKUP_FORM`), so a
+  manual run on a PC acts like the GitHub run; after changing a GitHub variable, change `.env` and its Drive copy
+  (`AGENT-PRIVATE/ULTRON`, `setup_pc.ps1 -Backup`). Secrets cannot be read back from GitHub: keep both in step by hand.
 - Decrypt a run's log: `python scripts/github/run_output.py <run id>` (ARTIFACT_KEY from `.env`). When GitHub's
   artifact has expired, the same failure log is in Drive `AGENT WORK/AGENT LOGS/<MON-YY>/<dd-mm-yy>/`
   (`<BOT> <time> FAIL #<run id>.log`).
