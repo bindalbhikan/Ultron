@@ -98,16 +98,24 @@ def test_brand_only_from_the_portal_sheet():
     assert brand["FSH-DRESS-Q-1-0"] == "Fashfun"             # a right brand on the sheet stays
 
 
-def test_portal_sheet_values_win_and_need_data_lists_gaps():
-    export = _export([("37864", "X - Meesho", "FSH-DRESS-Q-1-9", "M9", "DRESS-Q-1-9", "", "", "", "")])
-    given = build.given_rows([pl.DataFrame({"channel listing sku code": ["FSH-DRESS-Q-1-9"], "Channel Name": ["meesho"],
-                                            "BRAND": ["Fashfun"], "MEESHO CATALOG ID": ["C77"]})])
-    data, _, _, _ = build.rebuild(_old(_sheet_rows()), None, build.from_omsguru(export), {}, None, TODAY, None, given)
-    row = data.to_dicts()[0]
-    assert row["Brand"] == "Fashfun" and row["MEESHO CATALOG ID"] == "C77"
+def test_portal_file_found_by_its_skus_and_need_data_names_the_file():
+    rows = [("37864", "X - Meesho", f"FSH-DRESS-Q-1-{i}", f"M{i}", f"DRESS-Q-1-{i}", "", "", "", "") for i in range(6)]
+    rows += [("37862", "X - Amazon", "FSH-DRESS-Q-1-0", "A0", "DRESS-Q-1-0", "", "", "", "")]   # same SKU on Amazon
+    oms = build.from_omsguru(_export(rows))
+    # Meesho's own file as it downloads: its headers, the SKU column found by its values
+    meesho_file = pl.DataFrame({"Seller SKU ID": [f"fsh-dress-q-1-{i}" for i in range(6)],
+                                "Brand Name": ["Fashfun"] * 6, "Catalog ID": ["C77"] * 6, "Style": ["x"] * 6})
+    given, notes = build.given_rows([("meesho.csv", meesho_file)], oms)
+    assert "MEESHO" in notes[0] and given["_family"].unique().to_list() == ["MEESHO"]
+    data, _, _, _ = build.rebuild(_old([]), None, oms, {}, None, TODAY, None, given)
+    meesho = data.filter(pl.col("Channel Name") == "MEESHO")
+    assert meesho["Brand"].unique().to_list() == ["Fashfun"] and meesho["MEESHO CATALOG ID"].unique().to_list() == ["C77"]
+    assert data.filter(pl.col("Channel Name") == "AMAZON")["Brand"].to_list() == [None]   # Meesho's file: Meesho rows only
     need = build.need_data(data)
-    assert need.columns[0] == build.MISSING and "MEESHO PRODUCT ID" in need[build.MISSING][0]
-    assert "Brand" not in need[build.MISSING][0]
+    assert need.columns == build.NEED_COLUMNS
+    by = {r["CHANNEL"]: r for r in need.to_dicts()}
+    assert by["MEESHO"]["FILE NEEDED"].startswith("Meesho") and "MEESHO PRODUCT ID 6" in by["MEESHO"]["MISSING"]
+    assert "Brand" not in by["MEESHO"]["MISSING"] and by["AMAZON"]["LISTINGS MISSING DATA"] == 1
 
 
 def test_portal_listing_missing_in_omsguru_is_unmapped():

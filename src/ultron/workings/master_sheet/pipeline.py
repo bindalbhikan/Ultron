@@ -37,8 +37,8 @@ WHOLE = re.compile(r"^[1-9]\d{0,14}$")
 def typed(header: str, value):
     """A cell as the sheet had it: a day as a date in the date columns, a whole number (no leading 0, at most 15
     digits so Excel keeps it exact) as a number, anything else as text."""
-    if value is None:
-        return None
+    if value is None or not isinstance(value, str):
+        return value
     if header in DATE_COLUMNS:
         m = DAY.match(value)
         if m:
@@ -74,27 +74,30 @@ def omsguru_listings(notes: list[str]) -> pl.DataFrame:
     return df.filter(pl.col("Channel ID").str.strip_chars().is_in(sorted(active)))
 
 
-def portal_sheets(dest: Path, notes: list[str]) -> pl.DataFrame | None:
-    """The owner's files in AGENT WORK/MASTER SHEET/PORTAL SHEET (xlsx, every sheet, or csv; columns named as
-    MasterData's, the NEED DATA sheet filled in works as it is), oldest first so a newer file's row wins."""
+def portal_sheets(dest: Path, notes: list[str], listings: pl.DataFrame) -> pl.DataFrame | None:
+    """The portal files the owner drops in AGENT WORK/MASTER SHEET/PORTAL SHEET (a portal's own listing / inventory
+    file, xlsx with every sheet or csv), oldest first so a newer file's row wins; build.given_rows reads them."""
     from ..core.drive import agent_folder
     folder = agent_folder(ms.FOLDER, ms.PORTAL_FOLDER, create=True)
     files = sorted(((name, meta) for name, meta in folder.children().items()
-                    if name.lower().endswith((".xlsx", ".csv"))), key=lambda f: f[1].get("modifiedTime") or "")
+                    if name.lower().endswith((".xlsx", ".csv", ".txt"))), key=lambda f: f[1].get("modifiedTime") or "")
     frames = []
     for name, meta in files:
         try:
             path = folder.cached(name, dest, meta)
-            if name.lower().endswith(".csv"):
-                frames.append(read_text_csv(path))
+            low = name.lower()
+            if low.endswith(".csv"):
+                frames.append((name, read_text_csv(path)))
+            elif low.endswith(".txt"):             # Amazon's reports: tab separated
+                frames.append((name, pl.read_csv(path, separator="\t", infer_schema=False, quote_char=None)))
             else:
                 from python_calamine import CalamineWorkbook
-                frames += [read_excel_text(path, s) for s in CalamineWorkbook.from_path(str(path)).sheet_names]
+                frames += [(f"{name} [{s}]", read_excel_text(path, s))
+                           for s in CalamineWorkbook.from_path(str(path)).sheet_names]
         except Exception as exc:  # noqa: BLE001 - the other files still count
             notes.append(f"PORTAL SHEET {name} not read: {str(exc)[:80]}")
-    given = build.given_rows(frames)
-    if files:
-        notes.append(f"PORTAL SHEET: {len(files)} file(s), {0 if given is None else given.height:,} listings")
+    given, found = build.given_rows(frames, listings)
+    notes += found
     return given
 
 
@@ -169,7 +172,7 @@ def run(args) -> int:
     reports = myntra_reports(work / "myntra", notes)
     myntra = build.myntra_ids(reports) if reports is not None else None
     flipkart = flipkart_listing_file(work / "flipkart", notes)
-    given = portal_sheets(work / "portal", notes) if not args.file else None
+    given = portal_sheets(work / "portal", notes, oms) if not args.file else None
     data, gone, loose, counts = build.rebuild(old, removed, oms, others, myntra, today, flipkart, given)
     need = build.need_data(data)
     counts["need"] = need.height
@@ -207,8 +210,8 @@ def message(c: dict, notes: list[str], now: datetime) -> str:
     if c["no_brand"]:
         lines.append(f"Listings without a brand: {c['no_brand']:,}")
     if c.get("need"):
-        lines.append(f"NEED DATA: {c['need']:,} listings with a value missing (fill them, drop the file in "
-                     f"MASTER SHEET / {ms.PORTAL_FOLDER})")
+        lines.append(f"NEED DATA: {c['need']:,} channels need a portal file (drop it in MASTER SHEET / "
+                     f"{ms.PORTAL_FOLDER})")
     if c["new_no_design"]:
         lines.append(f"New listings without DESIGN-NO: {c['new_no_design']:,} (add the style to Fabric Code)")
     lines += notes

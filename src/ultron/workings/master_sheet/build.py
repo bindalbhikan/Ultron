@@ -246,59 +246,112 @@ def derive(df: pl.DataFrame, ctx: Context, cols: list[str]) -> pl.DataFrame:
     return df
 
 
-def given_rows(frames: list[pl.DataFrame]) -> pl.DataFrame | None:
-    """The owner's PORTAL SHEET files (owner, 24 Nov 2026) as one table: columns named as MasterData's (any case or
-    spacing), Channel Listing SKU Code needed, Channel Name optional; a later file's row wins."""
-    canon = {c.upper().replace(" ", ""): c for c in COLUMNS}
-    out = []
-    for f in frames:
-        f = f.rename({c: canon[c.upper().replace(" ", "")] for c in f.columns if c.upper().replace(" ", "") in canon})
-        if "Channel Listing SKU Code" not in f.columns:
+def family(e: pl.Expr) -> pl.Expr:
+    """A channel's portal: its name's first word (AMAZON SMART -> AMAZON, AJIO API -> AJIO, MYNTRA PPMP -> MYNTRA)."""
+    return e.str.to_uppercase().str.extract(r"^([A-Z]+)", 1)
+
+
+# A portal file's columns (headers without case, spaces or signs) -> MASTER DATA's; an id only for its own portal
+HEADERS = {"brand": "Brand", "brandname": "Brand", "color": "COLOR", "colour": "COLOR", "primarycolor": "COLOR",
+           "primarycolour": "COLOR"}
+PORTAL_HEADERS = {"AMAZON": {"asin": "AMAZON ASIN", "asin1": "AMAZON ASIN"},
+                  "FLIPKART": {"fsn": "FLIPKART FSN", "flipkartserialnumber": "FLIPKART FSN"},
+                  "AJIO": {"jiocode": "AJIO JIOCODE"},
+                  "MYNTRA": {"styleid": "MYNTRA STYLE ID", "skucode": "MYNTRA SKU CODE"},
+                  "MEESHO": {"productid": "MEESHO PRODUCT ID", "catalogid": "MEESHO CATALOG ID",
+                             "productidentifier": "MEESHO PRODUCT IDENTIFIER"}}
+
+
+def _norm(h: str) -> str:
+    return "".join(ch for ch in str(h).lower() if ch.isalnum())
+
+
+def given_rows(frames: list[tuple[str, pl.DataFrame]], listings: pl.DataFrame) -> tuple[pl.DataFrame | None, list[str]]:
+    """The portal files the owner drops in PORTAL SHEET (owner, 24 Nov 2026: a portal's own listing / inventory file,
+    as it downloads): (table of _family, Channel Listing SKU Code + the MASTER DATA columns it gives, notes).
+    The SKU column and the portal are found by the values: the column whose values are most often a listing SKU of
+    one portal on the sheet (listings: Channel Name + Channel Listing SKU Code). A file in MASTER DATA's own columns
+    works too. A later file's row wins."""
+    skus = listings.select(family(pl.col("Channel Name")).alias("_family"),
+                           pl.col("Channel Listing SKU Code").str.to_uppercase().alias("_k")).drop_nulls().unique()
+    by_family = {f: set(g["_k"].to_list()) for (f,), g in skus.group_by("_family")}
+    canon = {_norm(c): c for c in COLUMNS}
+    out, notes = [], []
+    for name, f in frames:
+        best = (0, None, None)
+        for col in f.columns:
+            vals = {str(v).strip().upper() for v in f[col].drop_nulls().to_list() if str(v).strip()}
+            for fam, have in by_family.items():
+                hits = len(vals & have)
+                if hits > best[0]:
+                    best = (hits, col, fam)
+        hits, key, fam = best
+        if not key or hits < max(5, 0.2 * f.height):
+            notes.append(f"PORTAL SHEET {name}: no column of listing SKUs found, not used")
             continue
-        keep = [c for c in COLUMNS if c in f.columns and c not in ("Channel Listing Id",)]
-        out.append(f.select(_txt(c).alias(c) for c in keep).drop_nulls("Channel Listing SKU Code"))
+        names = {**{_norm(c): c for c in COLUMNS if c not in ("Channel Listing SKU Code", "Channel Listing Id",
+                                                               "Channel Name")},
+                 **HEADERS, **PORTAL_HEADERS.get(fam, {})}
+        take = {}
+        for col in f.columns:
+            target = names.get(_norm(col))
+            if col != key and target and target not in take.values() and (target in canon.values()):
+                take[col] = target
+        if not take:
+            notes.append(f"PORTAL SHEET {name}: {fam} listing SKUs in '{key}', but no column MASTER DATA uses")
+            continue
+        notes.append(f"PORTAL SHEET {name}: {fam}, {hits:,} listings, {', '.join(sorted(set(take.values())))}")
+        out.append(f.select(pl.lit(fam).alias("_family"), _txt(key).str.to_uppercase().alias("_k"),
+                            *(_txt(c).alias(t) for c, t in take.items())).drop_nulls("_k"))
     if not out:
-        return None
-    df = pl.concat(out, how="diagonal")
-    if "Channel Name" not in df.columns:
-        df = df.with_columns(pl.lit(None, pl.Utf8).alias("Channel Name"))
-    return df.with_columns(pl.col("Channel Name").str.to_uppercase()).unique(
-        ["Channel Name", "Channel Listing SKU Code"], keep="last", maintain_order=True)
+        return None, notes
+    return pl.concat(out, how="diagonal").unique(["_family", "_k"], keep="last", maintain_order=True), notes
 
 
 def apply_given(df: pl.DataFrame, given: pl.DataFrame | None, cols: list[str]) -> pl.DataFrame:
-    """The owner's portal data over the worked-out values: a row of the same channel + listing SKU first, then one
-    with no channel for that listing SKU; an empty cell there changes nothing."""
+    """The owner's portal files over the worked-out values, on the rows of that portal with that listing SKU; an empty
+    cell there changes nothing."""
     if given is None or not given.height:
         return df
     fill = [c for c in given.columns if c in cols and c not in KEY]
-    by_ch = given.filter(pl.col("Channel Name").is_not_null()).select(
-        "Channel Name", "Channel Listing SKU Code", *(pl.col(c).alias(f"_g1_{c}") for c in fill))
-    any_ch = given.filter(pl.col("Channel Name").is_null()).select(
-        "Channel Listing SKU Code", *(pl.col(c).alias(f"_g2_{c}") for c in fill))
-    out = (df.join(by_ch, on=["Channel Name", "Channel Listing SKU Code"], how="left")
-             .join(any_ch, on="Channel Listing SKU Code", how="left"))
-    return out.with_columns(pl.coalesce(f"_g1_{c}", f"_g2_{c}", c).alias(c) for c in fill).drop(
-        [f"_g1_{c}" for c in fill] + [f"_g2_{c}" for c in fill])
+    g = given.select("_family", "_k", *(pl.col(c).alias(f"_g_{c}") for c in fill))
+    out = df.with_columns(family(pl.col("Channel Name")).alias("_family"),
+                          pl.col("Channel Listing SKU Code").str.to_uppercase().alias("_k")
+                          ).join(g, on=["_family", "_k"], how="left")
+    return out.with_columns(pl.coalesce(f"_g_{c}", c).alias(c) for c in fill).drop(
+        ["_family", "_k"] + [f"_g_{c}" for c in fill])
 
 
-# the portal id a row of each channel should have (NEED DATA)
+# NEED DATA (owner, 24 Nov 2026: only the portal and the file it needs): per channel, the file that gives what is
+# missing, the values a portal file gives (Brand, COLOR, the portal's ids)
+PORTAL_FILE = {"MYNTRA": "Myntra listing report (Seller_Listings_Report)",
+               "FLIPKART": "Flipkart listing file (Seller Hub, all listings)", "AJIO": "AJIO inventory file",
+               "AMAZON": "Amazon listing / inventory report", "MEESHO": "Meesho inventory / catalog file"}
 CHANNEL_IDS = {"MYNTRA": ["MYNTRA STYLE ID", "MYNTRA SKU CODE"], "FLIPKART": ["FLIPKART FSN"],
                "AMAZON": ["AMAZON ASIN"], "MEESHO": ["MEESHO PRODUCT ID", "MEESHO CATALOG ID"],
                "AJIO": ["AJIO JIOCODE"]}
-NEED_ALWAYS = ["Brand", "DESIGN-NO", "COLOR"]
-MISSING = "MISSING"
+FROM_PORTAL = ["Brand", "COLOR"]
+NEED_COLUMNS = ["PORTAL", "CHANNEL", "FILE NEEDED", "LISTINGS MISSING DATA", "MISSING"]
 
 
 def need_data(data: pl.DataFrame) -> pl.DataFrame:
-    """MasterData rows with a value missing (Brand, DESIGN-NO, COLOR, the channel's portal ids), MISSING naming them
-    first: the sheet the owner fills from the portals and drops in PORTAL SHEET (owner, 24 Nov 2026)."""
-    parts = [pl.when(pl.col(c).is_null()).then(pl.lit(c)) for c in NEED_ALWAYS]
-    for prefix, ids in CHANNEL_IDS.items():
-        parts += [pl.when(pl.col("Channel Name").str.starts_with(prefix) & pl.col(c).is_null()).then(pl.lit(c))
-                  for c in ids]
-    return (data.with_columns(pl.concat_str(parts, separator=", ", ignore_nulls=True).alias(MISSING))
-                .filter(pl.col(MISSING) != "").select([MISSING] + data.columns))
+    """One row per channel with listings missing a value a portal file gives: the portal, the file to drop in PORTAL
+    SHEET, how many listings, and which values with their counts."""
+    rows = []
+    for (ch,), g in data.group_by("Channel Name", maintain_order=True):
+        fam = str(ch).split(" ")[0].upper()
+        cols = FROM_PORTAL + CHANNEL_IDS.get(fam, [])
+        gaps = {c: g.filter(pl.col(c).is_null()).height for c in cols if c in g.columns}
+        gaps = {c: n for c, n in gaps.items() if n}
+        if not gaps:
+            continue
+        missing = g.filter(pl.any_horizontal(pl.col(c).is_null() for c in gaps)).height
+        rows.append({"PORTAL": fam, "CHANNEL": ch,
+                     "FILE NEEDED": PORTAL_FILE.get(fam, f"{fam.title()} listing / inventory file"),
+                     "LISTINGS MISSING DATA": missing,
+                     "MISSING": ", ".join(f"{c} {n:,}" for c, n in gaps.items())})
+    return pl.DataFrame(rows, schema={c: (pl.Int64 if c == "LISTINGS MISSING DATA" else pl.Utf8) for c in NEED_COLUMNS}
+                        ).sort(["PORTAL", "CHANNEL"])
 
 
 def unmapped(oms: pl.DataFrame, ctx: Context, old_all: pl.DataFrame, cols: list[str]) -> pl.DataFrame:

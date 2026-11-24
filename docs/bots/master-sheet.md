@@ -32,13 +32,18 @@ DATE & SIZE COUNT; the readers find a sheet whatever its case (`master_sheet.she
   they differed, 24 Nov 2026); Amazon ASIN from OMSGuru (Amazon `Extra Data`, Amazon Smart the ASIN of the same
   listing SKU on Amazon); Meesho product id OMSGuru `Extra Key`; AJIO JIOCODE = the listing id's first 9 digits + `_` +
   the colour (lower case, no spaces). Meesho catalog id / product identifier: only from PORTAL SHEET.
-* **PORTAL SHEET** folder (`AGENT WORK/MASTER SHEET/PORTAL SHEET`, owner, 24 Nov 2026): the owner's files (xlsx, every
-  sheet, or csv) with MASTER DATA's column names (any case / spacing; `Channel Listing SKU Code` needed, `Channel
-  Name` optional). Read every run, newest file last; a filled cell there wins over everything (Brand included); an
-  empty cell changes nothing. The NEED DATA sheet, filled in, works as it is.
-* **NEED DATA**: the MASTER DATA rows with a value missing, `MISSING` first naming them: Brand, DESIGN-NO, COLOR, and the
-  channel's portal ids (Myntra style id + SKU code, Flipkart FSN, Amazon ASIN, Meesho product + catalog id, AJIO
-  JIOCODE). Written anew each run, not read by the workings.
+* **PORTAL SHEET** folder (`AGENT WORK/MASTER SHEET/PORTAL SHEET`, owner, 24 Nov 2026): the portals' own listing /
+  inventory files, as they download (xlsx every sheet, csv, Amazon's tab-separated txt). Read every run, newest file
+  last (`build.given_rows`): the SKU column and the portal are found by the values (the column whose values are most
+  often one portal's listing SKUs on the sheet, at least 5 and 20% of the rows), then Brand / COLOR and that portal's
+  ids by their headings (Brand, Color / Colour, ASIN, FSN, JioCode, Style ID + SKU Code for Myntra, Product ID /
+  Catalog ID / Product Identifier for Meesho; MASTER DATA's own column names too). A value goes only to that portal's
+  rows with that listing SKU, wins over everything (Brand included); an empty cell changes nothing. Telegram names
+  each file read and what it gave, or why it was not used.
+* **NEED DATA** (owner, 24 Nov 2026: only the portal and the file it needs): one row per channel with listings missing
+  a value a portal file gives (Brand, COLOR, the channel's portal ids: Myntra style id + SKU code, Flipkart FSN, Amazon
+  ASIN, Meesho product + catalog id, AJIO JIOCODE): PORTAL, CHANNEL, FILE NEEDED (e.g. "AJIO inventory file",
+  "Meesho inventory / catalog file"), LISTINGS MISSING DATA, MISSING (each value with its count). 24 Nov: 9 channels.
 * **UNMAPPED LISTINGS** (owner, 24 Nov 2026): a listing in a portal's own listing file (each Myntra account's listing
   report, the Flipkart listing file) that OMSGuru does not have, in MASTER DATA's columns: SKU columns from the same
   listing SKU elsewhere on the sheet, else the listing SKU without its brand code (FSH-DRESS-A-1-L -> DRESS-A-1-L;
@@ -53,4 +58,4 @@ DATE & SIZE COUNT; the readers find a sheet whatever its case (`master_sheet.she
   (0.7) of the sheet's rows, fails the run with nothing written. A Myntra listing report, the Flipkart file or a
   PORTAL SHEET file not read: those values stay as they were and Telegram names it.
 * 24 Nov 2026: 118,721 listings of 13 Active channels, 61,379 on REMOVED LISTINGS (20,069 of them the paused / disabled
-  channels), 121 unmapped, 14,789 without a brand, 32,795 in NEED DATA; about 1.5 min.
+  channels), 121 unmapped, 14,789 without a brand, 9 channels in NEED DATA; about 1.5 min.
