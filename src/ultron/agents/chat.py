@@ -128,7 +128,10 @@ def run_now(action: str, summary: str, inputs: str = "{}") -> str:
 run_now = llm.tool(run_now)
 
 
-def tools() -> list:
+def tools(read_only: bool = False) -> list:
+    if read_only:
+        # App chat cannot inherit Telegram's owner-level action or shared-note write tools.
+        return config.load_tools(("runs", "omsguru", "business", "knowledge"))
     cfg = config.get()
     names = cfg.chat_tools + (("memory",) if memory_on() and "memory" not in cfg.chat_tools else ())
     extra = [propose_action] if cfg.actions else []
@@ -140,21 +143,24 @@ def tools() -> list:
 to_telegram = telegram.md   # the model's light markdown as Telegram HTML
 
 
-def answer(question: str, chat: str = "") -> str:
+def answer(question: str, chat: str = "", *, read_only: bool = False) -> str:
     """The reply (Telegram HTML) to one owner message from `chat`."""
     cfg = config.get()
     _chat.set(str(chat))
     system, history, mem = rules(cfg), [], None
+    if read_only:
+        system += "\nThis is read-only app chat. Do not start or propose actions, or change shared memory. Direct action requests to the app's Workflows or Approvals screens, where the user's permissions are checked."
     if memory_on():
         try:                                # the agent still answers when its memory is out of reach
             mem = memory.get()
             history = mem.history(chat)
-            system += MEMORY_RULES + (mem.context(question) or "(none yet)")
+            if not read_only:
+                system += MEMORY_RULES + (mem.context(question) or "(none yet)")
         except Exception as exc:  # noqa: BLE001
             log.warning("Memory not read: %s", exc)
             mem = None
     try:
-        text, usage = llm.agent_loop(system, question, tools(), max_steps=cfg.chat_steps, history=history)
+        text, usage = llm.agent_loop(system, question, tools(read_only=True) if read_only else tools(), max_steps=cfg.chat_steps, history=history)
         log.info("Answered by %s in %s steps (%s earlier messages), %s in + %s out tokens (%s): %s",
                  usage["model"], usage["steps"], len(history) // 2, usage["input"], usage["output"], llm.cost_text(usage), (text or "")[:300])
     except llm.LLMError as exc:
@@ -165,10 +171,37 @@ def answer(question: str, chat: str = "") -> str:
             mem.add_turn(chat, question, text)
         except Exception as exc:  # noqa: BLE001
             log.warning("Conversation not kept: %s", exc)
-    return "🤖 " + to_telegram(tidy(text))
+    return tidy(text) if read_only else "🤖 " + to_telegram(tidy(text))
+
+
+def app_reply(request_id: str) -> int:
+    """Answer a private app request; no Telegram messages or owner action tools."""
+    import re
+    from ..core import http
+    if not re.fullmatch(r"[0-9a-f-]{36}", request_id):
+        raise ValueError("invalid app chat request id")
+    url, token = config.get().worker()
+    if not url or not token:
+        raise RuntimeError("the operations service is not configured")
+    path = f"{url}/api/app/chat/job/{request_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+    response = http.get(path, headers=headers, timeout=30)
+    response.raise_for_status()
+    job = http.json_of(response)
+    status = "completed"
+    try:
+        text = answer(job["question"], f"app:{job['userId']}", read_only=True)
+    except Exception:  # report a safe failure in the app, not through Telegram
+        log.exception("App chat could not finish")
+        text, status = "The agent could not finish your answer. Please try again.", "failed"
+    result = http.request("PUT", path, headers=headers, json={"answer": text[:12000], "status": status}, timeout=30)
+    result.raise_for_status()
+    return 0 if status == "completed" else 1
 
 
 def run(args) -> int:
+    if getattr(args, "app_request", None):
+        return app_reply(args.app_request)
     question = (args.text or "").strip()
     if not question:
         return 0
@@ -180,5 +213,6 @@ def run(args) -> int:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="ultron chat", description="Answer the owner's Telegram message")
     p.add_argument("--text", help="the owner's message")
+    p.add_argument("--app-request", help="private app chat request id; never sends to Telegram")
     p.add_argument("--no-telegram", action="store_true", help="print the answer instead of sending it")
     return runtime.run("Ultron chat", p, run, argv)

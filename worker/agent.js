@@ -522,7 +522,72 @@ export function makeAgent({
     return res.status === 204 ? Response.json({ started: action.workflow }) : Response.json({ error: `GitHub said ${res.status}` }, { status: 502 });
   }
 
+  async function appChat(request, env, path) {
+    if (!authorised(request, env)) return bad("forbidden", 403);
+    const database = env[db];
+    const now = Date.now();
+    const id = path.slice("/api/app/chat/job/".length);
+    if (path.startsWith("/api/app/chat/job/")) {
+      if (!/^[0-9a-f-]{36}$/.test(id)) return bad("unknown chat request", 404);
+      if (request.method === "GET") {
+        const job = await database.prepare(`UPDATE app_chat_job SET status='running',updated_at=?
+          WHERE id=? AND status='queued' AND created_at>? AND EXISTS (
+            SELECT 1 FROM app_access a JOIN app_role r ON r.id=a.role_id
+            WHERE a.user_id=app_chat_job.user_id AND a.status='active'
+              AND EXISTS(SELECT 1 FROM json_each(r.permissions) WHERE value='agent.chat'))
+          RETURNING id,user_id AS userId,question`).bind(now, id, now - 30 * 60000).first();
+        return job ? Response.json(job) : bad("chat request expired or unavailable", 404);
+      }
+      if (request.method === "PUT") {
+        const input = await jsonBody(request).catch((e) => e);
+        if (input instanceof Response) return input;
+        if (typeof input.answer !== "string" || !input.answer.trim() || input.answer.length > 12000
+            || !["completed", "failed"].includes(input.status)) return bad("invalid chat result");
+        const saved = await database.prepare(`UPDATE app_chat_job SET status=?,answer=?,updated_at=?
+          WHERE id=? AND status='running' AND created_at>? RETURNING id`)
+          .bind(input.status, input.answer, now, id, now - 30 * 60000).first();
+        return saved ? Response.json({ saved: true }) : bad("chat request expired or already answered", 409);
+      }
+      return bad("method not allowed", 405);
+    }
+    const input = await jsonBody(request).catch((e) => e);
+    if (input instanceof Response) return input;
+    const userId = input.userId;
+    if (typeof userId !== "string" || !userId || userId.length > 128) return bad("user required");
+    const allowed = await database.prepare(`SELECT a.user_id FROM app_access a JOIN app_role r ON r.id=a.role_id
+      WHERE a.user_id=? AND a.status='active'
+        AND EXISTS(SELECT 1 FROM json_each(r.permissions) WHERE value='agent.chat')`).bind(userId).first();
+    if (!allowed) return bad("chat not allowed", 403);
+    await database.prepare(`UPDATE app_chat_job SET status='failed',answer='The agent did not finish in time. Please send your question again.',updated_at=?
+      WHERE user_id=? AND status IN ('queued','running') AND created_at<=?`).bind(now, userId, now - 30 * 60000).run();
+    if (path === "/api/app/chat/history") {
+      const { results } = await database.prepare(`SELECT id,question,answer,status FROM app_chat_job
+        WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 30`).bind(userId).all();
+      return Response.json({ messages: results.reverse() });
+    }
+    if (typeof input.text !== "string" || !input.text.trim() || input.text.trim().length > 2000) return bad("Enter a message of 1 to 2000 characters.");
+    const requestId = crypto.randomUUID();
+    try {
+      await database.prepare(`INSERT INTO app_chat_job(id,user_id,question,status,created_at,updated_at)
+        VALUES(?,?,?,'queued',?,?)`).bind(requestId, userId, input.text.trim(), now, now).run();
+    } catch (e) {
+      if (String(e).includes("UNIQUE")) return bad("The agent is still answering your previous message.", 409);
+      throw e;
+    }
+    let started = false;
+    try { started = (await dispatch(env, chatWorkflow, { app_request: requestId, chat_id: `app:${requestId}` })).status === 204; }
+    catch { /* mark the request failed below */ }
+    if (!started) {
+      await database.prepare("UPDATE app_chat_job SET status='failed',answer='The agent could not start. Please try again.',updated_at=? WHERE id=?")
+        .bind(Date.now(), requestId).run();
+      return bad("The agent could not start. Please try again.", 502);
+    }
+    return Response.json({ id: requestId, status: "queued" }, { status: 202 });
+  }
+
   function route(request, env, path) {
+    if ((path === "/api/app/chat" || path === "/api/app/chat/history") && request.method === "POST"
+        || path.startsWith("/api/app/chat/job/")) return appChat(request, env, path);
     if (path === "/api/ai" || path === "/api/chat/completions") return runAI(request, env);
     if (path === "/api/models") return listModels(request, env);
     if (path === "/api/approval") return saveApproval(request, env);

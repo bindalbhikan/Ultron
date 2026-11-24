@@ -2,6 +2,11 @@
 
 **When**: on a plain-text Telegram message from an allowed chat (`agent-chat.yml`, `workflow_dispatch`
 started by the worker's `askAgent`; inputs `text`, `chat_id`, `reply_to`). Never on a schedule.
+Also started by authenticated app chat with `app_request`: only a request id is passed to GitHub;
+the question and plain-text reply stay in D1 `app_chat_job`, isolated by the signed-in user.
+App chat uses the same model/fallback chain and private conversation history, with only read-only
+run/order/business/knowledge tools. It has no owner action tools or shared-note writes, and never
+sends the answer or failure to Telegram. The worker rechecks access when the agent claims its request.
 
 * The owner writes to the Telegram bot in plain words; Ultron (`src/ultron/agents/chat.py`) reads what
   it needs with its tools (`[chat] tools` in `agent.toml`: run history and logs, OMSGuru, the Myntra

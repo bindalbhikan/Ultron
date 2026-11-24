@@ -23,6 +23,7 @@ The database is called `ultron`. Its tables come from `services/app_api/migratio
 
 | Migration | Tables | Used by |
 |---|---|---|
+| `0007_app_chat.sql` | `app_chat_job`: private per-user questions, answers and processing state; one pending request per user | app API and Telegram worker; Python agent processes a request id |
 | `0001_identity.sql` | `user`, `session`, `account`, `verification`, `rate_limit` (better-auth), `app_role`, `app_access`, `app_audit` | app API |
 | `0006_api_keys.sql` | `api_key` (AES-GCM, `KEYS_SECRET`), `agent_model` | the app API adds / lists, the worker decrypts for the agent |
 | `0005_phone_agent.sql` | `phone_agent`: Agent mode phones (device, SHA-256 of the token, last seen, revoked) | the app API makes / revokes, the Telegram worker checks |
@@ -52,6 +53,7 @@ through this API, with a signed-in user's session and permissions.
 | `GET /api/workspace` | `app.access` | the live workspace from the Telegram worker (`worker/agent.js` `/api/app/workspace`, 2 minute cache): GitHub workflows with their last run, the last 40 runs, pending approvals, the reports' publish times, portal sessions and the Agent mode phone (time only, never cookies), and the cron schedule |
 | `POST /api/workflows/run` (action) | `workflows.run` | start a working in the worker's `AGENT_ACTIONS`; the tap is the approval; Telegram is told who started it; audited |
 | `POST /api/approvals/decide` (id, approve) | `approvals.decide` | approve or decline a pending agent proposal, as a tap on Telegram would; audited |
+| `GET/POST /api/agent/chat` (text) | `agent.chat` | last 30 private questions / queue a question of 1-2000 characters; identity comes from the session, never the body; the existing Python agent answers asynchronously |
 | `GET /api/agent/memory?kind=&search=` | `agent.tools.read` | the agent's notes, newest first (200), and the count of each kind |
 | `DELETE /api/agent/memory/<id>` | `memory.manage` | drop one note (audited) |
 | `GET /api/admin/phones` | `phone.manage` | the SMS-only phones, newest first: name, first / last seen, SMS sent, app version, blocked |
@@ -62,7 +64,14 @@ The app API reaches the worker through the `OPS` service binding (in `wrangler.j
 `WORKER_TOKEN` (the worker's `DASHBOARD_TOKEN`); the app never holds that token. Not through `WORKER_URL`:
 one Worker fetching another Worker of the same account by its workers.dev URL gets Cloudflare's 404
 (error 1042), which the app showed as "The operations service said 404". `WORKER_URL` is only the fallback. The other operational routes
-(`/api/agent/chat` ...) check the permission and then answer 503 until their services are connected.
+(`/api/agent/tools`, `/api/agent/execute` ...) check the permission and then answer 503 until their services are connected.
+
+App chat uses the existing `agent-chat.yml` workflow. Only the request id is dispatched to GitHub;
+the message stays in D1. A worker-authenticated job claim rechecks the account's active status and
+chat permission. The Python agent uses read-only tools (runs, orders, business facts and knowledge),
+private `app:<user>` history, and no Telegram notifications or owner action/shared-note write tools.
+Workflows and approvals stay in their separately authorised screens. Requests expire after 30 minutes;
+dispatch failures and expired requests are shown as failures, and a result can be saved only once.
 
 What the panel saves reaches the agent within 5 minutes. The order is: the `AGENT_MODEL*` env vars first,
 then the panel, then `[model]` in `agent.toml` (`ultron.core.llm.settings`, `src/ultron/core/models.py`).

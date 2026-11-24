@@ -31,7 +31,9 @@ button on the Myntra menu, or run the workflow. About 1-2 minutes for ~5,900 sty
   the ULTRON app (`apps/ultron_app`, Agent mode on), which checks them on the phone's mobile line
   (`core/phone.py`, worker `/api/phone/*`). Any run that gets 403 for most styles hands them to the
   phone too; `MYNTRA_ZERO_TD_VIA=phone` always does. The phone has `MYNTRA_ZERO_TD_PHONE_MINUTES`
-  (40) to answer.
+  (40) to reconnect and answer within one shared budget. A stale heartbeat no longer fails immediately:
+  the bot polls until the phone returns, then queues the work with the time remaining. If the phone
+  stays offline, no job is queued and the run names the missing phone; results are never fabricated.
   Styles the phone could not answer (its line dropped: `UnknownHostException`, or HTTP 403) are asked
   for again, up to `MYNTRA_ZERO_TD_PHONE_RETRIES` (2) times after a 1 / 2 minute pause (since 16 Nov 2026).
 * Fails (Telegram alert) when myntra.com answered no style at all (blocked, site down); exit 1

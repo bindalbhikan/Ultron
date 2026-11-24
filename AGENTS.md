@@ -106,6 +106,11 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   (error 1042; the app showed "The operations service said 404", 23 Nov 2026).
 - Daily OTP sheet (team sheet): the agent's rows show only the phone's user name in the name column, no
   `Agent ·` (owner, 23 Nov 2026); `services/sms_sheet/Code.gs` knows its rows by the note `ULTRON app` on that cell.
+- App chat is private per user and read-only: `app_chat_job` in D1, `agent-chat.yml` dispatched with a request
+  id only. Never give app chat Telegram's owner action or shared-note write tools; actions use the app's
+  separately authorised Workflows and Approvals routes. App replies never go to Telegram.
+- Phone jobs share one reconnect/processing deadline: a stale heartbeat is polled within the existing
+  wait budget, and work is queued only after the phone reconnects. An offline phone never supplies zero data.
 
 - The project lives at **`D:\ULTRON`**, a normal Git clone off Google Drive (since 22 Nov 2026; the old Drive
   folder `AGENT-ULTRON-BINDAL` is no longer worked in: Drive's `desktop.ini` broke Git refs there).

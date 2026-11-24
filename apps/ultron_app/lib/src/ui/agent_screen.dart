@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,8 +18,38 @@ class AgentScreen extends ConsumerStatefulWidget {
 class _AgentScreenState extends ConsumerState<AgentScreen> {
   final _message = TextEditingController();
   bool _busy = false;
+  bool _refreshing = false;
+  Timer? _poll;
+
+  @override
+  void initState() {
+    super.initState();
+    _poll = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (_busy ||
+          _refreshing ||
+          !(ref
+                  .read(workspaceProvider)
+                  .asData
+                  ?.value
+                  .messages
+                  .any((m) => m.pending) ??
+              false)) {
+        return;
+      }
+      _refreshing = true;
+      try {
+        await ref.read(workspaceProvider.notifier).refresh();
+      } catch (_) {
+        // A temporary network failure keeps the conversation and retries on the next tick.
+      } finally {
+        _refreshing = false;
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _poll?.cancel();
     _message.dispose();
     super.dispose();
   }

@@ -168,4 +168,7 @@ class WorkspaceController extends AsyncNotifier<WorkspaceData> {
 
   Future<void> sendMessage(String text) =>
       _perform('message', (repository) => repository.sendMessage(text));
+
+  Future<void> refresh() =>
+      _perform('refresh', (repository) => repository.loadWorkspace());
 }

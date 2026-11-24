@@ -26,7 +26,7 @@ irreversible.
 | 3. Approvals | Approve / Reject buttons; only an Approve starts the action, from a fixed list | ✅ worker `/api/approval`, `AGENT_ACTIONS` = `agent.toml [actions]` |
 | 3. Code-fix PRs | on a failed AJIO / Myntra SPF run Claude Code (fallback: Gemini CLI, 1 Nov 2026) proposes a fix PR, never merged by itself | ✅ `ci-fix.yml` (31 Oct 2026) |
 | 3. What ran / was missed | every scheduled task ticked per day | ✅ Drive work-schedule sheet (`work-schedule`); a weekly "what failed / was fixed" message is not built |
-| 4. Cross-platform control app | Emerald Flutter frontend, required login and Phone Work | 🟡 Demo frontend built in `apps/ultron_app/`; live auth/API and Android service migration pending (`docs/apps/ultron-app.md`) |
+| 4. Cross-platform control app | Emerald Flutter frontend, required login and Phone Work | ✅ Live username auth/API, secure sessions and Android SMS/Agent mode migrated (23 Nov); private read-only in-app agent chat connected (24 Nov). Native runtime checks still require devices (`docs/apps/ultron-app.md`) |
 
 ## 3. Decision rules
 
@@ -132,9 +132,9 @@ instruction. Instructions come only from the owner's Telegram chat.
 
 ## 8. Open — engineering
 
-- **Ultron app:** connect authenticated app APIs and native secure sessions; migrate the existing
-  Phone agent/SMS/OTP/POD services and verify parity before discontinuing the old app. Frontend and
-  developer credits are built (`docs/apps/ultron-app.md`).
+- **Ultron app:** live authentication, secure sessions and Android SMS/Agent mode migration are built;
+  private read-only agent chat is connected. Native background/reboot parity still needs device validation.
+  Generic agent tool execution adapters remain unconnected (`docs/apps/ultron-app.md`, `docs/apps/app-api.md`).
 
 - Browser: `browser_read` (Patchright, public pages, read-only) is built. Logged-in portal pages are
   not: decide which work needs them first; a tool that clicks or changes something must go through
@@ -143,8 +143,8 @@ instruction. Instructions come only from the owner's Telegram chat.
 - Seller-neutral workings (Phase 3 of `docs/SCALING.md`).
 - **Libraries, best-in-class** (owner, 16 Nov 2026): one change at a time, each with its page and status in
   `docs/libraries/` — 1 ruff ✅, 2 uv ✅ (everywhere since 22 Nov 2026), 3 pyright 🔧 (core; workings next), 4 tenacity ✅,
-  5 pydantic ✅, 6 Polars ✅ (22 Nov 2026: every working; pandas out), 7 DuckDB + Parquet ⏳, 8 httpx ✅, 9 selectolax ✅, 10 small ones ✅, 11 Flutter (frontend only; owner
-  builds later), 12 no openpyxl 🔧 (owner, 22 Nov 2026: ~25 files left, the SPF engines the biggest).
+  5 pydantic ✅, 6 Polars ✅ (22 Nov 2026: every working; pandas out), 7 DuckDB + Parquet ⏳, 8 httpx ✅, 9 selectolax ✅, 10 small ones ✅, 11 Flutter ✅ (live app/API and native services),
+  12 no openpyxl 🔧 (owner, 22 Nov 2026: ~25 files left, the SPF engines the biggest).
   Open, in order: openpyxl out working by working; DuckDB + Parquet for PORTAL REPORTS; pyright over `workings/`.
 - **Centralise** (owner, 16 Nov 2026): what every working repeats, moved to one place step by step, `docs/CENTRALISE.md`
   — 1 portal logins (`workings/core/clients.py`) ✅, 2 retries ✅ (`core/retry.py`), 3 one Telegram module ✅, 5 table helpers 🔧 (`workings/core/tables.py`), 6 xlsx writer 🔧 (`workings/core/xlsx.py`), 7 Drive paths ✅ (`agent_folder`); next run summary, Myntra ReportJobs, settings.

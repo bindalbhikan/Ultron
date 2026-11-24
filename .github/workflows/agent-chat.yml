@@ -6,10 +6,13 @@ on:
     inputs:
       text:
         description: "The owner's message"
-        required: true
+        default: ""
       chat_id:
         description: "Telegram chat to answer in"
         required: true
+      app_request:
+        description: "Private app chat request id (message read from the worker)"
+        default: ""
       reply_to:
         description: "Telegram message id answered"
         default: ""
@@ -56,13 +59,19 @@ jobs:
       AGENT_MODEL: ${{ vars.AGENT_MODEL }}
       # the message reaches the shell only as a variable, never pasted into the script
       IN_TEXT: ${{ inputs.text }}
+      IN_APP_REQUEST: ${{ inputs.app_request }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
         with:
           browser: "true"
       - name: Answer
-        run: bash scripts/github/ci_run.sh agent-chat --text "$IN_TEXT"
+        run: |
+          if [ -n "$IN_APP_REQUEST" ]; then
+            bash scripts/github/ci_run.sh agent-chat --app-request "$IN_APP_REQUEST" --no-telegram
+          else
+            bash scripts/github/ci_run.sh agent-chat --text "$IN_TEXT"
+          fi
       - name: Upload run output (encrypted)
         if: always()
         uses: actions/upload-artifact@v4

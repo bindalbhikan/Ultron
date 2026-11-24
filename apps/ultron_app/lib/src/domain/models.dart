@@ -135,10 +135,12 @@ class AgentMessage {
     required this.text,
     required this.fromOwner,
     this.sources = const [],
+    this.pending = false,
   });
   final String text;
   final bool fromOwner;
   final List<String> sources;
+  final bool pending;
 }
 
 /// One start time of the worker's cron schedule (worker/src/worker.js SCHEDULE).

@@ -2,6 +2,7 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { createTestHarness, unstable_splitSqlQuery, type TestHarness } from 'wrangler';
+import { makeAgent } from '../../../worker/agent.js';
 
 // The real Worker as `wrangler dev` runs it (its wrangler.jsonc, bundling and runtime), local D1.
 let server: TestHarness;
@@ -92,7 +93,7 @@ test('admin approves roles, revokes sessions immediately and retains the last ad
   assert.equal(role.status,200);
   assert.equal((await call('/api/me','GET',undefined,viewer)).status,401);
   const refreshed=await signin('member@example.test');
-  assert.equal((await call('/api/agent/chat','POST',{},refreshed)).status,503);
+  assert.equal((await call('/api/agent/chat','POST',{},refreshed)).status,400);
   assert.equal((await call(`/api/admin/users/${member!.id}`,'PATCH',{status:'disabled',roleId:'viewer',revision:2},adminToken)).status,200);
   assert.equal((await call('/api/me','GET',undefined,refreshed)).status,401);
   const audit=await db.prepare('SELECT action FROM app_audit ORDER BY created_at,rowid').all();
@@ -253,4 +254,57 @@ test('workspace, run and decide check the role, then reach the operations servic
   const viewerToken=await signin2('owner.two','Eight@8c');            // a viewer: app.access only
   assert.equal((await call('/api/workflows/run','POST',{action:'sale'},viewerToken)).status,403);
   assert.equal((await call('/api/approvals/decide','POST',{id:'abcdef123456',approve:true},viewerToken)).status,403);
+});
+
+test('app chat binds requests to the authenticated user and validates message length',async()=>{
+  const token=await signin('admin@example.test');
+  const actor=await db.prepare("SELECT id FROM user WHERE email='admin@example.test'").first<{id:string}>();
+  const sent=await call('/api/agent/chat','POST',{text:'Hello',userId:'someone-else'},token);
+  assert.equal(sent.status,202);
+  assert.equal((await sent.json() as {id:string}).id,actor!.id);
+  const history=await call('/api/agent/chat','GET',undefined,token);
+  assert.equal(history.status,200);
+  assert.equal((await history.json() as {messages:{question:string}[]}).messages[0].question,actor!.id);
+  assert.equal((await call('/api/agent/chat','POST',{text:' '.repeat(3)},token)).status,400);
+  assert.equal((await call('/api/agent/chat','POST',{text:'x'.repeat(2001)},token)).status,400);
+  assert.equal((await call('/api/agent/chat')).status,401);
+});
+
+test('real chat routes isolate users, serialize requests and persist answers exactly once',async()=>{
+  const one=(await signup('chatone@example.test'))!;
+  const two=(await signup('chattwo@example.test'))!;
+  for (const u of [one,two]) await db.prepare("UPDATE app_access SET status='active',role_id='admin' WHERE user_id=?").bind(u.id).run();
+  const agent=makeAgent({repo:'example/test'});
+  const env={AGENT_DB:db,AGENT_TOKEN:'test-token',GITHUB_TOKEN:'test-github'};
+  const request=(path:string,method:string,input?:Record<string,unknown>)=>agent.route(new Request(`https://worker.test${path}`,{
+    method,headers:{Authorization:'Bearer test-token','Content-Type':'application/json'},
+    ...(input?{body:JSON.stringify(input)}:{})}),env,path)! as Promise<Response>;
+  const original=globalThis.fetch;
+  const dispatched:Record<string,unknown>[]=[];
+  globalThis.fetch=(async(_url:unknown,init?:RequestInit)=>{dispatched.push(JSON.parse(String(init?.body)));return new Response(null,{status:204});}) as typeof fetch;
+  try {
+    const sent=await request('/api/app/chat','POST',{userId:one.id,text:'Private question'});
+    assert.equal(sent.status,202);
+    const {id}=await sent.json() as {id:string};
+    assert.ok(!JSON.stringify(dispatched).includes('Private question'));
+    assert.equal((await request('/api/app/chat','POST',{userId:one.id,text:'Another'})).status,409);
+    assert.deepEqual(await (await request('/api/app/chat/history','POST',{userId:two.id})).json(),{messages:[]});
+    const jobPath=`/api/app/chat/job/${id}`;
+    assert.equal((await request(jobPath,'GET')).status,200);
+    assert.equal((await request(jobPath,'GET')).status,404);
+    assert.equal((await request(jobPath,'PUT',{status:'completed',answer:'Private answer'})).status,200);
+    assert.equal((await request(jobPath,'PUT',{status:'completed',answer:'Replacement'})).status,409);
+    const history=await (await request('/api/app/chat/history','POST',{userId:one.id})).json() as {messages:{answer:string}[]};
+    assert.equal(history.messages[0].answer,'Private answer');
+    const next=await request('/api/app/chat','POST',{userId:one.id,text:'Next'});
+    const nextId=(await next.json() as {id:string}).id;
+    await db.prepare("UPDATE app_access SET status='disabled' WHERE user_id=?").bind(one.id).run();
+    assert.equal((await request(`/api/app/chat/job/${nextId}`,'GET')).status,404);
+    assert.equal((await request('/api/app/chat/history','POST',{userId:one.id})).status,403);
+    const expired=await request('/api/app/chat','POST',{userId:two.id,text:'Wait'});
+    const expiredId=(await expired.json() as {id:string}).id;
+    await db.prepare('UPDATE app_chat_job SET created_at=? WHERE id=?').bind(Date.now()-31*60000,expiredId).run();
+    const expiredHistory=await (await request('/api/app/chat/history','POST',{userId:two.id})).json() as {messages:{status:string}[]};
+    assert.equal(expiredHistory.messages[0].status,'failed');
+  } finally {globalThis.fetch=original;}
 });

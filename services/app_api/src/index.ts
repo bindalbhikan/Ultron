@@ -359,7 +359,7 @@ async function worker(env: Env, path: string, init: RequestInit = {}) {
     r = env.OPS ? await env.OPS.fetch(url, req) : await fetch(url, req);
   } catch { throw new HttpError(502, 'The operations service did not answer. Try again.'); }
   const data = await r.json().catch(() => ({})) as Record<string, unknown>;
-  if (!r.ok) throw new HttpError(r.status === 404 ? 404 : 502, String(data.error || `The operations service said ${r.status}.`));
+  if (!r.ok) throw new HttpError([400, 403, 404, 409, 413, 429].includes(r.status) ? r.status : 502, String(data.error || `The operations service said ${r.status}.`));
   return data;
 }
 async function workflowRun(request: Request, env: Env, actor: Identity) {
@@ -371,6 +371,17 @@ async function workflowRun(request: Request, env: Env, actor: Identity) {
   await env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'workflow.run',?,?)`)
     .bind(crypto.randomUUID(), actor.id, input.action, JSON.stringify({ inputs })).run();
   return json(out);
+}
+async function appChat(request: Request, env: Env, actor: Identity) {
+  requirePermission(actor, 'agent.chat');
+  if (request.method === 'GET') {
+    return json(await worker(env, '/api/app/chat/history', { method: 'POST', body: JSON.stringify({ userId: actor.id }) }));
+  }
+  const input = await body(request);
+  if (typeof input.text !== 'string' || !input.text.trim() || input.text.trim().length > 2000) {
+    throw new HttpError(400, 'Enter a message of 1 to 2000 characters.');
+  }
+  return json(await worker(env, '/api/app/chat', { method: 'POST', body: JSON.stringify({ userId: actor.id, text: input.text.trim() }) }), 202);
 }
 async function approvalDecide(request: Request, env: Env, actor: Identity) {
   requirePermission(actor, 'approvals.decide');
@@ -527,6 +538,7 @@ async function route(request: Request, env: Env) {
     return json(await worker(env, '/api/app/workspace'));
   }
   if (path === '/api/workflows/run' && request.method === 'POST') return workflowRun(request, env, user);
+  if (path === '/api/agent/chat' && ['GET', 'POST'].includes(request.method)) return appChat(request, env, user);
   if (path === '/api/approvals/decide' && request.method === 'POST') return approvalDecide(request, env, user);
   const noteMatch = path.match(/^\/api\/agent\/memory\/([a-f0-9]{6,16})$/);
   if (noteMatch && request.method === 'DELETE') return forgetNote(env, user, noteMatch[1]);

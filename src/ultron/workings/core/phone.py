@@ -47,16 +47,31 @@ def online(minutes: int = 20) -> bool:
 
 def run_job(kind: str, items: list, wait_minutes: float = 40, poll_seconds: int = 20) -> dict:
     """Queue a job for the phone and wait for its answers. Raises PhoneUnavailable when the phone
-    has not asked for work lately, or does not take / finish the job in time."""
-    if not online():
-        raise PhoneUnavailable("the phone has not asked for work in the last 20 minutes (Agent mode off?)")
+    does not reconnect, take or finish the job within one shared time budget."""
+    if wait_minutes <= 0 or poll_seconds <= 0:
+        raise ValueError("phone wait and poll intervals must be positive")
+    deadline = time.monotonic() + wait_minutes * 60
+    waiting_logged = False
+    while True:
+        try:
+            ready = online()
+        except (*http.FAILED, ValueError):
+            ready = False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise PhoneUnavailable(f"the phone did not reconnect within {wait_minutes:.0f} minutes (check Agent mode and its connection)")
+        if ready:
+            break
+        if not waiting_logged:
+            log.warning("Agent mode phone is offline; waiting within the %.0f minute job budget", wait_minutes)
+            waiting_logged = True
+        time.sleep(min(poll_seconds, remaining))
     job = f"{kind}-{uuid.uuid4().hex[:10]}"
     _call("job", body={"id": job, "kind": kind, "items": items})
     log.info("Phone job %s: %d items queued", job, len(items))
-    deadline = time.time() + wait_minutes * 60
     taken_logged = False
-    while time.time() < deadline:
-        time.sleep(poll_seconds)
+    while time.monotonic() < deadline:
+        time.sleep(min(poll_seconds, deadline - time.monotonic()))
         try:
             got = _call("collect", {"job": job})
         except (*http.FAILED, ValueError) as exc:   # the phone's work is not lost on one failed look

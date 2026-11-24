@@ -3,5 +3,6 @@
 - lib/src/domain immutable records, data live CloudflareRepository and Android bridges, state Riverpod, theme/ui design; router guards routes, app_info centralizes versions.
 - Signed-in user stays signed in using device key store and 30-day server session; signed-in users never see SMS only. SMS only applies to unsigned phones and opens automatically when enabled.
 - Android SMS only and Agent mode continue in background/after reboot through KeepAlive.kt and related services. Agent mode uses revocable phone token from app API and existing Myntra phone lookup exception.
+- App chat uses D1 app_chat_job and request-id-only agent-chat dispatch; private app:user history and read-only runs/OMSGuru/business/knowledge tools. No owner action/shared-note write tools or Telegram delivery; pending replies poll every five seconds.
 - UI authorization is backed by server checks. No demo login, sample records or credentials in app. Preserve emerald/mint design specified in docs/apps/ultron-app.md.
 - Read docs/apps/ultron-app.md and apps/ultron_app/README.md for feature requirements; commands in `mem:suggested_commands`, service boundaries in `mem:services/core`.

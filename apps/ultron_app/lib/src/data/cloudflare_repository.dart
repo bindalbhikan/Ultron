@@ -70,6 +70,7 @@ class CloudflareRepository extends UltronRepository {
       if (decoded is! Map<String, dynamic>) throw const FormatException();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         if (response.statusCode == 401 && authenticated) {
+          _workspace = null;
           _token = null;
           _user = null;
           await _store.clear();
@@ -152,6 +153,7 @@ class CloudflareRepository extends UltronRepository {
 
   @override
   Future<void> signOut() async {
+    _workspace = null;
     final token = _token;
     ++_epoch;
     _token = null;
@@ -478,6 +480,9 @@ class CloudflareRepository extends UltronRepository {
   @override
   Future<WorkspaceData> loadWorkspace() async {
     final d = (await _request('GET', '/api/workspace')).data;
+    final chat = _user?.allows('agent.chat') == true
+        ? (await _request('GET', '/api/agent/chat')).data
+        : <String, dynamic>{};
     List<Map<String, dynamic>> list(String k) => (d[k] as List? ?? const [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
@@ -547,7 +552,18 @@ class CloudflareRepository extends UltronRepository {
             available: c['available'] == true,
           ),
       ],
-      messages: _workspace?.messages ?? const [],
+      messages: [
+        for (final message in (chat['messages'] as List? ?? const [])) ...[
+          AgentMessage(text: message['question'] as String, fromOwner: true),
+          AgentMessage(
+            text: (message['answer'] as String? ?? '').isNotEmpty
+                ? message['answer'] as String
+                : 'Ultron is answering…',
+            fromOwner: false,
+            pending: ['queued', 'running'].contains(message['status']),
+          ),
+        ],
+      ],
       schedule: [
         for (final s in list('schedule'))
           if (RegExp(r'^(\d{1,2}:\d{2} [AP]M)\s*(.*)$')
@@ -600,8 +616,8 @@ class CloudflareRepository extends UltronRepository {
   }
 
   @override
-  Future<WorkspaceData> sendMessage(String text) async =>
-      throw const FrontendException(
-        'Chat with the agent on Telegram for now; in-app chat is coming next.',
-      );
+  Future<WorkspaceData> sendMessage(String text) async {
+    await _request('POST', '/api/agent/chat', body: {'text': text.trim()});
+    return loadWorkspace();
+  }
 }
