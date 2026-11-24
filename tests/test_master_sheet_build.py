@@ -40,7 +40,7 @@ def test_rebuild_keeps_derives_and_removes():
     assert kept["DESIGN-NO"] == "D-1" and kept["Brand"] == "Fashfun"
     assert new["SIZE SKU"] == "DRESS-A-1-M" and new["MY SKU"] == "DRESS-A-1" and new["MASTER STYLE CODE"] == "DRESS-A-1"
     assert new["DESIGN-NO"] == "D-1" and new["COLOR"] == "Red"   # from the same style
-    assert new["Brand"] == "Fashfun"                            # by the listing SKU prefix, not OMSGuru's "FSH"
+    assert new["Brand"] is None                                 # only a portal sheet names a brand, not OMSGuru's "FSH"
     assert new["FLIPKART FSN"] == "FSN_NEW"                     # nothing on the sheet: OMSGuru's
     assert rows["B0ASIN"]["AMAZON ASIN"] == "B0ASIN" and rows["B0ASIN"]["Channel Name"] == "AMAZON DF"
     assert gone["Channel Listing SKU Code"].to_list() == ["OLD-1"] and gone[build.REMOVED_ON][0] == "2026-11-24"
@@ -75,24 +75,39 @@ def _sheet_rows(n=6, prefix="FSH", brand="Fashfun", channel="AJIO"):
              "MASTER SKU": f"DRESS-Q-1-{i}", "MASTER STYLE CODE": "DRESS-Q-1"} for i in range(n)]
 
 
-def test_wrong_brand_repaired_right_one_kept():
+def test_brand_only_from_the_portal_sheet():
     export = _export([
-        ("37864", "X - Meesho", "FSH-DRESS-Q-1-9", "M9", "DRESS-Q-1-9", "FSH", "", "", ""),          # code as brand
+        ("37864", "X - Meesho", "FSH-DRESS-Q-1-9", "M9", "DRESS-Q-1-9", "FSH", "", "", ""),          # new, no portal
         ("37863", "X - Flipkart", "SY-HD-1-M", "LSTSY", "HD-1-M", "", "", "", ""),                   # Shopsy on sheet
         ("34958", "X - Ajio", "FSH-DRESS-Q-1-0", "FSH0", "DRESS-Q-1-0", "", "", "", ""),             # right: kept
-    ])
-    export = export.with_columns(pl.Series("Channel Listing Title", ["", "Casual Printed Women Yellow Top",
-                                                                     "Murcia Women Dress"]))
+        ("64106", "X - MYNTRA EXIM", "TOP-CU-A33-L", "E1", "TOP-CU-A33-L", "FSH", "", "", ""),       # report: Chemistry
+    ]).with_columns(pl.Series("Channel Listing Title", ["Fashfun Dress", "", "Murcia Women Dress", "Fashfun Top"]))
     old = _old(_sheet_rows() + [
         {"Channel Listing SKU Code": "SY-HD-1-M", "Channel Listing Id": "LSTSY", "Channel Name": "FLIPKART",
          "Brand": "Shopsy", "MY SKU": "HD-1", "SIZE SKU": "HD-1-M", "MASTER SKU": "HD-1-M", "MASTER STYLE CODE": "HD-1"},
-        {"Channel Listing SKU Code": "SY-HD-1-M", "Channel Listing Id": "B0X", "Channel Name": "AMAZON DF",
-         "Brand": "Fashfun", "MY SKU": "HD-1", "SIZE SKU": "HD-1-M", "MASTER SKU": "HD-1-M", "MASTER STYLE CODE": "HD-1"}])
-    data, _, _, _ = build.rebuild(old, None, build.from_omsguru(export), {}, None, TODAY)
+        {"Channel Listing SKU Code": "TOP-CU-A33-L", "Channel Listing Id": "E1", "Channel Name": "MYNTRA EXIM",
+         "Brand": "Fashfun", "MY SKU": "TOP-CU-A33", "SIZE SKU": "TOP-CU-A33-L", "MASTER SKU": "TOP-CU-A33-L",
+         "MASTER STYLE CODE": "TOP-CU-A33"}])
+    myntra = build.myntra_ids({"EXIM": pl.DataFrame({"seller sku code": ["TOP-CU-A33-L"], "style id": ["48506126"],
+                                                      "sku code": ["X1"], "brand": ["Chemistry"]})})
+    data, _, _, _ = build.rebuild(old, None, build.from_omsguru(export), {}, myntra, TODAY)
     brand = dict(zip(data["Channel Listing SKU Code"], data["Brand"]))
-    assert brand["FSH-DRESS-Q-1-9"] == "Fashfun"             # the prefix's brand, not OMSGuru's "FSH"
-    assert brand["SY-HD-1-M"] == "Fashfun"                   # Shopsy is no brand: the same SKU's brand on Amazon
-    assert brand["FSH-DRESS-Q-1-0"] == "Fashfun"             # a right brand on the sheet is never changed
+    assert brand["TOP-CU-A33-L"] == "Chemistry"              # Myntra's report wins over the sheet's "Fashfun"
+    assert brand["FSH-DRESS-Q-1-9"] is None                  # no portal sheet: not from OMSGuru, title or prefix
+    assert brand["SY-HD-1-M"] is None                        # Shopsy is no brand, and no portal sheet names one
+    assert brand["FSH-DRESS-Q-1-0"] == "Fashfun"             # a right brand on the sheet stays
+
+
+def test_portal_sheet_values_win_and_need_data_lists_gaps():
+    export = _export([("37864", "X - Meesho", "FSH-DRESS-Q-1-9", "M9", "DRESS-Q-1-9", "", "", "", "")])
+    given = build.given_rows([pl.DataFrame({"channel listing sku code": ["FSH-DRESS-Q-1-9"], "Channel Name": ["meesho"],
+                                            "BRAND": ["Fashfun"], "MEESHO CATALOG ID": ["C77"]})])
+    data, _, _, _ = build.rebuild(_old(_sheet_rows()), None, build.from_omsguru(export), {}, None, TODAY, None, given)
+    row = data.to_dicts()[0]
+    assert row["Brand"] == "Fashfun" and row["MEESHO CATALOG ID"] == "C77"
+    need = build.need_data(data)
+    assert need.columns[0] == build.MISSING and "MEESHO PRODUCT ID" in need[build.MISSING][0]
+    assert "Brand" not in need[build.MISSING][0]
 
 
 def test_portal_listing_missing_in_omsguru_is_unmapped():

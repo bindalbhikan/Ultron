@@ -10,11 +10,12 @@ One row per channel listing OMSGuru has (Channel Listings > Download Mapped Chan
   MASTER SKU / MASTER STYLE CODE from the owner's "Master Sku" sheet (else SIZE SKU / MY SKU), DESIGN-NO / COLOR /
   LAUNCH DATE / PORTAL LISTING DATE from the other rows of the same style only when they all agree (12% of the
   styles have more than one colour; DESIGN-NO else "Fabric Code", LAUNCH DATE first from "Launch Date & Size Count");
-* Brand: a wrong one (a SKU brand code like "FSH", or "Shopsy", a Flipkart marketplace; owner, 24 Nov 2026) or a
-  blank one is set from, in order: the portal's file (Myntra listing report, Flipkart listing file), the listing
-  title's first words (OMSGuru "Channel Listing Title"; agreed with the owner's Brand on 99% of the rows),
-  the same listing SKU on another channel, the brand nearly every row of the listing SKU's prefix has (FSH-
-  Fashfun); else blank. A right Brand already on the sheet is never changed;
+* Brand only from the portal's own sheet (owner, 24 Nov 2026: "brand confirmation portal ki sheet se hi"): a Myntra
+  listing takes the brand of its account's Myntra listing report, a Flipkart one the Flipkart listing file's (spelt
+  as the sheet spells it: FashFun -> Fashfun). A channel with no portal sheet keeps the Brand the sheet has, unless
+  it is wrong (a SKU brand code like "FSH", or "Shopsy", a Flipkart marketplace): that one, and a new listing's, is
+  left blank. Nothing is taken from titles, other channels or SKU prefixes (24 Nov 2026: that put "Fashfun" on
+  BINDAL EXIM, which has no such brand);
 * portal ids, the portal's own file first, then the value on the sheet, then OMSGuru: Myntra style id / SKU code
   from each account's Myntra listing report (seller SKU code = the listing SKU), Flipkart FSN from the Flipkart
   listing file (else OMSGuru "Extra Param"; OMSGuru's was wrong on 358 of 377 rows where they differed), Amazon
@@ -51,7 +52,6 @@ KEY = ["Channel Name", "Channel Listing SKU Code", "Channel Listing Id"]
 REMOVED_ON = "REMOVED ON"
 OMS_SKU = "Product SkuCode (Reference Only)"
 NOT_BRANDS = {"SHOPSY"}             # a marketplace, not a brand (owner, 24 Nov 2026)
-TITLE_ALIASES = {"fashfun clothing": "fashfun"}      # AJIO titles: "FASHFUN CLOTHING : Women ..."
 PREFIX = r"^([A-Za-z]+)-"
 # the extra columns a source frame for derive() may carry (null when it has none)
 SOURCE = {"_oms_sku": pl.Utf8, "_brand": pl.Utf8, "_title": pl.Utf8, "_fsn": pl.Utf8, "_asin": pl.Utf8,
@@ -158,39 +158,29 @@ class Context:
                .group_by("p", "Brand").len().sort("len", descending=True).unique("p", keep="first"))
         self.codes = {p for p, b in zip(top["p"], top["Brand"]) if b.upper() != p} | NOT_BRANDS
         valid = old_all.filter(self.is_brand(pl.col("Brand")))
-        self.brands = sorted({b for b in valid["Brand"].to_list()}, key=len, reverse=True)
+        # a portal's brand spelt as the sheet spells it (Flipkart's "FashFun" -> "Fashfun")
+        spell = valid.group_by(pl.col("Brand").str.to_lowercase().alias("_low"), "Brand").len().sort(
+            "len", descending=True).unique("_low", keep="first")
+        self.spelling = dict(zip(spell["_low"].to_list(), spell["Brand"].to_list()))
         known = old_all.filter(pl.col(style).is_not_null())
-        ms = sheets.get("Master Sku")
+        ms = sheets.get("MASTER SKU")
         self.master_sku = _lookup(ms, "SIZE SKU", "MASTER SKU", "_ms", "SIZE SKU").join(
             _lookup(ms, "SIZE SKU", "MASTER STYLE CODE", "_msc", "SIZE SKU"), on="SIZE SKU", how="left")
         self.style = (_mode_by(known, style, "DESIGN-NO").join(_mode_by(known, style, "COLOR"), on=style, how="full",
                                                                  coalesce=True)
                       .join(_mode_by(known, style, "LAUNCH DATE"), on=style, how="full", coalesce=True)
-                      .join(_lookup(sheets.get("Fabric Code"), "SKU", "FABRCI CODE", "_fabric", style), on=style,
+                      .join(_lookup(sheets.get("FABRIC CODE"), "SKU", "FABRCI CODE", "_fabric", style), on=style,
                             how="full", coalesce=True)
-                      .join(_lookup(sheets.get("Launch Date & Size Count"), "SKU", "DATE", "_launch", style), on=style,
+                      .join(_lookup(sheets.get("LAUNCH DATE & SIZE COUNT"), "SKU", "DATE", "_launch", style), on=style,
                             how="full", coalesce=True))
         self.listing_date = _mode_by(known.with_columns(pl.concat_str("Channel Name", style, separator="|").alias("_cs")),
                                      "_cs", "PORTAL LISTING DATE")
-        self.same_sku_brand = _mode_by(valid, "Channel Listing SKU Code", "Brand").rename({"_m_Brand": "_sku_brand"})
-        # a prefix's brand when at least 95% of its rows with a right brand have it
-        by_prefix = (valid.with_columns(pl.col("Channel Listing SKU Code").str.extract(PREFIX, 1).str.to_uppercase()
-                                        .alias("_prefix")).drop_nulls("_prefix")
-                     .group_by("_prefix", "Brand").len())
-        self.prefix_brand = (by_prefix.with_columns((pl.col("len") / pl.col("len").sum().over("_prefix")).alias("_s"))
-                             .filter(pl.col("_s") >= 0.95).select("_prefix", pl.col("Brand").alias("_prefix_brand")))
 
     def is_brand(self, e: pl.Expr) -> pl.Expr:
         return e.is_not_null() & ~e.str.to_uppercase().is_in(sorted(self.codes))
 
-    def title_brand(self, titles: list) -> list:
-        out = []
-        for t in titles:
-            t = (t or "").lower()
-            for alias, name in TITLE_ALIASES.items():
-                t = t.replace(alias, name)
-            out.append(next((b for b in self.brands if t.startswith(b.lower())), None))
-        return out
+    def spelt(self, e: pl.Expr) -> pl.Expr:
+        return pl.coalesce(e.str.to_lowercase().replace_strict(self.spelling, default=None, return_dtype=pl.Utf8), e)
 
 
 def derive(df: pl.DataFrame, ctx: Context, cols: list[str]) -> pl.DataFrame:
@@ -226,18 +216,10 @@ def derive(df: pl.DataFrame, ctx: Context, cols: list[str]) -> pl.DataFrame:
         df = df.with_columns(pl.lit(None, pl.Utf8).alias(c) for c in ("_style", "_sku_code", "_sku_id", "_mbrand"))
     myntra_row, flipkart_row = pl.col("_account").is_not_null(), pl.col("Channel Name") == "FLIPKART"
 
-    # Brand: a right one stays; else portal file, title, same listing SKU elsewhere, the prefix's brand
-    df = (df.with_columns(pl.Series("_tbrand", ctx.title_brand(df["_title"].to_list()), dtype=pl.Utf8),
-                          pl.Series("_fk_tbrand", ctx.title_brand(df["_fk_title"].to_list()), dtype=pl.Utf8),
-                          pl.col("Channel Listing SKU Code").str.extract(PREFIX, 1).str.to_uppercase().alias("_prefix"))
-            .join(ctx.same_sku_brand, on="Channel Listing SKU Code", how="left")
-            .join(ctx.prefix_brand, on="_prefix", how="left"))
-    right = lambda c: pl.when(ctx.is_brand(pl.col(c))).then(pl.col(c))  # noqa: E731
-    portal_brand = pl.when(myntra_row).then(right("_mbrand")).when(flipkart_row).then(
-        pl.coalesce(right("_fk_brand"), pl.col("_fk_tbrand")))
-    df = df.with_columns(pl.when(ctx.is_brand(pl.col("Brand"))).then(pl.col("Brand"))
-                           .otherwise(pl.coalesce(portal_brand, "_tbrand", "_sku_brand", "_prefix_brand"))
-                           .alias("Brand"))
+    # Brand: the portal's sheet; else the sheet's own when it is a brand (not "FSH" / "Shopsy"); else blank
+    portal_brand = pl.when(myntra_row).then(pl.col("_mbrand")).when(flipkart_row).then(pl.col("_fk_brand"))
+    kept = pl.when(~pl.col("_new") & ctx.is_brand(pl.col("Brand"))).then(pl.col("Brand"))
+    df = df.with_columns(pl.coalesce(ctx.spelt(portal_brand), kept).alias("Brand"))
 
     # ids: the portal's file, then the sheet, then OMSGuru
     df = df.with_columns(
@@ -262,6 +244,61 @@ def derive(df: pl.DataFrame, ctx: Context, cols: list[str]) -> pl.DataFrame:
           .then(pl.col("Channel Listing Id").str.slice(0, 9) + "_" + colour)
           .otherwise(pl.col("AJIO JIOCODE")).alias("AJIO JIOCODE"))
     return df
+
+
+def given_rows(frames: list[pl.DataFrame]) -> pl.DataFrame | None:
+    """The owner's PORTAL SHEET files (owner, 24 Nov 2026) as one table: columns named as MasterData's (any case or
+    spacing), Channel Listing SKU Code needed, Channel Name optional; a later file's row wins."""
+    canon = {c.upper().replace(" ", ""): c for c in COLUMNS}
+    out = []
+    for f in frames:
+        f = f.rename({c: canon[c.upper().replace(" ", "")] for c in f.columns if c.upper().replace(" ", "") in canon})
+        if "Channel Listing SKU Code" not in f.columns:
+            continue
+        keep = [c for c in COLUMNS if c in f.columns and c not in ("Channel Listing Id",)]
+        out.append(f.select(_txt(c).alias(c) for c in keep).drop_nulls("Channel Listing SKU Code"))
+    if not out:
+        return None
+    df = pl.concat(out, how="diagonal")
+    if "Channel Name" not in df.columns:
+        df = df.with_columns(pl.lit(None, pl.Utf8).alias("Channel Name"))
+    return df.with_columns(pl.col("Channel Name").str.to_uppercase()).unique(
+        ["Channel Name", "Channel Listing SKU Code"], keep="last", maintain_order=True)
+
+
+def apply_given(df: pl.DataFrame, given: pl.DataFrame | None, cols: list[str]) -> pl.DataFrame:
+    """The owner's portal data over the worked-out values: a row of the same channel + listing SKU first, then one
+    with no channel for that listing SKU; an empty cell there changes nothing."""
+    if given is None or not given.height:
+        return df
+    fill = [c for c in given.columns if c in cols and c not in KEY]
+    by_ch = given.filter(pl.col("Channel Name").is_not_null()).select(
+        "Channel Name", "Channel Listing SKU Code", *(pl.col(c).alias(f"_g1_{c}") for c in fill))
+    any_ch = given.filter(pl.col("Channel Name").is_null()).select(
+        "Channel Listing SKU Code", *(pl.col(c).alias(f"_g2_{c}") for c in fill))
+    out = (df.join(by_ch, on=["Channel Name", "Channel Listing SKU Code"], how="left")
+             .join(any_ch, on="Channel Listing SKU Code", how="left"))
+    return out.with_columns(pl.coalesce(f"_g1_{c}", f"_g2_{c}", c).alias(c) for c in fill).drop(
+        [f"_g1_{c}" for c in fill] + [f"_g2_{c}" for c in fill])
+
+
+# the portal id a row of each channel should have (NEED DATA)
+CHANNEL_IDS = {"MYNTRA": ["MYNTRA STYLE ID", "MYNTRA SKU CODE"], "FLIPKART": ["FLIPKART FSN"],
+               "AMAZON": ["AMAZON ASIN"], "MEESHO": ["MEESHO PRODUCT ID", "MEESHO CATALOG ID"],
+               "AJIO": ["AJIO JIOCODE"]}
+NEED_ALWAYS = ["Brand", "DESIGN-NO", "COLOR"]
+MISSING = "MISSING"
+
+
+def need_data(data: pl.DataFrame) -> pl.DataFrame:
+    """MasterData rows with a value missing (Brand, DESIGN-NO, COLOR, the channel's portal ids), MISSING naming them
+    first: the sheet the owner fills from the portals and drops in PORTAL SHEET (owner, 24 Nov 2026)."""
+    parts = [pl.when(pl.col(c).is_null()).then(pl.lit(c)) for c in NEED_ALWAYS]
+    for prefix, ids in CHANNEL_IDS.items():
+        parts += [pl.when(pl.col("Channel Name").str.starts_with(prefix) & pl.col(c).is_null()).then(pl.lit(c))
+                  for c in ids]
+    return (data.with_columns(pl.concat_str(parts, separator=", ", ignore_nulls=True).alias(MISSING))
+                .filter(pl.col(MISSING) != "").select([MISSING] + data.columns))
 
 
 def unmapped(oms: pl.DataFrame, ctx: Context, old_all: pl.DataFrame, cols: list[str]) -> pl.DataFrame:
@@ -299,12 +336,13 @@ def unmapped(oms: pl.DataFrame, ctx: Context, old_all: pl.DataFrame, cols: list[
 
 
 def rebuild(old: pl.DataFrame, removed: pl.DataFrame | None, oms: pl.DataFrame, sheets: dict[str, pl.DataFrame],
-            myntra: pl.DataFrame | None, today: date,
-            flipkart: pl.DataFrame | None = None) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, dict]:
+            myntra: pl.DataFrame | None, today: date, flipkart: pl.DataFrame | None = None,
+            given: pl.DataFrame | None = None) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, dict]:
     """(MasterData, REMOVED LISTINGS, UNMAPPED LISTINGS, counts). old / removed: the sheets as text
-    (read_excel_text); oms: from_omsguru(); sheets: the owner's "Master Sku", "Fabric Code", "Launch Date & Size
-    Count"; myntra: myntra_ids() or None when the Myntra reports could not be read (the ids then stay as they were);
-    flipkart: the Flipkart listing file (read_excel_text) or None."""
+    (read_excel_text); oms: from_omsguru(), the active channels' listings only; sheets: the owner's "Master Sku",
+    "Fabric Code", "Launch Date & Size Count"; myntra: myntra_ids() or None when the Myntra reports could not be read
+    (the ids then stay as they were); flipkart: the Flipkart listing file (read_excel_text) or None; given:
+    given_rows() of the owner's PORTAL SHEET files, over everything else."""
     cols = [c for c in (old.columns if old.width else COLUMNS)]
     cols += [c for c in COLUMNS if c not in cols]
     old = old.with_columns(pl.lit(None, pl.Utf8).alias(c) for c in cols if c not in old.columns).select(cols)
@@ -315,11 +353,11 @@ def rebuild(old: pl.DataFrame, removed: pl.DataFrame | None, oms: pl.DataFrame, 
     old_all = old_all.with_columns(_txt(c).alias(c) for c in KEY).unique(KEY, keep="first", maintain_order=True)
     ctx = Context(old_all, sheets, myntra, flipkart)
 
-    joined = derive(oms.join(old_all, on=KEY, how="left"), ctx, cols)
+    joined = apply_given(derive(oms.join(old_all, on=KEY, how="left"), ctx, cols), given, cols)
     data = joined.select(cols)
     gone = old_all.join(oms.select(KEY), on=KEY, how="anti").with_columns(
         pl.coalesce(REMOVED_ON, pl.lit(today.isoformat())).alias(REMOVED_ON)).select(cols + [REMOVED_ON])
-    loose = unmapped(oms, ctx, old_all, cols)
+    loose = apply_given(unmapped(oms, ctx, old_all, cols), given, cols).select(cols)
     came_back = joined.filter(pl.col(REMOVED_ON).is_not_null()).height
     counts = {"listings": data.height, "new": joined.filter("_new").height,
               "kept": joined.filter(~pl.col("_new")).height - came_back, "back": came_back,

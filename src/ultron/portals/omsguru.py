@@ -247,23 +247,30 @@ class OmsGuruClient:
         return int(m.group(1)) if m else 0
 
     # ------------------------------------------------------------ channels
-    def channels(self) -> list[dict]:
-        """Every channel (Channel > List Channels): id, name, channel, inventory sync on or off."""
-        soup = parse(self.get(f"{BASE_URL}/channel_companies").text)
-        head = [text_of(th) for th in soup.select("table thead th")]
-        col = {h: i for i, h in enumerate(head)}
+    def channels(self, every: bool = False) -> list[dict]:
+        """Channel > List Channels: id, name, channel, account, inventory sync on or off, status. The page's tabs:
+        /index/1 Active, /2 Paused, /3 Disabled, /4 every channel with its Status. every=False: the Active ones only
+        (what the first tab lists; inv-push and listings work on these); every=True: all of them, "active" telling."""
         out = []
-        for tr in soup.select("table tbody tr"):
-            a = tr.select_one('a[href*="/channel_companies/edit/"]')
-            m = VIEW_CHANNEL.search(str(a["href"])) if a else None
-            if not m:
-                continue
-            cells = [text_of(td) for td in tr.select("td")]
-            cell = lambda name: cells[col[name]] if name in col and col[name] < len(cells) else ""  # noqa: E731
-            out.append({"id": m.group(1), "name": cell("Name"), "channel": cell("Channel"),
-                        "account": cell("Email / UserID / Site"),
-                        "inventory_sync": cell("Inventory Sync Enabled").upper() == "YES"})
-        return out
+        for page in ("/index/4", ""):          # the all-channels tab; the first tab if it gives no rows
+            soup = parse(self.get(f"{BASE_URL}/channel_companies{page}").text)
+            head = [text_of(th) for th in soup.select("table thead th")]
+            col = {h: i for i, h in enumerate(head)}
+            for tr in soup.select("table tbody tr"):
+                a = tr.select_one('a[href*="/channel_companies/edit/"]')
+                m = VIEW_CHANNEL.search(str(a["href"])) if a else None
+                if not m:
+                    continue
+                cells = [text_of(td) for td in tr.select("td")]
+                cell = lambda name: cells[col[name]] if name in col and col[name] < len(cells) else ""  # noqa: E731
+                status = cell("Status") or ("Active" if page == "" else "")
+                out.append({"id": m.group(1), "name": cell("Name"), "channel": cell("Channel"),
+                            "account": cell("Email / UserID / Site"),
+                            "inventory_sync": cell("Inventory Sync Enabled").upper() == "YES",
+                            "status": status, "active": status.upper() == "ACTIVE"})
+            if out:
+                break
+        return out if every else [c for c in out if c["active"]]
 
     def push_inventory(self, channel_id: str) -> str:
         """Related Actions > Push Inventory on the channel's page (all its listings). Returns the

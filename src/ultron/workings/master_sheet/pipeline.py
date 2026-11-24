@@ -51,16 +51,51 @@ def rows_of(df: pl.DataFrame) -> list[list]:
     return [[typed(h, v) for h, v in zip(heads, row)] for row in df.iter_rows()]
 
 
-def omsguru_listings() -> pl.DataFrame:
-    """OMSGuru's mapped channel listings (the warehouse chosen first, as the listing pages show its listings)."""
+def omsguru_listings(notes: list[str]) -> pl.DataFrame:
+    """OMSGuru's mapped channel listings of its Active channels only (owner, 24 Nov 2026: a Paused / Disabled
+    channel's listings go to REMOVED LISTINGS). The warehouse is chosen first, as the listing pages show its listings."""
     client = clients.omsguru()
+    channels = client.channels(every=True)
+    active = {c["id"] for c in channels if c["active"]}
+    if not active:
+        raise RuntimeError("OMSGuru's channel list gave no Active channel (nothing written)")
     warehouses = list(client.warehouses())
     if warehouses:
         client.set_warehouse(warehouses[0])
     df = read_text_csv(client.export_listings(wait_minutes=num("LISTING_EXPORT_WAIT_MINUTES", 15)))
     if not df.height:
         raise RuntimeError("OMSGuru's channel listing export came back empty")
-    return df
+    off = df.filter(~pl.col("Channel ID").str.strip_chars().is_in(sorted(active)))
+    if off.height:
+        status = {c["id"]: c["status"] for c in channels}
+        names = (off.group_by("Channel ID").len().sort("Channel ID").rows())
+        notes.append("Not active in OMSGuru, left out: " + ", ".join(
+            f"{build.channel_of(cid, '')} {status.get(cid, '?').lower()} ({n:,})" for cid, n in names))
+    return df.filter(pl.col("Channel ID").str.strip_chars().is_in(sorted(active)))
+
+
+def portal_sheets(dest: Path, notes: list[str]) -> pl.DataFrame | None:
+    """The owner's files in AGENT WORK/MASTER SHEET/PORTAL SHEET (xlsx, every sheet, or csv; columns named as
+    MasterData's, the NEED DATA sheet filled in works as it is), oldest first so a newer file's row wins."""
+    from ..core.drive import agent_folder
+    folder = agent_folder(ms.FOLDER, ms.PORTAL_FOLDER, create=True)
+    files = sorted(((name, meta) for name, meta in folder.children().items()
+                    if name.lower().endswith((".xlsx", ".csv"))), key=lambda f: f[1].get("modifiedTime") or "")
+    frames = []
+    for name, meta in files:
+        try:
+            path = folder.cached(name, dest, meta)
+            if name.lower().endswith(".csv"):
+                frames.append(read_text_csv(path))
+            else:
+                from python_calamine import CalamineWorkbook
+                frames += [read_excel_text(path, s) for s in CalamineWorkbook.from_path(str(path)).sheet_names]
+        except Exception as exc:  # noqa: BLE001 - the other files still count
+            notes.append(f"PORTAL SHEET {name} not read: {str(exc)[:80]}")
+    given = build.given_rows(frames)
+    if files:
+        notes.append(f"PORTAL SHEET: {len(files)} file(s), {0 if given is None else given.height:,} listings")
+    return given
 
 
 def myntra_reports(dest: Path, notes: list[str]) -> dict[str, pl.DataFrame] | None:
@@ -110,15 +145,19 @@ def run(args) -> int:
     src = ms.download(work / "drive") if not args.file else Path(args.file)
     from python_calamine import CalamineWorkbook
     names = CalamineWorkbook.from_path(str(src)).sheet_names
-    if ms.SHEET not in names:
+    main, gone_sheet = ms.sheet_of(names, ms.SHEET), ms.sheet_of(names, ms.REMOVED)
+    if main is None:
         raise RuntimeError(f"{ms.FILE} has no {ms.SHEET} sheet (sheets: {', '.join(names)})")
-    old = read_excel_text(src, ms.SHEET)
-    removed = read_excel_text(src, ms.REMOVED) if ms.REMOVED in names else None
-    others = {n: read_excel_text(src, n) for n in names if n not in (ms.SHEET, ms.REMOVED, ms.UNMAPPED)}
-    log.info("%s: %d MasterData rows, %d removed listings, sheets %s", ms.FILE, old.height,
+    old = read_excel_text(src, main)
+    removed = read_excel_text(src, gone_sheet) if gone_sheet else None
+    made = {ms.sheet_of(names, n) for n in (ms.SHEET, ms.REMOVED, ms.UNMAPPED, ms.NEED)}
+    # the owner's own sheets, by their names in capitals (owner, 24 Nov 2026: "MASTER SKU", "FABRIC CODE" ...)
+    own = {n: n.upper() for n in names if n not in made}
+    others = {own[n]: read_excel_text(src, n) for n in own}
+    log.info("%s: %d MASTER DATA rows, %d removed listings, sheets %s", ms.FILE, old.height,
              0 if removed is None else removed.height, list(others))
 
-    export = omsguru_listings()
+    export = omsguru_listings(notes)
     oms = build.from_omsguru(export)
     share = oms.height / max(old.height, 1)
     if share < num("MASTER_SHEET_MIN_SHARE", 0.7):
@@ -130,19 +169,22 @@ def run(args) -> int:
     reports = myntra_reports(work / "myntra", notes)
     myntra = build.myntra_ids(reports) if reports is not None else None
     flipkart = flipkart_listing_file(work / "flipkart", notes)
-    data, gone, loose, counts = build.rebuild(old, removed, oms, others, myntra, today, flipkart)
+    given = portal_sheets(work / "portal", notes) if not args.file else None
+    data, gone, loose, counts = build.rebuild(old, removed, oms, others, myntra, today, flipkart, given)
+    need = build.need_data(data)
+    counts["need"] = need.height
     log.info("MasterData: %s", counts)
 
     out = output_dir("master_sheet") / ms.FILE
-    sheets = [(ms.SHEET, data.columns, rows_of(data)), (ms.UNMAPPED, loose.columns, rows_of(loose)),
-              (ms.REMOVED, gone.columns, rows_of(gone))]
+    sheets = [(ms.SHEET, data.columns, rows_of(data)), (ms.NEED, need.columns, rows_of(need)),
+              (ms.UNMAPPED, loose.columns, rows_of(loose)), (ms.REMOVED, gone.columns, rows_of(gone))]
     # the owner's own sheets go back cell for cell, as their types were (a text "5" stays a text)
-    for n in others:
+    for n, upper in own.items():
         raw = CalamineWorkbook.from_path(str(src)).get_sheet_by_name(n).to_python(skip_empty_area=False)
         while raw and all(v in ("", None) for v in raw[-1]):
             raw.pop()
         if raw:
-            sheets.append((n, [("" if v is None else v) for v in raw[0]], raw[1:]))
+            sheets.append((upper, [("" if v is None else v) for v in raw[0]], raw[1:]))
     write_sheets(work / ms.FILE, sheets, header_format=ACCENT2_HEADER, freeze=True, autofilter=True,
                  column_widths=[(0, 25, 20)])
     shutil.copy2(work / ms.FILE, out)
@@ -164,6 +206,9 @@ def message(c: dict, notes: list[str], now: datetime) -> str:
              f"In a portal's listing file, not in OMSGuru: {c['unmapped']:,} (UNMAPPED LISTINGS)"]
     if c["no_brand"]:
         lines.append(f"Listings without a brand: {c['no_brand']:,}")
+    if c.get("need"):
+        lines.append(f"NEED DATA: {c['need']:,} listings with a value missing (fill them, drop the file in "
+                     f"MASTER SHEET / {ms.PORTAL_FOLDER})")
     if c["new_no_design"]:
         lines.append(f"New listings without DESIGN-NO: {c['new_no_design']:,} (add the style to Fabric Code)")
     lines += notes

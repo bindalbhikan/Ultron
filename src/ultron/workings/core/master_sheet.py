@@ -17,11 +17,19 @@ if TYPE_CHECKING:
 
 FOLDER = "MASTER SHEET"
 FILE = "MasterSheet.xlsx"
-SHEET = "MasterData"
+SHEET = "MASTER DATA"                      # sheet names in capitals (owner, 24 Nov 2026); was "MasterData"
 REMOVED = "REMOVED LISTINGS"
 UNMAPPED = "UNMAPPED LISTINGS"             # in a portal's listing file, not in OMSGuru
+NEED = "NEED DATA"                         # MasterData rows with a value missing (MISSING names it); not read
+PORTAL_FOLDER = "PORTAL SHEET"             # AGENT WORK/MASTER SHEET/PORTAL SHEET: the owner's portal data, read each run
 OLD_SHEET = "Master"                       # the layout before 24 Nov 2026
 RENAMED = {"MASTER SKU": "FINAL SKU", "MASTER STYLE CODE": "FINAL MY SKU"}   # new name -> the old one
+
+
+def sheet_of(names: list[str], name: str) -> str | None:
+    """The workbook's sheet called `name`, whatever its case or spacing ("MasterData" is MASTER DATA)."""
+    key = name.upper().replace(" ", "")
+    return next((n for n in names if n.upper().replace(" ", "") == key), None)
 
 
 def download(dest: Path) -> Path:
@@ -42,11 +50,12 @@ def read(path: Path, removed: bool = True) -> "pl.DataFrame":
 
     from .tables import read_excel_text
     names = CalamineWorkbook.from_path(str(path)).sheet_names
-    if SHEET not in names:
+    main = sheet_of(names, SHEET)
+    if main is None:
         return read_excel_text(path, OLD_SHEET)
-    frames = [read_excel_text(path, SHEET)]
-    if removed:            # MasterData's row of a listing first, then the listings OMSGuru lacks or dropped
-        frames += [read_excel_text(path, n) for n in (UNMAPPED, REMOVED) if n in names]
+    frames = [read_excel_text(path, main)]
+    if removed:            # MASTER DATA's row of a listing first, then the listings OMSGuru lacks or dropped
+        frames += [read_excel_text(path, n) for n in (sheet_of(names, UNMAPPED), sheet_of(names, REMOVED)) if n]
     df = pl.concat([f for f in frames if f.width], how="diagonal")
     return df.with_columns(pl.col(new).alias(old) for new, old in RENAMED.items() if new in df.columns and old not in df.columns)
 
