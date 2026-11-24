@@ -33,7 +33,7 @@ def test_rebuild_keeps_derives_and_removes():
          "SIZE SKU": "Z-L", "MASTER SKU": "Z-L", "MASTER STYLE CODE": "Z"},
     ])
     oms = build.from_omsguru(export)
-    data, gone, counts = build.rebuild(old, None, oms, {}, None, TODAY)
+    data, gone, _, counts = build.rebuild(old, None, oms, {}, None, TODAY)
     rows = {r["Channel Listing SKU Code"]: r for r in data.to_dicts()}
     kept, new = rows["FSH-DRESS-A-1-L"], rows["FSH-DRESS-A-1-M"]
     assert kept["FLIPKART FSN"] == "FSN_SHEET"                 # the sheet's id before OMSGuru's
@@ -54,7 +54,7 @@ def test_portal_file_wins_and_removed_rows_come_back():
                      "MASTER SKU": "DRESS-A-1-L", "MASTER STYLE CODE": "DRESS-A-1", "FLIPKART FSN": "FSN_SHEET"}]
                    ).with_columns(pl.lit("2026-11-20").alias(build.REMOVED_ON))
     listing_file = pl.DataFrame({"Seller SKU Id": ["FSH-DRESS-A-1-L"], "Flipkart Serial Number": ["FSN_PORTAL"]})
-    data, gone, counts = build.rebuild(_old([]), removed, build.from_omsguru(export), {}, None, TODAY, listing_file)
+    data, gone, _, counts = build.rebuild(_old([]), removed, build.from_omsguru(export), {}, None, TODAY, listing_file)
     assert data["FLIPKART FSN"].to_list() == ["FSN_PORTAL"]
     assert gone.height == 0 and counts["back"] == 1
 
@@ -64,5 +64,46 @@ def test_same_style_value_only_when_all_rows_agree():
     old = _old([{"Channel Listing SKU Code": f"FSH-TOP-B-1-{s}", "Channel Listing Id": f"L{s}", "Channel Name": "FLIPKART",
                  "MY SKU": "TOP-B-1", "SIZE SKU": f"TOP-B-1-{s}", "MASTER SKU": f"TOP-B-1-{s}",
                  "MASTER STYLE CODE": "TOP-B-1", "COLOR": c} for s, c in (("S", "Red"), ("L", "Blue"))])
-    data, _, _ = build.rebuild(old, None, build.from_omsguru(export), {}, None, TODAY)
+    data, _, _, _ = build.rebuild(old, None, build.from_omsguru(export), {}, None, TODAY)
     assert data["COLOR"].to_list() == [None]                    # two colours on the style: no guess
+
+
+def _sheet_rows(n=6, prefix="FSH", brand="Fashfun", channel="AJIO"):
+    """n rows of a brand whose listing SKU is its code + the SKU, as the owner's sheet has them."""
+    return [{"Channel Listing SKU Code": f"{prefix}-DRESS-Q-1-{i}", "Channel Listing Id": f"{prefix}{i}",
+             "Channel Name": channel, "Brand": brand, "MY SKU": "DRESS-Q-1", "SIZE SKU": f"DRESS-Q-1-{i}",
+             "MASTER SKU": f"DRESS-Q-1-{i}", "MASTER STYLE CODE": "DRESS-Q-1"} for i in range(n)]
+
+
+def test_wrong_brand_repaired_right_one_kept():
+    export = _export([
+        ("37864", "X - Meesho", "FSH-DRESS-Q-1-9", "M9", "DRESS-Q-1-9", "FSH", "", "", ""),          # code as brand
+        ("37863", "X - Flipkart", "SY-HD-1-M", "LSTSY", "HD-1-M", "", "", "", ""),                   # Shopsy on sheet
+        ("34958", "X - Ajio", "FSH-DRESS-Q-1-0", "FSH0", "DRESS-Q-1-0", "", "", "", ""),             # right: kept
+    ])
+    export = export.with_columns(pl.Series("Channel Listing Title", ["", "Casual Printed Women Yellow Top",
+                                                                     "Murcia Women Dress"]))
+    old = _old(_sheet_rows() + [
+        {"Channel Listing SKU Code": "SY-HD-1-M", "Channel Listing Id": "LSTSY", "Channel Name": "FLIPKART",
+         "Brand": "Shopsy", "MY SKU": "HD-1", "SIZE SKU": "HD-1-M", "MASTER SKU": "HD-1-M", "MASTER STYLE CODE": "HD-1"},
+        {"Channel Listing SKU Code": "SY-HD-1-M", "Channel Listing Id": "B0X", "Channel Name": "AMAZON DF",
+         "Brand": "Fashfun", "MY SKU": "HD-1", "SIZE SKU": "HD-1-M", "MASTER SKU": "HD-1-M", "MASTER STYLE CODE": "HD-1"}])
+    data, _, _, _ = build.rebuild(old, None, build.from_omsguru(export), {}, None, TODAY)
+    brand = dict(zip(data["Channel Listing SKU Code"], data["Brand"]))
+    assert brand["FSH-DRESS-Q-1-9"] == "Fashfun"             # the prefix's brand, not OMSGuru's "FSH"
+    assert brand["SY-HD-1-M"] == "Fashfun"                   # Shopsy is no brand: the same SKU's brand on Amazon
+    assert brand["FSH-DRESS-Q-1-0"] == "Fashfun"             # a right brand on the sheet is never changed
+
+
+def test_portal_listing_missing_in_omsguru_is_unmapped():
+    export = _export([("34958", "X - Ajio", "FSH-DRESS-Q-1-0", "FSH0", "DRESS-Q-1-0", "", "", "", "")])
+    listing_file = pl.DataFrame({"Seller SKU Id": ["FSH-DRESS-Q-1-7", "DRESS-VW-1-L"],
+                                 "Flipkart Serial Number": ["FSN7", "FSN8"], "Listing ID": ["LST7", "LST8"],
+                                 "Brand": ["Fashfun", "Serein"], "Title": ["", ""]})
+    _, _, loose, counts = build.rebuild(_old(_sheet_rows()), None, build.from_omsguru(export), {}, None, TODAY,
+                                        listing_file)
+    rows = {r["Channel Listing SKU Code"]: r for r in loose.to_dicts()}
+    assert counts["unmapped"] == 2 and set(loose.columns) >= set(build.COLUMNS)
+    assert rows["FSH-DRESS-Q-1-7"]["SIZE SKU"] == "DRESS-Q-1-7"     # the brand code taken off
+    assert rows["DRESS-VW-1-L"]["SIZE SKU"] == "DRESS-VW-1-L"       # DRESS- is part of the SKU
+    assert rows["FSH-DRESS-Q-1-7"]["FLIPKART FSN"] == "FSN7" and rows["DRESS-VW-1-L"]["Brand"] == "Serein"

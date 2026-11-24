@@ -22,6 +22,18 @@ REPORTING and RETURN ANALYSIS/Supporting are no longer read.
   the ASIN of the same listing SKU on Amazon); Meesho product id OMSGuru `Extra Key`; AJIO JIOCODE = the listing id's
   first 9 digits + `_` + the colour (lower case, no spaces). Meesho catalog id / product identifier have no source:
   kept as they are.
+* **Brand** (owner, 24 Nov 2026: "FSH", "Shopsy" were wrong): a Brand that is a SKU brand code (a listing SKU prefix
+  whose rows mostly carry another brand: FSH -> Fashfun; LEIA- rows are LEIA, so LEIA stays a brand) or "Shopsy" (a
+  Flipkart marketplace), or a blank one, is set from the portal's file (Myntra listing report, Flipkart listing file),
+  else the listing title's first words (OMSGuru `Channel Listing Title`, 99% the same as the owner's Brand), else the
+  same listing SKU's brand on another channel, else the brand of 95%+ of the prefix's rows; else blank (1,547 on
+  24 Nov, mostly Meesho). A right Brand on the sheet is never changed.
+* **UNMAPPED LISTINGS** (owner, 24 Nov 2026): a listing in a portal's own listing file (each Myntra account's
+  listing report, the Flipkart listing file) that OMSGuru does not have, in MasterData's columns: SKU columns from
+  the same listing SKU elsewhere on the sheet, else the listing SKU without its brand code (FSH-DRESS-A-1-L ->
+  DRESS-A-1-L; DRESS- stays), then worked out as a new listing. Written anew each run; the readers read it after
+  MasterData (24 Nov: 121, 119 of them Myntra EXIM).
+* Header row of every sheet: Excel's Accent2 style (fill #C0504D, bold white; owner, 24 Nov 2026), frozen, filtered.
 * **REMOVED LISTINGS**: a listing OMSGuru no longer has moves there with `REMOVED ON` (owner, 24 Nov 2026: kept so old
   orders still map; the readers read MasterData first, then this sheet). One that comes back moves back.
 * The owner's sheets (Master Sku, Fabric Code, Launch Date & Size Count, any other) are written back cell for cell.

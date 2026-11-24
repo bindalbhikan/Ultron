@@ -17,6 +17,11 @@ from pathlib import Path
 BAD = re.compile(r"[\\/*?:\[\]]")
 
 
+# Excel's "Accent2" cell style (100% fill of the Office theme's Accent 2, which xlsxwriter's workbooks use) with bold
+# white text: the owner's header style (24 Nov 2026)
+ACCENT2_HEADER = {"bold": True, "font_color": "#FFFFFF", "bg_color": "#C0504D", "border": 1}
+
+
 def sheet_name(name: str, taken: set[str]) -> str:
     """An Excel sheet name for `name`: refused characters out, 31 characters, unique in the workbook."""
     base = BAD.sub("-", str(name))[:31] or "Sheet"
@@ -35,16 +40,18 @@ URL_LIMIT = 65_530                   # xlsxwriter's (Excel's) most links in one 
 
 def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze: bool | tuple[int, int] = False,
                  auto_width: bool = False, max_width: int = 60, autofilter: bool = False,
-                 column_widths: list[tuple[int, int, float]] | None = None, links: bool = False) -> Path:
+                 column_widths: list[tuple[int, int, float]] | None = None, links: bool = False,
+                 header_format: dict | None = None) -> Path:
     """{sheet: (headers, rows)} or [(sheet, headers, rows), ...] (a name may repeat) -> one xlsx at path (its
-    folder made); the path. freeze: True = the header row, or (rows, columns); autofilter over the header and rows;
+    folder made); the path. header_format: the header row's xlsxwriter format (e.g. ACCENT2_HEADER), else bold_header
+    makes it bold. freeze: True = the header row, or (rows, columns); autofilter over the header and rows;
     column_widths: (first column, last column, width) each; links: a text starting with http(s):// as a clickable link."""
     import xlsxwriter
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     wb = xlsxwriter.Workbook(str(path), {"strings_to_numbers": False, "strings_to_formulas": False,
                                          "strings_to_urls": False, "nan_inf_to_errors": True})
-    head = wb.add_format({"bold": True}) if bold_header else None
+    head = (wb.add_format(header_format) if header_format else wb.add_format({"bold": True}) if bold_header else None)
     when = wb.add_format({"num_format": "yyyy-mm-dd hh:mm:ss"})
     day = wb.add_format({"num_format": "yyyy-mm-dd"})
     taken: set[str] = set()

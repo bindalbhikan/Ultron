@@ -24,7 +24,7 @@ from ..core import master_sheet as ms
 from ..core.app import run_bot
 from ..core.config import num, output_dir
 from ..core.tables import read_excel_text, read_text_csv
-from ..core.xlsx import write_sheets
+from ..core.xlsx import ACCENT2_HEADER, write_sheets
 from . import build
 
 log = logging.getLogger("bindal.master_sheet")
@@ -114,7 +114,7 @@ def run(args) -> int:
         raise RuntimeError(f"{ms.FILE} has no {ms.SHEET} sheet (sheets: {', '.join(names)})")
     old = read_excel_text(src, ms.SHEET)
     removed = read_excel_text(src, ms.REMOVED) if ms.REMOVED in names else None
-    others = {n: read_excel_text(src, n) for n in names if n not in (ms.SHEET, ms.REMOVED)}
+    others = {n: read_excel_text(src, n) for n in names if n not in (ms.SHEET, ms.REMOVED, ms.UNMAPPED)}
     log.info("%s: %d MasterData rows, %d removed listings, sheets %s", ms.FILE, old.height,
              0 if removed is None else removed.height, list(others))
 
@@ -130,11 +130,12 @@ def run(args) -> int:
     reports = myntra_reports(work / "myntra", notes)
     myntra = build.myntra_ids(reports) if reports is not None else None
     flipkart = flipkart_listing_file(work / "flipkart", notes)
-    data, gone, counts = build.rebuild(old, removed, oms, others, myntra, today, flipkart)
+    data, gone, loose, counts = build.rebuild(old, removed, oms, others, myntra, today, flipkart)
     log.info("MasterData: %s", counts)
 
     out = output_dir("master_sheet") / ms.FILE
-    sheets = [(ms.SHEET, data.columns, rows_of(data)), (ms.REMOVED, gone.columns, rows_of(gone))]
+    sheets = [(ms.SHEET, data.columns, rows_of(data)), (ms.UNMAPPED, loose.columns, rows_of(loose)),
+              (ms.REMOVED, gone.columns, rows_of(gone))]
     # the owner's own sheets go back cell for cell, as their types were (a text "5" stays a text)
     for n in others:
         raw = CalamineWorkbook.from_path(str(src)).get_sheet_by_name(n).to_python(skip_empty_area=False)
@@ -142,7 +143,8 @@ def run(args) -> int:
             raw.pop()
         if raw:
             sheets.append((n, [("" if v is None else v) for v in raw[0]], raw[1:]))
-    write_sheets(work / ms.FILE, sheets, bold_header=True, freeze=True, autofilter=True)
+    write_sheets(work / ms.FILE, sheets, header_format=ACCENT2_HEADER, freeze=True, autofilter=True,
+                 column_widths=[(0, 25, 20)])
     shutil.copy2(work / ms.FILE, out)
     if not args.no_upload and not args.file:
         from ..core.drive import XLSX, agent_folder
@@ -158,7 +160,10 @@ def run(args) -> int:
 def message(c: dict, notes: list[str], now: datetime) -> str:
     lines = [f"🗂 MasterSheet updated from OMSGuru · {now:%d %b %Y %I:%M %p}",
              f"MasterData: {c['listings']:,} listings ({c['new']:,} new, {c['back']:,} back)",
-             f"Removed from OMSGuru today: {c['removed_today']:,} (REMOVED LISTINGS: {c['removed_total']:,})"]
+             f"Removed from OMSGuru today: {c['removed_today']:,} (REMOVED LISTINGS: {c['removed_total']:,})",
+             f"In a portal's listing file, not in OMSGuru: {c['unmapped']:,} (UNMAPPED LISTINGS)"]
+    if c["no_brand"]:
+        lines.append(f"Listings without a brand: {c['no_brand']:,}")
     if c["new_no_design"]:
         lines.append(f"New listings without DESIGN-NO: {c['new_no_design']:,} (add the style to Fabric Code)")
     lines += notes

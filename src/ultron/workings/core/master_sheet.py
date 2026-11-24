@@ -19,6 +19,7 @@ FOLDER = "MASTER SHEET"
 FILE = "MasterSheet.xlsx"
 SHEET = "MasterData"
 REMOVED = "REMOVED LISTINGS"
+UNMAPPED = "UNMAPPED LISTINGS"             # in a portal's listing file, not in OMSGuru
 OLD_SHEET = "Master"                       # the layout before 24 Nov 2026
 RENAMED = {"MASTER SKU": "FINAL SKU", "MASTER STYLE CODE": "FINAL MY SKU"}   # new name -> the old one
 
@@ -44,8 +45,8 @@ def read(path: Path, removed: bool = True) -> "pl.DataFrame":
     if SHEET not in names:
         return read_excel_text(path, OLD_SHEET)
     frames = [read_excel_text(path, SHEET)]
-    if removed and REMOVED in names:
-        frames.append(read_excel_text(path, REMOVED))
+    if removed:            # MasterData's row of a listing first, then the listings OMSGuru lacks or dropped
+        frames += [read_excel_text(path, n) for n in (UNMAPPED, REMOVED) if n in names]
     df = pl.concat([f for f in frames if f.width], how="diagonal")
     return df.with_columns(pl.col(new).alias(old) for new, old in RENAMED.items() if new in df.columns and old not in df.columns)
 
