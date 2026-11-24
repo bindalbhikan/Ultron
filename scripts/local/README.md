@@ -36,6 +36,18 @@ Results and the log go to `%LOCALAPPDATA%\Ultron\output\<bot>\` (outside the sou
 
 ## Rules
 
+### Serena onboarding
+
+Activate project `ULTRON` at `D:\ULTRON` through Serena. Read its initial instructions, then the
+`core` memory; the onboarding notes cover shared rules, stack, commands, completion checks and the
+workings, services and app boundaries. `.serena/project.yml` and reviewed `.serena/memories/` are
+versioned; cache and local configuration are ignored. Never put credentials or business data in memories.
+
+After memory updates, copy `.serena/memories/` to Drive
+`AGENT-MEMORY/AGENT-ULTRON-BINDAL/serena/` as well. To check memory references, run
+`serena memories check` from the project root if the Serena CLI is installed. A semantic lookup of
+`src/ultron/core/paths.py` should find `output_root`; this checks the Python language server.
+
 ### The project lives at `D:\ULTRON`, off Google Drive
 
 Since 22 Nov 2026 the checkout is a normal Git clone at `D:\ULTRON`. It was on Google Drive before,

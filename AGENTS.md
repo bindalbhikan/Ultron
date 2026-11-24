@@ -89,6 +89,11 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 
 ## Working on this machine (owner's Windows PC)
 
+- **Serena**: activate `D:\ULTRON` (project `ULTRON`), not the retired Drive checkout. Onboarding notes live in
+  `.serena/memories/`; start with `core`. Commit shared config and reviewed memories; keep caches and
+  `project.local.yml` ignored. Back up memories to Drive `AGENT-MEMORY/AGENT-ULTRON-BINDAL/serena/`
+  after updating them. See `scripts/local/README.md` for the onboarding checks.
+
 - The ULTRON app: `apps/ultron_app/` (`docs/apps/ultron-app.md`), live on the app API (`services/app_api`,
   username sign-in). The old Kotlin `android app/` was removed on 23 Nov 2026: SMS only and Agent mode live here.
   Owner rules (23 Nov 2026): a signed-in user stays signed in (session in the device key store, 30-day server
