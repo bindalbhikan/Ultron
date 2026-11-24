@@ -13,6 +13,7 @@
   },
   // the Telegram worker, reached by binding (a workers.dev fetch between two Workers gets a 404)
   "services": [{ "binding": "OPS", "service": "bindal-telegram-bot" }],
+  "r2_buckets": [{ "binding": "RELEASES", "bucket_name": "ultron-app-releases" }],
   "d1_databases": [
     {
       "binding": "DB",

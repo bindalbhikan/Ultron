@@ -116,6 +116,12 @@ detailed **hyper log** is kept on Drive in `AGENT WORK/AGENT LOGS/<month>/<date>
   exists?" check skips that ticket. AJIO tickets / replies only Wed + Sat.
 - Myntra: never bypass its reCAPTCHA; never log out of the portal (it ends the bot's session).
 
+R2 app-update storage must stay within the free allowance (owner, 24 Nov 2026). The dedicated
+ultron-app-releases bucket is Standard and private. Its app API stops at 2 GB total upload reservations,
+10,000 Class A calls and 100,000 Class B calls per UTC month. Stop updates rather than pay overage;
+never reset accounting blindly or enable public bucket URLs. Unrelated account use is outside these guards.
+See docs/apps/app-updates.md; Cloudflare has no R2 billing cap.
+
 ## Settings and secrets — never in git
 
 - **Public repo**: every workflow runs its bot through `scripts/github/ci_run.sh` (public log = exit code

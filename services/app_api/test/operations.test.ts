@@ -5,6 +5,7 @@ import { createTestHarness, unstable_splitSqlQuery, type TestHarness } from 'wra
 import { makeAgent } from '../../../worker/agent.js';
 import { phoneJobs } from '../../../worker/phone.js';
 import { releases } from '../src/releases';
+import { RELEASE_LIMITS } from '../src/release_limits';
 
 let server: TestHarness;
 let db: D1Database;
@@ -89,7 +90,8 @@ test('completed multipart releases advance monotonically and serve their verifie
         const payload = Buffer.concat(upload.parts);
         const object = {size:payload.length,customMetadata:upload.meta,httpEtag:'"release"',payload};
         objects.set(key,object);
-        return object;
+        // Completion responses need not include persisted custom metadata.
+        return {size:payload.length,httpEtag:'"release"',customMetadata:{}};
       },
     }),
     get: async (key:string) => {
@@ -119,6 +121,63 @@ test('completed multipart releases advance monotonically and serve their verifie
   assert.equal(manifest.sha256,'a'.repeat(64));
   const download=await releases(new Request(manifest.url),env);
   assert.deepEqual([...new Uint8Array(await download!.arrayBuffer())],[1,2,3]);
+});
+
+test('concurrent download requests cannot cross the R2 read budget', async () => {
+  const period=new Date().toISOString().slice(0,7);
+  const old=await db.prepare("SELECT used FROM release_usage WHERE period=? AND kind='B'").bind(period).first<{used:number}>();
+  await db.prepare("INSERT OR REPLACE INTO release_usage(period,kind,used) VALUES(?,'B',?)").bind(period,RELEASE_LIMITS.classB-1).run();
+  let reads=0;
+  const env={DB:db,RELEASES:{head:async()=>{reads++;return null;}} as unknown as R2Bucket} as Parameters<typeof releases>[1];
+  const url='https://api.test/api/releases/files/releases/200/android/'+'a'.repeat(64)+'/ULTRON.apk';
+  const responses=await Promise.all([releases(new Request(url,{method:'HEAD'}),env),releases(new Request(url,{method:'HEAD'}),env)]);
+  assert.equal(reads,1);
+  assert.deepEqual(responses.map(r=>r!.status).sort(),[404,429]);
+  const used=await db.prepare("SELECT used FROM release_usage WHERE period=? AND kind='B'").bind(period).first<{used:number}>();
+  assert.equal(used!.used,RELEASE_LIMITS.classB);
+  await db.prepare("UPDATE release_usage SET used=? WHERE period=? AND kind='B'").bind(old?.used??0,period).run();
+});
+
+test('concurrent upload reservations cannot cross the storage budget and part sizes cannot bypass it', async () => {
+  const existing=await db.prepare('SELECT COALESCE(SUM(size),0) AS n FROM release_upload').first<{n:number}>();
+  await db.prepare("INSERT INTO release_upload(id,object_key,size,created) VALUES('test-fill','test-fill',?,0)")
+    .bind(RELEASE_LIMITS.storageBytes-existing!.n-3).run();
+  let creates=0,parts=0;
+  const env={DB:db,WORKER_TOKEN:'private-test-token',RELEASES:{
+    createMultipartUpload:async()=>({uploadId:'budget-'+(++creates)}),
+    resumeMultipartUpload:()=>({uploadPart:async()=>{parts++;return {};}}),
+  } as unknown as R2Bucket} as Parameters<typeof releases>[1];
+  const start=(build:number)=>releases(new Request('https://api.test/api/releases/upload',{method:'POST',
+    headers:{Authorization:'Bearer private-test-token'},
+    body:JSON.stringify({platform:'android',version:'0.1.43',build,size:3,sha256:'b'.repeat(64)})}),env);
+  const responses=await Promise.all([start(300),start(301)]);
+  assert.equal(creates,1);
+  assert.deepEqual(responses.map(r=>r!.status).sort(),[200,429]);
+  const upload=await responses.find(r=>r!.status===200)!.json() as Record<string,string>;
+  const result=await releases(new Request('https://api.test/api/releases/upload?'+new URLSearchParams({...upload,part:'1'}),{
+    method:'PUT',headers:{Authorization:'Bearer private-test-token','Content-Length':'4'},body:new Uint8Array([1,2,3,4]),
+  }),env);
+  assert.equal(result!.status,400);
+  assert.equal(parts,0);
+  const reserved=await db.prepare('SELECT SUM(size) AS n FROM release_upload').first<{n:number}>();
+  assert.equal(reserved!.n,RELEASE_LIMITS.storageBytes);
+  await db.prepare("DELETE FROM release_upload WHERE id='test-fill'").run();
+});
+
+test('the write budget stops upload initialization before R2 and failed accounting fails closed', async () => {
+  const period=new Date().toISOString().slice(0,7);
+  const old=await db.prepare("SELECT used FROM release_usage WHERE period=? AND kind='A'").bind(period).first<{used:number}>();
+  await db.prepare("INSERT OR REPLACE INTO release_usage(period,kind,used) VALUES(?,'A',?)").bind(period,RELEASE_LIMITS.classA).run();
+  let creates=0;
+  const env={DB:db,WORKER_TOKEN:'private-test-token',RELEASES:{createMultipartUpload:async()=>{creates++;return {uploadId:'unused'};}} as unknown as R2Bucket} as Parameters<typeof releases>[1];
+  const request=()=>new Request('https://api.test/api/releases/upload',{method:'POST',headers:{Authorization:'Bearer private-test-token'},
+    body:JSON.stringify({platform:'android',version:'0.1.44',build:400,size:3,sha256:'c'.repeat(64)})});
+  assert.equal((await releases(request(),env))!.status,429);
+  assert.equal(creates,0);
+  await db.prepare("UPDATE release_usage SET used=? WHERE period=? AND kind='A'").bind(old?.used??0,period).run();
+  const failing={prepare:()=>{throw new Error('accounting unavailable');}} as unknown as D1Database;
+  await assert.rejects(()=>releases(request(),{...env,DB:failing}),/accounting unavailable/);
+  assert.equal(creates,0);
 });
 
 test('release endpoints fail closed without storage and publishing requires the private credential', async () => {

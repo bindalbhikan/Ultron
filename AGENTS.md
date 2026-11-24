@@ -108,7 +108,11 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   `Agent ·` (owner, 23 Nov 2026); `services/sms_sheet/Code.gs` knows its rows by the note `ULTRON app` on that cell.
 - App updates: docs/apps/app-updates.md. Never publish a manifest before upload completion or replace
   it with an older build. Android verifies size, digest, package and version before the system installer.
-  R2 activation remains required as of 24 Nov 2026.
+  R2 is enabled with Standard bucket ultron-app-releases. Owner rule (24 Nov): free allowance only.
+  Keep app guards at 2 GB total storage reservations, 10,000 Class A / 100,000 Class B calls per UTC month.
+  Counters are claimed in D1 before R2; stop at limits, no paid fallback. Never reset storage reservations
+  blindly or expose public bucket URLs/custom domains. Cloudflare has no R2 billing cap; other account use
+  is outside these app guards.
 - Approval decisions claim D1 before dispatch; ambiguous failures cannot dispatch again automatically.
   Phone jobs/results use independent D1 rows rather than a shared KV job slot.
 - App chat is private per user and read-only: `app_chat_job` in D1, `agent-chat.yml` dispatched with a request

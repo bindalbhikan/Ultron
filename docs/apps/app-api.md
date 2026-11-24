@@ -23,6 +23,7 @@ The database is called `ultron`. Its tables come from `services/app_api/migratio
 
 | Migration | Tables | Used by |
 |---|---|---|
+| `0010_release_limits.sql` | Durable R2 operation counters and storage reservations; reject before exceeding app cutoffs | app API |
 | `0009_app_release.sql` | Current completed R2 package per platform | app API; see app-updates.md |
 | `0008_operations_state.sql` | Atomic approval decisions and independent phone jobs/results | Telegram worker |
 | `0007_app_chat.sql` | `app_chat_job`: private per-user questions, answers and processing state; one pending request per user | app API and Telegram worker; Python agent processes a request id |

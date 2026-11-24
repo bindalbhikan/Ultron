@@ -35,7 +35,7 @@ Phones show Home, Agent, Workflows, Reports and Profile in the bottom bar and th
 Profile links to **AI providers and models**. Provider/model controls stay visible in Auto mode; choosing a model turns Auto off and Save applies it.
 Startup checks for a newer build and shows an update prompt inside the app, including SMS only. Profile also has Check for updates.
 Android verifies the APK before opening its system installer; desktops open the package download.
-See app-updates.md for storage and the R2 activation still required. Older installations need the first updater-enabled APK from Drive once.
+See app-updates.md for the connected R2 bucket and free-allowance guards; updates pause at their limits. Older installations need the first updater-enabled APK from Drive once.
 
 ## Design
 

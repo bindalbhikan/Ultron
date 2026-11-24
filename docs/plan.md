@@ -30,7 +30,7 @@ irreversible.
 
 24 Nov app reliability: workspace sections now respect server permissions; approvals use atomic claims;
 overlapping phone jobs have independent storage; model outages fail app chat jobs.
-Provider/model selection stays visible in Auto mode. In-app update implementation is added; Cloudflare R2 activation is pending.
+Provider/model selection stays visible in Auto mode. In-app update implementation is added; Cloudflare R2 is connected with a 2 GB storage reservation ceiling and operation cutoffs below the free allowance.
 
 ## 3. Decision rules
 
