@@ -39,3 +39,20 @@ def test_reconnect_and_processing_share_the_same_deadline(monkeypatch):
     with pytest.raises(phone.PhoneUnavailable, match="not finished"):
         phone.run_job("myntra_style", [1], wait_minutes=1)
     assert now[0] == 60
+
+
+def test_zero_td_retry_never_starts_another_full_wait(monkeypatch):
+    from ultron.workings.myntra_zero_td import pipeline
+    now = clock(monkeypatch)
+    monkeypatch.setenv("MYNTRA_ZERO_TD_VIA", "phone")
+    monkeypatch.setenv("MYNTRA_ZERO_TD_PHONE_MINUTES", "2")
+    calls = []
+    def run_job(kind, items, wait_minutes=40):
+        calls.append(wait_minutes)
+        if len(calls) == 1:
+            now[0] += 70
+            return {"1": {"id": 1}, "2": "HTTP 403"}
+        pytest.fail("there is not enough time for the retry pause")
+    monkeypatch.setattr(phone, "run_job", run_job)
+    assert pipeline.lookup([1, 2]) == {1: {"id": 1}, 2: "HTTP 403"}
+    assert calls == [2]

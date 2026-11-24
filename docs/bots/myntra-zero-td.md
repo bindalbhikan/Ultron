@@ -36,5 +36,7 @@ button on the Myntra menu, or run the workflow. About 1-2 minutes for ~5,900 sty
   stays offline, no job is queued and the run names the missing phone; results are never fabricated.
   Styles the phone could not answer (its line dropped: `UnknownHostException`, or HTTP 403) are asked
   for again, up to `MYNTRA_ZERO_TD_PHONE_RETRIES` (2) times after a 1 / 2 minute pause (since 16 Nov 2026).
+  These retries also share the original phone lookup deadline; they never restart another 40-minute
+  wait beyond the workflow's 45-minute limit. Exhausted retries preserve any answers already received.
 * Fails (Telegram alert) when myntra.com answered no style at all (blocked, site down); exit 1
   when more than 5% had no answer (the message and sheet still go out).

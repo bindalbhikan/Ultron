@@ -95,6 +95,7 @@ def lookup(ids: list[int]) -> dict[int, dict | str]:
         log.warning("www.myntra.com refused this machine (%d of %d styles HTTP 403): asking the ULTRON app's Agent mode",
                     refused, len(ids))
     wait = num("MYNTRA_ZERO_TD_PHONE_MINUTES", 40)
+    deadline = time.monotonic() + wait * 60
     got = phone.run_job("myntra_style", ids, wait_minutes=wait)
     answers = {i: got.get(str(i), "no answer from the phone") for i in ids}
     # the phone's line drops for a while (UnknownHostException) or myntra.com refuses a burst
@@ -104,10 +105,13 @@ def lookup(ids: list[int]) -> dict[int, dict | str]:
         if not missing:
             break
         pause = 60 * (again + 1)
+        if deadline - time.monotonic() <= pause:
+            log.warning("Phone retry skipped: the shared lookup time budget is exhausted")
+            break
         log.warning("%d styles without an answer from the phone: asking again in %d s", len(missing), pause)
         time.sleep(pause)
         try:
-            got = phone.run_job("myntra_style", missing, wait_minutes=wait)
+            got = phone.run_job("myntra_style", missing, wait_minutes=(deadline - time.monotonic()) / 60)
         except phone.PhoneUnavailable as exc:
             log.warning("Phone retry not done: %s", exc)
             break

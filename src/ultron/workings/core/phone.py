@@ -70,8 +70,8 @@ def run_job(kind: str, items: list, wait_minutes: float = 40, poll_seconds: int 
     _call("job", body={"id": job, "kind": kind, "items": items})
     log.info("Phone job %s: %d items queued", job, len(items))
     taken_logged = False
-    while time.monotonic() < deadline:
-        time.sleep(min(poll_seconds, deadline - time.monotonic()))
+    while (remaining := deadline - time.monotonic()) > 0:
+        time.sleep(min(poll_seconds, remaining))
         try:
             got = _call("collect", {"job": job})
         except (*http.FAILED, ValueError) as exc:   # the phone's work is not lost on one failed look

@@ -5,6 +5,6 @@
 - Return windows run through next month's 14th; partial sources are named and omitted as needed. Preserve partial quantities, cancellations/RTO distinctions and line identifiers.
 - Daily return-delivery workbook updates require validated Orders; stale/missing Orders leave account rows unchanged. Pending job snapshots refresh before enforcing a shared wait deadline.
 - Portal report requests reuse completed usable jobs; Myntra duplicate report cooldown is 15 minutes. Do not run the same local Myntra bot concurrently with GitHub.
-- Phone jobs wait for reconnect within the existing total job budget before queueing; an offline timeout queues no work and never fabricates results.
+- Phone jobs wait for reconnect within the existing total job budget before queueing; Zero TD retries share the original lookup deadline; an offline timeout queues no work and never fabricates results.
 - Safe flags vary: sale/vms/ajio-tat use --no-drive --no-telegram; returns/myntra-spf/ajio-ads use --no-upload --no-telegram; ajio-spf also needs --dry-run. Confirm each parser; no blanket assumption that flags suppress every portal write.
 - New working integration checklist includes workflow, watcher, command/menu, schedule, dashboard, run.py, docs page and sync.

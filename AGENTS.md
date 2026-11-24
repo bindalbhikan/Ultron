@@ -110,7 +110,9 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   id only. Never give app chat Telegram's owner action or shared-note write tools; actions use the app's
   separately authorised Workflows and Approvals routes. App replies never go to Telegram.
 - Phone jobs share one reconnect/processing deadline: a stale heartbeat is polled within the existing
-  wait budget, and work is queued only after the phone reconnects. An offline phone never supplies zero data.
+  wait budget, and work is queued only after the phone reconnects. Zero TD's retries share that original
+  lookup budget too, so they cannot start another full wait past the workflow timeout. An offline phone
+  never supplies zero data.
 
 - The project lives at **`D:\ULTRON`**, a normal Git clone off Google Drive (since 22 Nov 2026; the old Drive
   folder `AGENT-ULTRON-BINDAL` is no longer worked in: Drive's `desktop.ini` broke Git refs there).
