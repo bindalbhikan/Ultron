@@ -1,6 +1,6 @@
 # Project context — BINDAL EXPORTS report bots
 
-<!-- AUTO:synced -->Last synced with the code: 2026-11-16.<!-- /AUTO:synced -->
+<!-- AUTO:synced -->Last synced with the code: 2026-11-24.<!-- /AUTO:synced -->
 Owner: Bhikan (GitHub `bindalbhikan`, commit author
 `bhikan.serein@gmail.com`). Every bot reports to Telegram **@bindal_exports_bot**.
 
@@ -34,6 +34,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 | inv-push | `python run.py inv-push` | OMSGuru inventory push | `inv-push.yml` OMSGuru inventory push | every 3 hours, 6 AM - 3 AM daily (8 times) | `docs/bots/inv-push.md` |
 | labels | `python run.py labels` | Label check | `labels.yml` Label check | 6:00 PM daily | `docs/bots/labels.md` |
 | listings | `python run.py listings` | Listing health | `listings.yml` Listing health | 11:30 AM daily | `docs/bots/listings.md` |
+| master-sheet | `python run.py master-sheet` | MasterSheet | `master-sheet.yml` MasterSheet from OMSGuru | 1:00 AM daily | `docs/bots/master-sheet.md` |
 | mis | `python run.py mis` | Monthly MIS | `mis.yml` Monthly MIS | 11:00 AM monthly (2nd) | `docs/bots/mis.md` |
 | morning | `python run.py morning` | Morning report | `morning.yml` Morning report | 9:30 AM daily | `docs/bots/morning.md` |
 | myntra-grouping | `python run.py myntra-grouping` | Myntra colour grouping | `myntra-grouping.yml` Myntra colour grouping | 12:00 PM every 3 days; 8:00 PM daily | `docs/bots/myntra-grouping.md` |
@@ -58,7 +59,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 Gaps the sync found:
 
 <!-- AUTO:gaps -->
-- none: every bot has its page and its workflow is watched
+- `master-sheet.yml` (MasterSheet from OMSGuru) has no Telegram command (`COMMANDS` in `worker/src/worker.js`)
 <!-- /AUTO:gaps -->
 
 ## The agent's folder: Drive `BINDAL EXPORTS/AGENT WORK`
@@ -80,6 +81,10 @@ AGENT WORK/
                      return reports by the return analysis on the 10th (replaced by the 15th's fresh second
                      try); the business reporting reads them (core/portal_reports.py)
   BUSINESS REPORTING/ the owner's Myntra sale / return / payment analysis (CONTEXT.md and scripts in it)
+  MASTER SHEET/      MasterSheet.xlsx, the one SKU master every working reads (core/master_sheet.py): MasterData rebuilt
+                     from OMSGuru at 1 AM (master-sheet), REMOVED LISTINGS, the owner's Master Sku / Fabric Code /
+                     Launch Date & Size Count (owner, 24 Nov 2026; the old copies in BUSINESS REPORTING and RETURN
+                     ANALYSIS/Supporting are no longer read)
   SPF CLAIMS/        the final SPF master sheets only: AJIO MASTER.xlsx, MYNTRA SPF MASTER.xlsx (owner, 24 Nov 2026:
                      kept only here; core/drive.py spf_master). Their hand inputs stay in Drive SPF/AJIO/input and
                      SPF/MYNTRA/input (MYNTRA_SPF_FOLDER_ID, SPF_MANUAL_DRIVE_FILE_ID, SPF_OMS_DRIVE_FILE_ID)

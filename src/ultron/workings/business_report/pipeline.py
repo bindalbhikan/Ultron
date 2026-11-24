@@ -92,12 +92,9 @@ def portal_files(portal: str, first: date, last: date, dest: Path | None = None,
 
 
 def master_sheet(dest: Path | None = None) -> pl.DataFrame:
-    folder = agent_folder(FOLDER)
-    path = folder.cached("MasterSheet.xlsx", dest or report_cache()) if folder else None
-    if not path:
-        raise RuntimeError(f"MasterSheet.xlsx not found in AGENT WORK/{FOLDER}")
-    from ..core.tables import read_excel_text
-    return read_excel_text(path, "Master")
+    """The SKU master (AGENT WORK/MASTER SHEET/MasterSheet.xlsx: MasterData + REMOVED LISTINGS, core/master_sheet.py)."""
+    from ..core import master_sheet as ms
+    return ms.load(dest or report_cache())
 
 
 def log_rows(files: list[dict], frames: dict[str, pl.DataFrame], date_col: dict[str, tuple[str, callable]]) -> list:
@@ -172,7 +169,7 @@ def build_myntra(files: list[dict], master: pl.DataFrame, missing: list[str] = (
     lg = log_rows(files, frames, {"ORDER": ("created on", myntra.pdt), "RETURN": ("return_created_date", myntra.pdt),
                                   "PAYMENT": ("Payment_Date", myntra.pdt)})
     lg.append(["Orders used", "ALL", "one row per order line", raw.height, "Order date", raw["ORDER DATE"].min(), raw["ORDER DATE"].max(), ""])
-    lg.append(["SKU master", "ALL", "BUSINESS REPORTING/MasterSheet.xlsx (sheet Master)", master.height, "-", None, None, ""])
+    lg.append(["SKU master", "ALL", "MASTER SHEET/MasterSheet.xlsx (MasterData + REMOVED LISTINGS)", master.height, "-", None, None, ""])
     for gap in missing:
         lg.append(["Report missing", "-", gap, "-", "-", None, None, "not in PORTAL REPORTS: the figures of these months are low"])
     unknown = mark_returns_not_known({}, files, set(raw["ORDER MONTH"].drop_nulls().to_list()), lg)

@@ -32,7 +32,8 @@
   `<PORTAL> SALE RETURN ANALYSIS <FIRST MON-YY> TO <LAST MON-YY>.xlsx`; the portal's older one goes
   to the Drive trash.
 * Inputs: every month of Drive `AGENT WORK/PORTAL REPORTS` from `--from` (default 2025-01; a portal
-  starts where its reports do) to last month, and `BUSINESS REPORTING/MasterSheet.xlsx`. Read from the shared
+  starts where its reports do) to last month, and the SKU master `AGENT WORK/MASTER SHEET/MasterSheet.xlsx` (MasterData + REMOVED LISTINGS, since 24 Nov 2026;
+  `core/master_sheet.py`, rebuilt by `master-sheet` at 1 AM). Read from the shared
   local cache `<output folder>/cache/portal_reports/` (22 Nov 2026): a file is downloaded again only when its Drive copy
   changed (its MD5 against Drive's md5Checksum, `DriveFolder.cached`), so the return analysis and a rebuild read the very same files
   without fetching them twice; `--work` names another cache folder.

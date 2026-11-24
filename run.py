@@ -34,6 +34,7 @@
   portal-reports 2nd (+ fresh 15th): last month's order + payment reports into PORTAL REPORTS  python run.py portal-reports --help
   portal-sale 5:30 PM daily, real sale per order date with its returns + cancels  python run.py portal-sale --help
   myntra-zero-td every 2 h 7 AM-7 PM + 10 AM daily, styles live at MRP  python run.py myntra-zero-td --help
+  master-sheet 1 AM daily, MasterData of the SKU master from OMSGuru  python run.py master-sheet --help
 """
 import importlib
 import sys
@@ -60,7 +61,8 @@ BOTS = {"sale": "ultron.workings.sale.pipeline", "vms": "ultron.workings.vms.pip
         "myntra-history": "ultron.workings.myntra_history.pipeline",
         "flipkart-price": "ultron.workings.flipkart_price.pipeline",
         "flipkart-calc": "ultron.workings.flipkart_price.calculator",
-        "flipkart-listing-file": "ultron.workings.flipkart_price.listing_file"}
+        "flipkart-listing-file": "ultron.workings.flipkart_price.listing_file",
+        "master-sheet": "ultron.workings.master_sheet.pipeline"}
 
 
 def main(argv: list[str]) -> int:

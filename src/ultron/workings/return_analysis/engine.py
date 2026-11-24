@@ -113,10 +113,12 @@ def _mode(values: pl.Expr) -> pl.Expr:
 
 def load_master(supporting_dir):
     """(design_map: FINAL SKU -> DESIGN-NO, launch: Channel Name, FINAL SKU, date) from MasterSheet.xlsx."""
-    from ..core.tables import read_excel_text
+    from pathlib import Path
+
+    from ..core import master_sheet as ms
     path = os.path.join(supporting_dir, 'MasterSheet.xlsx')
     log.info('Loading master: %s', path)
-    m = read_excel_text(path, 'Master').filter(pl.col('FINAL SKU').is_not_null())
+    m = ms.read(Path(path)).filter(pl.col('FINAL SKU').is_not_null())     # FINAL SKU = MASTER SKU
     design = (m.filter(pl.col('DESIGN-NO').is_not_null()).group_by('FINAL SKU').agg(_mode(pl.col('DESIGN-NO')).alias('d')))
     design_map = dict(zip(design['FINAL SKU'].to_list(), design['d'].to_list()))
     launch = (m.filter(pl.col('PORTAL LISTING DATE').is_not_null())

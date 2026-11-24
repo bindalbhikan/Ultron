@@ -14,7 +14,7 @@ Inputs (relative to this file):
                                      - Myntra listing report, one file per seller account
   input/*inventory*.xlsx|csv         - optional, columns: SKU + qty/inventory/stock
   sale/*.csv                         - Myntra sales export (party_id_to = account)
-  MasterSheet.xlsx                   - sheet "Master" (MY SKU / FINAL MY SKU / MYNTRA SKU CODE)
+  MasterSheet.xlsx                   - MasterData (MY SKU / MASTER STYLE CODE / MYNTRA SKU CODE), core/master_sheet.py
 
 Portal check:
   For every style in a group, the public product API
@@ -159,9 +159,9 @@ def load_grouping_sheet(path):
 
 
 def load_master(path):
-    from ..core.tables import read_excel_text
+    from ..core import master_sheet as ms
     cols = ["Channel Name", "MY SKU", "SIZE SKU", "FINAL MY SKU", "MYNTRA STYLE ID", "MYNTRA SKU CODE"]
-    m = read_excel_text(path, "Master")
+    m = ms.read(path)            # MasterData + REMOVED LISTINGS, FINAL MY SKU = MASTER STYLE CODE
     df = m.select(*[pnorm(pl.col(c) if c in m.columns else pl.lit(None)).alias(c) for c in cols])
     final_map = first_of(df.filter(pl.col("MY SKU") != ""), "MY SKU", "FINAL MY SKU")
     size_final_map = first_of(df.filter(pl.col("SIZE SKU") != ""), "SIZE SKU", "FINAL MY SKU")

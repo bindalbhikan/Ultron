@@ -6,7 +6,7 @@ Inputs:
   .../LISTING GROUPING/portal template.xlsx                     Myntra's grouping upload template
   Myntra partner portal Seller_Listings_Report of every account: the newest of today / yesterday (the
         9:30 AM myntra-reports run makes it there), else one asked for
-  AGENT WORK/BUSINESS REPORTING/MasterSheet.xlsx               the SKU master
+  AGENT WORK/MASTER SHEET/MasterSheet.xlsx                     the SKU master (core/master_sheet.py)
   AGENT WORK/PORTAL REPORTS/MYNTRA (ORDER REPORTs)              sales: the last SALE_MONTHS (3) months'
         order lines delivered (C) or on the way (SH), per account and style
   www.myntra.com/gateway/v2/product/<style>                     each style's live colour group: the
@@ -247,9 +247,8 @@ def run(args) -> int:
     if not lg.download("GROUPING SHEET.xlsx", work / "input" / "GROUPING SHEET.xlsx"):
         raise RuntimeError("GROUPING SHEET.xlsx not found in AGENT WORK/MYNTRA/LISTING GROUPING")
     lg.download("portal template.xlsx", work / "portal template.xlsx")
-    br = agent_work().subfolder("BUSINESS REPORTING")
-    if not br or not br.download("MasterSheet.xlsx", work / "MasterSheet.xlsx"):
-        raise RuntimeError("MasterSheet.xlsx not found in AGENT WORK/BUSINESS REPORTING")
+    from ..core import master_sheet as ms
+    ms.download(work)                       # AGENT WORK/MASTER SHEET/MasterSheet.xlsx -> work/MasterSheet.xlsx
     listings = latest_listings(work / "input")
     log.info("Listings: %s", {a: p.name for a, p in listings.items()})
 

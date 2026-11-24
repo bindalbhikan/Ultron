@@ -13,7 +13,7 @@ on:
                 "Flipkart TAT daily update",
                 "Myntra SPF master", "Return analysis", "Daily sale report", "Myntra VMS report",
                 "Morning report", "SLA warning", "Label check", "Stock-out alert",
-                "Evening summary", "Weekly review", "Dead stock report", "Listing health",
+                "Evening summary", "Weekly review", "Dead stock report", "Listing health", "MasterSheet from OMSGuru",
                 "Myntra courier scorecard", "Monthly MIS", "Myntra courier OTP", "Myntra daily reports",
                 "Myntra zero TD", "Portal reports", "Portal sale report", "ERP to OMSGuru returns", "Business reporting", "Myntra colour grouping", "Ticket follow-up",
                 "Flipkart Final TP update", "Flipkart calculator",

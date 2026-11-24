@@ -5,7 +5,7 @@ for BINDAL EXPORTS on GitHub Actions, a Cloudflare Telegram worker + dashboard, 
 (`src/ultron/`, seller-neutral, sellable). Any coding agent (Claude Code, Gemini CLI, the "AI fix on failure"
 workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 
-<!-- AUTO:synced -->Last synced with the code: 2026-11-16.<!-- /AUTO:synced -->
+<!-- AUTO:synced -->Last synced with the code: 2026-11-24.<!-- /AUTO:synced -->
 
 ## Read next
 
@@ -86,7 +86,7 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 ## Gaps the sync found (fix them)
 
 <!-- AUTO:gaps -->
-- none: every bot has its page and its workflow is watched
+- `master-sheet.yml` (MasterSheet from OMSGuru) has no Telegram command (`COMMANDS` in `worker/src/worker.js`)
 <!-- /AUTO:gaps -->
 
 ## Working on this machine (owner's Windows PC)

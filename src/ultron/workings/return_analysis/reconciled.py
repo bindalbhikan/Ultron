@@ -12,7 +12,6 @@ from pathlib import Path
 import polars as pl
 
 from ..business_report import pipeline as business
-from ..core.tables import read_excel_text
 from . import engine
 
 log = logging.getLogger(__name__)
@@ -66,7 +65,8 @@ def template_rows(rep, month: date, account: str = "", cost_map=None, *, source=
 
 def load_context(supporting: Path):
     """Read the existing mapping/cost resources once for a monthly or yearly rebuild."""
-    master = read_excel_text(supporting / "MasterSheet.xlsx", "Master")
+    from ..core import master_sheet as ms
+    master = ms.read(supporting / "MasterSheet.xlsx")
     design_map, launch = engine.load_master(str(supporting))
     cost_map = engine.load_cost(str(supporting))
     return master, design_map, launch, cost_map

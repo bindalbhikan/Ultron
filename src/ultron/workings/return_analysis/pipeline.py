@@ -276,9 +276,8 @@ def run(args) -> int:
     supporting = root.subfolder("Supporting")
     # the Supporting files from the shared cache: downloaded again only when they changed on Drive
     shared = output_dir("cache") / "return_supporting"
-    master = supporting.cached("MasterSheet.xlsx", shared) if supporting else None
-    if not master:
-        raise RuntimeError("MasterSheet.xlsx not found in RETURN ANALYSIS/Supporting on Drive")
+    from ..core import master_sheet as ms
+    master = ms.download(shared)            # the one SKU master: AGENT WORK/MASTER SHEET (core/master_sheet.py)
     cost = supporting.cached("Cost Sheet.xlsx", shared)                                  # optional
     (work / "Supporting").mkdir(parents=True, exist_ok=True)
     for f in (master, cost):

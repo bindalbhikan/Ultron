@@ -31,7 +31,8 @@ AJIO customer-order number plus SELLER SKU CODE; a partially returned line can a
 | Myntra orders / returns | saved calendar-month order and return reports per account; scheduled refresh still collects reports 4 / 12 |
 | AJIO orders / RTV | saved order + RTV reports, with the same monthly/OMSGuru supplements as Business Reporting |
 | Flipkart orders / returns | saved Fulfilment Orders + Returns, Sales Reports and the same supplements as Business Reporting; no invoice-month grouping |
-| MasterSheet (+ optional Cost Sheet) | Drive `RETURN ANALYSIS/Supporting` |
+| MasterSheet | Drive `AGENT WORK/MASTER SHEET` (MasterData + REMOVED LISTINGS, since 24 Nov 2026; `core/master_sheet.py`) |
+| Cost Sheet (optional) | Drive `RETURN ANALYSIS/Supporting` |
 
 **PORTAL REPORTS** (1 Nov 2026): the downloaded reports are also kept in Drive `AGENT WORK/PORTAL
 REPORTS/<PORTAL>/<YYYY>/<Mon-YY>/` as `<PORTAL> [<ACCOUNT>] ORDER REPORT <MON-YY>` and `... RETURN
