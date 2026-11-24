@@ -5,7 +5,9 @@ returns 12 and delivery 84 jobs are the same; since 16 Nov 2026 the 7 AM `--requ
 The older order window (31-60 days) is still asked for by the master itself.
 On demand: `/myntraspf`.
 
-**Result**: `SPF/MYNTRA/MYNTRA SPF MASTER.xlsx` (`MYNTRA_SPF_FOLDER_ID`), sheets MAIN / DBCC / FMCC
+**Result**: `AGENT WORK/SPF CLAIMS/MYNTRA SPF MASTER.xlsx`, found by name (`core/drive.py` `spf_master`; owner,
+24 Nov 2026: the final master is kept only there; the hand inputs stay in `SPF/MYNTRA/input`,
+`MYNTRA_SPF_FOLDER_ID`), sheets MAIN / DBCC / FMCC
 + SUMMARY / DATE SUMMARY / INPUT LOG; claim aging per SPF POLICY v5 (formulas).
 
 * Rules: the hand-run tool `SPF/MYNTRA/main.py` as `engine.py` (only its folder `MYNTRA_SPF_DIR`

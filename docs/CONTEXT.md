@@ -80,6 +80,9 @@ AGENT WORK/
                      return reports by the return analysis on the 10th (replaced by the 15th's fresh second
                      try); the business reporting reads them (core/portal_reports.py)
   BUSINESS REPORTING/ the owner's Myntra sale / return / payment analysis (CONTEXT.md and scripts in it)
+  SPF CLAIMS/        the final SPF master sheets only: AJIO MASTER.xlsx, MYNTRA SPF MASTER.xlsx (owner, 24 Nov 2026:
+                     kept only here; core/drive.py spf_master). Their hand inputs stay in Drive SPF/AJIO/input and
+                     SPF/MYNTRA/input (MYNTRA_SPF_FOLDER_ID, SPF_MANUAL_DRIVE_FILE_ID, SPF_OMS_DRIVE_FILE_ID)
 ```
 
 A bot that finds its file by name looks in its portal's folder (`AREA = "MYNTRA"` in the Myntra

@@ -1,5 +1,6 @@
 """Myntra SPF master, every day at 10 AM (on the report jobs the 9:30 AM myntra-reports run asks for): returns of Myntra MAIN / DBCC / FMCC with claim aging, tickets,
-payouts and ERP receipts, in Drive SPF/MYNTRA/MYNTRA SPF MASTER.xlsx.
+payouts and ERP receipts, in Drive AGENT WORK/SPF CLAIMS/MYNTRA SPF MASTER.xlsx (the hand inputs
+in SPF/MYNTRA/input).
 
 The rules are those of the hand-run tool (engine.py, unchanged). The bot builds its input/
 folder in a work folder:
@@ -594,13 +595,11 @@ def run(args) -> int:
         return 0
     if not env("MYNTRA_SPF_FOLDER_ID"):
         raise RuntimeError("MYNTRA_SPF_FOLDER_ID (Drive folder SPF/MYNTRA) not set")
-    folder = DriveFolder(env("MYNTRA_SPF_FOLDER_ID"))
-    found = folder.children().get(MASTER_NAME)
-    if not found:
-        raise RuntimeError(f"{MASTER_NAME} not found in the Drive folder SPF/MYNTRA")
+    from ..core.drive import spf_master
+    folder = DriveFolder(env("MYNTRA_SPF_FOLDER_ID"))      # the hand inputs (input/)
+    master = spf_master(MASTER_NAME)                         # AGENT WORK/SPF CLAIMS
     work = Path(tempfile.mkdtemp(prefix="myntra_spf_"))
     inp = work / "input"
-    master = DriveFile(found["id"])
     master.download(work / MASTER_NAME, need_edit=not args.no_upload)
     notes: list[str] = []
     log.info("Hand inputs from Drive: %s", hand_inputs(folder, inp))
@@ -708,7 +707,7 @@ def summary_text(path: Path, notes: list[str]) -> str:
             lines.append(f"{name:<8}{max(wb[name].max_row - 2, 0):>8}")
     out = ["🧾 <b>Myntra SPF master updated</b>", "<i>returns, tickets, payouts, ERP receipts</i>", "",
            "<pre>" + telegram.esc("\n".join(lines)) + "</pre>", "",
-           "📁 Drive: SPF / MYNTRA / MYNTRA SPF MASTER.xlsx"]
+           "📁 Drive: AGENT WORK / SPF CLAIMS / MYNTRA SPF MASTER.xlsx"]
     if notes:
         out += ["", "⚠️ <b>Notes</b>", *(f"• {telegram.esc(n)}" for n in notes)]
     return "\n".join(out)

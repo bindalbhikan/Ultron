@@ -285,3 +285,17 @@ def agent_folder(*names: str, create: bool = False) -> "DriveFolder | None":
     for name in names:
         folder = folder.subfolder(name, create=create) if folder else None
     return folder
+
+
+# The final SPF master sheets (AJIO MASTER.xlsx, MYNTRA SPF MASTER.xlsx) live and are kept only here
+# (owner, 24 Nov 2026); the hand inputs stay in Drive SPF/<portal>.
+SPF_CLAIMS = "SPF CLAIMS"
+
+
+def spf_master(name: str) -> "DriveFile":
+    """An SPF master sheet in AGENT WORK/SPF CLAIMS, by its file name."""
+    folder = agent_folder(SPF_CLAIMS)
+    found = folder.children().get(name) if folder else None
+    if not found:
+        raise RuntimeError(f"{name} not found in Drive AGENT WORK/{SPF_CLAIMS}")
+    return DriveFile(found["id"])

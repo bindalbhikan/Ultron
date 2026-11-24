@@ -3,7 +3,9 @@
 **When**: 9:00 AM daily. Wed + Sat the full run (tickets + replies); the other days
 `--master-only` (master updated, nothing posted). On demand: `/ajiospf` (live) or `/ajiospf dry`.
 
-**Result**: `SPF/AJIO/AJIO MASTER.xlsx` (`SPF_MASTER_DRIVE_FILE_ID`).
+**Result**: `AGENT WORK/SPF CLAIMS/AJIO MASTER.xlsx`, found by name (`core/drive.py` `spf_master`; owner,
+24 Nov 2026: the final master is kept only there, `SPF_MASTER_DRIVE_FILE_ID` is no longer used). The hand inputs
+stay in Drive `SPF/AJIO` (`SPF_MANUAL_DRIVE_FILE_ID`, `SPF_OMS_DRIVE_FILE_ID`).
 
 1. **Fetch**: AJIO RTV report + SPF tickets, ERP GRN and dispatch, SRM ledger, the manual register
    (Drive).

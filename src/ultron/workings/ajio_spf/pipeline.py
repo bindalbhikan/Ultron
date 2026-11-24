@@ -185,11 +185,10 @@ def fetch_all(today: date, ctx: dict) -> None:
 def fetch_drive(ctx: dict) -> None:
     """Master (editable) plus the manual register and old OMS sheet (read only) from Drive."""
     lookups = WORK / "input" / "Manual Sheet"
-    master_id = env("SPF_MASTER_DRIVE_FILE_ID")
     local = env("SPF_MASTER_XLSX_PATH")
-    if master_id:
-        from ..core.drive import DriveFile
-        ctx["master_drive"] = DriveFile(master_id)
+    if not local:
+        from ..core.drive import DriveFile, spf_master
+        ctx["master_drive"] = spf_master(MASTER_NAME)      # AGENT WORK/SPF CLAIMS
         ctx["master_drive"].download(WORK / MASTER_NAME, need_edit=True)
         http = ctx["master_drive"].http
         for var, name in (("SPF_MANUAL_DRIVE_FILE_ID", "AJIO RETURN SHEET MANUAL - DRIVE.xlsx"),
@@ -199,14 +198,12 @@ def fetch_drive(ctx: dict) -> None:
                     DriveFile(env(var), http).download(lookups / name)
                 except Exception as exc:  # noqa: BLE001
                     ctx["errors"].append(f"Drive {name}: {exc}")
-    elif local:
+    else:
         shutil.copy2(local, WORK / MASTER_NAME)
         for var, name in (("SPF_MANUAL_XLSX_PATH", "AJIO RETURN SHEET MANUAL - DRIVE.xlsx"),
                           ("SPF_OMS_XLSX_PATH", "AJIO RETURN SHEET OMS GURU - DRIVE.xlsx")):
             if env(var) and Path(env(var)).exists():
                 shutil.copy2(env(var), lookups / name)
-    else:
-        raise RuntimeError("Set SPF_MASTER_DRIVE_FILE_ID (or SPF_MASTER_XLSX_PATH for a local run)")
 
 
 # ------------------------------------------------------------------ build
