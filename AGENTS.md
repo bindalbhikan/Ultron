@@ -33,6 +33,8 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
   checked unit for unit before anything is published; a figure that differs is left out and named, never sent
   (`return_analysis/reconciled.check_against_business`). Rebuild reports from the saved PORTAL REPORTS, never from
   newly requested ones, so every report reads the same files.
+- Daily Myntra return delivery workbook rows require that account's validated Orders report; a missing or
+  stale Orders report leaves its existing rows unchanged, since cancellation/RTO classification needs it.
 - Seller specifics live in `agent.toml` and `src/ultron/workings/`; `src/ultron/` core never names Bindal.
 - Free Cloudflare plan: at most **5 cron triggers** (`worker/wrangler.toml`); each `SCHEDULE` entry in
   `worker/src/worker.js` must use a time the triggers fire at.

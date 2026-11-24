@@ -456,6 +456,10 @@ class MyntraPortal:
         return data[0]
 
     def _wait(self, job: dict, deadline: float, poll_seconds: int) -> dict:
+        # Another report may have used the shared wait budget. Refresh a queued job before
+        # deciding it timed out: the scheduling response can be forty minutes out of date.
+        if str(job.get("status") or "").upper() != "COMPLETED":
+            job = next((j for j in self.jobs() if j.get("id") == job.get("id")), job)
         while True:
             status = str(job.get("status") or "").upper()
             if status == "COMPLETED" and job.get("successFile"):

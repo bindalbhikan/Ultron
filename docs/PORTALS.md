@@ -25,6 +25,8 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
 * **Cooldown**: the same report again within 15 minutes is refused with *"Internal server error
   while scheduling…"* (HTTP 200). Different reports can be requested together. After any request
   or refusal, the next request of that report waits ~16 min (`schedule()` waits out one refusal).
+* **Polling**: refresh a queued job before applying a shared deadline; a scheduling response can still
+  say CREATED after the portal has completed it while another report was being waited for.
 * **Reuse**: a job for exactly the same dates (`exact_job`) or covering them (`plan`, SJIT) is
   reused. Statuses like `INTERRUPTED`, `FAILED`, `EXPIRED` are dead — never reused or waited for.
   A job that will not download is asked for again (`collect_or_regenerate`).

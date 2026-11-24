@@ -43,6 +43,11 @@ had only 23 of the day's 239 MAIN orders.) By hand: run the workflow (`date` = a
   portal sale) or the listings job has no rows (grouping).
 * A report refused ("Internal server error while scheduling") or killed (INTERRUPTED, "cluster is out of
   memory") is asked for again in a second round (`MYNTRA_REPORT_ROUNDS`, 2); the workflow has 100 minutes.
+  Queued jobs are refreshed before applying the shared wait deadline, so a report completed while another
+  report was being polled is not falsely reported as timed out. Return delivery workbook rows require a
+  validated Orders report; if it is stale or missing, that account's existing rows stay unchanged.
+  A 24 Nov check confirmed EXIM was authenticated but its latest completed Orders report still held data
+  only through 22 Nov: a source delay remains named and excluded until Myntra supplies complete data.
 * Telegram: one message: yesterday's return delivery (customer return / RTO / cancelled), per account each report
   made (job id and dates), the workbook link, then the days left blank and any report not made, and why.
 * The workbook (`workbook.py`): **DASHBOARD** (formulas over DATA, current when opened) and **DATA**; only DATA's

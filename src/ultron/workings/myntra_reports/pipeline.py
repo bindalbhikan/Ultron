@@ -249,13 +249,15 @@ def data_gaps(rows: dict[date, dict], min_daily: float = 10, min_run: int = 2) -
 
 def account_rows(account: str, done: dict[str, dict]) -> tuple[dict[date, dict], list[date], date | None]:
     """window_rows of the account's 30-day return delivery job (and orders job), read in memory."""
+    if "Orders" not in done:
+        raise RuntimeError("no validated orders report; return delivery rows left unchanged")
     from ..portals import myntra as mp
     from ..return_analysis.sources import myntra_portal
     portal = myntra_portal(account)
     job = done["Return Delivery"]
     from ..core.tables import read_text_csv
     delivery = read_text_csv(portal.download(job)[1])
-    orders = read_text_csv(portal.download(done["Orders"])[1]) if "Orders" in done else None
+    orders = read_text_csv(portal.download(done["Orders"])[1])
     first, last = mp.job_range(job, REPORTS["Return Delivery"])
     return window_rows(delivery, orders, first, last)
 
