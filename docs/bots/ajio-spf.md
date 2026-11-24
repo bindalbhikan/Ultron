@@ -14,6 +14,16 @@
    not delivered 60 to 90 days); **follow up** where AJIO answered (`followup.py`, Gemini drafts).
 4. **Publish**: master to Drive, actions file + summary to Telegram.
 
+**Sheets** (owner, 24 Nov 2026: **the portal decides the sheet**): RETURN DELIVERED holds only the
+returns AJIO marks delivered to us (a Return Delivered Date, 3PL "Return Delivered", or Return Status
+RETURN_DELIVERED / RETURN_PROCESSED / CREDIT_NOTE_CREATED; `master_engine.delivered_to_us`); every
+other return (in transit, cancelled, no status, received in ERP / OMSGuru or paid all the same) is on
+RETURN IN TRANSIT and moves over on the run after AJIO marks it delivered (until 24 Nov 2026 a
+received return sat on RETURN DELIVERED). **RETURN MONTH** (a formula column): the delivery month
+(Return Delivered Date, else the Delivery Challan Date AGE counts from) for a delivered return, the
+Return Created Date month otherwise; SUMMARY's months match on it (until 24 Nov 2026 by created date).
+A paid return (G4, Payment Done) is still claimed (`claims.py`); only a received one is not.
+
 `SPF_DRY_RUN=1` (default) lists instead of posting; only an explicit 0 posts. Any failed source turns
 the run into a dry run; per-run caps (`MAX_RAISE_PER_RUN`, `MAX_REPLIES_PER_RUN`); a failed "ticket
 already exists?" check skips that ticket.

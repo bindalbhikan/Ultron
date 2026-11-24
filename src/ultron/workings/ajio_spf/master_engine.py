@@ -163,6 +163,7 @@ SOURCE_FILL = "FFC8F7C8"
 DERIVED_FILL = "FFFFFF00"
 
 DERIVED_HEADERS = (
+    "RETURN MONTH",
     "AGE (DAYS)",
     "CLAIM STATUS",
     "CLAIM TYPE",
@@ -392,6 +393,7 @@ REQUIRED_HEADERS = (
     "Credit Note Value",
     "FWD B2B Invoice Amt",
     "POB ID",
+    "RETURN MONTH",
     "AGE (DAYS)",
     "CLAIM STATUS",
     "CLAIM TYPE",
@@ -582,9 +584,10 @@ NO_PICKUP = ("NOT PICKED UP", "PICKUP CANCELLED", "PICKUP FAILED")
 # that claim - it is MANUAL CLAIM, for the team. Only a return whose credit note is still pending
 # is ELIGIBLE (claims.py, the same rule).
 MANUAL_CLAIM = "MANUAL CLAIM"
-# Returns AJIO has not delivered to us and we have not received (in transit or cancelled, paid or
-# not) sit on their own sheet, like Myntra's; a row moves to RETURN DELIVERED on the run after it is
-# delivered or received.
+# The portal decides the sheet (owner, 24 Nov 2026): RETURN DELIVERED holds only the returns AJIO
+# marks delivered to us (delivered_to_us); every other one (in transit, cancelled, no status, received
+# or paid all the same) sits on its own sheet, like Myntra's, and moves to RETURN DELIVERED on the run
+# after AJIO marks it delivered. Until 24 Nov 2026 a received return went to RETURN DELIVERED too.
 TRANSIT_SHEET = "RETURN IN TRANSIT"
 MASTER_SHEETS = (SHEET, TRANSIT_SHEET)
 
@@ -645,6 +648,12 @@ def computed_formulas(column_of, row):
               f'IF({age}{row}<=90,"ELIGIBLE","NON ELIGIBLE")),"")))')
 
     return {
+        # yyyy-mm (owner, 24 Nov 2026): a return delivered to us by the month it was delivered (the
+        # date AGE counts from), one not delivered by the month it was created
+        "RETURN MONTH": (
+            f'=IF({back},TEXT({since},"yyyy-mm"),'
+            f'IF({created}{row}<>"",TEXT({created}{row},"yyyy-mm"),""))'
+        ),
         "AGE (DAYS)": (
             f'=IF({back},MAX(0,TODAY()-{since}),'
             f'IF({created}{row}<>"",MAX(0,TODAY()-{created}{row}),""))'
@@ -677,6 +686,14 @@ def _empty(value):
     return value is None or (isinstance(value, str) and value.strip() == "")
 
 
+def delivered_to_us(get):
+    """AJIO marks the return delivered to us: a Return Delivered Date, the carrier's "Return
+    Delivered", or a delivered Return Status (`get(header)` is the row's value)."""
+    return (not _empty(get("Return Delivered Date"))
+            or str(get("3PL Delivery Status") or "").strip().upper() == "RETURN DELIVERED"
+            or str(get("Return Status") or "").strip().upper() in DELIVERED_STATUSES)
+
+
 def computed_values(get, today=None):
     """What computed_formulas' four formulas give for one row, worked out here (`get(header)` is
     the row's value). Saved with each formula (store_values), so the numbers show where nothing
@@ -689,8 +706,7 @@ def computed_values(get, today=None):
 
     created = parse_date(get("Return Created Date"))
     carrier = str(get("3PL Delivery Status") or "")
-    is_delivered = (not _empty(get("Return Delivered Date")) or carrier.strip().upper() == "RETURN DELIVERED"
-                    or str(get("Return Status") or "").strip().upper() in DELIVERED_STATUSES)
+    is_delivered = delivered_to_us(get)
     since = parse_date(get("Return Delivered Date")) if not _empty(get("Return Delivered Date"))         else parse_date(get("Delivery Challan Date"))
     back = is_delivered and since is not None
     start = since if back else created
@@ -723,7 +739,8 @@ def computed_values(get, today=None):
     # credit note accepted, still open: the team claims it by hand
     elif claim == "ELIGIBLE" and not _empty(get("Credit Note Acceptance date")):
         claim = MANUAL_CLAIM
-    return {"AGE (DAYS)": age, "CLAIM STATUS": claim, "CLAIM TYPE": claim_type,
+    return {"RETURN MONTH": f"{start:%Y-%m}" if start else "",
+            "AGE (DAYS)": age, "CLAIM STATUS": claim, "CLAIM TYPE": claim_type,
             "FINAL RETURN STATUS": final}
 
 
@@ -2305,13 +2322,13 @@ def write(final_headers, records, out_index, log):
     sources = [out_index[header] for header in headers]
 
     workbook = Workbook()
-    # every return worked out first: the ones still in transit go to their own sheet
+    # every return worked out first: the ones AJIO has not delivered to us go to their own sheet
     today = date.today()
-    worked_of = [computed_values(
-        lambda header, record=record: record[out_index[header]] if header in out_index else None, today)
-        for record in records]
-    # not delivered to us and not received (paid or not): in transit or cancelled on the way
-    on_road = [w["CLAIM TYPE"] in ("RETURN IN TRANSIT", "RETURN CANCELLED") for w in worked_of]
+    getters = [lambda header, record=record: record[out_index[header]] if header in out_index else None
+               for record in records]
+    worked_of = [computed_values(get, today) for get in getters]
+    # the portal decides: not marked delivered (received, paid or not) -> RETURN IN TRANSIT
+    on_road = [not delivered_to_us(get) for get in getters]
 
     def styled_like(header):
         """The layout entry a column copies: its own, else its block's."""
@@ -2539,7 +2556,8 @@ def write_claim_tat(workbook, records, record_index):
 
 
 def write_summary(workbook, column_of, records, record_index, row_values=None):
-    """Add the SUMMARY sheet: one row per account and return month, a TOTAL row per account, a
+    """Add the SUMMARY sheet: one row per account and RETURN MONTH (delivery month on RETURN
+    DELIVERED, created month on RETURN IN TRANSIT), a TOTAL row per account, a
     blank row between accounts and a GRAND TOTAL at the bottom - the same columns as the Myntra
     SPF summary. Open returns are split: IN TRANSIT (still on the road, CLAIM TYPE "RETURN IN
     TRANSIT") and DELIVERED PENDING (handed to us but not received, "RETURN NOT RECEIVED"), so a
@@ -2562,7 +2580,7 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
         return f'"{value}"'
 
     account = SUMMARY_ACCOUNT_HEADER
-    created = "Return Created Date"
+    month = "RETURN MONTH"
     final = "FINAL RETURN STATUS"
     claim_status = "CLAIM STATUS"
     claim_type = "CLAIM TYPE"
@@ -2581,12 +2599,11 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
     manual = (claim_status, quoted(MANUAL_CLAIM))      # credit note accepted: claimed by hand
 
     def criteria(row, pairs, sheet):
-        # Account in column A, month as "yyyy-mm" text in column B.
-        month_start = f"DATE(LEFT($B{row},4),RIGHT($B{row},2),1)"
+        # Account in column A, month as "yyyy-mm" text in column B, matched on each row's RETURN
+        # MONTH: the delivery month on RETURN DELIVERED, the created month on RETURN IN TRANSIT.
         base = (
             (account, f"$A{row}"),
-            (created, f'">="&{month_start}'),
-            (created, f'"<"&EDATE({month_start},1)'),
+            (month, f"$B{row}"),
         )
         return ",".join(f"{whole(header, sheet)},{crit}" for header, crit in base + tuple(pairs))
 
@@ -2688,10 +2705,17 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
     paint(1, yellow)
 
     # column_of places Sheet1's columns; the records keep the script's order.
-    created_column = record_index["Return Created Date"]
     account_column = record_index[SUMMARY_ACCOUNT_HEADER]
-    created_of = [parse_date(record[created_column]) for record in records]
-    months = [parsed.replace(day=1) for parsed in created_of if parsed is not None]
+
+    def month_of(i):
+        label = str(worked(i, "RETURN MONTH") or "")
+        try:
+            return datetime.strptime(label, "%Y-%m").date()
+        except ValueError:
+            return None
+
+    month_dates = [month_of(i) for i in range(len(records))]
+    months = [parsed for parsed in month_dates if parsed is not None]
     today = date.today().replace(day=1)
     cursor = min(months, default=today)
     end = max(months + [today])
@@ -2705,8 +2729,8 @@ def write_summary(workbook, column_of, records, record_index, row_values=None):
     # the rows of each account and month, for the saved values
     rows_of = {}
     for i, record in enumerate(records):
-        if created_of[i] is not None:
-            rows_of.setdefault((text(record[account_column]), f"{created_of[i]:%Y-%m}"), []).append(i)
+        if month_dates[i] is not None:
+            rows_of.setdefault((text(record[account_column]), f"{month_dates[i]:%Y-%m}"), []).append(i)
 
     values = {}
 

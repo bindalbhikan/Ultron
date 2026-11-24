@@ -82,12 +82,12 @@ def _blank(v) -> bool:
 
 def claim_of(r: dict, today: date, ticketed: set[str]) -> str | None:
     """The category to claim this master row under today, or None."""
-    from .pipeline import final_status, not_worked
+    from .pipeline import not_worked, resolved
     from .engine import norm, is_delivered_status
     oli = norm(r.get("order_line_id"))
     if not oli or oli in ticketed or not _blank(r.get("TICKET ID")):
         return None
-    if not_worked(r) or final_status(r):
+    if not_worked(r) or resolved(r):           # Payment Received is still claimed
         return None
     if str(r.get("RETURN POD") or "").strip().upper() == "YES":
         return None
@@ -242,10 +242,10 @@ SUPERSEDED = re.compile(r"new .*ticket", re.I)     # rejected because a newer ti
 def dispute_due(row: dict, master: dict | None, today: date) -> bool:
     """A rejected claim to dispute today: on the master, not received or settled, no courier POD, a
     worked order, not replaced by a newer ticket, and untouched for MYNTRA_SPF_DISPUTE_DAYS (7)."""
-    from .pipeline import final_status, not_worked
+    from .pipeline import not_worked, resolved
     if row.get("STATUS") != "REJECT" or master is None or SUPERSEDED.search(str(row.get("REASON") or "")):
         return False
-    if not_worked(master) or final_status(master) or str(master.get("RETURN POD") or "").strip().upper() == "YES":
+    if not_worked(master) or resolved(master) or str(master.get("RETURN POD") or "").strip().upper() == "YES":
         return False
     if row.get("CATEGORY") == CATEGORY_NAME[DELAYED] and env("MYNTRA_SPF_DISPUTE_DELAYED") != "1":
         return False

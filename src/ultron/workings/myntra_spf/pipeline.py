@@ -271,6 +271,13 @@ def final_status(r: dict) -> str:
     return ""
 
 
+def resolved(r: dict) -> bool:
+    """True when the return needs no claim: received, or SPF paid / accepted. "Payment Received"
+    (the order was paid out, no return debit yet) is no return result: such a return is still
+    checked in OMSGuru, claimed and disputed (owner, 24 Nov 2026)."""
+    return final_status(r) not in ("", "Payment Received")
+
+
 def not_worked(r: dict) -> bool:
     """SJIT and FBM orders are not worked for SPF (engine.NOT_WORKED_MODELS)."""
     from .engine import NOT_WORKED_MODELS
@@ -314,7 +321,7 @@ def claim_status(r: dict, age) -> str:
     """CLAIM STATUS as the master's formula computes it (SPF POLICY v5)."""
     if str(r.get("TICKET ID") or "").strip():
         return "CLAIM DONE"
-    if not_worked(r) or age is None or final_status(r):
+    if not_worked(r) or age is None or resolved(r):
         return "NON ELIGIBLE"
     if r.get("deliver_to_seller_date"):
         return "ELIGIBLE" if age <= 7 else "EXPIRED"
@@ -398,15 +405,15 @@ def oldest_open(path: Path) -> dict[str, date]:
 
 
 def open_returns(path: Path, since: date) -> dict[tuple, dict]:
-    """(order_line_id, return_id) -> lookup terms for every row whose FINAL RETURN STATUS is
-    blank, created since `since`. Only these are looked up in OMSGuru."""
+    """(order_line_id, return_id) -> lookup terms for every row not resolved yet (FINAL RETURN
+    STATUS blank or Payment Received), created since `since`. Only these are looked up in OMSGuru."""
     from openpyxl import load_workbook
     from .engine import master_rows, norm
     wb = load_workbook(path, read_only=True)
     out = {}
     for name in ACCOUNTS:      # the account sheets and the RETURN IN TRANSIT sheet
         for r in master_rows(wb, name):
-            if final_status(r) or not_worked(r):
+            if resolved(r) or not_worked(r):
                 continue
             created = r.get("return_created_date")
             created = created.date() if hasattr(created, "date") else None

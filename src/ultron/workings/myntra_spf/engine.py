@@ -156,10 +156,11 @@ EARLIEST_RETURN = dt.datetime(2026, 1, 1)
 # is too young to act on. Each run asks in the terminal whether such rows go into the
 # sheet (y) or are left out (n); anything already received is always kept.
 YOUNG_TRANSIT_DAYS = 60
-# Every return still in transit (not delivered, not received or settled), whatever its age, is
-# on this sheet of the master instead of its account sheet, all three accounts together with an
-# ACCOUNT column (the last one, so the formulas line up with the account sheets). A row moves to
-# its account sheet on the first run after it is delivered or received. Before 30 Oct 2026 only
+# Every return the portal has not delivered back to us (is_in_transit: received, paid or not),
+# whatever its age, is on this sheet of the master instead of its account sheet, all three accounts
+# together with an ACCOUNT column (the last one, so the formulas line up with the account sheets).
+# A row moves to its account sheet on the first run after the portal marks it delivered (owner,
+# 24 Nov 2026; until then a received or settled return went to the account sheet). Before 30 Oct 2026 only
 # the young ones (< 60 days) were set aside, on the hidden sheet OLD_PARKED_SHEETS (still read).
 PARKED_SHEET = 'RETURN IN TRANSIT'
 OLD_PARKED_SHEETS = ['YOUNG IN TRANSIT']
@@ -1568,8 +1569,10 @@ def build_formulas(n):
     start = 'IF({d}<>"",{d},{r})'.format(d=dlv, r=rcd)
     f_age = '=IF({p}="","",MAX(0,TODAY()-INT({p})))'.format(p=start)
 
-    # yyyy-mm of the return create date, so sorting this column A to Z is chronological
-    f_month = '=IF({r}="","",TEXT({r},"yyyy-mm"))'.format(r=rcd)
+    # yyyy-mm, so sorting this column A to Z is chronological (owner, 24 Nov 2026): a return the
+    # portal delivered back to us (account sheets) by its delivery month, a return not delivered
+    # (RETURN IN TRANSIT sheet) by its return / RTO creation month
+    f_month = '=IF({d}<>"",TEXT({d},"yyyy-mm"),IF({r}="","",TEXT({r},"yyyy-mm")))'.format(d=dlv, r=rcd)
 
     # First match wins:
     #   SPF Paid          - Myntra paid the claim (SPF PAID filled)
@@ -1608,7 +1611,7 @@ def build_formulas(n):
     f_status = ('=IF({k}<>"","CLAIM DONE",'
                 'IF({nw},"NON ELIGIBLE",'
                 'IF(NOT(ISNUMBER({a})),"NON ELIGIBLE",'
-                'IF({f}<>"","NON ELIGIBLE",'
+                'IF(AND({f}<>"",{f}<>"Payment Received"),"NON ELIGIBLE",'
                 'IF({d}<>"",IF({a}<=7,"ELIGIBLE","EXPIRED"),'
                 'IF({a}<60,"UPCOMING CLAIM",IF({a}<=120,"ELIGIBLE","EXPIRED")))))))'
                 .format(k=tkt, d=dlv, a=age, f=final, nw=not_worked))
@@ -1655,7 +1658,8 @@ def row_values(rec, today=None):
         return out[h]
 
     rcd, dlv = rec.get('return_created_date'), rec.get('deliver_to_seller_date')
-    get('RETURN MONTH', lambda: rcd.strftime('%Y-%m') if day(rcd) else '')
+    month_day = (day(dlv) if not _blank(dlv) else None) or day(rcd)     # delivery month, else created
+    get('RETURN MONTH', lambda: month_day.strftime('%Y-%m') if month_day else '')
     start = day(dlv) if not _blank(dlv) else day(rcd)
     age = get('AGE (DAYS)', lambda: max(0, (today - start).days) if start else '')
 
@@ -1689,7 +1693,9 @@ def row_values(rec, today=None):
     def status():
         if not _blank(rec.get('TICKET ID')):
             return 'CLAIM DONE'
-        if str(rec.get('model') or '').upper() in NOT_WORKED_MODELS or not _num(age) or not _blank(fin):
+        # an order payout alone ("Payment Received") is no return result: still claimed (owner, 24 Nov 2026)
+        if (str(rec.get('model') or '').upper() in NOT_WORKED_MODELS or not _num(age)
+                or str(fin or '').strip() not in ('', 'Payment Received')):
             return 'NON ELIGIBLE'
         if not _blank(dlv):
             return 'ELIGIBLE' if age <= 7 else 'EXPIRED'
@@ -1913,9 +1919,10 @@ NOTES = {
                             'creation date, for type=RTO the RTO creation date. The\n'
                             'source reports keep these in two separate columns but never\n'
                             'fill both (verified across 84,901 rows), so they are one.'),
-    'RETURN MONTH': ('The return_created_date month as yyyy-mm, so sorting or\n'
-                     'filtering this column A to Z gives chronological order.\n'
-                     'Rows are already written oldest month first.'),
+    'RETURN MONTH': ('yyyy-mm, so sorting or filtering this column A to Z gives\n'
+                     'chronological order. Delivered back to us (account sheets):\n'
+                     'the deliver_to_seller_date month. Not delivered (RETURN IN\n'
+                     'TRANSIT sheet): the return_created_date month.'),
     'deliver_to_seller_date': ('From the Return Delivery Report - when the portal handed\n'
                                'the shipment back to the seller. When this is filled, it\n'
                                'is where AGE starts counting from.'),
@@ -1929,7 +1936,9 @@ NOTES = {
                      'CLAIM DONE - a ticket has already been raised\n\n'
                      'SJIT / FBM order -> NON ELIGIBLE, these are not worked\n\n'
                      'you confirmed you have it (FINAL RETURN STATUS =\n'
-                     'Return Received) -> NON ELIGIBLE, nothing to claim\n\n'
+                     'Return Received), or SPF paid / accepted\n'
+                     '-> NON ELIGIBLE, nothing to claim. Payment Received\n'
+                     '(the order paid out) is still claimed.\n\n'
                      'delivery date present - return not received claim,\n'
                      '7 days from the delivery date:\n'
                      '  AGE <= 7  -> ELIGIBLE\n'
@@ -2246,7 +2255,8 @@ def _summary_value(recs, bk, by_day, base, val, crit):
 def write_summary(wb, f, data, title, cols, by_day):
     """Account-wise summary on its own sheet, bucketed by return month or by day.
 
-    Months match the RETURN MONTH text. Days match return_created_date with a >= / <
+    Months match the RETURN MONTH text (the delivery month on the account sheets, the created
+    month on the in-transit sheet). Days match return_created_date with a >= / <
     window rather than equality, so a date that carries a time of day still counts.
     The sheets are created before the account sheets because xlsxwriter cannot reorder
     them afterwards, and these two belong at the front.
@@ -2287,19 +2297,21 @@ def write_summary(wb, f, data, title, cols, by_day):
 
     for name in SHEETS:
         recs = [rec for rec in data[name] + PARKED.get(name, [])
-                if isinstance(rec.get('return_created_date'), dt.datetime)
-                and str(rec.get('model') or '').upper() not in SUMMARY_EXCLUDE_MODELS]
-        if not recs:
+                if str(rec.get('model') or '').upper() not in SUMMARY_EXCLUDE_MODELS]
+        if by_day:
+            buckets = sorted({rec['return_created_date'].date() for rec in recs
+                              if isinstance(rec.get('return_created_date'), dt.datetime)})
+        else:
+            # RETURN MONTH: delivery month on the account sheets, created month on the in-transit one
+            buckets = sorted({str(m).strip() for m in (_value(rec, 'RETURN MONTH') for rec in recs)
+                              if str(m or '').strip()})
+        if not buckets:
             continue
         acc_recs, transit_recs = data[name], PARKED.get(name, []) if n_transit else []
         parts_of = [(sheet_ranges(name, len(data[name])), [])]
         if n_transit:
             t = sheet_ranges(PARKED_SHEET, n_transit)
             parts_of.append((t, [t[PARKED_ACCOUNT], '"%s"' % name]))
-        if by_day:
-            buckets = sorted({rec['return_created_date'].date() for rec in recs})
-        else:
-            buckets = sorted({rec['return_created_date'].strftime('%Y-%m') for rec in recs})
 
         first = r
         for bk in buckets:
@@ -2745,25 +2757,6 @@ def cleanup_inputs(data, log, dry_run=False):
 
 
 # ------------------------------------------------------------- young in-transit rows
-def is_settled(rec, payment=True):
-    """Python twin of the FINAL RETURN STATUS formula: True when that cell would hold a
-    value (SPF Paid / SPF Accepted / Return Received / Payment Received), i.e. the return is resolved.
-    payment=False leaves out "Payment Received" (the order was paid out, no return debit yet): that
-    says nothing about the return itself, so it does not keep a young in-transit row on the sheet."""
-    if rec.get('FINAL RETURN STATUS') not in (None, ''):     # typed over the formula
-        return True
-    if rec.get('SPF PAID') is not None:
-        return True
-    if norm(rec.get('STATUS')) in SPF_ACCEPTED_STATUSES and rec.get('TICKET ID') not in (None, ''):
-        return True
-    oms = str(rec.get('OMSGURU STATUS') or '').upper()
-    man = str(rec.get('MANUAL RETURN STATUS') or '').upper()
-    if 'RECEIVED' in oms or 'RECEIVED' in man or 'PICKUP NOT DONE' in man:
-        return True
-    return (payment and isinstance(rec.get('ORDER SETTLEMENT'), (int, float))
-            and rec.get('RETURN DEBIT') is None and rec.get('RETURN CHARGE') is None)
-
-
 # SPF ticket statuses that mean the claim passed (FINAL RETURN STATUS = SPF Accepted)
 SPF_ACCEPTED_STATUSES = {'ACCEPT', 'INVOICE_INITIATED', 'PAYMENT_COMPLETED'}
 IN_TRANSIT_STATUSES = {'RET CREATED', 'RET DISPATCHED', 'RTO CREATED', 'DISPATCHED'}
@@ -2777,28 +2770,12 @@ def is_young_in_transit(rec, today):
 
 
 def is_in_transit(rec):
-    """Exactly the rows the sheet shows as CLAIM TYPE = RETURN IN TRANSIT, any age.
-
-    Never matched: anything delivered (a delivery date, or "Delivered" in the status),
-    anything resolved (FINAL RETURN STATUS would hold a value), and a Return with no
-    return tracking number whose status is not a transit one - the sheet calls that
-    NO RETURN TRACKING, not in transit. With no delivery date, AGE counts from
-    return_created_date, so that is the date the age is taken from.
+    """A row of the RETURN IN TRANSIT sheet (owner, 24 Nov 2026: the portal decides): every return
+    the portal has not delivered back to us - no deliver_to_seller_date and no "Delivered" in the
+    status - whatever OMSGuru, the ERP, the manual sheet or a payment says, a row with no portal
+    status at all included. The account sheets hold only what the portal marks delivered.
     """
-    created = rec.get('return_created_date')
-    if not isinstance(created, dt.datetime):
-        return False
-    if rec.get('deliver_to_seller_date') or is_delivered_status(rec.get('status')):
-        return False
-    # an order payout alone ("Payment Received") is no return result: 530 young in-transit
-    # rows stayed on MAIN / DBCC / FMCC that way until 30 Oct 2026
-    if is_settled(rec, payment=False):
-        return False
-    if (norm(rec.get('status')) not in IN_TRANSIT_STATUSES
-            and norm(rec.get('type')) == 'RETURN'
-            and not rec.get('return_tracking_number')):
-        return False
-    return True
+    return not (rec.get('deliver_to_seller_date') or is_delivered_status(rec.get('status')))
 
 
 def ask_yes_no(question):
@@ -2815,7 +2792,7 @@ def ask_yes_no(question):
 
 
 def drop_young_in_transit(data, args):
-    """Ask whether the in-transit, unreceived returns (any age) go on their own sheet
+    """Ask whether the returns the portal has not delivered (any age, see is_in_transit) go on their own sheet
     (PARKED_SHEET, n) or stay on the account sheets (y).
 
     --in-transit y/n answers up front (the bot passes n). Otherwise the question is asked in
@@ -2827,7 +2804,7 @@ def drop_young_in_transit(data, args):
     total = sum(len(v) for v in young.values())
     if not total:
         return
-    print('RETURNS IN TRANSIT, NOT RECEIVED: %d (under %d days old: %d)'
+    print('RETURNS NOT DELIVERED BY THE PORTAL: %d (under %d days old: %d)'
           % (total, YOUNG_TRANSIT_DAYS,
              sum(is_young_in_transit(r, today) for v in young.values() for r in v)))
     for name in SHEETS:
@@ -2853,7 +2830,7 @@ def drop_young_in_transit(data, args):
         drop = {id(r) for r in young.get(name, [])}
         data[name] = [r for r in rows if id(r) not in drop]
         PARKED[name] = young.get(name, [])
-    print('  -> on the %s sheet (each moves to its account sheet once delivered or received)\n'
+    print('  -> on the %s sheet (each moves to its account sheet once the portal marks it delivered)\n'
           % PARKED_SHEET)
 
 
