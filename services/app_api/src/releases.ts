@@ -35,7 +35,7 @@ async function releaseRoute(request: Request, env: Env): Promise<Response | null
     if (!object) return fail('Release file is unavailable.', 404);
     const headers = new Headers({ 'Content-Type': 'application/octet-stream', 'Accept-Ranges': 'bytes',
       'Content-Disposition': 'attachment; filename="' + key.split('/').pop() + '"', ETag: object.httpEtag });
-    const range = 'range' in object ? object.range : undefined;
+    const range = request.method === 'GET' && request.headers.has('Range') && 'range' in object ? object.range : undefined;
     const offset = range && 'offset' in range ? range.offset ?? 0 : 0;
     const length = range && 'length' in range ? range.length ?? object.size : object.size;
     headers.set('Content-Length', String(length));

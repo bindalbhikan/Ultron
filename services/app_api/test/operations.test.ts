@@ -88,7 +88,7 @@ test('completed multipart releases advance monotonically and serve their verifie
       complete: async (_parts:unknown) => {
         const upload = pending.get(id);
         const payload = Buffer.concat(upload.parts);
-        const object = {size:payload.length,customMetadata:upload.meta,httpEtag:'"release"',payload};
+        const object = {size:payload.length,customMetadata:upload.meta,httpEtag:'"release"',payload,range:{offset:0,length:payload.length}};
         objects.set(key,object);
         // Completion responses need not include persisted custom metadata.
         return {size:payload.length,httpEtag:'"release"',customMetadata:{}};
@@ -120,7 +120,16 @@ test('completed multipart releases advance monotonically and serve their verifie
   assert.equal(manifest.size,3);
   assert.equal(manifest.sha256,'a'.repeat(64));
   const download=await releases(new Request(manifest.url),env);
+  assert.equal(download!.status,200);
+  assert.equal(download!.headers.get('Content-Range'),null);
   assert.deepEqual([...new Uint8Array(await download!.arrayBuffer())],[1,2,3]);
+  const head=await releases(new Request(manifest.url,{method:'HEAD'}),env);
+  assert.equal(head!.status,200);
+  assert.equal(head!.headers.get('Content-Length'),'3');
+  assert.equal(head!.headers.get('Content-Range'),null);
+  const ranged=await releases(new Request(manifest.url,{headers:{Range:'bytes=0-2'}}),env);
+  assert.equal(ranged!.status,206);
+  assert.equal(ranged!.headers.get('Content-Range'),'bytes 0-2/3');
 });
 
 test('concurrent download requests cannot cross the R2 read budget', async () => {

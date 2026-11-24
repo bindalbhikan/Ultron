@@ -111,7 +111,8 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   R2 is enabled with Standard bucket ultron-app-releases. Owner rule (24 Nov): free allowance only.
   Keep app guards at 2 GB total storage reservations, 10,000 Class A / 100,000 Class B calls per UTC month.
   Counters are claimed in D1 before R2; stop at limits, no paid fallback. Never reset storage reservations
-  blindly or expose public bucket URLs/custom domains. Cloudflare has no R2 billing cap; other account use
+  blindly or expose public bucket URLs/custom domains. Full APK downloads must use HTTP 200;
+  R2 full-object range metadata alone must not turn them into 206 responses. Cloudflare has no R2 billing cap; other account use
   is outside these app guards.
 - Approval decisions claim D1 before dispatch; ambiguous failures cannot dispatch again automatically.
   Phone jobs/results use independent D1 rows rather than a shared KV job slot.

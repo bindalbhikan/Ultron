@@ -46,6 +46,7 @@ Part indices and exact byte counts must match the reservation; retries cannot up
 At a cutoff, requests return 429 and updates pause. There is no paid fallback. Existing releases remain available at the storage cutoff, subject to the read cutoff.
 After enough releases fill the 2 GB reservation budget, audit completed objects and pending uploads before any cleanup/accounting adjustment; never reset the ledger blindly.
 The private GET /api/releases/usage endpoint exposes the application limits and reserved usage.
+Full downloads and HEAD responses use HTTP 200 even if R2 includes full-object range metadata; only explicit GET Range requests use 206. Android requires 200 for its complete APK download.
 
 These are application safeguards, not a Cloudflare billing cap. They cannot limit unrelated buckets, direct account uploads/downloads, other credentials or another service.
 Keep public bucket access disabled and all app release traffic behind this Worker.
