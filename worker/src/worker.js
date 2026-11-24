@@ -11,6 +11,7 @@
 // Every reply is written for a phone: a bold heading line, a blank line, short lines below,
 // and at most two short buttons per row.
 
+import { phoneJobs } from "../phone.js";
 import { makeAgent } from "../agent.js";   // Ultron's worker routes (the same for every seller)
 
 const OWNER = "bindalbhikan";
@@ -812,7 +813,7 @@ async function readMyntraSession(request, env) {
 //   status                        when the phone last asked, from which device
 // KV free plan: 1,000 writes a day, so the phone's "seen" is written at most every 10 minutes.
 const PHONE_SEEN = "phone_seen";
-const PHONE_JOB = "phone_job";
+
 
 // An Agent mode phone of the ULTRON app: its own token, made by the app API (services/app_api, phone_agent
 // table, only the SHA-256 kept) when an administrator turned the phone on; revoked there. It opens only the
@@ -834,57 +835,15 @@ async function phoneApi(request, env, action) {
   if (!authorised(request, env) && !(["next", "result"].includes(action) && await phoneAgent(request, env))) {
     return new Response("forbidden", { status: 403 });
   }
-  const q = new URL(request.url).searchParams;
   const json = (data) => new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
-  if (action === "job") {
-    const job = await request.json().catch(() => null);
-    if (!job?.id || !job.kind || !Array.isArray(job.items)) return new Response("bad job", { status: 400 });
-    await env.DASH.put(PHONE_JOB, JSON.stringify({ ...job, created: Date.now(), taken: 0 }), { expirationTtl: 86400 });
-    return json({ queued: job.id });
-  }
   if (action === "next") {
     const me = await request.json().catch(() => ({}));
     const seen = JSON.parse((await env.DASH.get(PHONE_SEEN)) || "{}");
     if (Date.now() - (seen.at || 0) > 10 * 60 * 1000) {
-      await env.DASH.put(PHONE_SEEN, JSON.stringify({ at: Date.now(), device: me.device || "", battery: me.battery ?? null,
-                                                       version: me.version || "" }));
+      await env.DASH.put(PHONE_SEEN, JSON.stringify({ at: Date.now(), device: String(me?.device || "").slice(0,100), battery: me?.battery ?? null, version: String(me?.version || "").slice(0,50) }));
     }
-    const job = JSON.parse((await env.DASH.get(PHONE_JOB)) || "null");
-    if (!job || job.done) return json({});
-    if (!job.taken || Date.now() - job.taken > 30 * 60 * 1000) {   // a phone that took it and died: given again
-      job.taken = Date.now();
-      await env.DASH.put(PHONE_JOB, JSON.stringify(job), { expirationTtl: 86400 });
-    }
-    return json({ id: job.id, kind: job.kind, items: job.items });
   }
-  if (action === "result") {
-    const id = q.get("job") || "";
-    const part = Number(q.get("part") || 0);
-    const job = JSON.parse((await env.DASH.get(PHONE_JOB)) || "null");
-    if (!job || job.id !== id) return new Response("no such job", { status: 404 });
-    const body = await request.text();
-    if (body.length > 20_000_000) return new Response("too large", { status: 413 });
-    await env.DASH.put(`phone_result:${id}:${part}`, body, { expirationTtl: 86400 });
-    if (q.get("last") === "1") {
-      job.done = part + 1;
-      await env.DASH.put(PHONE_JOB, JSON.stringify(job), { expirationTtl: 86400 });
-    }
-    return json({ stored: part });
-  }
-  if (action === "collect") {
-    const id = q.get("job") || "";
-    const job = JSON.parse((await env.DASH.get(PHONE_JOB)) || "null");
-    if (!job || job.id !== id) return json({ done: 0, missing: true });
-    if (!job.done) return json({ done: 0, taken: job.taken || 0 });
-    const results = {};
-    for (let i = 0; i < job.done; i++) {
-      // KV is eventually consistent: a part saved a moment ago may not be visible yet, so not done until every part is
-      const part = await env.DASH.get(`phone_result:${id}:${i}`);
-      if (part === null) return json({ done: 0, taken: job.taken || 0 });
-      Object.assign(results, JSON.parse(part));
-    }
-    return json({ done: job.done, taken: job.taken, results });
-  }
+  if (action !== "status") return phoneJobs(request, env, action);
   if (action === "status") return json(JSON.parse((await env.DASH.get(PHONE_SEEN)) || "{}"));
   return new Response("unknown", { status: 404 });
 }

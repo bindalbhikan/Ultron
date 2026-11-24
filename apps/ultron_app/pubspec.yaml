@@ -16,6 +16,7 @@ dependencies:
   http: ^1.6.0
   lucide_icons_flutter: ^4.0.3
   material_ui: ^1.11.1
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:

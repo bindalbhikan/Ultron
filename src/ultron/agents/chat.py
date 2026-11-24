@@ -164,6 +164,8 @@ def answer(question: str, chat: str = "", *, read_only: bool = False) -> str:
         log.info("Answered by %s in %s steps (%s earlier messages), %s in + %s out tokens (%s): %s",
                  usage["model"], usage["steps"], len(history) // 2, usage["input"], usage["output"], llm.cost_text(usage), (text or "")[:300])
     except llm.LLMError as exc:
+        if read_only:
+            raise
         text, mem = f"Sorry, the agent's model is not available right now ({str(exc)[:150]}). Try again later.", None
     text = text or "Sorry, I could not find an answer."
     if mem is not None:

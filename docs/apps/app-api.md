@@ -23,6 +23,8 @@ The database is called `ultron`. Its tables come from `services/app_api/migratio
 
 | Migration | Tables | Used by |
 |---|---|---|
+| `0009_app_release.sql` | Current completed R2 package per platform | app API; see app-updates.md |
+| `0008_operations_state.sql` | Atomic approval decisions and independent phone jobs/results | Telegram worker |
 | `0007_app_chat.sql` | `app_chat_job`: private per-user questions, answers and processing state; one pending request per user | app API and Telegram worker; Python agent processes a request id |
 | `0001_identity.sql` | `user`, `session`, `account`, `verification`, `rate_limit` (better-auth), `app_role`, `app_access`, `app_audit` | app API |
 | `0006_api_keys.sql` | `api_key` (AES-GCM, `KEYS_SECRET`), `agent_model` | the app API adds / lists, the worker decrypts for the agent |
@@ -75,6 +77,17 @@ dispatch failures and expired requests are shown as failures, and a result can b
 
 What the panel saves reaches the agent within 5 minutes. The order is: the `AGENT_MODEL*` env vars first,
 then the panel, then `[model]` in `agent.toml` (`ultron.core.llm.settings`, `src/ultron/core/models.py`).
+
+## Operations fixes (24 Nov 2026)
+
+Workspace fields are filtered on the server: workflows/GitHub require workflows.read; runs require workflows.read or analytics.read; approvals/reports/connections/schedule require their own read permission.
+Restricted lists are empty even when callers bypass navigation.
+
+Approval decisions share a conditional D1 claim between Telegram and app. Concurrent decisions dispatch at most once; explicit GitHub client refusals keep the request pending.
+Network/server ambiguity marks it uncertain and prevents another automatic dispatch; inspect GitHub run history.
+Read-only app chat propagates model outages so the job and workflow fail, rather than saving a successful apology.
+
+Public update discovery/downloads and private CI publication use the optional RELEASES R2 binding. See app-updates.md.
 
 ## Checks
 

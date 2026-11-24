@@ -44,6 +44,10 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ultron/updates").setMethodCallHandler { call, result ->
+            if (call.method == "install") AppUpdates.install(this, call, result)
+            else result.notImplemented()
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ultron/agent").setMethodCallHandler { call, result ->
             when (call.method) {
                 "status" -> result.success(agentStatus())

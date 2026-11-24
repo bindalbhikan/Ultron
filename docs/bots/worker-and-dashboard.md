@@ -23,6 +23,11 @@ are `KEYS` in `dashboard/src/index.js` and must also be in the worker's `DASH_KE
 | Returns | `returns`, `returns_year` | return % per portal (month / year), % by month, top reasons, brands, categories, states (`src/ultron/workings/return_analysis/dash.py`) |
 | Ads | `ajio_ads` | G4 per month, charge, charge / G4 %, pending months |
 
+Operations reliability (24 Nov): approval decisions use atomic D1 claims shared by app/Telegram.
+Explicit GitHub client refusals retain the request; network/server ambiguity blocks another dispatch.
+Phone jobs/results have independent D1 rows (worker/phone.js, migration 0008), so Zero TD and Grouping cannot overwrite each other.
+Next claims atomically with a 30-minute lease; collection needs every part. The current KV job is imported during deployment.
+
 KPIs: sale, VMS %, AJIO pickup pending, AJIO open returns, Myntra claims eligible, last month's
 return %. The run strip shows every bot's last run (`run_<key>`, pushed by `core/app.py`).
 * `POST /api/chat/completions` (also `/api/ai`) and `GET /api/models` (`DASHBOARD_TOKEN`): Workers AI in the

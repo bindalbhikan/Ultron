@@ -1,4 +1,5 @@
 import { createAuth, type Env } from './auth';
+import { releases } from './releases';
 import { openKey, sealKey } from './keys';
 import { HttpError, identity, PERMISSIONS, requirePermission, rolePermissions, type Identity, type Permission } from './access';
 
@@ -457,6 +458,8 @@ async function route(request: Request, env: Env) {
   }
   if (path === '/api/setup' && request.method === 'GET') return json({ needed: !(await adminExists(env)) });
   if (path === '/api/setup' && request.method === 'POST') return firstAdmin(request, env);
+  const release = await releases(request, env);
+  if (release) return release;
   const auth = createAuth(env);
   if (path.startsWith('/api/auth/')) {
     const authPath = path.slice('/api/auth'.length);
@@ -535,7 +538,17 @@ async function route(request: Request, env: Env) {
   }
   if (path === '/api/workspace' && request.method === 'GET') {
     requirePermission(user, 'app.access');
-    return json(await worker(env, '/api/app/workspace'));
+    const data = await worker(env, '/api/app/workspace');
+    const allowed = (p: Permission) => user.permissions.includes(p);
+    return json({ at: data.at,
+      workflows: allowed('workflows.read') ? data.workflows : [],
+      runs: allowed('workflows.read') || allowed('analytics.read') ? data.runs : [],
+      approvals: allowed('approvals.read') ? data.approvals : [],
+      reports: allowed('reports.read') ? data.reports : [],
+      connections: allowed('connections.read') ? data.connections : [],
+      schedule: allowed('schedule.read') ? data.schedule : [],
+      ...(allowed('workflows.read') ? { github: data.github } : {}),
+    });
   }
   if (path === '/api/workflows/run' && request.method === 'POST') return workflowRun(request, env, user);
   if (path === '/api/agent/chat' && ['GET', 'POST'].includes(request.method)) return appChat(request, env, user);

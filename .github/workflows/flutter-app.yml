@@ -74,7 +74,7 @@ jobs:
         working-directory: apps/ultron_app
         run: |
           flutter pub get --enforce-lockfile
-          flutter build apk --release --no-pub --build-name "$APP_VERSION" --build-number "$BUILD_NUMBER"
+          flutter build apk --release --no-pub --build-name "$APP_VERSION" --build-number "$BUILD_NUMBER" --dart-define=APP_VERSION="$APP_VERSION" --dart-define=BUILD_NUMBER="$BUILD_NUMBER"
           mkdir -p "$RUNNER_TEMP/out" && cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/out/ULTRON.apk"
       - uses: actions/upload-artifact@v4
         with:
@@ -97,7 +97,7 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get --enforce-lockfile
-      - run: flutter build windows --release --no-pub --build-name "$env:APP_VERSION" --build-number "$env:BUILD_NUMBER"
+      - run: flutter build windows --release --no-pub --build-name "$env:APP_VERSION" --build-number "$env:BUILD_NUMBER" --dart-define=APP_VERSION="$env:APP_VERSION" --dart-define=BUILD_NUMBER="$env:BUILD_NUMBER"
       - name: Package
         shell: pwsh
         run: |
@@ -124,7 +124,7 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get --enforce-lockfile
-      - run: flutter build macos --release --no-pub --build-name "$APP_VERSION" --build-number "$BUILD_NUMBER"
+      - run: flutter build macos --release --no-pub --build-name "$APP_VERSION" --build-number "$BUILD_NUMBER" --dart-define=APP_VERSION="$APP_VERSION" --dart-define=BUILD_NUMBER="$BUILD_NUMBER"
       - name: Package
         run: |
           mkdir -p "$RUNNER_TEMP/out"
@@ -152,7 +152,7 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get --enforce-lockfile
-      - run: flutter build linux --release --no-pub --build-name "$APP_VERSION" --build-number "$BUILD_NUMBER"
+      - run: flutter build linux --release --no-pub --build-name "$APP_VERSION" --build-number "$BUILD_NUMBER" --dart-define=APP_VERSION="$APP_VERSION" --dart-define=BUILD_NUMBER="$BUILD_NUMBER"
       - name: Package
         run: |
           mkdir -p "$RUNNER_TEMP/out"
@@ -175,6 +175,8 @@ jobs:
       GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
       GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      APP_UPDATES_API: https://ultron-app-api.bhikan-serein.workers.dev
+      DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:

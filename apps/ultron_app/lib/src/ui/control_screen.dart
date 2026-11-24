@@ -140,6 +140,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     );
     if (picked != null && mounted) {
       setState(() {
+        _auto = false;
         _pickModel = picked;
         _model.text = '$_pickProvider:$picked';
       });
@@ -514,7 +515,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   Text('Brain: model', style: theme.textTheme.titleMedium),
                   const SizedBox(height: 6),
                   Text(
-                    'Auto picks the newest strong model of every provider that has a key, and moves to the next one when a model fails or runs out of credit.',
+                    'Choose a provider and model below, or use Auto. Choosing a model turns Auto off; save to apply. If it fails, the agent tries your other providers.',
                     style: theme.textTheme.bodySmall,
                   ),
                   SwitchListTile(
@@ -525,7 +526,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                         : null,
                     title: const Text('Auto-select the model'),
                   ),
-                  if (!_auto) ...[
+                  ...[
                     DropdownButtonFormField<String>(
                       key: const Key('pick-provider'),
                       initialValue: _pickProvider,
@@ -543,6 +544,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                       ],
                       onChanged: canManage && !_saving
                           ? (v) => setState(() {
+                              _auto = false;
                               _pickProvider = v!;
                               _pickModel = _modelsOf(v).firstOrNull;
                               _model.text =

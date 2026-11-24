@@ -3,7 +3,7 @@ export default {
   async fetch(request) {
     if (request.headers.get('Authorization') !== 'Bearer test-worker-token') return new Response('forbidden', { status: 403 });
     const path = new URL(request.url).pathname;
-    if (path === '/api/app/workspace' && request.method === 'GET') return Response.json({ workflows: [], runs: [], github: 'ok' });
+    if (path === '/api/app/workspace' && request.method === 'GET') return Response.json({ at: 123, workflows: [{id:'sale'}], runs: [{id:'run'}], approvals: [{id:'approval'}], reports: [{id:'report'}], connections: [{id:'connection'}], schedule: [{id:'schedule'}], github: 'ok' });
     if (path === '/api/app/run' && request.method === 'POST') return Response.json({ started: 'sale.yml' });
     if (path === '/api/app/chat' || path === '/api/app/chat/history') {
       const input = await request.json();

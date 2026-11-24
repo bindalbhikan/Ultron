@@ -37,7 +37,7 @@ def publish(folder_path: Path) -> None:
         if name in found:
             file_id = drive.put(found[name], mime)
             link = f"https://drive.google.com/file/d/{file_id}/view"
-            print(f"{name}: AGENT WORK/{FOLDER} ({link})")
+            print(f"{name}: uploaded to AGENT WORK/{FOLDER}")
             lines.append(f"• <b>{label}</b>\n{link}")
     for name in missing:                 # a build that failed is named, never silently left out
         lines.append(f"• {FILES[name][0]}: <i>not built this time</i>")
@@ -48,6 +48,11 @@ def publish(folder_path: Path) -> None:
                       + "\n\nAndroid: open the link on the phone and install over the old one.")
     if missing:
         print("not built:", ", ".join(missing))
+    if env("APP_UPDATES_API") and env("DASHBOARD_TOKEN"):
+        from app_updates import publish_updates
+        publish_updates(found, api=env("APP_UPDATES_API").rstrip("/"), token=env("DASHBOARD_TOKEN"),
+                        version=version, build=int(env("BUILD_NUMBER")))
+
 
 
 if __name__ == "__main__":

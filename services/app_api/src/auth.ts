@@ -6,6 +6,7 @@ import * as schema from './schema';
 
 export interface Env {
   DB: D1Database;
+  RELEASES?: R2Bucket;
   AUTH_SECRET: string;
   // SHA-256 (hex) of the one-time setup code that makes the first administrator (POST /api/setup)
   SETUP_CODE_HASH?: string;

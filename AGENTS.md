@@ -106,6 +106,11 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   (error 1042; the app showed "The operations service said 404", 23 Nov 2026).
 - Daily OTP sheet (team sheet): the agent's rows show only the phone's user name in the name column, no
   `Agent ·` (owner, 23 Nov 2026); `services/sms_sheet/Code.gs` knows its rows by the note `ULTRON app` on that cell.
+- App updates: docs/apps/app-updates.md. Never publish a manifest before upload completion or replace
+  it with an older build. Android verifies size, digest, package and version before the system installer.
+  R2 activation remains required as of 24 Nov 2026.
+- Approval decisions claim D1 before dispatch; ambiguous failures cannot dispatch again automatically.
+  Phone jobs/results use independent D1 rows rather than a shared KV job slot.
 - App chat is private per user and read-only: `app_chat_job` in D1, `agent-chat.yml` dispatched with a request
   id only. Never give app chat Telegram's owner action or shared-note write tools; actions use the app's
   separately authorised Workflows and Approvals routes. App replies never go to Telegram.

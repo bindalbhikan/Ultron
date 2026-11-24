@@ -30,6 +30,13 @@ Every screen reads a live service; a person sees only what their role allows (`d
 
 Phones show Home, Agent, Workflows, Reports and Profile in the bottom bar and the rest in the menu; wider screens get a side bar with everything. These screens were restored on 23 Nov 2026 with live data in place of the old demo data.
 
+## Updates and model selection (24 Nov 2026)
+
+Profile links to **AI providers and models**. Provider/model controls stay visible in Auto mode; choosing a model turns Auto off and Save applies it.
+Startup checks for a newer build and shows an update prompt inside the app, including SMS only. Profile also has Check for updates.
+Android verifies the APK before opening its system installer; desktops open the package download.
+See app-updates.md for storage and the R2 activation still required. Older installations need the first updater-enabled APK from Drive once.
+
 ## Design
 
 The owner's emerald / mint reference, as first built: emerald greens (`#007B57`), mint surfaces, the mint sign-in

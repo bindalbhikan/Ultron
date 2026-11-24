@@ -129,31 +129,58 @@ export function makeAgent({
 
   const isTap = (data) => /^(ap|rj):/.test(String(data || ""));
 
+  async function resolveApproval(env, id, approve, chat = "") {
+    const key = `approval:${id}`;
+    const database = env[db];
+    const existing = await database.prepare("SELECT payload FROM agent_approval WHERE id=? AND expires>?").bind(id, Date.now()).first();
+    const saved = existing ? JSON.parse(existing.payload) : await env[kv].get(key, "json");
+    if (!saved || (chat && String(saved.chat) !== String(chat))) return { status: 404, error: "expired or already decided" };
+    const expires = (saved.at || Date.now()) + approvalHours * 3600000;
+    if (expires <= Date.now()) return { status: 404, error: "expired or already decided" };
+    const action = actions(env)[saved.action];
+    if (approve && !action) return { status: 400, error: "action no longer allowed" };
+    await database.prepare("INSERT OR IGNORE INTO agent_approval(id,payload,status,expires) VALUES(?,?,'pending',?)")
+      .bind(id, JSON.stringify(saved), expires).run();
+    const claimed = await database.prepare("UPDATE agent_approval SET status='dispatching' WHERE id=? AND status='pending' AND expires>? RETURNING id")
+      .bind(id, Date.now()).first();
+    if (!claimed) return { status: 409, error: "This approval is processing or already decided. Check the run history before trying again." };
+    if (approve) {
+      let res;
+      try { res = await dispatch(env, action.workflow, saved.inputs); }
+      catch {
+        await database.prepare("UPDATE agent_approval SET status='uncertain' WHERE id=?").bind(id).run();
+        return { status: 502, error: "GitHub did not confirm the dispatch. Check the run history; this approval will not dispatch again." };
+      }
+      if (res.status >= 500) {
+        await database.prepare("UPDATE agent_approval SET status='uncertain' WHERE id=?").bind(id).run();
+        return { status: 502, error: "GitHub returned a server error. Check run history; this approval will not dispatch again." };
+      }
+      if (res.status !== 204) {
+        await database.prepare("UPDATE agent_approval SET status='pending' WHERE id=?").bind(id).run();
+        return { status: 502, error: `GitHub refused the dispatch (${res.status}). The approval is kept; try again.` };
+      }
+    }
+    await database.prepare("UPDATE agent_approval SET status=? WHERE id=?").bind(approve ? "completed" : "rejected", id).run();
+    await env[kv].delete(key);
+    await env[kv].delete("app:workspace");
+    return { status: 200, saved, workflow: action?.workflow };
+  }
+
   async function decide(env, cb, data) {
-    const key = `approval:${data.slice(3)}`;
-    const saved = await env[kv].get(key, "json");
     const edit = (text) => telegram(env, "editMessageText", { chat_id: cb.message.chat.id, message_id: cb.message.message_id,
                                                              text, parse_mode: "HTML", disable_web_page_preview: true });
-    if (!saved || String(saved.chat) !== String(cb.message.chat.id)) {     // a tap from another chat uses nothing up
-      await telegram(env, "answerCallbackQuery", { callback_query_id: cb.id, text: "Expired or already decided" });
-      return edit(`${cb.message.text ? esc(cb.message.text) : ""}\n\n⌛ <i>Expired or already decided.</i>`);
+    const result = await resolveApproval(env, data.slice(3), data.startsWith("ap:"), cb.message.chat.id);
+    if (result.status !== 200) {
+      await telegram(env, "answerCallbackQuery", { callback_query_id: cb.id, text: "Not started" });
+      return edit(`${esc(cb.message.text || "")}\n\n⚠️ ${esc(result.error)}`);
     }
-    await env[kv].delete(key);                     // one tap decides it, a second does nothing
     const who = esc(cb.from?.first_name || "someone");
     if (data.startsWith("rj:")) {
       await telegram(env, "answerCallbackQuery", { callback_query_id: cb.id, text: "Rejected" });
       return edit(`${esc(cb.message.text || "")}\n\n✖️ <b>Rejected</b> by ${who}.`);
     }
-    const action = actions(env)[saved.action];
-    if (!action) {
-      await telegram(env, "answerCallbackQuery", { callback_query_id: cb.id, text: "Action no longer allowed" });
-      return edit(`${esc(cb.message.text || "")}\n\n❌ <i>${esc(saved.action)} is no longer in AGENT_ACTIONS.</i>`);
-    }
-    const res = await dispatch(env, action.workflow, saved.inputs);
-    await telegram(env, "answerCallbackQuery", { callback_query_id: cb.id, text: res.status === 204 ? "Started" : "Failed" });
-    return edit(`${esc(cb.message.text || "")}\n\n` + (res.status === 204
-      ? `✅ <b>Approved</b> by ${who}: ${esc(action.workflow)} started.`
-      : `❌ Approved by ${who}, but GitHub said ${res.status}: ${esc((await res.text()).slice(0, 200))}`));
+    await telegram(env, "answerCallbackQuery", { callback_query_id: cb.id, text: "Started" });
+    return edit(`${esc(cb.message.text || "")}\n\n✅ <b>Approved</b> by ${who}: ${esc(result.workflow)} started.`);
   }
 
   // Workers AI on the account's free daily allocation: one chat-completions call (OpenAI shape:
@@ -458,6 +485,8 @@ export function makeAgent({
     for (const k of (await env[kv].list({ prefix: "approval:" })).keys) {
       const a = await env[kv].get(k.name, "json");
       if (!a) continue;
+      const state = await env[db].prepare("SELECT status FROM agent_approval WHERE id=?").bind(k.name.slice("approval:".length)).first();
+      if (state && state.status !== "pending") continue;
       approvals.push({ id: k.name.slice("approval:".length), action: a.action, inputs: a.inputs || {}, summary: a.summary || "",
                        workflow: allowed[a.action]?.workflow || "", at: a.at || null,
                        expires: k.expiration ? k.expiration * 1000 : null });
@@ -503,23 +532,17 @@ export function makeAgent({
     if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
     const req = await jsonBody(request).catch((e) => e);
     if (req instanceof Response) return req;
-    const key = `approval:${String(req.id || "")}`;
-    const saved = await env[kv].get(key, "json");
-    if (!saved) return bad("expired or already decided", 404);
-    await env[kv].delete(key);
-    await env[kv].delete("app:workspace");
+    if (typeof req.approve !== "boolean" || !/^[a-f0-9-]{6,40}$/.test(String(req.id || ""))) return bad("invalid approval");
+    const result = await resolveApproval(env, req.id, req.approve);
+    if (result.status !== 200) return bad(result.error, result.status);
+    const saved = result.saved;
     const who = esc(req.by || "someone");
     if (!req.approve) {
       await send(env, saved.chat, `✖️ <b>Rejected</b> in the ULTRON app by ${who}: ${esc(saved.action)}.`);
       return Response.json({ rejected: saved.action });
     }
-    const action = actions(env)[saved.action];
-    if (!action) return bad("action no longer allowed");
-    const res = await dispatch(env, action.workflow, saved.inputs);
-    await send(env, saved.chat, res.status === 204
-      ? `✅ <b>Approved</b> in the ULTRON app by ${who}: ${esc(action.workflow)} started.`
-      : `❌ Approved in the app by ${who}, but GitHub said ${res.status}.`);
-    return res.status === 204 ? Response.json({ started: action.workflow }) : Response.json({ error: `GitHub said ${res.status}` }, { status: 502 });
+    await send(env, saved.chat, `✅ <b>Approved</b> in the ULTRON app by ${who}: ${esc(result.workflow)} started.`);
+    return Response.json({ started: result.workflow });
   }
 
   async function appChat(request, env, path) {

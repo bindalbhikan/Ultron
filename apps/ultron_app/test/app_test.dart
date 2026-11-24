@@ -615,8 +615,9 @@ void main() {
     await _signIn(tester, 'Bhikan');
     container(tester).read(routerProvider).go('/app/control');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Auto-select the model'));
-    await tester.pumpAndSettle();
+    // The picker is visible while Auto is on.
+    expect(find.byKey(const Key('pick-provider')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pick-model-anthropic')), findsOneWidget);
     await tester.tap(find.byKey(const Key('refresh-models')));
     await tester.pumpAndSettle();
     expect(find.text('4 models this provider offers'), findsOneWidget);

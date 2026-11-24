@@ -252,6 +252,11 @@ test('workspace, run and decide check the role, then reach the operations servic
   assert.equal(((await gone.json()) as {error:string}).error,'expired or already decided');
   assert.equal((await call('/api/workflows/run','POST',{action:'BAD ACTION'},adminToken)).status,400);
   const viewerToken=await signin2('owner.two','Eight@8c');            // a viewer: app.access only
+  const restricted = await (await call('/api/workspace','GET',undefined,viewerToken)).json() as Record<string,unknown>;
+  assert.deepEqual(restricted.approvals, []);
+  assert.deepEqual(restricted.connections, []);
+  assert.deepEqual(restricted.workflows, []);
+  assert.equal(restricted.github, undefined);
   assert.equal((await call('/api/workflows/run','POST',{action:'sale'},viewerToken)).status,403);
   assert.equal((await call('/api/approvals/decide','POST',{id:'abcdef123456',approve:true},viewerToken)).status,403);
 });

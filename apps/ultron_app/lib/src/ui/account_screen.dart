@@ -7,6 +7,7 @@ import '../app_info.dart';
 import '../domain/access.dart';
 import '../state/providers.dart';
 import 'components.dart';
+import 'update_notice.dart';
 
 void showUltronAbout(BuildContext context) => showAboutDialog(
   context: context,
@@ -104,6 +105,17 @@ class AccountScreen extends ConsumerWidget {
             '"Check again" or sign in again.',
           ),
         if (!pending && !denied) ...[
+          if (user?.permissions.contains('agent.tools.read') ?? false)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(LucideIcons.brain),
+              title: const Text('AI providers and models'),
+              subtitle: const Text(
+                'Choose a model, add API keys and set fallbacks',
+              ),
+              onTap: () => context.go('/app/control'),
+            ),
+          const UpdateNotice(full: true),
           const SectionHeading('Appearance'),
           SegmentedButton<ThemeMode>(
             segments: const [

@@ -28,6 +28,10 @@ irreversible.
 | 3. What ran / was missed | every scheduled task ticked per day | ✅ Drive work-schedule sheet (`work-schedule`); a weekly "what failed / was fixed" message is not built |
 | 4. Cross-platform control app | Emerald Flutter frontend, required login and Phone Work | ✅ Live username auth/API, secure sessions and Android SMS/Agent mode migrated (23 Nov); private read-only in-app agent chat connected (24 Nov). Native runtime checks still require devices (`docs/apps/ultron-app.md`) |
 
+24 Nov app reliability: workspace sections now respect server permissions; approvals use atomic claims;
+overlapping phone jobs have independent storage; model outages fail app chat jobs.
+Provider/model selection stays visible in Auto mode. In-app update implementation is added; Cloudflare R2 activation is pending.
+
 ## 3. Decision rules
 
 | The agent does by itself | Asks first (Telegram Approve / Reject) | Never |

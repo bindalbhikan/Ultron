@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'dart:async';
+
 import 'src/app.dart';
+import 'src/data/app_updates.dart';
 import 'src/data/sms_bridge.dart';
 import 'src/state/providers.dart';
 
@@ -23,6 +26,7 @@ Future<void> main() async {
       .read(authProvider.notifier)
       .restore()
       .timeout(const Duration(seconds: 3), onTimeout: () {});
+  unawaited(container.read(updatesProvider.notifier).check());
   runApp(
     UncontrolledProviderScope(container: container, child: const UltronApp()),
   );
