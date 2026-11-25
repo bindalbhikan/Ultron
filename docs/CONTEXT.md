@@ -22,7 +22,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 | agent-watch | `python run.py agent-watch` | Agent watch | `agent-watch.yml` Agent watch | as every bot workflow finishes | `docs/bots/agent-watch.md` |
 | ajio-ads | `python run.py ajio-ads` | AJIO ads / TOT gap | `ajio-ads.yml` AJIO ads TOT gap | 9:00 AM monthly (3rd); 9:00 AM monthly (5th) | `docs/bots/ajio-ads.md` |
 | ajio-spf | `python run.py ajio-spf` | AJIO SPF | `ajio-spf.yml` AJIO SPF run | 9:00 AM weekly (wed, sat); 9:00 AM daily (not wed, sat) | `docs/bots/ajio-spf.md` |
-| ajio-tat | `python run.py ajio-tat` | AJIO dispatch TAT | `ajio-tat.yml` AJIO TAT daily update | 5:30 PM daily | `docs/bots/ajio-tat.md` |
+| ajio-tat | `python run.py ajio-tat` | AJIO dispatch TAT | `ajio-tat.yml` AJIO TAT daily update | 6:00 PM daily | `docs/bots/ajio-tat.md` |
 | business-report | `python run.py business-report` | Business reporting | `business-report.yml` Business reporting | after every `portal-reports` run | `docs/bots/business-report.md` |
 | deadstock | `python run.py deadstock` | Dead stock report | `deadstock.yml` Dead stock report | 11:00 AM monthly (1st) | `docs/bots/deadstock.md` |
 | erp-oms-return | `python run.py erp-oms-return` | ERP to OMSGuru returns | `erp-oms-return.yml` ERP to OMSGuru returns | 8:00 PM daily | `docs/bots/erp-oms-return.md` |

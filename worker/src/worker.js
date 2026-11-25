@@ -230,7 +230,7 @@ const SCHEDULE = [
   { ist: "2:00 PM on the 15th", cron: "30 8 * * *", day: 15, cmd: "returns", label: "Return analysis second try" },
   { ist: "3:30 PM daily", cron: "0 10 * * *", cmd: "sale" },
   { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "vms" },
-  { ist: "5:30 PM daily", cron: "0 12 * * *", cmd: "ajiotat" },
+  { ist: "6:00 PM daily", cron: "30 12 * * *", cmd: "ajiotat" },   // 6 PM (owner, 25 Nov 2026; was 5:30 PM)
   // the reports that used GitHub's schedule until 25 Oct 2026
   { ist: "9:30 AM daily", cron: "0 4 * * *", cmd: "morning" },
   { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "stock" },

@@ -1,6 +1,6 @@
 # AJIO dispatch TAT — `python run.py ajio-tat`
 
-**When**: 5:30 PM daily (OMSGuru window = yesterday + today, `TAT_LOOKBACK_DAYS`). On demand:
+**When**: 6:00 PM daily (owner, 25 Nov 2026; was 5:30 PM; OMSGuru window = yesterday + today, `TAT_LOOKBACK_DAYS`). On demand:
 `/ajiotat [days]`.
 
 **Result**: one master `AJIO_TAT_MASTER.xlsx` in Drive `AGENT WORK/AJIO/Ajio Daily Order Tat Check Working`
@@ -16,6 +16,14 @@
 * OMSGuru order pages (only orders new or still open) + courier tracking for AWBs whose pickup is
   not confirmed: Process / Pickup status, TAT Result (CORRECT / NOT CORRECT / CHECK / PENDING /
   CANCELLED).
+* **Open pickups read again** (owner, 25 Nov 2026): every master order still waiting for pickup from the last
+  `TRACK_DAYS` (15) days but before the OMSGuru window is read from OMSGuru again each run (`open_before`, at most
+  `TAT_OPEN_RECHECK_CAP` 300). Before, only yesterday + today were read, so an order cancelled after packing (OMSGuru
+  `Cancel Init` -> `Cancelled Return Received`) kept showing as pickup pending and got ticket follow-ups (25 Nov: 6 of
+  the 10 pickup pending AWBs).
+* **Cancelled after packing, never picked up** (`cancelled_unpicked`, owner, 25 Nov 2026): never in pickup pending, the
+  Telegram message, its Excel or the pickup form. It gets the courier pickup ticket once (when it has none and the
+  courier's site says not picked), never a follow-up, and that ticket is not reported on Telegram (only logged).
 * **ERP label print**: `Label Printed` / `ERP Label Time` / `ERP Label By` from ERP report 62
   (portal AJIO; its "Order ID" is the AWB), read from the window start (a week at least); the first
   print counts. 18 Oct: 3,104 of 3,286 orders matched.

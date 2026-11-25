@@ -285,6 +285,22 @@ def awbs_to_track(o: pl.DataFrame, old_status: pl.DataFrame) -> pl.DataFrame:
                  .unique("AWB", keep="first", maintain_order=True))
 
 
+def open_before(old_status: pl.DataFrame, start: datetime) -> list[str]:
+    """The master's orders still waiting for pickup, ordered in the last TRACK_DAYS (15) days but before the OMSGuru
+    window: read from OMSGuru again each run (owner, 25 Nov 2026), so an order cancelled after it was packed (Cancel
+    Init, Cancelled Return Received) leaves pickup pending instead of getting pickup tickets. At most
+    TAT_OPEN_RECHECK_CAP (300), oldest left out first."""
+    if not old_status.height or "Pickup Status" not in old_status.columns:
+        return []
+    since = _today() - timedelta(days=num("TRACK_DAYS", 15))
+    ids = (old_status.filter(awaiting_pickup() & (pl.col("Order Time") >= since).fill_null(False)
+                             & (pl.col("Order Time") < start).fill_null(False) & pl.col("Order ID").is_not_null())
+                     .sort("Order Time", descending=True)["Order ID"].cast(pl.Utf8).str.strip_chars().to_list())
+    ids = [i for i in dict.fromkeys(ids) if i and i.lower() not in ("nan", "none")][:int(num("TAT_OPEN_RECHECK_CAP", 300))]
+    log.info("%d open pickups from before %s: their OMSGuru status read again", len(ids), f"{start:%d-%b}")
+    return ids
+
+
 def _today() -> datetime:
     return datetime.combine(date.today(), datetime.min.time())
 
@@ -404,17 +420,25 @@ def pickup_pending_report(df: pl.DataFrame, now=None) -> list:
             "Regards,", "Bindal Exports"]
 
 
+def cancelled_unpicked() -> pl.Expr:
+    """Cancelled (OMSGuru or the courier) after it was packed, never picked up: one pickup ticket, no follow-up,
+    not in pickup pending, the Telegram message or its sheet (owner, 25 Nov 2026)."""
+    return ((pl.col("Pickup Status") == "Cancelled") & pl.col("Pickup Time").is_null()
+            & pl.col("RTS Time").is_not_null()).fill_null(False)
+
+
 def pickup_ticket_candidates(df: pl.DataFrame, now: datetime) -> pl.DataFrame:
     """Packed, not picked up, ordered in the last TRACK_DAYS (15) days: one AJIO ticket per order,
     whether its pickup deadline has passed (Over) or not yet (Due) - every order of the pickup
-    pending list gets one. TICKET_ONLY_OVER=1: only orders whose deadline passed
-    TICKET_GRACE_HOURS (24) ago, as before 24 Oct 2026."""
+    pending list gets one; a cancelled one never picked up too (cancelled_unpicked, "_cancelled"). TICKET_ONLY_OVER=1:
+    only orders whose deadline passed TICKET_GRACE_HOURS (24) ago, as before 24 Oct 2026."""
     since = datetime.combine(now.date(), datetime.min.time()) - timedelta(days=num("TRACK_DAYS", 15))
-    due = (awaiting_pickup() & (pl.col("Order Time") >= since).fill_null(False)
+    due = ((awaiting_pickup() | cancelled_unpicked()) & (pl.col("Order Time") >= since).fill_null(False)
            & pl.col("Order ID").is_not_null() & pl.col("AWB").is_not_null())
     if env("TICKET_ONLY_OVER", "").lower() in ("1", "true", "yes"):
         due = due & (pl.col("Dispatch Deadline") + timedelta(hours=num("TICKET_GRACE_HOURS", 24)) < now).fill_null(False)
-    return df.filter(due).sort("Dispatch Deadline", nulls_last=True, maintain_order=True)
+    return (df.filter(due).with_columns(cancelled_unpicked().alias("_cancelled"))
+              .sort("Dispatch Deadline", nulls_last=True, maintain_order=True))
 
 
 ORDER_IN_TICKET = re.compile(r"Order ID (\d+)")
@@ -546,14 +570,15 @@ def raise_pickup_tickets(df, now, dry: bool) -> tuple[list[dict], dict[str, list
     for r in cands.iter_rows(named=True):
         oid = str(r["Order ID"]).strip()
         rec = {"Order ID": oid, "AWB": str(r["AWB"]), "Courier": str(r["Courier"]),
-               "Pickup Deadline": r["Dispatch Deadline"], "Ticket": ", ".join(ids.get(oid, [])), "Result": ""}
+               "Pickup Deadline": r["Dispatch Deadline"], "Ticket": ", ".join(ids.get(oid, [])), "Result": "",
+               "Cancelled": bool(r.get("_cancelled"))}
         seen = courier.get(str(r["AWB"]), "not checked")
         rec["Courier Site"] = seen
         in_master = [x.strip() for x in str(r.get("Pickup Ticket") or "").split(",")
                      if x.strip() and x.strip().lower() != "nan"]
         if ids.get(oid) or in_master:
             rec["Result"] = "already has ticket"
-            if seen == "not picked" and ids.get(oid):
+            if seen == "not picked" and ids.get(oid) and not rec["Cancelled"]:     # a cancelled order: once only
                 to_follow.setdefault(ids[oid][-1], []).append(rec)
         elif seen != "not picked":
             rec["Result"] = f"courier: {seen}"
@@ -637,7 +662,10 @@ def pickup_tickets(df, args, errors: list[str]):
     except Exception as exc:  # noqa: BLE001 - the TAT report still goes out
         log.exception("Pickup tickets not raised")
         return df, [f"⚠️ AJIO pickup tickets not raised: {telegram.esc(str(exc)[:150])}"]
-    return add_ticket_ids(df, ids), pickup_ticket_report(done) + pickup_forms(done, dry=args.tickets_dry)
+    live = [d for d in done if not d.get("Cancelled")]   # a cancelled order's one ticket is not reported, no form
+    if len(live) < len(done):
+        log.info("Cancelled orders never picked up: %s", dict(Counter(d["Result"] for d in done if d.get("Cancelled"))))
+    return add_ticket_ids(df, ids), pickup_ticket_report(live) + pickup_forms(live, dry=args.tickets_dry)
 
 
 FORM_LOG = "AJIO_PICKUP_FORMS.json"   # {"2026-10-29": ["Bluedart", ...]}: a courier's form once a day
@@ -868,7 +896,7 @@ def run(args) -> int:
     old_status = apply_status(old, datetime.now()) if old.height else old.with_columns(pl.lit(None, dtype=pl.Utf8).alias("Pickup Status"))
     complete = set(old_status.filter(~needs_oms_refresh())["Order ID"].drop_nulls().cast(pl.Utf8).to_list())
     start, end = oms_window(args)
-    o, hist, errors = fetch_oms(start, end, complete, csv_list_of(args.orders))
+    o, hist, errors = fetch_oms(start, end, complete, csv_list_of(args.orders) + open_before(old_status, start))
 
     # 3) courier tracking, only where pickup is not confirmed yet
     (summ, ev), n_awbs, track_errors = track(awbs_to_track(o, old_status))

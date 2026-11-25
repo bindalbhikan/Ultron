@@ -13,11 +13,11 @@ workers_dev = true
 #            5 -> 11:00 AM  Myntra courier OTP; dead stock (1st), monthly MIS + portal reports (2nd), portal reports fresh (15th)
 #            6 -> 12:00 PM  SLA warning;   8 -> 2:00 PM return analysis (15th);   9 -> 3:00 PM SLA
 #            1 3 5 7 9 11 13 -> 7 AM - 7 PM every 2 hours  Myntra zero TD (Mon-Sat)
-#           12 -> 6:00 PM   label check, Flipkart TAT;  14 -> 8:00 PM evening summary
+#           12 -> 6:00 PM   label check, Flipkart TAT, AJIO TAT;  14 -> 8:00 PM evening summary
 #           19 -> 1:00 AM   MasterSheet (the SKU master) rebuilt from OMSGuru
 #   :00 past  4 -> 9:30 AM Myntra daily reports (every daily Myntra report asked for), morning;  6 -> 11:30 AM listings;
 #             7 -> 12:30 PM Myntra daily reports again, only if the 9:30 AM run failed;  10 -> 3:30 PM sale;
-#            12 -> 5:30 PM VMS, AJIO TAT;  13 -> 6:30 PM Myntra courier scorecard
+#            12 -> 5:30 PM VMS;  13 -> 6:30 PM Myntra courier scorecard
 #   4:45      -> 10:15 AM weekly review (Mondays only, by SCHEDULE)
 #   6:10      -> 11:40 AM Myntra courier OTP retry
 [triggers]
