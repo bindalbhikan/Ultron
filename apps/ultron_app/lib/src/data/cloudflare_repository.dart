@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -563,6 +564,16 @@ class CloudflareRepository extends UltronRepository {
                 : 'Ultron is answering…',
             fromOwner: false,
             pending: ['queued', 'running'].contains(message['status']),
+            files: [
+              for (final f in (message['files'] as List? ?? const []))
+                AgentFile(
+                  id: (f as Map)['id'] as String,
+                  name: f['name'] as String? ?? 'file',
+                  mime: f['mime'] as String? ?? 'application/octet-stream',
+                  size: (f['size'] as num?)?.toInt() ?? 0,
+                  caption: f['caption'] as String? ?? '',
+                ),
+            ],
           ),
         ],
       ],
@@ -643,5 +654,42 @@ class CloudflareRepository extends UltronRepository {
   Future<WorkspaceData> sendMessage(String text) async {
     await _request('POST', '/api/agent/chat', body: {'text': text.trim()});
     return loadWorkspace();
+  }
+
+  @override
+  Future<Uint8List> chatFileBytes(String id) async {
+    final epoch = _epoch;
+    final token = _token;
+    if (token == null) throw const FrontendException('Sign in to continue.');
+    final request =
+        http.Request('GET', _base.resolve('/api/agent/chat/files/$id'))
+          ..followRedirects = false
+          ..headers['Authorization'] = 'Bearer $token';
+    try {
+      final response = await http.Response.fromStream(
+        await _client.send(request).timeout(const Duration(seconds: 30)),
+      ).timeout(const Duration(seconds: 30));
+      if (epoch != _epoch) {
+        throw const FrontendException('The session changed. Sign in again.');
+      }
+      if (response.statusCode != 200) {
+        throw const FrontendException('That file is no longer available.');
+      }
+      return response.bodyBytes;
+    } on FrontendException {
+      rethrow;
+    } catch (_) {
+      throw const FrontendException('The file could not be loaded. Try again.');
+    }
+  }
+
+  @override
+  Future<Uri> chatFileLink(String id) async {
+    final data = (await _request(
+      'POST',
+      '/api/agent/chat/files/$id/link',
+      body: const {},
+    )).data;
+    return Uri.parse(data['url'] as String);
   }
 }

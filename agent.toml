@@ -76,8 +76,13 @@ retry_when = ['Read timed out', 'ReadTimeout', 'ConnectTimeout', 'ConnectionErro
 paths = ["docs/knowledge", "docs/PORTALS.md"]
 
 [chat]
-max_steps = 8
-tools = ["runs", "omsguru", "business", "memory", "knowledge", "browser", "ultron.workings.agent_tools"]
+# 12: a dynamic working takes a few steps (find the data, run the script, fix it, send the file)
+max_steps = 12
+tools = ["runs", "omsguru", "business", "memory", "knowledge", "browser", "files", "adhoc",
+         "ultron.workings.agent_tools", "ultron.workings.agent_data"]
+# the private app chat: read tools, files and dynamic workings, no owner action or memory tools
+app_tools = ["runs", "omsguru", "business", "knowledge", "files", "adhoc", "ultron.workings.agent_tools",
+             "ultron.workings.agent_data"]
 
 # The shared action registry for Python, Telegram and the app.
 # scripts/docs/sync_controls.py generates worker/actions.json from this section and workflow inputs.
@@ -118,3 +123,4 @@ myntrahistory = { workflow = "myntra-history.yml", inputs = ["from", "to"], abou
 businessreport = { workflow = "business-report.yml", inputs = ["portals", "from", "to", "no_upload"], about = "Build business reports from saved portal reports" }
 portalreports = { workflow = "portal-reports.yml", inputs = ["month", "from", "to", "kinds", "portals", "fresh", "no_upload"], about = "Save portal reports" }
 portalsale = { workflow = "portal-sale.yml", inputs = ["from", "to", "no_upload"], about = "Portal sale report from saved data" }
+codechange = { workflow = "code-change.yml", inputs = ["request"], about = "Make a working permanent or change the code: a coding agent writes it (code, tests, docs) and opens a pull request for the owner to merge; nothing goes live until merged. inputs: request (what to build, in plain words)" }

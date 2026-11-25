@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../domain/access.dart';
 import '../domain/models.dart';
 import 'account_repository.dart';
@@ -25,4 +27,8 @@ abstract class UltronRepository extends AccountRepository {
   Future<WorkspaceData> decide(String id, ApprovalStatus decision) async =>
       unavailable();
   Future<WorkspaceData> sendMessage(String text) async => unavailable();
+
+  /// A file of an agent answer: its bytes (to show a picture) or a one-use link that downloads it.
+  Future<Uint8List> chatFileBytes(String id) async => unavailable();
+  Future<Uri> chatFileLink(String id) async => unavailable();
 }

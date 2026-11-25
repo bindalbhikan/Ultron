@@ -1,7 +1,9 @@
 """chat: the owner writes to the Telegram bot in plain words; the agent reads what it needs with its
 tools and answers in the same chat.
 
-It can only read. Anything to be done (start a report, add orders, push inventory) it proposes
+It reads, and it can do dynamic workings: a script it writes runs on copies of saved data in a locked
+sandbox (tools/adhoc.py) and the result comes back to the same chat as a file (tools/files.py), from
+Telegram and from the app alike. Anything to be done (start a report, add orders, push inventory) it proposes
 with propose_action: the owner gets Approve / Reject buttons and only an Approve tap starts it,
 from the fixed list of actions and inputs in agent.toml [actions] (core/approvals.py: kept by the
 seller's worker, or by ultron serve on the seller's own machine).
@@ -17,7 +19,7 @@ import json
 import logging
 from datetime import date
 
-from ..core import approvals, config, llm, memory, runtime
+from ..core import approvals, attachments, config, llm, memory, runtime
 from ..core.style import MOBILE, tidy
 from ..core.config import env
 from ..integrations import telegram
@@ -45,6 +47,15 @@ answer. Whenever the owner asks you to run, start, push, add or redo anything, a
 an action marked [runs at once] only makes a report, so start it with run_now; every other action
 changes something outside, so call propose_action (the owner gets Approve / Reject buttons and
 nothing happens until they approve). Say exactly what happened: started, or waiting for approval.
+
+Files: when the owner asks for a picture, sheet or file, attach it to your reply with send_file (a run's file:
+find the run with recent_runs, the file with run_files). Never answer with a GitHub artifact link: those are
+encrypted and cannot be opened.
+Dynamic workings: when no report, action or tool gives what the owner asks, do it yourself: find the data
+(run_files, drive_files), write a short Polars script, run it with run_adhoc (fix it and run again when it fails),
+send the result with send_file and say it is an ad-hoc result, not a checked report. When the owner wants such a
+working kept as a real one (scheduled, checked, in the reports), propose the codechange action with the request
+in plain words; a pull request is made for the owner to merge.
 Available actions:
 """ + ("\n".join(f"- {k}{' [runs at once]' if a.auto else ''}: {a.about}" for k, a in cfg.actions.items())
        or "(none)") + """
@@ -132,7 +143,7 @@ run_now = llm.tool(run_now)
 def tools(read_only: bool = False) -> list:
     if read_only:
         # App chat cannot inherit Telegram's owner-level action or shared-note write tools.
-        names = ("runs", "omsguru", "business", "knowledge")
+        names = config.get().app_tools
         if (controls.actor.get() or {}).get("source") == "job":
             names += ("controls",)
         return config.load_tools(names)
@@ -148,10 +159,37 @@ def tools(read_only: bool = False) -> list:
 to_telegram = telegram.md   # the model's light markdown as Telegram HTML
 
 
+def deliver(text: str, chat: str | int | None = None) -> bool:
+    """Send a reply of answer() to Telegram: the text, then the files the agent attached to it."""
+    ok = telegram.send(text, chat)
+    for item in attachments.take():
+        ok = telegram.send_file(item.path, chat, telegram.esc(item.caption)) and ok
+    return ok
+
+
+def upload_files(path: str, headers: dict) -> int:
+    """Store the files the agent attached to an app answer with that answer (before it is marked done)."""
+    import base64
+    import mimetypes
+    from ..core import http
+    sent = 0
+    for item in attachments.take():
+        mime = mimetypes.guess_type(item.path.name)[0] or "application/octet-stream"
+        r = http.request("PUT", f"{path}/file", headers=headers, timeout=60, json={
+            "name": item.path.name[:120], "mime": mime, "caption": item.caption[:200],
+            "data": base64.b64encode(item.path.read_bytes()).decode("ascii")})
+        if r.status_code == 200:
+            sent += 1
+        else:
+            log.warning("App file %s not stored: %s %s", item.path.name, r.status_code, r.text[:200])
+    return sent
+
+
 def answer(question: str, chat: str = "", *, read_only: bool = False) -> str:
     """The reply (Telegram HTML) to one owner message from `chat`."""
     cfg = config.get()
     _chat.set(str(chat))
+    attachments.start()
     if not read_only:
         controls.actor.set({"source": "telegram", "chatId": str(chat)})
     system, history, mem = rules(cfg), [], None
@@ -206,6 +244,12 @@ def app_reply(request_id: str) -> int:
         text, status = "The agent could not finish your answer. Please try again.", "failed"
     finally:
         controls.actor.reset(context)
+    if status == "completed":
+        files = upload_files(path, headers)
+        if files:
+            log.info("App answer carries %d files", files)
+    else:
+        attachments.take()
     result = http.request("PUT", path, headers=headers, json={"answer": text[:12000], "status": status}, timeout=30)
     result.raise_for_status()
     return 0 if status == "completed" else 1
@@ -218,7 +262,12 @@ def run(args) -> int:
     if not question:
         return 0
     text = answer(question, env("TELEGRAM_CHAT_ID").split(",")[0].strip())
-    print(text) if args.no_telegram else telegram.send(text)
+    if args.no_telegram:
+        print(text)
+        for item in attachments.take():
+            print(f"[file] {item.path}")
+    else:
+        deliver(text)
     return 0
 
 

@@ -139,12 +139,34 @@ class AgentMessage {
     required this.text,
     required this.fromOwner,
     this.sources = const [],
+    this.files = const [],
     this.pending = false,
   });
   final String text;
   final bool fromOwner;
   final List<String> sources;
+
+  /// Files the agent attached to its answer (a run's picture or sheet, a dynamic working's result).
+  final List<AgentFile> files;
   final bool pending;
+}
+
+/// One file of an agent answer, kept with the conversation for 30 days.
+@immutable
+class AgentFile {
+  const AgentFile({
+    required this.id,
+    required this.name,
+    required this.mime,
+    required this.size,
+    this.caption = '',
+  });
+  final String id;
+  final String name;
+  final String mime;
+  final int size;
+  final String caption;
+  bool get isImage => mime.startsWith('image/');
 }
 
 /// One start time of the worker's cron schedule (worker/src/worker.js SCHEDULE).

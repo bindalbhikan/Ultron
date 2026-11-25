@@ -129,6 +129,11 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   blindly or expose public bucket URLs/custom domains. Full APK downloads must use HTTP 200;
   R2 full-object range metadata alone must not turn them into 206 responses. Cloudflare has no R2 billing cap; other account use
   is outside these app guards.
+- **Dynamic workings** (owner, 25 Nov 2026: "root se fix", app and Telegram alike): the agent's own scripts run only
+  through `run_adhoc` in `core/sandbox.py` (Docker, no network, no secrets, read-only data); never add a tool that
+  runs model-written code any other way. Files reach a chat only through `send_file` / `core/attachments.py`, never
+  as a GitHub artifact link (encrypted). Ad-hoc results stay out of reports, dashboard and Drive. A working worth
+  keeping goes through the `codechange` action: a PR, never merged by CI. `docs/ARCHITECTURE.md` Dynamic workings.
 - Approval decisions claim D1 before dispatch; ambiguous failures cannot dispatch again automatically.
   Phone jobs/results use independent D1 rows rather than a shared KV job slot.
 - App and Telegram controls are central (owner, 24-25 Nov 2026): agent.toml generates worker/actions.json;

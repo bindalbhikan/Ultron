@@ -95,6 +95,30 @@ docs/                       this file, PORTALS.md, bots/<bot>.md
 5. **Data must never be wrong.** A month or portal whose source data is incomplete is left out
    with a note (e.g. Flipkart returns older than ~4 months), not reported as real numbers.
 
+## Dynamic workings (the agent writes the code)
+
+When no working, action or tool gives what the owner asks for, the agent does the work itself, the same from
+Telegram and the app (25 Nov 2026):
+
+1. **Find the data**: `run_files` (a run's output), `drive_files` (Drive AGENT WORK, read-only), `master` (the SKU
+   master through `workings/core/master_sheet.py`).
+2. **Write and run a script**: `run_adhoc` (`src/ultron/tools/adhoc.py`) copies the named files into `/data` and
+   runs the model's Polars script in the sandbox (`src/ultron/core/sandbox.py`): Docker with no network, an empty
+   environment (no secrets), user `nobody`, every capability dropped, a read-only root, `/data` read-only, `/out`
+   the only writable folder, 240 s, 3 GB, 256 processes. The host's own Python is mounted read-only, so the script
+   has exactly uv.lock's libraries (Polars, calamine, xlsxwriter, Pillow). A failed script shows its error; the
+   agent fixes it and runs it again. GitHub's ubuntu runner only (a Windows PC answers that it cannot run there).
+3. **Send the result**: `send_file` (`src/ultron/tools/files.py`) attaches a file to the reply
+   (`core/attachments.py`): Telegram sends it as a photo (+ full-size document) or document; the app stores it
+   with the answer (D1 `app_chat_file`, migration 0012, at most 1.4 MB a file, 5 an answer, kept 30 days) and shows
+   a picture inline, any file opening by a one-use 5-minute link. A run's file is sent the same way
+   (`run:<run id>/<path>`): never a GitHub artifact link, those are encrypted.
+4. **Make it permanent**: the `codechange` action (`code-change.yml`, approval first) has Claude Code (fallback
+   Gemini CLI) build it as a real working with its page, tests and docs, and open a PR the owner merges.
+
+An ad-hoc result is labelled "Ad-hoc result, not a checked report": it never goes into the reports, the
+dashboard or Drive, so the rule that connected numbers agree is untouched.
+
 ## Adding a new working — checklist
 
 1. `src/ultron/workings/<name>/__init__.py`, `pipeline.py` with `run(args)` and

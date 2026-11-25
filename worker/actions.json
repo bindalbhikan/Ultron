@@ -640,5 +640,20 @@
         "type": "string"
       }
     }
+  },
+  "codechange": {
+    "workflow": "code-change.yml",
+    "inputs": [
+      "request"
+    ],
+    "about": "Make a working permanent or change the code: a coding agent writes it (code, tests, docs) and opens a pull request for the owner to merge; nothing goes live until merged. inputs: request (what to build, in plain words)",
+    "chat": true,
+    "fields": {
+      "request": {
+        "description": "What to build or change, in plain words",
+        "default": "",
+        "type": "string"
+      }
+    }
   }
 }
