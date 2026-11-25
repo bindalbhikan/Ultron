@@ -15,6 +15,10 @@ Fund > Create New Claim > "Here"): an xlsx of order line ids per issue category.
       days were paid or accepted. One claim per order line, so a rejected one is lost for good.
       MYNTRA_SPF_TRANSIT_CATEGORY=DELAYED brings the old category back.
 
+SJIT / FBM returns (owner, 25 Nov 2026; Myntra's new SJIT SPF tool, tickets through the old ticketing portal
+not considered after 30 Nov 2026): claimed per item (Fact Core Item ID = the SJIT returns report's core_item_id)
+with the SJIT bulk upload (Create New Claim > SJIT > "Here"), see sjit_candidates / raise_sjit_claims.
+
 A row is claimed only when nothing says it is settled: no ticket on it (master TICKET ID or
 any ticket on the portal for that order line, any status - the policy allows one claim per
 order and treats repeat tickets as fraud), FINAL RETURN STATUS blank (not received in the ERP /
@@ -44,6 +48,14 @@ DELAYED = "DELAYED_DELIVERED_RETURN"
 TRANSIT = "RNR_TRANSIT"        # ours only: claimed on Myntra as RNR, with its own description
 ISSUE = {TRANSIT: RNR}
 CATEGORY_NAME = {RNR: "Return Not Received", DELAYED: "Delayed Returns", TRANSIT: "Return Not Received (in transit)"}
+# The SJIT tool's bulk categories (its Issue Category list, 25 Nov 2026)
+SJIT_INWARD = "INWARD_REJECTIONS_DELAY_IN_RETURNS"
+SJIT_SHORT = "SHORTAGE_IN_RSTN"
+SJIT_NOT_SETTLED = "STN_GRN_AT_WAREHOUSE_NOT_SETTLED_NOR_RETURNED"
+CATEGORY_NAME.update({SJIT_INWARD: "Inward Rejections - Delay in Returns", SJIT_SHORT: "Shortage in RSTN",
+                      SJIT_NOT_SETTLED: "STN GRN'd at the Warehouse but not settled nor returned"})
+SJIT_DESCRIPTION = ("Return Pending: customer return / RTO not received back at the Myntra warehouse, "
+                    "item neither settled (paid) nor returned to us")
 DESCRIPTION = {
     RNR: "RETURN DELIVERED BUT PHYSICAL RETURN PARCEL NOT RECEIVED YET",
     DELAYED: "RETURN SHOWING IN TRANSIT, KINDLY CHECK AND RETURN THE PARCEL ASAP",
@@ -108,11 +120,13 @@ def claim_of(r: dict, today: date, ticketed: set[str]) -> str | None:
     return DELAYED if str(env("MYNTRA_SPF_TRANSIT_CATEGORY", "")).upper() == "DELAYED" else TRANSIT
 
 
-def candidates(path: Path, today: date, ticketed: dict[str, set[str]],
-               skip: set[tuple] = frozenset()) -> dict[str, dict[str, list[str]]]:
+def candidates(path: Path, today: date, ticketed: dict[str, set[str]], skip: set[tuple] = frozenset(),
+               blocked: dict[str, set[str]] | None = None) -> dict[str, dict[str, list[str]]]:
     """account -> category -> order line ids to claim, from the master's account sheets.
     ticketed: account -> order lines with a portal ticket. skip: (order_line_id, return_id)
-    keys known to be received (OMSGuru) since the master was written."""
+    keys known to be received (OMSGuru) since the master was written. blocked (filled when
+    given): account -> order lines that already have a ticket, are received / settled or have a
+    courier POD, which an SJIT claim leaves alone too."""
     from openpyxl import load_workbook
     from .engine import SHEETS, master_rows, norm
     wb = load_workbook(path, read_only=True)
@@ -120,7 +134,10 @@ def candidates(path: Path, today: date, ticketed: dict[str, set[str]],
     for name in SHEETS:          # the account sheet and its rows on the RETURN IN TRANSIT sheet
         seen: set[str] = set()
         for r in master_rows(wb, name):
-            if (norm(r.get("order_line_id")), norm(r.get("return_id"))) in skip:
+            key = (norm(r.get("order_line_id")), norm(r.get("return_id")))
+            if blocked is not None and (key in skip or not _blank(r.get("TICKET ID")) or _settled(r)):
+                blocked.setdefault(name, set()).add(key[0])
+            if key in skip:
                 continue
             cat = claim_of(r, today, ticketed.get(name, set()))
             oli = norm(r.get("order_line_id"))
@@ -128,6 +145,125 @@ def candidates(path: Path, today: date, ticketed: dict[str, set[str]],
                 seen.add(oli)
                 out.setdefault(name, {}).setdefault(cat, []).append(oli)
     wb.close()
+    return out
+
+
+def _settled(r: dict) -> bool:
+    """Received / settled on the master, or the courier's POD says it was handed back."""
+    from .pipeline import resolved
+    return resolved(r) or str(r.get("RETURN POD") or "").strip().upper() == "YES"
+
+
+# ------------------------------------------------------------------ SJIT / FBM claims (new SJIT tool)
+
+def _sjit_created(r: dict) -> date | None:
+    """A return's creation day, an RTO's RTO day (an RTO's return_created_date is 1970-01-01)."""
+    cols = ("order_rto_date", "return_created_date") if str(r.get("type")).upper() == "RTO" \
+        else ("return_created_date", "order_rto_date")
+    for col in cols:
+        try:
+            d = date.fromisoformat(str(r.get(col) or "")[:10])
+        except ValueError:
+            continue
+        if d.year > 2000:
+            return d
+    return None
+
+
+def sjit_returns(folder: Path) -> list[dict]:
+    """The SJIT_Customer_Returns_Report rows in folder that carry a core_item_id (its PPMP lines have none),
+    one per item: core_item_id, order_line_id, type, created (return / RTO day), status."""
+    import io
+    import zipfile
+    import polars as pl
+    out: dict[str, dict] = {}
+    for f in sorted(folder.glob("*")) if folder.exists() else []:
+        data = f.read_bytes()
+        if data[:2] == b"PK":
+            z = zipfile.ZipFile(io.BytesIO(data))
+            data = z.read(z.namelist()[0])
+        df = pl.read_csv(data, infer_schema=False)
+        if "core_item_id" not in df.columns:
+            continue
+        for r in df.filter(pl.col("core_item_id").str.strip_chars().fill_null("") != "").iter_rows(named=True):
+            core = str(r["core_item_id"]).strip()
+            out[core] = {"core_item_id": core, "order_line_id": str(r.get("order_line_id") or "").strip(),
+                         "type": r.get("type"), "created": _sjit_created(r), "status": r.get("status")}
+    return list(out.values())
+
+
+def sjit_candidates(rows: list[dict], today: date, ticketed: set[str], blocked: set[str]) -> list[dict]:
+    """The SJIT / FBM returns to claim as in transit today: created MYNTRA_SPF_SJIT_AFTER_DAYS (the in-transit
+    claims' 61) to MYNTRA_SPF_SJIT_MAX_DAYS (120) days ago, no SJIT claim on the item (ticketed: its core ids
+    and order lines), and the order line not ticketed, received / settled or POD'd on the master (blocked).
+    Whether the item is still out of Myntra's warehouse is asked live (raise_sjit_claims)."""
+    lo = num("MYNTRA_SPF_SJIT_AFTER_DAYS", num("MYNTRA_SPF_DELAY_AFTER_DAYS", 61))
+    hi = num("MYNTRA_SPF_SJIT_MAX_DAYS", num("MYNTRA_SPF_DELAY_MAX_DAYS", 120))
+    out = []
+    for r in rows:
+        oli = r["order_line_id"]
+        if r["core_item_id"] in ticketed or (oli and (oli in ticketed or oli in blocked)):
+            continue
+        if r["created"] and lo <= (today - r["created"]).days <= hi:
+            out.append(r)
+    return out
+
+
+def sjit_category() -> str:
+    """MYNTRA_SPF_SJIT_CATEGORY (one of the tool's three), else not settled nor returned."""
+    cat = str(env("MYNTRA_SPF_SJIT_CATEGORY", "") or SJIT_NOT_SETTLED).strip().upper()
+    return cat if cat in (SJIT_INWARD, SJIT_SHORT, SJIT_NOT_SETTLED) else SJIT_NOT_SETTLED
+
+
+def raise_sjit_claims(portal, account: str, rows: list[dict], live: bool) -> list[str]:
+    """Each candidate item is looked up on the SJIT tool first (spf_sjit_item): claimed only while it is still
+    SHIPPED (out of Myntra's warehouse: the return never came back) with no claim on it. Raised live in bulk
+    jobs of SPF_BULK_MAX (model SJIT, FactCoreId file), or only counted. Lines for the report."""
+    from ..portals.myntra import SPF_BULK_MAX
+    cap = num("MYNTRA_SPF_SJIT_CHECK_MAX", 1000)
+    todo, rest = rows[:cap], max(0, len(rows) - cap)
+    failed: list[str] = []
+
+    def check(r):
+        try:
+            item = portal.spf_sjit_item(r["core_item_id"])
+        except Exception as exc:  # noqa: BLE001 - not claimed on a guess
+            failed.append(str(exc)[:60])
+            return None
+        if str(item.get("itemStatus") or "").upper() != "SHIPPED":
+            return None                                  # back in stock, or unknown to the tool
+        if not (_blank(item.get("ticketId")) and _blank(item.get("issueCategory"))):
+            return None                                  # a claim is already on the item
+        return r["core_item_id"]
+
+    with ThreadPoolExecutor(max_workers=num("MYNTRA_SPF_SJIT_WORKERS", 4)) as pool:
+        due = [c for c in pool.map(check, todo) if c]
+    cat = sjit_category()
+    name = f"{account} SJIT/FBM {CATEGORY_NAME[cat]}"
+    more = (f", {rest} left for the next run" if rest else "") + (f", {len(failed)} not checked" if failed else "")
+    if not due:
+        return [f"{name}: none due of {len(todo)} checked (back in Myntra's stock or claimed){more}"]
+    if not live:
+        return [f"{name}: {len(due)} due of {len(todo)} checked (not raised: MYNTRA_SPF_SJIT_TICKETS is off){more}"]
+    lines, jobs, raised = [], [], 0
+    for i in range(0, len(due), SPF_BULK_MAX):
+        part = due[i:i + SPF_BULK_MAX]
+        try:
+            jobs.append(portal.spf_bulk_claim(part, cat, SJIT_DESCRIPTION, model="SJIT"))
+            raised += len(part)
+        except Exception as exc:  # noqa: BLE001 - the next part / account still goes
+            log.exception("%s SJIT claim failed", account)
+            lines.append(f"{name}: {len(part)} NOT raised: {str(exc)[:80]}")
+    if jobs:
+        lines.append(f"{name}: {raised} raised (job {', '.join(map(str, jobs))}){more}")
+    return lines
+
+
+def sjit_ticketed(portal) -> set[str]:
+    """The core item ids and order lines that already have an SJIT claim (any status)."""
+    out = set()
+    for t in portal.spf_tickets(model="SJIT"):
+        out.update(str(t.get(k)).strip() for k in ("factCoreId", "orderLineId") if not _blank(t.get(k)))
     return out
 
 

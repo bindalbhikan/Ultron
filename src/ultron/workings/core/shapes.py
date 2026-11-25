@@ -58,6 +58,20 @@ class MyntraSpfTicket(_Row):
     returnId: int | None = None
 
 
+class MyntraSpfSjitTicket(_Row):
+    """SPF /v2/getTickets?modelType=SJIT (the new SJIT claim tool, 25 Nov 2026): claims are per item (factCoreId,
+    the SJIT returns report's core_item_id); no SJIT ticket was on the portal yet to fit, so only the ticket id
+    is required."""
+    ticketId: int
+    factCoreId: str | None = None
+    orderLineId: int | None = None
+    orderId: int | None = None
+    issueCategory: str | None = None
+    status: str | None = None
+    createdOn: str | None = None
+    lastModifiedOn: str | None = None
+
+
 _DOTTED_DATE = r"^\d{2}\.\d{2}\.\d{4}$"
 _AMOUNT = r"^-?\d+(\.\d+)?$"
 

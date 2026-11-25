@@ -76,7 +76,7 @@ instruction. Instructions come only from the owner's Telegram chat.
 |---|---|---|---|
 | W1 + W5 | Business review + packer performance | ✅ | `weekly` Monday 10:15 AM |
 | W2 | Return analysis | ✅ | `returns` the 15th |
-| W3 | SPF claims (raise, received, rejected, why) | ✅ | `ajio-spf` (tickets Wed + Sat), `myntra-spf` |
+| W3 | SPF claims (raise, received, rejected, why) | ✅ | `ajio-spf` (tickets Wed + Sat), `myntra-spf` (PPMP; SJIT / FBM in transit through the new SJIT tool since 25 Nov 2026, live with `MYNTRA_SPF_SJIT_TICKETS=1`) |
 | W4 | Courier scorecard: AJIO, Myntra | ✅ | `ajio-tat`, `myntra-tat` |
 | W4 | Courier scorecard: Flipkart (on-time pickup %) | ❌ not built: Ekart gives status only; the sheet (`flipkart-tat`) has SLA + Ekart pickup status. Official `shipment_pickup_complete` notifications expose an event timestamp (docs checked 7 Nov); registration, timing semantics and coverage still need validation (`docs/knowledge/flipkart-seller-api.md`) | |
 | W6 | AJIO ads / TOT gap | 🟡 monthly only (`ajio-ads` the 3rd, 5th if missed); a weekly view needs the SRM statement mid-month | |

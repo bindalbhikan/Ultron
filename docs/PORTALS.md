@@ -18,7 +18,9 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   session too. Logged out = HTTP 401 → Telegram alert.
 * **Accounts**: MAIN 19170 (also SJIT), DBCC 32207, FMCC 35426 — separate logins.
 * **Reports** (`storeId 2297`, `partnerType PPMP`, one job ≤ 1 month):
-  `Seller_Orders_Report` 4, `Seller_Returns_Report` 12, `Return_Delivery_Report` 84.
+  `Seller_Orders_Report` 4, `Seller_Returns_Report` 12, `Return_Delivery_Report` 84. The SJIT reports are asked
+  for with `partnerType SJIT` (`REPORT_PARTNER` / `query_for`): `SJIT_Customer_Returns_Report` 70 (by return / RTO
+  date; `core_item_id` = the SJIT SPF tool's Fact Core Item ID, blank on its PPMP lines).
   `POST /api/partners/report/jobs/schedule` → poll `GET /api/partners/report/jobs/search` until
   `COMPLETED` → download via `/api/file-manager/getDownloadUrl?url=<successFile>` (redirect to a
   signed link; the blob URL itself is private). A job takes ~5–10 min.
@@ -34,6 +36,11 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   after the 16-minute wait), and a job can be killed (`INTERRUPTED`: "Connection refused",
   "Query killed because the cluster is out of memory"). Asking again later works.
 * Backfilled months: the order report carries the return status as of the day it is generated.
+* **SPF, SJIT model** (new tool, 25 Nov 2026): `getTickets?modelType=SJIT` (filter `factCoreId`),
+  `GET /api/spf/fetchNewClaimSJIT?factCoreId&fetchAccio=true` (the item: `itemStatus` SHIPPED / STORED, inward /
+  GRN dates, return-to-vendor `ro*`, a claim already on it), `createRnrBulkTickets` with `modelType SJIT` and a
+  `FactCoreId` xlsx (sample `spf-claims/SJIT_RNR_SAMPLE_FILE.xlsx`). Bulk categories: Inward Rejections - Delay in
+  Returns, Shortage in RSTN, STN GRN'd at the warehouse but not settled nor returned. Used by `myntra-spf`.
 * **Stale data**: the order report is built from a copy of Myntra's data renewed once a day (it runs to
   ~03:30 AM IST), and the copy is renewed only after 7 AM: a job asked for on 6 Nov 2026 at 07:01 held
   5 Nov only up to 03:28, one asked for at 09:36 held all of 5 Nov. `data_stamp` (newest time in any

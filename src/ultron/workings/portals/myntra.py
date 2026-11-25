@@ -48,6 +48,9 @@ COOLDOWN_MINUTES = 16
 COOLDOWN = re.compile(r"cool|wait|minute|already|recent|frequent|too many|try again|later|"
                       r"internal server error|while schedul", re.I)
 QUERY = {"storeId": 2297, "partnerType": "PPMP"}  # store MYNTRA; the PPMP report also holds SJIT / FBM lines
+SJIT_RETURNS_REPORT_ID = 70         # SJIT_Customer_Returns_Report: SJIT / FBM returns with their core_item_id
+# Reports asked for as another partner type than QUERY's (the portal adds partnerId / sellerType itself)
+REPORT_PARTNER = {SJIT_RETURNS_REPORT_ID: "SJIT"}
 HEADERS = {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest",
            "x-myntra-app-name": "partners", "Origin": PORTAL, "Referer": f"{PORTAL}/Reports/ops-reports"}
 # Akamai bot-manager cookies live for minutes or hours and are renewed by the server;
@@ -60,6 +63,8 @@ SPF_STATUSES = ("OPEN", "IN_REVIEW", "ACCEPT", "REJECT", "MANUAL", "INVOICE_CREA
                 "PAYMENT_INITIATED", "PAYMENT_COMPLETED", "AWAITING_SELLER_RESPONSE",
                 "AWAITING_AGENT_RESPONSE", "CLOSED", "DISPUTED")
 SPF_BULK_MAX = 500                  # "Upload Order IDs for SPF (Max 500)"
+# The bulk claim file's one column per business model (the portal's RNR_SAMPLE_FILE / SJIT_RNR_SAMPLE_FILE)
+SPF_BULK_COLUMN = {"PPMP": "OrderId", "SJIT": "FactCoreId"}
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 # job statuses that will never complete (INTERRUPTED seen on old jobs, Oct 2026)
 FAILED = ("FAIL", "ERROR", "CANCEL", "REJECT", "INTERRUPT", "ABORT", "EXPIRE", "TIMEOUT")
@@ -187,6 +192,11 @@ def _ts(ms) -> date | None:
     return datetime.fromtimestamp(ms / 1000).date() if ms else None
 
 
+def query_for(report_id: int) -> dict:
+    """The report request's queryParams without dates: QUERY, with the report's own partner type."""
+    return {**QUERY, "partnerType": REPORT_PARTNER.get(report_id, QUERY["partnerType"])}
+
+
 def job_range(job: dict, report_id: int = REPORT_ID) -> tuple[date, date] | None:
     """(first, last day) of a usable job of that report for the store: not failed, and
     requested after its last day (so that day was complete). None for any other job."""
@@ -194,7 +204,7 @@ def job_range(job: dict, report_id: int = REPORT_ID) -> tuple[date, date] | None
     status = str(job.get("status") or "").upper()
     if job.get("reportId") != report_id or any(f in status for f in FAILED):
         return None
-    if str(q.get("storeId")) != str(QUERY["storeId"]) or q.get("partnerType") != QUERY["partnerType"]:
+    if str(q.get("storeId")) != str(QUERY["storeId"]) or q.get("partnerType") != query_for(report_id)["partnerType"]:
         return None
     try:
         first, last = date.fromisoformat(q["reportStartDate"]), date.fromisoformat(q["reportEndDate"])
@@ -440,7 +450,7 @@ class MyntraPortal:
         start / end None: a snapshot report (Seller_Listings_Report, ...), asked for without dates."""
         from ultron.core.retry import retry_call
         dates = {"reportStartDate": f"{start}", "reportEndDate": f"{end}"} if start else {}
-        body = {"reportId": report_id, "queryParams": {**QUERY, **dates}}
+        body = {"reportId": report_id, "queryParams": {**query_for(report_id), **dates}}
 
         def tries(exc: BaseException) -> int:
             cooldown = cooldown_wait and not isinstance(exc, SessionExpired) and COOLDOWN.search(str(exc))
@@ -613,8 +623,9 @@ class MyntraPortal:
             data = retry_call(lambda: self._call("GET", f"{SPF_API}/v2/getTickets", params=params), tries=tries,
                               wait=lambda n: 15 * n, on=(Exception,), log=log, what=f"SPF tickets page {page}",
                               sleep=lambda s: time.sleep(s))
-            from ..core.shapes import MyntraSpfTicket, check_rows
-            rows = check_rows(data.get("data") or [], MyntraSpfTicket, "Myntra SPF ticket", key="ticketId")
+            from ..core.shapes import MyntraSpfSjitTicket, MyntraSpfTicket, check_rows
+            shape = MyntraSpfSjitTicket if model == "SJIT" else MyntraSpfTicket
+            rows = check_rows(data.get("data") or [], shape, f"Myntra {model} SPF ticket", key="ticketId")
             out += rows
             total = (data.get("status") or {}).get("totalCount") or 0
             if not rows or len(out) >= total:
@@ -684,23 +695,32 @@ class MyntraPortal:
         if st and st.get("statusType") not in (None, "SUCCESS"):
             raise RuntimeError(f"Myntra refused the dispute: {st.get('statusMessage')}")
 
+    def spf_sjit_item(self, fact_core_id) -> dict:
+        """One SJIT / FBM item as the new SJIT claim tool's search shows it ("Search Fact Core Items eligible
+        for SPF", captured 25 Nov 2026): itemStatus (SHIPPED = out of Myntra's warehouse, STORED = back in
+        stock), itemType, inwardDate, grnDate, roId / roStatus (return to vendor), ticketId / issueCategory /
+        status of a claim already on it. Empty when the portal knows no such item."""
+        data = self._call("GET", f"{SPF_API}/fetchNewClaimSJIT",
+                          params={"factCoreId": fact_core_id, "fetchAccio": "true"}).get("data")
+        return (data[0] if data else {}) if isinstance(data, list) else (data or {})
+
     def spf_bulk_claim(self, order_line_ids: list, category: str, description: str,
                        model: str = "PPMP", seller: int | None = None) -> int:
-        """One bulk claim, as the portal's "Delayed / Return Not Received" upload does it: an xlsx
-        with one OrderId column (order line ids, max SPF_BULK_MAX) is put on the claims blob store,
-        then createRnrBulkTickets is called with its link. Returns the job id; the tickets turn up
-        in spf_tickets() a minute or so later."""
+        """One bulk claim, as the portal's bulk upload does it: an xlsx with one column (PPMP: OrderId,
+        order line ids; SJIT: FactCoreId, the items' core_item_id; max SPF_BULK_MAX) is put on the claims
+        blob store, then createRnrBulkTickets is called with its link and the model. Returns the job id;
+        the tickets turn up in spf_tickets(model) a minute or so later."""
         import io
-        from openpyxl import Workbook
+        import xlsxwriter
         if not 0 < len(order_line_ids) <= SPF_BULK_MAX:
             raise ValueError(f"a bulk claim takes 1 to {SPF_BULK_MAX} order lines, not {len(order_line_ids)}")
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["OrderId"])
-        for oli in order_line_ids:
-            ws.append([int(oli)])
         buf = io.BytesIO()
-        wb.save(buf)
+        wb = xlsxwriter.Workbook(buf, {"in_memory": True})
+        ws = wb.add_worksheet()
+        ws.write_string(0, 0, SPF_BULK_COLUMN[model])
+        for row, oli in enumerate(order_line_ids, 1):
+            ws.write_number(row, 0, int(oli)) if str(oli).isdigit() else ws.write_string(row, 0, str(oli))
+        wb.close()
         seller = seller or self.partner_id() or 0
         name = f"{seller}_{int(time.time() * 1000)}"
         token = self._call("GET", f"{API.rsplit('/', 1)[0]}/file-manager/getUploadToken/spfJob",

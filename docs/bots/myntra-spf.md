@@ -75,6 +75,29 @@ On demand: `/myntraspf`.
     `RAISED BY BOT` until the real ticket comes in on the next run.
   * Live only with the repo variable `MYNTRA_SPF_TICKETS=1`; otherwise the report only counts
     the claims due. At most `MYNTRA_SPF_TICKET_MAX` (500) per account and category per run.
+* **SJIT / FBM in-transit claims** (owner, 25 Nov 2026; `tickets.py` `raise_sjit_claims`). Myntra's new SJIT SPF
+  tool (Support > Seller Protection Fund > Create New Claim > SJIT; tickets raised through the old ticketing portal
+  are not considered after 30 Nov 2026) takes claims per item, by **Fact Core Item ID** = the `core_item_id` of the
+  `SJIT_Customer_Returns_Report` (70, `partnerType SJIT`). That report holds the SJIT lines that the Seller Returns
+  Report calls `FBM` (MAIN, 1-23 Nov 2026: 429 of them, matched on order line; its PPMP lines carry no core id).
+  * Each run asks for report 70 over the in-transit window (returns / RTOs created `MYNTRA_SPF_SJIT_AFTER_DAYS` 61 to
+    `MYNTRA_SPF_SJIT_MAX_DAYS` 120 days ago; an RTO's day is `order_rto_date`, its `return_created_date` is
+    1970-01-01). The file goes to `<work>/sjit/<account>`, never into the engine's input. A refused request is
+    named and skipped, never retried into the run.
+  * Not claimed: an item with an SJIT claim (`getTickets?modelType=SJIT`, its `factCoreId` / order line), or whose
+    order line has a ticket, is received / settled or has a courier POD on the master. An account whose SJIT claims
+    could not be read gets none, and none at all while ERP or OMSGuru was not read.
+  * Each candidate is looked up live (`fetchNewClaimSJIT?factCoreId`): claimed only while `itemStatus` is
+    `SHIPPED` (out of Myntra's warehouse: the return never came back; `STORED` = back in stock) and no claim is on
+    it. A lookup that fails is not claimed. At most `MYNTRA_SPF_SJIT_CHECK_MAX` (1000) lookups per account a run.
+  * Raised as the tool's bulk upload: an xlsx with one `FactCoreId` column (max 500) on the claims blob store, then
+    `createRnrBulkTickets` with `modelType SJIT`, category `STN_GRN_AT_WAREHOUSE_NOT_SETTLED_NOR_RETURNED` (not
+    settled nor returned; `MYNTRA_SPF_SJIT_CATEGORY` may name `INWARD_REJECTIONS_DELAY_IN_RETURNS` or
+    `SHORTAGE_IN_RSTN`, the tool's other two), description "Return Pending: ...".
+  * Live only with the repo variable `MYNTRA_SPF_SJIT_TICKETS=1` (its own switch: the category is new and a
+    rejected claim cannot be raised again); otherwise the report counts the items due. Dry run on MAIN, 25 Nov 2026
+    (younger window, only a 1-23 Nov report on hand): 47 of 60 checked still out of stock.
+  * The SJIT / FBM rows stay NON ELIGIBLE on the sheets and out of the summaries (below): only the claims are new.
 * A formula linking another workbook (e.g. `=VLOOKUP(G5,[1]Orders!$E:$F,2,)` pasted into a
   yellow column) reads as empty: written back it made Excel repair the file on every open.
 * **Return received**: ERP GRN, then **OMSGuru** (only rows whose FINAL RETURN STATUS is blank or Payment Received,
@@ -89,7 +112,7 @@ On demand: `/myntraspf`.
   and reports not ready in time are left to the next runs (named in the notes), so they never
   hold up the run (19 Oct: 3 per run with retries and 45-minute waits ran past the 150-minute
   job limit). A value once filled stays in the master.
-* **SJIT and FBM orders are not worked** (`NOT_WORKED_MODELS`): their rows stay on the sheets,
+* **SJIT and FBM orders are not worked on the sheets** (`NOT_WORKED_MODELS`; their in-transit claims: above): their rows stay on the sheets,
   but CLAIM STATUS is always NON ELIGIBLE, OMSGuru does not check them, and the summaries and the
   dashboard leave them out. A row with a blank `model` from a warehouse that is not one of ours
   (ours = the warehouses with PPMP orders: 46148, 24504, 50829, 56765) is marked `FBM` (Myntra
@@ -97,7 +120,7 @@ On demand: `/myntraspf`.
 * 18 Oct: 47,502 to 52,772 rows; GRN 2,011 received; OMSGuru 5,969 checked, 447 received.
   Without SJIT / FBM: MAIN 915 open (was 5,340), 69 eligible (was 435); OMSGuru checks 1,553.
 
-**Later**: raising SPF claims on Myntra (needs captures of the claim form, the ticket export and the
-payment download); only no-video claim types, existing-ticket check, caps, dry run first.
+**Later**: SJIT claims on the TICKETS sheet (their claim page call is not captured yet); the SJIT Shortage in
+RSTN and Inward Rejections claims (need the RSTN / inward reports matched to what we received).
 
 **No claim on a guess**: when the ERP or OMSGuru could not be read, no SPF claim is raised that run and the report names the source (a received return could look lost). An account whose portal reports failed gets no claim that run, and neither does a return whose OMSGuru lookup failed.

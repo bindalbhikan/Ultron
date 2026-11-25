@@ -13,8 +13,11 @@ folder in a work folder:
   * Drive SPF/MYNTRA/input: what is still dropped by hand - each account's Ticket1 and older
     payment exports, MANUAL RETURN and LEGACY MASTER
   * Myntra SPF tickets of each account (portal API), read as one more ticket report
+  * SJIT_Customer_Returns_Report of the in-transit claim window (SJIT / FBM items' core_item_id) and the
+    account's SJIT claims, for the SJIT / FBM in-transit claims (kept out of the engine's input/)
 After the first engine run the SPF claims due by the policy timelines are raised (tickets.py,
-only with MYNTRA_SPF_TICKETS=1; otherwise they are only counted in the report).
+only with MYNTRA_SPF_TICKETS=1, SJIT / FBM ones with MYNTRA_SPF_SJIT_TICKETS=1; otherwise they are only
+counted in the report).
 The previous master (from Drive) is the base, so a run only adds and updates rows. The new
 master replaces the Drive file in place (Drive keeps the old versions).
 """
@@ -50,11 +53,11 @@ COOLDOWN_SECONDS = 15 * 60 + 45
 # ------------------------------------------------------------------ Myntra portal
 
 def _windows(today: date) -> dict[int, list[tuple[date, date]]]:
-    """report id -> date ranges of at most 30 days, ending yesterday."""
+    """report id -> date ranges of at most 30 days, ending yesterday; the SJIT returns report's
+    cover the SJIT in-transit claim window (returns / RTOs created 61 to 120 days ago)."""
     from ..portals import myntra as mp
-    end = today - timedelta(days=1)
 
-    def split(days: int) -> list[tuple[date, date]]:
+    def split(days: int, end: date = today - timedelta(days=1)) -> list[tuple[date, date]]:
         out, stop = [], end
         while len(out) * 30 < days:
             start = max(stop - timedelta(days=29), end - timedelta(days=days - 1))
@@ -62,14 +65,18 @@ def _windows(today: date) -> dict[int, list[tuple[date, date]]]:
             stop = start - timedelta(days=1)
         return list(reversed(out))
     returns = split(num("MYNTRA_SPF_RETURN_DAYS", 30))
+    lo = num("MYNTRA_SPF_SJIT_AFTER_DAYS", num("MYNTRA_SPF_DELAY_AFTER_DAYS", 61))
+    hi = num("MYNTRA_SPF_SJIT_MAX_DAYS", num("MYNTRA_SPF_DELAY_MAX_DAYS", 120))
     return {mp.RETURNS_REPORT_ID: returns, DELIVERY_REPORT_ID: returns,
-            mp.REPORT_ID: split(num("MYNTRA_SPF_ORDER_DAYS", 60))}
+            mp.REPORT_ID: split(num("MYNTRA_SPF_ORDER_DAYS", 60)),
+            mp.SJIT_RETURNS_REPORT_ID: split(hi - lo + 1, today - timedelta(days=lo))}
 
 
 def fetch_account(account: str, today: date, dest: Path, notes: list[str],
                   old_orders: list[tuple[date, date]] | None = None,
                   ticketed: dict[str, set[str]] | None = None, cached: dict | None = None,
-                  details: dict | None = None, pay_from: date | None = None) -> None:
+                  details: dict | None = None, pay_from: date | None = None,
+                  sjit: dict[str, set[str]] | None = None) -> None:
     """The account's returns, delivery and order reports into dest. Different reports are asked
     for together; the same report again only after the cooldown. Jobs for the same dates are reused.
 
@@ -82,11 +89,18 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
 
     ticketed: filled with the order lines that have an SPF ticket on the portal (the tickets are
     also written into dest as a ticket report). Left out when they could not be read, so no
-    claim is raised for the account."""
+    claim is raised for the account. sjit: the same for the SJIT claims (core item ids and order
+    lines); the SJIT returns report goes to <work>/sjit/<account>, not into the engine's input."""
     from ..return_analysis.sources import myntra_portal
     from ..portals import myntra as mp
     portal = myntra_portal(account)
     dest.mkdir(parents=True, exist_ok=True)
+    sjit_dir = dest.parent.parent / "sjit" / account
+
+    def save(job: dict, name: str, data: bytes) -> None:
+        folder = sjit_dir if job.get("reportId") == mp.SJIT_RETURNS_REPORT_ID else dest
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / name).write_bytes(data)
     left: list[str] = []
     old_jobs, ask_old = [], []
     listed = portal.jobs(100) if old_orders else []
@@ -127,6 +141,10 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
                     key = (rid, a, b)
                     tries[key] = tries.get(key, 0) + 1
                     log.warning("%s report %s %s..%s refused (try %d): %s", account, rid, a, b, tries[key], exc)
+                    if rid == mp.SJIT_RETURNS_REPORT_ID:     # SJIT claims only: never holds up the run
+                        notes.append(f"{account} SJIT returns report {a}..{b} refused, no SJIT claim from it today")
+                        q.pop(0)
+                        continue
                     if old:
                         left.append(f"{a:%b %Y}")
                         q.pop(0)
@@ -144,7 +162,7 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
     for job in jobs:
         try:
             name, data = portal.collect_or_regenerate(job, wait_minutes=num("MYNTRA_SPF_WAIT_MINUTES", 45))
-            (dest / name).write_bytes(data)
+            save(job, name, data)
         except Exception as exc:  # noqa: BLE001
             notes.append(f"{account} report job {job.get('id')}: {str(exc)[:80]}")
     for job in old_jobs:                         # no regenerating: a next run finds the job done
@@ -162,6 +180,12 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
         except Exception as exc:  # noqa: BLE001 - no claims for this account then
             log.exception("%s SPF tickets not read", account)
             notes.append(f"{account} SPF tickets not read, no claims raised: {str(exc)[:80]}")
+    if sjit is not None:
+        try:
+            sjit[account] = tickets.sjit_ticketed(portal)
+        except Exception as exc:  # noqa: BLE001 - no SJIT claims for this account then
+            log.exception("%s SJIT SPF tickets not read", account)
+            notes.append(f"{account} SJIT SPF tickets not read, no SJIT claims raised: {str(exc)[:80]}")
     # the payments (SPF paid, return charges, order settlements): no longer dropped by hand
     try:
         # from the oldest return still open (its payout can come any day), at least the last
@@ -465,11 +489,13 @@ def oms_statuses(wanted: dict[tuple, dict], notes: list[str], unread: set[tuple]
 
 def raise_due_claims(work: Path, today: date, ticketed: dict[str, set[str]], oms: dict,
                      notes: list[str], details: dict | None = None, paused: list[str] | None = None,
-                     unread: set[tuple] = frozenset()) -> list[str]:
+                     unread: set[tuple] = frozenset(), sjit: dict[str, set[str]] | None = None) -> list[str]:
     """SPF claims due today per account (tickets.candidates), raised when MYNTRA_SPF_TICKETS=1,
     else only counted. Accounts whose portal reports or tickets could not be read are skipped. paused:
     sources not read, so a received return could look lost: no claim at all, as in AJIO SPF. unread:
-    returns whose OMSGuru lookup failed, not claimed. The lines for the report; they also go to notes."""
+    returns whose OMSGuru lookup failed, not claimed. sjit: account -> core item ids / order lines with
+    an SJIT claim (accounts whose SJIT claims were read): their SJIT / FBM in-transit claims, raised when
+    MYNTRA_SPF_SJIT_TICKETS=1. The lines for the report; they also go to notes."""
     if paused:
         line = f"SPF claims not raised today: {', '.join(paused)} not read"
         log.warning(line)
@@ -478,8 +504,9 @@ def raise_due_claims(work: Path, today: date, ticketed: dict[str, set[str]], oms
     from ..return_analysis.sources import myntra_portal
     from ..portals import myntra as mp
     received = {k for k, v in oms.items() if "RECEIVED" in str(v).upper()}
+    blocked: dict[str, set[str]] = {}
     try:
-        due = tickets.candidates(work / MASTER_NAME, today, ticketed, received | set(unread))
+        due = tickets.candidates(work / MASTER_NAME, today, ticketed, received | set(unread), blocked)
     except Exception as exc:  # noqa: BLE001 - the master still goes out
         log.exception("SPF claims not worked out")
         notes.append(f"SPF claims not worked out: {str(exc)[:100]}")
@@ -502,6 +529,19 @@ def raise_due_claims(work: Path, today: date, ticketed: dict[str, set[str]], oms
         except Exception as exc:  # noqa: BLE001 - the other accounts still go
             log.exception("%s SPF claims failed", account)
             lines.append(f"{account} SPF claims failed: {str(exc)[:80]}")
+    sjit_live = env("MYNTRA_SPF_SJIT_TICKETS") == "1"
+    for account, claimed in (sjit or {}).items():
+        try:
+            rows = tickets.sjit_candidates(tickets.sjit_returns(work / "sjit" / account), today, claimed,
+                                           blocked.get(account, set()) | ticketed.get(account, set()))
+            if not rows:
+                continue
+            portal = myntra_portal(account)          # the items are checked on the portal even when only counted
+            lines += tickets.raise_sjit_claims(portal, account, rows, sjit_live)
+            mp.save_to_worker(env, portal.cookies(), account)
+        except Exception as exc:  # noqa: BLE001 - the other accounts still go
+            log.exception("%s SJIT SPF claims failed", account)
+            lines.append(f"{account} SJIT SPF claims failed: {str(exc)[:80]}")
     if not lines:
         lines = ["SPF claims: none due today"]
     for line in lines:
@@ -614,6 +654,7 @@ def run(args) -> int:
         log.exception("Months of missing order amounts not worked out")
         old_orders = {}
     ticketed: dict[str, set[str]] = {}
+    sjit: dict[str, set[str]] = {}
     try:
         cached = tickets.read_details(work / MASTER_NAME)
     except Exception:  # noqa: BLE001 - every recent claim is read again then
@@ -627,7 +668,7 @@ def run(args) -> int:
         log.exception("Oldest open return not worked out")
         pay_from = {}
     tasks = {a: (fetch_account, (a, today, inp / a, notes, old_orders.get(a), ticketed, cached, details,
-                                 pay_from.get(a)))
+                                 pay_from.get(a), sjit))
              for a in ACCOUNTS}
     with ThreadPoolExecutor(max_workers=len(tasks) + 1) as pool:
         futures = {name: pool.submit(fn, *a) for name, (fn, a) in tasks.items()}
@@ -639,6 +680,7 @@ def run(args) -> int:
             log.exception("Myntra %s reports failed", name)
             notes.append(f"Myntra {name} reports not fetched, no SPF claim for it today: {str(exc)[:100]}")
             ticketed.pop(name, None)
+            sjit.pop(name, None)
     paused: list[str] = []
     try:
         log.info("ERP: %s", erp.result())
@@ -669,7 +711,7 @@ def run(args) -> int:
         oms = {}
         paused.append("OMSGuru")
     # 3) SPF claims due today (policy timelines), raised on the portal; shown in the master at once
-    claims = raise_due_claims(work, today, ticketed, oms, notes, details, paused, unread)
+    claims = raise_due_claims(work, today, ticketed, oms, notes, details, paused, unread, sjit)
     dispute_rejected(work, today, oms, notes, details, paused, unread)
     for p in _files(inp) - after_engine:          # ticket files of these claims, for a rebuild
         (work / "claim_files" / p).parent.mkdir(parents=True, exist_ok=True)
