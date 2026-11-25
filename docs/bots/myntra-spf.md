@@ -5,7 +5,8 @@ returns 12 and delivery 84 jobs are the same; since 16 Nov 2026 the 7 AM `--requ
 The older order window (31-60 days) is still asked for by the master itself.
 On demand: `/myntraspf`.
 
-**Result**: `AGENT WORK/SPF CLAIMS/MYNTRA SPF MASTER.xlsx`, found by name (`core/drive.py` `spf_master`; owner,
+**Result**: `AGENT WORK/SPF CLAIMS/MYNTRA SPF MASTER.xlsx` (PPMP) and, its own file, `MYNTRA SJIT SPF MASTER.xlsx`
+(SJIT / FBM, below); the PPMP master found by name (`core/drive.py` `spf_master`; owner,
 24 Nov 2026: the final master is kept only there; the hand inputs stay in `SPF/MYNTRA/input`,
 `MYNTRA_SPF_FOLDER_ID`), sheets MAIN / DBCC / FMCC
 + SUMMARY / DATE SUMMARY / INPUT LOG; claim aging per SPF POLICY v5 (formulas).
@@ -99,6 +100,16 @@ On demand: `/myntraspf`.
     report counts the items due. `MYNTRA_SPF_SJIT_CATEGORY` (repo variable, unset) changes the category. Dry run on MAIN, 25 Nov 2026
     (younger window, only a 1-23 Nov report on hand): 47 of 60 checked still out of stock.
   * The SJIT / FBM rows stay NON ELIGIBLE on the sheets and out of the summaries (below): only the claims are new.
+  * **Their own file** (owner, 25 Nov 2026: "alag master sheet ... same me mat karo"): `AGENT WORK/SPF CLAIMS/MYNTRA
+    SJIT SPF MASTER.xlsx` (`sjit_master.py`), rebuilt by every run on the previous one (made by the bot the first
+    time with the owner's OAuth; the bot owns it, an edit on Drive is not kept). Sheets: **SUMMARY** per account
+    (items, in the claim window, out of Myntra stock, raised today, due not raised, claims, open, paid, rejected,
+    amount paid); **ITEMS** one row per Fact Core Item ID read so far (order line, Return / RTO, its date and age,
+    report status, MYNTRA STOCK and LAST CHECKED from the tool, BOT RESULT: RAISED / DUE (claims off) / BACK IN
+    MYNTRA STOCK / CLAIM ON IT / TICKETED / SETTLED ON THE MASTER / TOO YOUNG / TOO OLD / NOT CHECKED ..., BOT JOB,
+    and the claim: ticket id, category, status, dates, compensation, UTR); an item stays after it leaves the report
+    window, its claim followed; **TICKETS** every SJIT claim on the portal. A line in the Telegram report. First
+    built 25 Nov 2026 from MAIN's 1-23 Nov report (411 items, all younger than the window).
 * A formula linking another workbook (e.g. `=VLOOKUP(G5,[1]Orders!$E:$F,2,)` pasted into a
   yellow column) reads as empty: written back it made Excel repair the file on every open.
 * **Return received**: ERP GRN, then **OMSGuru** (only rows whose FINAL RETURN STATUS is blank or Payment Received,

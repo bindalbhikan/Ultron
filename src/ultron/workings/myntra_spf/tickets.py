@@ -192,21 +192,47 @@ def sjit_returns(folder: Path) -> list[dict]:
     return list(out.values())
 
 
+# Why an SJIT / FBM item is not claimed (the SJIT master's BOT RESULT); "" = a candidate
+SJIT_CLAIMED = "CLAIM ON IT"
+SJIT_SETTLED = "TICKETED / SETTLED ON THE MASTER"
+SJIT_NO_DATE = "NO RETURN DATE"
+SJIT_YOUNG = "TOO YOUNG"
+SJIT_OLD = "TOO OLD"
+SJIT_BACK = "BACK IN MYNTRA STOCK"
+SJIT_RAISED = "RAISED"
+SJIT_DUE = "DUE (claims off)"
+SJIT_FAILED = "NOT CHECKED (lookup failed)"
+SJIT_CAPPED = "NOT CHECKED (next run)"
+SJIT_NOT_RAISED = "DUE, RAISE FAILED"
+
+
+def sjit_window() -> tuple[int, int]:
+    """(first, last) age in days of an SJIT in-transit claim: MYNTRA_SPF_SJIT_AFTER_DAYS / _MAX_DAYS, else the
+    PPMP in-transit claims' 61 / 120."""
+    return (num("MYNTRA_SPF_SJIT_AFTER_DAYS", num("MYNTRA_SPF_DELAY_AFTER_DAYS", 61)),
+            num("MYNTRA_SPF_SJIT_MAX_DAYS", num("MYNTRA_SPF_DELAY_MAX_DAYS", 120)))
+
+
+def sjit_reason(r: dict, today: date, ticketed: set[str], blocked: set[str]) -> str:
+    """Why the item is not a candidate today, or "": an SJIT claim on the item (ticketed: core ids and order
+    lines), its order line ticketed / received / settled / POD'd on the master (blocked), or its age outside
+    sjit_window()."""
+    oli = r["order_line_id"]
+    if r["core_item_id"] in ticketed or (oli and oli in ticketed):
+        return SJIT_CLAIMED
+    if oli and oli in blocked:
+        return SJIT_SETTLED
+    if not r["created"]:
+        return SJIT_NO_DATE
+    lo, hi = sjit_window()
+    age = (today - r["created"]).days
+    return SJIT_YOUNG if age < lo else SJIT_OLD if age > hi else ""
+
+
 def sjit_candidates(rows: list[dict], today: date, ticketed: set[str], blocked: set[str]) -> list[dict]:
-    """The SJIT / FBM returns to claim as in transit today: created MYNTRA_SPF_SJIT_AFTER_DAYS (the in-transit
-    claims' 61) to MYNTRA_SPF_SJIT_MAX_DAYS (120) days ago, no SJIT claim on the item (ticketed: its core ids
-    and order lines), and the order line not ticketed, received / settled or POD'd on the master (blocked).
-    Whether the item is still out of Myntra's warehouse is asked live (raise_sjit_claims)."""
-    lo = num("MYNTRA_SPF_SJIT_AFTER_DAYS", num("MYNTRA_SPF_DELAY_AFTER_DAYS", 61))
-    hi = num("MYNTRA_SPF_SJIT_MAX_DAYS", num("MYNTRA_SPF_DELAY_MAX_DAYS", 120))
-    out = []
-    for r in rows:
-        oli = r["order_line_id"]
-        if r["core_item_id"] in ticketed or (oli and (oli in ticketed or oli in blocked)):
-            continue
-        if r["created"] and lo <= (today - r["created"]).days <= hi:
-            out.append(r)
-    return out
+    """The SJIT / FBM returns to claim as in transit today (sjit_reason ""). Whether the item is still out of
+    Myntra's warehouse is asked live (raise_sjit_claims)."""
+    return [r for r in rows if not sjit_reason(r, today, ticketed, blocked)]
 
 
 def sjit_category() -> str:
@@ -215,26 +241,39 @@ def sjit_category() -> str:
     return cat if cat in (SJIT_INWARD, SJIT_SHORT, SJIT_NOT_SETTLED) else SJIT_NOT_SETTLED
 
 
-def raise_sjit_claims(portal, account: str, rows: list[dict], live: bool) -> list[str]:
+def raise_sjit_claims(portal, account: str, rows: list[dict], live: bool,
+                      results: dict[str, dict] | None = None) -> list[str]:
     """Each candidate item is looked up on the SJIT tool first (spf_sjit_item): claimed only while it is still
     SHIPPED (out of Myntra's warehouse: the return never came back) with no claim on it. Raised live in bulk
-    jobs of SPF_BULK_MAX (model SJIT, FactCoreId file), or only counted. Lines for the report."""
+    jobs of SPF_BULK_MAX (model SJIT, FactCoreId file), or only counted. Lines for the report; results (when
+    given): core id -> {result, stock (itemStatus), checked, job} for the SJIT master."""
     from ..portals.myntra import SPF_BULK_MAX
     cap = num("MYNTRA_SPF_SJIT_CHECK_MAX", 1000)
     todo, rest = rows[:cap], max(0, len(rows) - cap)
     failed: list[str] = []
+    res = results if results is not None else {}
+    stamp = f"{datetime.now():%d-%b-%Y %H:%M}"
+    for r in rows[cap:]:
+        res[r["core_item_id"]] = {"result": SJIT_CAPPED}
 
     def check(r):
+        core = r["core_item_id"]
         try:
-            item = portal.spf_sjit_item(r["core_item_id"])
+            item = portal.spf_sjit_item(core)
         except Exception as exc:  # noqa: BLE001 - not claimed on a guess
             failed.append(str(exc)[:60])
+            res[core] = {"result": SJIT_FAILED, "checked": stamp}
             return None
-        if str(item.get("itemStatus") or "").upper() != "SHIPPED":
-            return None                                  # back in stock, or unknown to the tool
+        stock = str(item.get("itemStatus") or "").upper()
+        res[core] = {"stock": stock or "UNKNOWN TO THE TOOL", "checked": stamp}
+        if stock != "SHIPPED":
+            res[core]["result"] = SJIT_BACK              # back in stock, or unknown to the tool
+            return None
         if not (_blank(item.get("ticketId")) and _blank(item.get("issueCategory"))):
-            return None                                  # a claim is already on the item
-        return r["core_item_id"]
+            res[core]["result"] = SJIT_CLAIMED           # a claim is already on the item
+            return None
+        res[core]["result"] = SJIT_DUE
+        return core
 
     with ThreadPoolExecutor(max_workers=num("MYNTRA_SPF_SJIT_WORKERS", 4)) as pool:
         due = [c for c in pool.map(check, todo) if c]
@@ -251,18 +290,22 @@ def raise_sjit_claims(portal, account: str, rows: list[dict], live: bool) -> lis
         try:
             jobs.append(portal.spf_bulk_claim(part, cat, SJIT_DESCRIPTION, model="SJIT"))
             raised += len(part)
+            for core in part:
+                res[core].update(result=SJIT_RAISED, job=jobs[-1], category=cat)
         except Exception as exc:  # noqa: BLE001 - the next part / account still goes
             log.exception("%s SJIT claim failed", account)
             lines.append(f"{name}: {len(part)} NOT raised: {str(exc)[:80]}")
+            for core in part:
+                res[core]["result"] = SJIT_NOT_RAISED
     if jobs:
         lines.append(f"{name}: {raised} raised (job {', '.join(map(str, jobs))}){more}")
     return lines
 
 
-def sjit_ticketed(portal) -> set[str]:
-    """The core item ids and order lines that already have an SJIT claim (any status)."""
+def sjit_ticketed(rows: list[dict]) -> set[str]:
+    """The core item ids and order lines of the account's SJIT claims (portal.spf_tickets(model="SJIT"))."""
     out = set()
-    for t in portal.spf_tickets(model="SJIT"):
+    for t in rows:
         out.update(str(t.get(k)).strip() for k in ("factCoreId", "orderLineId") if not _blank(t.get(k)))
     return out
 

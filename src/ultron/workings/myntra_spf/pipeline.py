@@ -15,6 +15,7 @@ folder in a work folder:
   * Myntra SPF tickets of each account (portal API), read as one more ticket report
   * SJIT_Customer_Returns_Report of the in-transit claim window (SJIT / FBM items' core_item_id) and the
     account's SJIT claims, for the SJIT / FBM in-transit claims (kept out of the engine's input/)
+The SJIT / FBM returns and their claims go into their own file, MYNTRA SJIT SPF MASTER.xlsx (sjit_master.py).
 After the first engine run the SPF claims due by the policy timelines are raised (tickets.py,
 only with MYNTRA_SPF_TICKETS=1, SJIT / FBM ones with MYNTRA_SPF_SJIT_TICKETS=1; otherwise they are only
 counted in the report).
@@ -76,7 +77,7 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
                   old_orders: list[tuple[date, date]] | None = None,
                   ticketed: dict[str, set[str]] | None = None, cached: dict | None = None,
                   details: dict | None = None, pay_from: date | None = None,
-                  sjit: dict[str, set[str]] | None = None) -> None:
+                  sjit: dict[str, list[dict]] | None = None) -> None:
     """The account's returns, delivery and order reports into dest. Different reports are asked
     for together; the same report again only after the cooldown. Jobs for the same dates are reused.
 
@@ -89,8 +90,8 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
 
     ticketed: filled with the order lines that have an SPF ticket on the portal (the tickets are
     also written into dest as a ticket report). Left out when they could not be read, so no
-    claim is raised for the account. sjit: the same for the SJIT claims (core item ids and order
-    lines); the SJIT returns report goes to <work>/sjit/<account>, not into the engine's input."""
+    claim is raised for the account. sjit: the same for the SJIT claims (the account's SJIT tickets);
+    the SJIT returns report goes to <work>/sjit/<account>, not into the engine's input."""
     from ..return_analysis.sources import myntra_portal
     from ..portals import myntra as mp
     portal = myntra_portal(account)
@@ -182,7 +183,7 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
             notes.append(f"{account} SPF tickets not read, no claims raised: {str(exc)[:80]}")
     if sjit is not None:
         try:
-            sjit[account] = tickets.sjit_ticketed(portal)
+            sjit[account] = portal.spf_tickets(model="SJIT")
         except Exception as exc:  # noqa: BLE001 - no SJIT claims for this account then
             log.exception("%s SJIT SPF tickets not read", account)
             notes.append(f"{account} SJIT SPF tickets not read, no SJIT claims raised: {str(exc)[:80]}")
@@ -489,13 +490,15 @@ def oms_statuses(wanted: dict[tuple, dict], notes: list[str], unread: set[tuple]
 
 def raise_due_claims(work: Path, today: date, ticketed: dict[str, set[str]], oms: dict,
                      notes: list[str], details: dict | None = None, paused: list[str] | None = None,
-                     unread: set[tuple] = frozenset(), sjit: dict[str, set[str]] | None = None) -> list[str]:
+                     unread: set[tuple] = frozenset(), sjit: dict[str, list[dict]] | None = None,
+                     sjit_out: dict[str, dict] | None = None) -> list[str]:
     """SPF claims due today per account (tickets.candidates), raised when MYNTRA_SPF_TICKETS=1,
     else only counted. Accounts whose portal reports or tickets could not be read are skipped. paused:
     sources not read, so a received return could look lost: no claim at all, as in AJIO SPF. unread:
-    returns whose OMSGuru lookup failed, not claimed. sjit: account -> core item ids / order lines with
-    an SJIT claim (accounts whose SJIT claims were read): their SJIT / FBM in-transit claims, raised when
-    MYNTRA_SPF_SJIT_TICKETS=1. The lines for the report; they also go to notes."""
+    returns whose OMSGuru lookup failed, not claimed. sjit: account -> its SJIT tickets (accounts whose SJIT
+    claims were read): their SJIT / FBM in-transit claims, raised when MYNTRA_SPF_SJIT_TICKETS=1; sjit_out
+    (when given): account -> {reasons: core id -> why not a candidate, results: raise_sjit_claims' results},
+    for the SJIT master. The lines for the report; they also go to notes."""
     if paused:
         line = f"SPF claims not raised today: {', '.join(paused)} not read"
         log.warning(line)
@@ -530,14 +533,20 @@ def raise_due_claims(work: Path, today: date, ticketed: dict[str, set[str]], oms
             log.exception("%s SPF claims failed", account)
             lines.append(f"{account} SPF claims failed: {str(exc)[:80]}")
     sjit_live = env("MYNTRA_SPF_SJIT_TICKETS") == "1"
-    for account, claimed in (sjit or {}).items():
+    for account, sjit_tickets in (sjit or {}).items():
         try:
-            rows = tickets.sjit_candidates(tickets.sjit_returns(work / "sjit" / account), today, claimed,
-                                           blocked.get(account, set()) | ticketed.get(account, set()))
+            claimed = tickets.sjit_ticketed(sjit_tickets)
+            master = blocked.get(account, set()) | ticketed.get(account, set())
+            items = tickets.sjit_returns(work / "sjit" / account)
+            out = {"reasons": {r["core_item_id"]: tickets.sjit_reason(r, today, claimed, master) for r in items},
+                   "results": {}}
+            if sjit_out is not None:
+                sjit_out[account] = out
+            rows = [r for r in items if not out["reasons"][r["core_item_id"]]]
             if not rows:
                 continue
             portal = myntra_portal(account)          # the items are checked on the portal even when only counted
-            lines += tickets.raise_sjit_claims(portal, account, rows, sjit_live)
+            lines += tickets.raise_sjit_claims(portal, account, rows, sjit_live, out["results"])
             mp.save_to_worker(env, portal.cookies(), account)
         except Exception as exc:  # noqa: BLE001 - the other accounts still go
             log.exception("%s SJIT SPF claims failed", account)
@@ -654,7 +663,7 @@ def run(args) -> int:
         log.exception("Months of missing order amounts not worked out")
         old_orders = {}
     ticketed: dict[str, set[str]] = {}
-    sjit: dict[str, set[str]] = {}
+    sjit: dict[str, list[dict]] = {}
     try:
         cached = tickets.read_details(work / MASTER_NAME)
     except Exception:  # noqa: BLE001 - every recent claim is read again then
@@ -711,8 +720,13 @@ def run(args) -> int:
         oms = {}
         paused.append("OMSGuru")
     # 3) SPF claims due today (policy timelines), raised on the portal; shown in the master at once
-    claims = raise_due_claims(work, today, ticketed, oms, notes, details, paused, unread, sjit)
+    sjit_out: dict[str, dict] = {}
+    claims = raise_due_claims(work, today, ticketed, oms, notes, details, paused, unread, sjit, sjit_out)
     dispute_rejected(work, today, oms, notes, details, paused, unread)
+    # the SJIT / FBM returns and claims: their own file (owner, 25 Nov 2026), not in the PPMP master
+    from . import sjit_master
+    sjit_master.publish(work, today, sjit, sjit_out, notes, upload=not args.no_upload,
+                        why_not=f"{', '.join(paused)} not read" if paused else "")
     for p in _files(inp) - after_engine:          # ticket files of these claims, for a rebuild
         (work / "claim_files" / p).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(inp / p, work / "claim_files" / p)

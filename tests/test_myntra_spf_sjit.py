@@ -113,3 +113,38 @@ def test_bulk_claim_file_has_the_models_column():
     assert sent["body"]["modelType"] == "SJIT" and sent["body"]["issueCategory"] == tickets.SJIT_NOT_SETTLED
     portal.spf_bulk_claim(["11"], tickets.RNR, "d")
     assert pl.read_excel(io.BytesIO(sent["file"])).columns == ["OrderId"]
+
+
+def test_results_say_what_happened_to_each_item():
+    res = {}
+    tickets.raise_sjit_claims(Portal(ITEMS), "MAIN", ROWS, live=True, results=res)
+    assert res["C1"]["result"] == tickets.SJIT_RAISED and res["C1"]["job"] == 99
+    assert res["C2"]["result"] == tickets.SJIT_BACK and res["C2"]["stock"] == "STORED"
+    assert res["C3"]["result"] == tickets.SJIT_CLAIMED
+
+
+def test_sjit_master_items_claims_and_history(tmp_path):
+    import polars as pl
+    from ultron.workings.myntra_spf import sjit_master
+    work = tmp_path / "work"
+    (work / "sjit" / "MAIN").mkdir(parents=True)
+    (work / "sjit" / "MAIN" / "r.csv").write_text(
+        HEAD + f"C1,11,Return,Ret Created,{_day(70)},\n" + f"C2,12,Return,Ret Created,{_day(30)},\n", encoding="utf-8")
+    sjit = {"MAIN": [{"ticketId": 501, "factCoreId": "C9", "issueCategory": tickets.SJIT_NOT_SETTLED,
+                      "status": "PAYMENT_COMPLETED", "createdOn": "2026-10-01T10:00:00", "compensationAmount": 450}]}
+    out = {"MAIN": {"reasons": {"C1": "", "C2": tickets.SJIT_YOUNG},
+                    "results": {"C1": {"result": tickets.SJIT_RAISED, "stock": "SHIPPED", "job": 99,
+                                       "checked": f"{TODAY:%d-%b-%Y} 10:30"}}}}
+    previous = {("MAIN", "C9"): {"ACCOUNT": "MAIN", "FACT CORE ITEM ID": "C9", "ORDER LINE ID": "19",
+                                 "RETURN / RTO DATE": "2026-08-01", "BOT RESULT": tickets.SJIT_RAISED}}
+    dest = work / sjit_master.SJIT_MASTER
+    summary = sjit_master.build(work, TODAY, sjit, out, previous, dest)
+    items = {r["FACT CORE ITEM ID"]: r for r in pl.read_excel(dest, sheet_name="ITEMS", infer_schema_length=0)
+             .iter_rows(named=True)}
+    assert items["C1"]["BOT RESULT"] == tickets.SJIT_RAISED and items["C1"]["BOT JOB"] == "99"
+    assert items["C2"]["BOT RESULT"] == tickets.SJIT_YOUNG
+    assert items["C9"]["CLAIM STATUS"] == "PAYMENT_COMPLETED" and items["C9"]["TICKET ID"] == "501"
+    assert summary["MAIN"]["ITEMS"] == 3 and summary["MAIN"]["PAID"] == 1 and summary["MAIN"]["AMOUNT PAID"] == 450
+    assert summary["MAIN"]["RAISED TODAY"] == 1
+    again = sjit_master.read_previous(dest)
+    assert set(again) == {("MAIN", "C1"), ("MAIN", "C2"), ("MAIN", "C9")}
