@@ -21,7 +21,21 @@ def retry_failed(client, dry_run=False):
         page = 1
         while True:
             url = PAGE if page == 1 else f"{PAGE}/page:{page}"
-            soup = parse(client.get(url).text)
+            if page > 1:
+                response = client.s.get(url, timeout=client.timeout)
+                if response.status_code == 404:
+                    # The pager can outlive the queue while OMSGuru processes a batch.
+                    fresh = parse(client.get(PAGE).text)
+                    if re.search(r"showing 0 records out of 0 total", fresh.text(), re.I):
+                        break
+                    if any(i["value"] not in seen for i in fresh.select("input.channel_listings_cb_select")):
+                        page = 1
+                        continue
+                    raise OmsGuruError("Failed queue pagination unavailable before completion")
+                response.raise_for_status()
+                soup = parse(response.text)
+            else:
+                soup = parse(client.get(url).text)
             count = re.search(r"showing [0-9,]+ records out of ([0-9,]+) total", soup.text(), re.I)
             form = soup.select_one(f'form[action="{ACTION}"]')
             if not count or not form or form.attr("method", "").lower() != "post":

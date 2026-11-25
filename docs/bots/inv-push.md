@@ -14,4 +14,4 @@
   does not stop the others). Not sent on a dry run.
 * GitHub turns off scheduled workflows of a repo with no commits for 60 days; it says so by email.
 
-Use `python run.py inv-push --retry-failed` or the inv-retry workflow to retry the Failed queue in each warehouse. The worker starts it at 10 AM and 3 PM IST daily. A dry run counts listings.
+Use `python run.py inv-push --retry-failed` or the inv-retry workflow to retry the Failed queue in each warehouse. The worker starts it at 10 AM and 3 PM IST daily. A dry run counts listings. If a stale next-page link disappears during processing, the run reads the first page again to confirm the queue cleared.
