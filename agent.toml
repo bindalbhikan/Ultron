@@ -96,6 +96,7 @@ ajiotat = { workflow = "ajio-tat.yml", inputs = ["days", "orders"], about = "AJI
 ajiospf = { workflow = "ajio-spf.yml", inputs = ["dry_run", "master_only", "disputes"], about = "AJIO SPF run (raises claims on AJIO). inputs: dry_run=1 for a test run" }
 myntraspf = { workflow = "myntra-spf.yml", inputs = ["request", "no_upload"], about = "Myntra SPF master. no inputs" }
 invpush = { workflow = "inv-push.yml", inputs = ["dry_run"], about = "OMSGuru Push Inventory on every channel. inputs: dry_run=1 to only list channels" }
+invretry = { workflow = "inv-retry.yml", inputs = ["dry_run"], about = "OMSGuru failed listing retry: push the failed inventory again. inputs: dry_run=1 to only count failed listings" }
 morning = { workflow = "morning.yml", inputs = ["day"], about = "Morning sale report. inputs: day (YYYY-MM-DD)", auto = true }
 sla = { workflow = "sla.yml", inputs = [], about = "SLA warning now. no inputs", auto = true }
 labels = { workflow = "labels.yml", inputs = [], about = "ERP label check now. no inputs" }
