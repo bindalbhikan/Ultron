@@ -5,10 +5,9 @@ since 25 Nov 2026). On demand: `/mastersheet`, the 📋 MasterSheet button (All 
 workflow by hand (`no_upload=1` = a test run, the sheet only in the run's artifact).
 
 **Result**: `AGENT WORK/MASTER SHEET/MasterSheet.xlsx` (by name, `workings/core/master_sheet.py`), the one SKU master
-every working reads (business report, return analysis, Myntra colour grouping, Myntra zero TD's style list) and the
+every working reads (business report, return analysis, Myntra colour grouping, Myntra zero TD's brand / SKU) and the
 chat agent answers from (`sku_lookup`, `master_sheet_query` in `workings/agent_tools.py`; owner, 25 Nov 2026: the one
-central SKU master); the old copies in BUSINESS REPORTING and RETURN ANALYSIS/Supporting and the MYNTRA ZERO TD UPDATE
-SHEET are no longer read. Sheet tabs in capitals (owner, 24 Nov 2026): MASTER DATA
+central SKU master); the old copies in BUSINESS REPORTING and RETURN ANALYSIS/Supporting are no longer read. Sheet tabs in capitals (owner, 24 Nov 2026): MASTER DATA
 (was MasterData), NEED DATA, UNMAPPED LISTINGS, REMOVED LISTINGS, then the owner's MASTER SKU, FABRIC CODE, LAUNCH
 DATE & SIZE COUNT; the readers find a sheet whatever its case (`master_sheet.sheet_of`).
 

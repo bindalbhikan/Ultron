@@ -71,8 +71,9 @@ and folder kept its Drive id):
 AGENT WORK/
   AGENT REPORT WORK SCHEDULE REPORT.xlsx   the agent's reporting sheet (below)
   AGENT LOGS/<OCT-26>/<29-10-26>/          every run's hyper log
-  MYNTRA/   MYNTRA DAILY REPORTS/ (up to 15 Nov 2026 only), MYNTRA DAILY RETURN DELIVERY REPORT.xlsx (the zero TD sheet retired 25 Nov 2026: styles from MASTER SHEET),
-            MYNTRA ZERO TD SHEETS/, MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../
+  MYNTRA/   MYNTRA DAILY REPORTS/ (up to 15 Nov 2026 only), MYNTRA DAILY RETURN DELIVERY REPORT.xlsx,
+            MYNTRA ZERO TD SHEETS/ (MYNTRA ZERO TD UPDATE SHEET.xlsx = the styles to check, MYNTRA ZERO TD MASTER.xlsx =
+            times at MRP per style / day / month, <MON-YY>/<dd-mm-yy>/ every check), MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../
   AJIO/     Ajio Daily Order Tat Check Working/ (TAT master), Ajio Ads Gap Working/
   DAILY REPORTING/   DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx, PORTAL SALE REPORT.xlsx), VMS/ (the daily reports in one place)
   PORTAL REPORTS/    <MYNTRA|AJIO|FLIPKART>/<YYYY>/<Mon-YY>/<PORTAL> [<ACCOUNT>] ORDER|RETURN|PAYMENT REPORT <MON-YY>

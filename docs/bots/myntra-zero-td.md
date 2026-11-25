@@ -2,15 +2,19 @@
 
 **When**: every 2 hours from 7 AM to 7 PM IST (7, 9, 11 AM, 1, 3, 5, 7 PM), Monday to Saturday, plus one fixed run every day (Sunday too) at 10 AM (`myntra-zero-td.yml`, started by the
 worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: `/myntrazerotd`, the 🏷 Zero TD
-button on the Myntra menu, or run the workflow. About 2 minutes for ~5,500 styles (8,800 account checks).
+button on the Myntra menu, or run the workflow. About 1 minute for ~3,500 styles.
 
-* Source: the one SKU master (owner, 25 Nov 2026), Drive `AGENT WORK/MASTER SHEET/MasterSheet.xlsx`, sheet MASTER DATA
-  (`workings/core/master_sheet.py`; REMOVED LISTINGS not checked): every Myntra listing with a MYNTRA STYLE ID, by
-  account (MYNTRA + MYNTRA PPMP = MAIN, MYNTRA DBCC, MYNTRA FMCC, MYNTRA EXIM), one row per style: BRAND, STYLE ID,
-  MY SKU, MASTER STYLE CODE, COLOR (each the first value the style's listings give). The old MYNTRA ZERO TD UPDATE
-  SHEET (a hand list per account and month with ARTICLE TYPE, COST, LIQ STYLES) was trashed on 25 Nov 2026 and is
-  no longer read; its brand / SKU agreed with the MasterSheet on every style. Accounts: `MYNTRA_ZERO_TD_ACCOUNTS`
-  (default every account of `portals/myntra.py`). 25 Nov 2026: MAIN 4,220, DBCC 2,225, FMCC 2,351, EXIM 6 styles.
+* Styles: the owner's sheet, Drive `AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/MYNTRA ZERO TD UPDATE SHEET.xlsx` (moved
+  there 25 Nov 2026; `AGENT WORK/MYNTRA` still read when it is not there), one tab per account (`MAIN`, `DBCC`, `FMCC`,
+  or `MAIN-SEP-26` ...; ARTICLE TYPE, BRAND, STYLE ID, MY SKU, FINAL SKU, COST, LIQ STYLES), the last tab of each
+  account read. Accounts: `MYNTRA_ZERO_TD_ACCOUNTS` (default every account of `portals/myntra.py`).
+* **Brand / SKU from the MasterSheet** (owner, 25 Nov 2026: the one SKU master, `AGENT WORK/MASTER SHEET/MasterSheet.xlsx`,
+  MASTER DATA only): BRAND, MY SKU and FINAL SKU (= MASTER STYLE CODE) by MYNTRA STYLE ID, the sheet's own value only
+  where the master has none. An account with no tab (EXIM) is checked for every Myntra style the master has for it.
+  The MasterSheet not readable: the sheet's values, named on Telegram.
+* **Each style checked once** (owner, 25 Nov 2026): the accounts' styles are merged and a style id on two or three tabs
+  is checked once, under the first account (MAIN, DBCC, FMCC, EXIM) that has it; ACCOUNTS names every account that has
+  it. 25 Nov 2026: 4,665 rows, 3,480 styles (1,185 duplicates no longer checked again).
 * Each style is looked up on the buyer side, the product API behind `https://www.myntra.com/<style id>`
   (`/gateway/v2/product/<style id>`, a Scrapy spider: `myntra_zero_td/spider.py`). No login: the
   home page first gives the session cookie the API needs (without it: 401).
@@ -19,10 +23,17 @@ button on the Myntra menu, or run the workflow. About 2 minutes for ~5,500 style
   CHECKED (no answer after 3 retries).
 * Telegram: one message, per account the styles at MRP and their stock, the 5 with most stock,
   then the workbook: SUMMARY, ALL ACCOUNTS (every account's styles at MRP together, each style
-  once: STYLE ID, SKU (MASTER STYLE CODE, else MY SKU), SELLING PRICE), a tab per account (its ZERO TD / PART ZERO TD styles: the master's
+  once: STYLE ID, SKU (FINAL SKU, else MY SKU), SELLING PRICE), a tab per account (its ZERO TD / PART ZERO TD styles: the sheet's
   columns + STATUS, MRP, SELLING PRICE, SIZES AT MRP, STOCK AT MRP, TOTAL STOCK, SELLER, LINK),
   NOT CHECKED when some had no answer.
 * Drive: the same workbook in `AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx`.
+* **MYNTRA ZERO TD MASTER** (owner, 25 Nov 2026; `myntra_zero_td/history.py`), `MYNTRA ZERO TD SHEETS/MYNTRA ZERO TD
+  MASTER.xlsx`, every check added, written anew (Drive keeps the old versions): STYLE SUMMARY (one row per style: ACCOUNTS,
+  BRAND, SKU, TIMES AT MRP, ZERO TD / PART ZERO TD TIMES, DAYS, FIRST / LAST AT MRP, LAST STATUS, MAX STOCK AT MRP, DATES,
+  times per month), DAY WISE (style + day: TIMES, CHECK TIMES), MONTH WISE (month + account: styles, times, checks run),
+  RUNS (every check), LOG (every style at MRP of every check). With no master on Drive it is built from every saved
+  check first (25 Nov 2026: 193 checks since 26 Oct, about 6 minutes, once); `--rebuild-master` builds it again. The
+  Telegram list names a style's times this month ("15x in Nov"). Not updated: named on Telegram, the check still goes out.
 * The buyer side shows a style, not an account: a style id on two account tabs shows the same
   result on both.
 * Runs on the office PC (self-hosted runner BHIKAN-PC, label `bindal-office`, in
