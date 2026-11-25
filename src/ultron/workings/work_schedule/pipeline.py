@@ -18,7 +18,7 @@ import argparse
 import logging
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -46,13 +46,34 @@ class Task:
     day: int = 0                      # day of the month
     days: tuple[int, ...] = ()        # days of the month (every few days)
     when: str = ""                    # the TIME column of a task with several slots
+    changes: tuple[dict, ...] = ()    # shared schedule history, never applied retroactively
 
     def due(self, d: date) -> bool:
         return ((not self.weekdays or d.weekday() in self.weekdays) and (not self.day or d.day == self.day)
                 and (not self.days or d.day in self.days))
 
+    def slots_on(self, d: date) -> tuple[int, ...]:
+        """The starts actually due while each schedule revision was active."""
+        if not self.due(d):
+            return ()
+        slots = set()
+        for original in self.slots:
+            events = sorted((c for c in self.changes if c["origin"] == original
+                             and (not c["day"] or c["day"] == d.day)), key=lambda c: (c["at"], c.get("revision", 0)))
+            start, minute, enabled = datetime.min, original, True
+            for change in [*events, {"at": datetime.max}]:
+                candidate = datetime.combine(d, time()) + timedelta(minutes=minute)
+                if enabled and start <= candidate < change["at"]:
+                    slots.add(minute)
+                if change["at"] == datetime.max:
+                    break
+                start, minute, enabled = change["at"], change["target"], change["enabled"]
+        return tuple(sorted(slots))
+
     @property
     def time(self) -> str:
+        if self.changes:
+            return "Changed (app schedule)"
         if len(self.slots) > 1:
             return self.when or "every 3 hours, 6 AM - 3 AM"
         return datetime.combine(date.today(), time(self.slots[0] // 60, self.slots[0] % 60)).strftime(
@@ -174,6 +195,53 @@ WORK = {
 }
 
 
+
+BASE_TASKS = tuple(TASKS)
+
+
+def live_tasks() -> list[Task]:
+    """Attach server-recorded schedule revisions without changing historical starts."""
+    url, token = env("DASHBOARD_URL").rstrip("/"), env("DASHBOARD_TOKEN")
+    if not url or not token:
+        if url or token or env('RUN_MODE') == 'github-actions':
+            raise RuntimeError('The shared schedule credentials are missing; the work schedule was not published')
+        return list(BASE_TASKS)
+    response = http.get(f"{url}/api/control/schedule", headers={"Authorization": f"Bearer {token}"}, timeout=60)
+    response.raise_for_status()
+    data = http.json_of(response)
+    if not isinstance(data.get("baseline"), list) or not isinstance(data.get("history"), list):
+        raise RuntimeError("The shared schedule is incomplete; the work schedule was not published")
+    history = {}
+    for event in data["history"]:
+        history.setdefault(event["id"], []).append(event)
+    out = []
+    for task in BASE_TASKS:
+        changes = []
+        for source in data["baseline"]:
+            if source.get("workflow") != task.workflow:
+                continue
+            weekdays = tuple(sorted((day - 1) % 7 for day in source.get("weekdays", [])))
+            if weekdays != tuple(sorted(task.weekdays)):
+                continue
+            day = int(source.get("day", 0))
+            if task.days:
+                if day not in task.days:
+                    continue
+            elif day != task.day:
+                continue
+            minute, hour = map(int, source["cron"].split()[:2])
+            original = (hour * 60 + minute + 330) % 1440
+            for slot in task.slots:
+                if slot % 1440 != original:
+                    continue
+                for event in history.get(source["id"], []):
+                    m, h = map(int, (event.get("cron") or source["cron"]).split()[:2])
+                    changes.append({"origin": slot, "target": (h * 60 + m + 330) % 1440 + slot // 1440 * 1440,
+                                    "enabled": bool(event["enabled"]), "day": day, "revision": event["revision"],
+                                    "at": datetime.fromtimestamp(event["created_at"] / 1000, IST).replace(tzinfo=None)})
+        out.append(replace(task, changes=tuple(changes)))
+    return out
+
 # ------------------------------------------------------------------ GitHub run history
 
 def github():
@@ -219,7 +287,7 @@ def done_slots(first: date, last: date, runs: dict[str, list[datetime]]) -> set[
     while d <= last + timedelta(days=1):
         for i, t in enumerate(TASKS):
             if t.due(d):
-                for k, m in enumerate(t.slots):
+                for k, m in enumerate(t.slots_on(d)):
                     slots.setdefault(t.workflow, []).append((datetime.combine(d, time()) + timedelta(minutes=m), i, d, k))
         d += timedelta(days=1)
     done = set()
@@ -279,15 +347,16 @@ def write_month(wb, month: date, done: set, now: datetime, since: dict[str, date
     for n, t in enumerate(TASKS):
         row = [n + 1, portal(t), t.name, t.time, t.every]
         for d in days:
-            ok = all((n, d, k) in done for k in range(len(t.slots)))
-            began = datetime.combine(d, time()) + timedelta(minutes=t.slots[0]) >= since.get(t.workflow, datetime.max)
-            row.append("" if not t.due(d) or not (ok or began) else DONE if ok else DUE)
+            slots = t.slots_on(d)
+            ok = bool(slots) and all((n, d, k) in done for k in range(len(slots)))
+            began = bool(slots) and datetime.combine(d, time()) + timedelta(minutes=slots[0]) >= since.get(t.workflow, datetime.max)
+            row.append("" if not slots or not (ok or began) else DONE if ok else DUE)
         ws.append(row + [WORK.get(t.name, "")])
         r = ws.max_row
         for j, d in enumerate(days):
             c = ws.cell(r, len(COLUMNS) + 1 + j)
             c.alignment = Alignment(horizontal="center")
-            last_slot = datetime.combine(d, time()) + timedelta(minutes=t.slots[-1], hours=num("SLOT_HOURS", 12))
+            last_slot = datetime.combine(d, time()) + timedelta(minutes=(t.slots_on(d) or t.slots)[-1], hours=num("SLOT_HOURS", 12))
             if c.value == DONE:
                 c.fill, c.font = green, Font(color="006100", size=12)
             elif c.value == DUE and now > last_slot:
@@ -330,6 +399,8 @@ LOGS = "LOGS"   # a tab once here (29 Oct 2026); the run logs stay in Drive AGEN
 def build(path: Path, months: list[date], now: datetime) -> dict:
     from openpyxl import Workbook, load_workbook
     wb = load_workbook(path) if path.exists() else Workbook()
+    global TASKS
+    TASKS = live_tasks()
     first, last = min(months), max(months)
     last = (last.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     repo, s = github()
@@ -345,7 +416,7 @@ def build(path: Path, months: list[date], now: datetime) -> dict:
     wb.active = wb.sheetnames.index(month_sheet(max(months)))
     wb.save(path)
     today = now.date()
-    due = [(i, k) for i, t in enumerate(TASKS) if t.due(today) for k in range(len(t.slots))]
+    due = [(i, k) for i, t in enumerate(TASKS) if t.due(today) for k in range(len(t.slots_on(today)))]
     return {"today_due": len(due), "today_done": sum((i, today, k) in done for i, k in due)}
 
 

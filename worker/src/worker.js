@@ -11,6 +11,8 @@
 // Every reply is written for a phone: a bold heading line, a blank line, short lines below,
 // and at most two short buttons per row.
 
+import ACTIONS from "../actions.json" with { type: "json" };
+import { effectiveSchedule } from "../control.js";
 import { phoneJobs } from "../phone.js";
 import { makeAgent } from "../agent.js";   // Ultron's worker routes (the same for every seller)
 
@@ -30,6 +32,7 @@ const oneDate = (key, usage) => (args) => {
 // back to the chat that asked). `minutes` is the usual run time until the workflow has runs to measure.
 // `portal` groups it in /status and /help.
 const COMMANDS = {
+  mastersheet: { workflow: "master-sheet.yml", name: "MasterSheet", icon: "📋", portal: "all", minutes: 5, examples: ["/mastersheet"], inputs: none("/mastersheet") },
   // Myntra
   vms: { workflow: "vms.yml", icon: "📹", name: "Myntra VMS", portal: "myntra", chat: true, minutes: 2,
          examples: ["/vms", "/vms 2026-10-01 2026-10-07", "/vms erp"],
@@ -168,6 +171,8 @@ const COMMANDS = {
   deadstock: { workflow: "deadstock.yml", icon: "🪦", name: "Dead stock", portal: "reports", minutes: 6,
                examples: ["/deadstock"], inputs: none("/deadstock") },
 };
+
+export { COMMANDS, SCHEDULE };
 
 const PORTALS = [["myntra", "🛍 Myntra"], ["ajio", "🟠 AJIO"], ["flipkart", "🛒 Flipkart"], ["all", "📦 All channels (OMSGuru)"], ["reports", "📊 Reports & MIS"]];
 
@@ -427,6 +432,7 @@ const REPLY_KEYBOARD = {
 // the bot's command list in Telegram (setMyCommands on /start; worker/setup.ps1 sets the same)
 const BOT_COMMANDS = [
   ["menu", "Buttons for every portal and report"], ["status", "Last run of each report"],
+  ["control", "Shared agent controls, settings and schedule"],
   ["sale", "Daily sale (optional: today, or from to dates)"], ["salepic", "Sale sheet photo (optional: YYYY-MM)"],
   ["vms", "Myntra VMS (optional: dates, or erp)"], ["vmspic", "VMS sheet photo (optional: YYYY-MM)"],
   ["ajiotat", "AJIO TAT (optional: days)"], ["ajiospf", "AJIO SPF (optional: dry, master)"],
@@ -531,7 +537,8 @@ export default {
     // `day` = IST day of the month, `weekdays` = IST weekdays (0 Sunday .. 6 Saturday): the free
     // plan allows 5 cron triggers, so monthly / weekly runs ride on daily ones
     const ist = new Date(event.scheduledTime + 5.5 * 3600 * 1000);
-    const due = SCHEDULE.filter((s) => at(s.cron) === now && (!s.day || s.day === ist.getUTCDate())
+    const active = await effectiveSchedule(env.AGENT_DB, SCHEDULE);
+    const due = active.filter((s) => s.enabled && at(s.cron) === now && (!s.day || s.day === ist.getUTCDate())
       && (!s.weekdays || s.weekdays.includes(ist.getUTCDay())));
     ctx.waitUntil(
       Promise.all(
@@ -542,7 +549,9 @@ export default {
               console.log(`cron ${s.cmd}: today's run succeeded or is running, second try not needed`);
               return;
             }
-            const res = await dispatch(env, cmd, s.inputs || {});
+            const action = Object.entries(ACTIONS).find(([, a]) => a.workflow === cmd.workflow)?.[0];
+            const result = await agent.control.execute(env, { source: "system" }, "workflow.run", { action, inputs: s.inputs || {} }, { confirmed: true });
+            const res = { status: result.started ? 204 : 502 };
             console.log(`cron ${event.cron} -> ${cmd.workflow} ${res.status}`);
             if (res.status !== 204) throw new Error(`GitHub said ${res.status}: ${(await res.text()).slice(0, 200)}`);
           } catch (e) {
@@ -617,6 +626,20 @@ async function handle(env, chatId, replyTo, text) {
                   REPLY_KEYBOARD);
       return await reply(SCREENS.main.title, keyboard(SCREENS.main.rows));
     }
+    if (name === "control") {
+      const raw = rawArgs.join(" ");
+      if (!raw || raw === "catalog") {
+        const catalog = await agent.control.catalog(env, { source: "telegram", chatId });
+        return reply("<b>Shared agent controls</b>\n" + Object.entries(catalog.operations).map(([key, value]) =>
+          esc(key + ": " + value.about + " (" + value.fields.join(", ") + ")")).join("\n") +
+          "\n\n/control preview operation {arguments}\n/control execute operation {arguments}\nOther changes wait for approval. Keys and passwords are entered only in the app.");
+      }
+      const match = raw.match(/^(?:(preview|execute)\s+)?([a-zA-Z.]+)(?:\s+([\s\S]+))?$/);
+      if (!match) return reply("Use /control [preview|execute] operation {arguments}");
+      const args = match[3] ? JSON.parse(match[3]) : {};
+      const result = await agent.telegramControl(env, chatId, match[2], args, { preview: match[1] === "preview", confirmed: match[1] === "execute" });
+      return reply("<pre>" + esc(JSON.stringify(result, null, 2).slice(0, 3500)) + "</pre>");
+    }
     if (name === "help") return await reply(helpText());
     if (name === "dashboard") return await sendDashboardLink(env, chatId, replyTo);
     if (name === "menu") return await reply(SCREENS.main.title, keyboard(SCREENS.main.rows));
@@ -635,8 +658,10 @@ async function handle(env, chatId, replyTo, text) {
     // Measured before dispatching, so the new run is not counted as "already running".
     const eta = await estimate(env, cmd, inputs);
     // The run's report goes back to the chat that asked for it, when the workflow can.
-    const res = await dispatch(env, cmd, cmd.chat ? { ...inputs, chat_id: String(chatId) } : inputs);
-    console.log(`dispatch ${cmd.workflow} ${JSON.stringify(inputs)} -> ${res.status}`);
+    const action = Object.entries(ACTIONS).find(([, a]) => a.workflow === cmd.workflow)?.[0];
+    const result = await agent.telegramControl(env, chatId, "workflow.run", { action, inputs }, { confirmed: true });
+    const res = { status: result.started ? 204 : 502 };
+    console.log(`dispatch ${cmd.workflow} -> ${res.status}`);
     if (res.status !== 204) {
       return await reply(`❌ <b>${cmd.name} did not start</b>\n\nGitHub said ${res.status}\n<code>${esc((await res.text()).slice(0, 200))}</code>`);
     }
@@ -855,9 +880,13 @@ async function phoneApi(request, env, action) {
 // starts it - one of AGENT_ACTIONS (wrangler.toml, the same list as agent.toml), with only the
 // inputs listed there. /api/ai serves its model (Workers AI, free daily allocation), /api/memory
 // its memory.
-const agent = makeAgent({ repo: `${OWNER}/${REPO}`, token: (env) => env.DASHBOARD_TOKEN, allowedChat, kv: "DASH",
+const agent = makeAgent({ prepareInputs: async (env, workflow, inputs) => {
+  if (Object.values(COMMANDS).some(c => c.workflow === workflow && c.office) && !inputs.runner)
+    return {...inputs, runner: (await officeOnline(env)) ? "office" : "cloud"};
+  return inputs;
+}, actionDefinitions: ACTIONS, repo: `${OWNER}/${REPO}`, token: (env) => env.DASHBOARD_TOKEN, allowedChat, kv: "DASH",
                           userAgent: "bindal-ultron-worker",
-                          schedule: SCHEDULE.map((s) => ({ ist: s.ist, name: s.label || COMMANDS[s.cmd]?.name || s.cmd,
+                          schedule: SCHEDULE.map((s) => ({ ...s, workflow: COMMANDS[s.cmd]?.workflow, name: s.label || COMMANDS[s.cmd]?.name || s.cmd,
                                                            portal: COMMANDS[s.cmd]?.portal || "all" })) });
 
 // Dashboard sign-in: a link carrying a token signed with SESSION_KEY (shared with the dashboard
@@ -889,15 +918,6 @@ async function failedToday(env, cmd, ist) {
     .filter((r) => new Date(Date.parse(r.created_at) + 5.5 * 3600 * 1000).toISOString().slice(0, 10) === day);
   if (today.some((r) => r.status !== "completed")) return false;
   return !today.some((r) => r.conclusion === "success");
-}
-
-async function dispatch(env, cmd, inputs) {
-  // office: true - the office PC's runner when it is online, else GitHub's runner with the ULTRON app's Agent mode
-  if (cmd.office && !inputs.runner) inputs = { ...inputs, runner: (await officeOnline(env)) ? "office" : "cloud" };
-  return github(env, `/repos/${OWNER}/${REPO}/actions/workflows/${cmd.workflow}/dispatches`, {
-    method: "POST",
-    body: JSON.stringify({ ref: "main", inputs }),
-  });
 }
 
 // Is the office PC's self-hosted runner (label bindal-office) online? When GitHub does not say, the

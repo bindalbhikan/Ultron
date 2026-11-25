@@ -21,5 +21,9 @@ on a saved input first). The seller-neutral core (`src/ultron/`, not `workings/`
 | 10 | Customer returns counted differently in Return Analysis and Business Reporting | Business Reporting's existing portal builders; `return_analysis/reconciled.py` only selects and renders their canonical lines | ✅ 19 Nov 2026: same archived snapshots, order month, return-sheet window and partial quantities; monthly/yearly parity tests, missing sources excluded |
 | 11 | The Myntra accounts (MAIN / DBCC / FMCC and their partner ids) copied into 14 workings | `portals/myntra.py`: `SELLERS` (every account and partner id, EXIM 109704 included) and `ACCOUNTS` (the ones the portal workings run on); the Seller API's OMSGuru channels in `portals/myntra_api.py` `CHANNELS` | ✅ 23 Nov 2026: all 14 moved, a test stops a new copy (`tests/test_myntra_one_account_list.py`). EXIM's login was saved and it joined `ACCOUNTS` the same day: every Myntra working runs on MAIN, DBCC, FMCC, EXIM |
 
+25 Nov 2026: app and Telegram controls share agent.toml → worker/actions.json and worker/control.js.
+The app UI, Telegram commands, chat tools, scheduler and approvals use this service; account controls
+reuse app API handlers through a service binding. See docs/apps/shared-controls.md.
+
 Order: 1 → 2 → 5 → 6 → 7 → 3 → 9 → 8 → 4 (most repeated and lowest risk first; Myntra jobs and settings touch
 the most and come when the shared pieces under them are in place).

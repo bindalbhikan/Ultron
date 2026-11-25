@@ -501,6 +501,7 @@ class CloudflareRepository extends UltronRepository {
             updated: _when(w['updated']),
             action: w['action'] as String?,
             auto: w['auto'] == true,
+            fields: Map<String, dynamic>.from(w['fields'] as Map? ?? const {}),
           ),
       ],
       runs: [
@@ -513,6 +514,7 @@ class CloudflareRepository extends UltronRepository {
             started: _when(r['started']),
             duration: r['minutes'] == null ? 'running' : '${r['minutes']} min',
             note: r['note'] as String? ?? '',
+            controllable: r['controllable'] == true,
           ),
       ],
       reports: [
@@ -570,6 +572,10 @@ class CloudflareRepository extends UltronRepository {
                   .firstMatch(s['ist'] as String? ?? '')
               case final m?)
             ScheduleItem(
+              id: s['id'] as String? ?? '',
+              cron: s['cron'] as String? ?? '',
+              enabled: s['enabled'] != false,
+              revision: (s['revision'] as num?)?.toInt() ?? 0,
               time: m.group(1)!,
               when: m.group(2)!,
               name: s['name'] as String? ?? '',
@@ -588,6 +594,7 @@ class CloudflareRepository extends UltronRepository {
   Future<WorkspaceData> requestRun(
     String workflowId, {
     required bool preview,
+    Map<String, String> inputs = const {},
   }) async {
     final w = (_workspace ?? await loadWorkspace()).workflows
         .where((w) => w.id == workflowId)
@@ -600,10 +607,27 @@ class CloudflareRepository extends UltronRepository {
     await _request(
       'POST',
       '/api/workflows/run',
-      body: {'action': w!.action, 'inputs': <String, Object?>{}},
+      body: {'action': w!.action, 'inputs': inputs, 'preview': preview},
     );
-    return loadWorkspace();
+    return preview ? (_workspace ?? await loadWorkspace()) : loadWorkspace();
   }
+
+  @override
+  Future<Map<String, dynamic>> control(
+    String operation, {
+    Map<String, Object?> args = const {},
+    bool preview = false,
+    bool confirmed = false,
+  }) async => (await _request(
+    'POST',
+    '/api/agent/control',
+    body: {
+      'operation': operation,
+      'args': args,
+      'preview': preview,
+      'confirmed': confirmed,
+    },
+  )).data;
 
   @override
   Future<WorkspaceData> decide(String id, ApprovalStatus decision) async {

@@ -30,6 +30,7 @@ class Workflow {
     required this.updated,
     this.action,
     this.auto = false,
+    this.fields = const {},
   });
   final String id;
   final String name;
@@ -44,6 +45,7 @@ class Workflow {
 
   /// Only makes a report (the agent may run it at once).
   final bool auto;
+  final Map<String, dynamic> fields;
 }
 
 @immutable
@@ -56,6 +58,7 @@ class WorkflowRun {
     required this.started,
     required this.duration,
     required this.note,
+    this.controllable = false,
   });
 
   final String id;
@@ -65,6 +68,7 @@ class WorkflowRun {
   final String started;
   final String duration;
   final String note;
+  final bool controllable;
 }
 
 @immutable
@@ -151,10 +155,17 @@ class ScheduleItem {
     required this.when,
     required this.name,
     required this.portal,
+    this.id = '',
+    this.cron = '',
+    this.revision = 0,
+    this.enabled = true,
   });
 
   /// "7:00 AM"; [when] is the rest ("daily", "on the 10th", "Mon-Sat").
   final String time, when, name, portal;
+  final String id, cron;
+  final int revision;
+  final bool enabled;
 
   /// Minutes after midnight IST, to sort and to find the next one.
   int get minutes {

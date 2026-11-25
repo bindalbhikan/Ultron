@@ -32,6 +32,7 @@
 //      agent.route(request, env, path) -> Response | null;  agent.ask(env, chatId, messageId, text);
 //      agent.isTap(data) / agent.decide(env, cb, data)
 
+import { makeControl, ControlError, effectiveSchedule, scheduleKey } from "./control.js";
 export const FREE_MODELS = ["@cf/openai/gpt-oss-120b", "@cf/qwen/qwen3.8-27b", "@cf/nvidia/nemotron-3-120b-a12b",
                             "@cf/openai/gpt-oss-20b"];
 
@@ -47,6 +48,8 @@ export function makeAgent({
   approvalHours = 24,
   smsPerHour = 300,                      // SMS one phone may send in an hour ("SMS only" mode)
   userAgent = "ultron-worker",
+  actionDefinitions = null,
+  prepareInputs = async (_env, _workflow, inputs) => inputs,
   schedule = [],                         // [{ist, name, portal}]: what the cron triggers start, for the app
 } = {}) {
   const allowedModels = new Set(models);
@@ -79,13 +82,54 @@ export function makeAgent({
   };
 
   const actions = (env) => {
-    const a = env.AGENT_ACTIONS;
+    const a = actionDefinitions || env.AGENT_ACTIONS;
     return typeof a === "string" ? JSON.parse(a) : (a || {});
   };
 
-  const dispatch = (env, workflow, inputs) => github(env, `/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
-    method: "POST", body: JSON.stringify({ ref, inputs }),
+  const dispatch = async (env, workflow, inputs) => github(env, `/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
+    method: "POST", body: JSON.stringify({ ref, inputs: await prepareInputs(env, workflow, { ...inputs }) }),
   });
+
+
+  async function delegateControl(env, who, operation, args) {
+    if (!env.APP) throw new ControlError(503, "The account control service is unavailable.");
+    const res = await env.APP.fetch("https://app.internal/api/internal/control", {
+      method: "POST", headers: { Authorization: "Bearer " + token(env), "Content-Type": "application/json" },
+      body: JSON.stringify({ actor: who, operation, args }),
+    });
+    const out = await res.json();
+    if (!res.ok) throw new ControlError(res.status, out.error || "The account control did not finish.");
+    return out;
+  }
+  async function proposeControl(env, who, operation, args) {
+    const id = crypto.randomUUID().slice(0, 12);
+    const context = who.source === "telegram" ? { source: "telegram", chatId: who.chatId } : { source: "app", userId: who.id };
+    const chat = who.chatId || String(env.ALLOWED_CHAT_IDS || "").split(",")[0].trim();
+    const saved = { action: args.action || operation, inputs: args.inputs || {}, chat, at: Date.now(),
+      summary: operation + (args.action ? ": " + args.action : ""), control: { operation, args, actor: context } };
+    await env[kv].put("approval:" + id, JSON.stringify(saved), { expirationTtl: approvalHours * 3600 });
+    await env[kv].delete("app:workspace");
+    if (chat) await send(env, chat, "Approve agent control: <b>" + esc(saved.summary) + "</b>",
+      undefined, { inline_keyboard: [[{ text: "Approve", callback_data: "ap:" + id }, { text: "Reject", callback_data: "rj:" + id }]] });
+    return { proposed: id, operation, message: "Waiting for approval in Approvals or Telegram. Nothing has run yet." };
+  }
+  const control = makeControl({ repo, actions, github, dispatch, allowedChat, schedule,
+    database: (env) => env[db], invalidate: (env) => env[kv].delete("app:workspace"),
+    delegate: delegateControl, propose: proposeControl });
+  async function controlRoute(request, env) {
+    if (!authorised(request, env)) return bad("forbidden", 403);
+    const input = await jsonBody(request).catch((e) => e);
+    if (input instanceof Response) return input;
+    if (!["app", "job", "telegram"].includes(input.actor?.source)) return bad("verified identity required", 403);
+    try {
+      if (input.operation === "catalog") return Response.json(await control.catalog(env, input.actor));
+      const confirmed = input.actor.source !== "job" && input.confirmed === true;
+      return Response.json(await control.execute(env, input.actor, input.operation, input.args || {}, { preview: input.preview === true, confirmed }));
+    } catch (e) { return bad(e instanceof ControlError ? e.message : "The control could not finish. Check its status before retrying.", e.status || 502); }
+  }
+  async function telegramControl(env, chatId, operation, args = {}, { preview = false, confirmed = false } = {}) {
+    return control.execute(env, { source: "telegram", chatId }, operation, args, { preview, confirmed });
+  }
 
   async function ask(env, chatId, messageId, text) {
     try {
@@ -129,27 +173,48 @@ export function makeAgent({
 
   const isTap = (data) => /^(ap|rj):/.test(String(data || ""));
 
-  async function resolveApproval(env, id, approve, chat = "") {
+  async function resolveApproval(env, id, approve, chat = "", approver = null) {
     const key = `approval:${id}`;
     const database = env[db];
     const existing = await database.prepare("SELECT payload FROM agent_approval WHERE id=? AND expires>?").bind(id, Date.now()).first();
     const saved = existing ? JSON.parse(existing.payload) : await env[kv].get(key, "json");
     if (!saved || (chat && String(saved.chat) !== String(chat))) return { status: 404, error: "expired or already decided" };
+    if (approve) {
+      try {
+        const who = await control.actor(env, approver || { source: "telegram", chatId: chat || saved.chat });
+        const catalog = await control.catalog(env, approver || { source: "telegram", chatId: chat || saved.chat });
+        const operation = saved.control?.operation || "workflow.run";
+        if (!control.can(who, "approvals.decide") || !catalog.operations[operation]) return {status:403,error:"Your role cannot approve this operation."};
+        control.plan(env, operation, saved.control?.args || {action:saved.action,inputs:saved.inputs || {}});
+      } catch (e) { return {status:e.status || 400,error:e.message || "This operation is unavailable."}; }
+    }
     const expires = (saved.at || Date.now()) + approvalHours * 3600000;
     if (expires <= Date.now()) return { status: 404, error: "expired or already decided" };
     const action = actions(env)[saved.action];
-    if (approve && !action) return { status: 400, error: "action no longer allowed" };
+    if (approve && !action && !saved.control) return { status: 400, error: "action no longer allowed" };
     await database.prepare("INSERT OR IGNORE INTO agent_approval(id,payload,status,expires) VALUES(?,?,'pending',?)")
       .bind(id, JSON.stringify(saved), expires).run();
     const claimed = await database.prepare("UPDATE agent_approval SET status='dispatching' WHERE id=? AND status='pending' AND expires>? RETURNING id")
       .bind(id, Date.now()).first();
     if (!claimed) return { status: 409, error: "This approval is processing or already decided. Check the run history before trying again." };
-    if (approve) {
-      let res;
-      try { res = await dispatch(env, action.workflow, saved.inputs); }
-      catch {
+    if (approve && saved.control) {
+      try {
+        await control.execute(env, saved.control.actor, saved.control.operation, saved.control.args, { confirmed: true });
+      } catch (e) {
         await database.prepare("UPDATE agent_approval SET status='uncertain' WHERE id=?").bind(id).run();
-        return { status: 502, error: "GitHub did not confirm the dispatch. Check the run history; this approval will not dispatch again." };
+        return { status: e.status || 502, error: e.message || "The control did not finish. Check status before retrying." };
+      }
+    } else if (approve) {
+      let res;
+      try {
+        await control.execute(env, {source:"telegram",chatId:saved.chat}, "workflow.run",
+          {action:saved.action,inputs:saved.inputs || {}},{confirmed:true});
+        res = {status:204};
+      }
+      catch (e) {
+        const uncertain = !e.status || e.status >= 500 && !e.retryable;
+        await database.prepare("UPDATE agent_approval SET status=? WHERE id=?").bind(uncertain ? "uncertain" : "pending", id).run();
+        return { status: e.status || 502, error: e.message || "The dispatch was not confirmed. Check run history before trying again." };
       }
       if (res.status >= 500) {
         await database.prepare("UPDATE agent_approval SET status='uncertain' WHERE id=?").bind(id).run();
@@ -163,7 +228,7 @@ export function makeAgent({
     await database.prepare("UPDATE agent_approval SET status=? WHERE id=?").bind(approve ? "completed" : "rejected", id).run();
     await env[kv].delete(key);
     await env[kv].delete("app:workspace");
-    return { status: 200, saved, workflow: action?.workflow };
+    return { status: 200, saved, workflow: action?.workflow || saved.control?.operation };
   }
 
   async function decide(env, cb, data) {
@@ -430,9 +495,9 @@ export function makeAgent({
     if (!action.auto) return bad("this action needs the owner's approval", 403);
     const inputs = Object.fromEntries(Object.entries(req.inputs || {})
       .filter(([k]) => (action.inputs || []).includes(k)).map(([k, v]) => [k, String(v)]));
-    const res = await dispatch(env, action.workflow, inputs);
-    if (res.status !== 204) return Response.json({ error: `GitHub said ${res.status}` }, { status: 502 });
-    return Response.json({ started: action.workflow, inputs });
+    try { return Response.json(await control.execute(env,{source:"telegram",chatId:req.chat_id || String(env.ALLOWED_CHAT_IDS || "").split(",")[0].trim()},
+      "workflow.run",{action:req.action,inputs},{confirmed:true})); }
+    catch (e) { return bad(e.message || "The run did not start.",e.status || 502); }
   }
 
   // ---- the ULTRON app (services/app_api calls these with this worker's token, after checking the user's role)
@@ -451,7 +516,8 @@ export function makeAgent({
     const cached = await env[kv].get("app:workspace", "json");
     if (cached && Date.now() - cached.at < 120_000) return Response.json(cached);
     const allowed = actions(env);
-    const byFile = Object.fromEntries(Object.entries(allowed).map(([k, a]) => [a.workflow, { key: k, auto: Boolean(a.auto) }]));
+    const activeSchedule = await effectiveSchedule(env[db], schedule);
+    const byFile = Object.fromEntries(Object.entries(allowed).map(([k, a]) => [a.workflow, { key: k, auto: Boolean(a.auto), fields: a.fields || {} }]));
     const [wfRes, runRes] = await Promise.all([
       github(env, `/repos/${repo}/actions/workflows?per_page=100`),
       github(env, `/repos/${repo}/actions/runs?per_page=80&exclude_pull_requests=true`),
@@ -473,11 +539,11 @@ export function makeAgent({
       const r = latest[w.id];
       return { id: file(w).replace(/\.ya?ml$/, ""), name: w.name, file: file(w), marketplace: portalOf(w.name),
                status: r ? runStatus(r) : "none", updated: r ? r.updated_at : null,
-               action: byFile[file(w)]?.key || null, auto: byFile[file(w)]?.auto || false };
+               action: byFile[file(w)]?.key || null, auto: byFile[file(w)]?.auto || false, fields: byFile[file(w)]?.fields || {} };
     }).sort((a, b) => a.name.localeCompare(b.name));
     const names = Object.fromEntries(wfs.map((w) => [w.id, w.name]));
     const recent = runs.filter((r) => !PLUMBING.has(String(r.path || "").split("/").pop())).slice(0, 40).map((r) => ({
-      id: String(r.id), workflow: names[r.workflow_id] || r.name, marketplace: portalOf(r.name), status: runStatus(r),
+      id: String(r.id), controllable: Boolean(byFile[String(r.path || "").split("/").pop().split("@")[0]]), workflow: names[r.workflow_id] || r.name, marketplace: portalOf(r.name), status: runStatus(r),
       started: r.run_started_at || r.created_at,
       minutes: r.status === "completed" ? Math.max(0, Math.round((Date.parse(r.updated_at) - Date.parse(r.run_started_at || r.created_at)) / 60000)) : null,
       note: r.conclusion || r.status, url: r.html_url }));
@@ -488,7 +554,7 @@ export function makeAgent({
       const state = await env[db].prepare("SELECT status FROM agent_approval WHERE id=?").bind(k.name.slice("approval:".length)).first();
       if (state && state.status !== "pending") continue;
       approvals.push({ id: k.name.slice("approval:".length), action: a.action, inputs: a.inputs || {}, summary: a.summary || "",
-                       workflow: allowed[a.action]?.workflow || "", at: a.at || null,
+                       workflow: a.control?.operation || allowed[a.action]?.workflow || "", at: a.at || null,
                        expires: k.expiration ? k.expiration * 1000 : null });
     }
     const reports = [];
@@ -504,7 +570,7 @@ export function makeAgent({
     const phone = await env[kv].get("phone_seen", "json");
     connections.push({ name: "Agent mode phone", available: Boolean(phone && Date.now() - phone.at < 15 * 60 * 1000),
                        detail: phone ? `${phone.device || "phone"} · last seen ${new Date(phone.at).toISOString()}` : "never seen" });
-    const out = { at: Date.now(), workflows, runs: recent, approvals, reports, connections, schedule,
+    const out = { at: Date.now(), workflows, runs: recent, approvals, reports, connections, schedule: activeSchedule,
                   github: wfRes.ok && runRes.ok ? "ok" : `GitHub said ${wfRes.status}/${runRes.status}` };
     await env[kv].put("app:workspace", JSON.stringify(out), { expirationTtl: 600 });
     return Response.json(out);
@@ -512,19 +578,13 @@ export function makeAgent({
 
   // A run asked by an app user with workflows.run (the app API checked it): their tap is the approval.
   async function appRun(request, env) {
-    if (!authorised(request, env)) return new Response("forbidden", { status: 403 });
+    if (!authorised(request, env)) return bad("forbidden", 403);
     const req = await jsonBody(request).catch((e) => e);
     if (req instanceof Response) return req;
-    const action = actions(env)[req.action];
-    if (!action) return bad("this working cannot be started from the app");
-    const inputs = Object.fromEntries(Object.entries(req.inputs || {})
-      .filter(([k]) => (action.inputs || []).includes(k)).map(([k, v]) => [k, String(v).slice(0, 1000)]));
-    const res = await dispatch(env, action.workflow, inputs);
-    if (res.status !== 204) return Response.json({ error: `GitHub said ${res.status}` }, { status: 502 });
-    await env[kv].delete("app:workspace");
-    const chat = String(env.ALLOWED_CHAT_IDS || "").split(",")[0].trim();
-    if (chat) await send(env, chat, `▶️ <b>${esc(action.workflow)}</b> started from the ULTRON app by ${esc(req.by || "someone")}.`);
-    return Response.json({ started: action.workflow });
+    if (!req.userId) return bad("verified app identity required", 403);
+    try { return Response.json(await control.execute(env, { source: "app", userId: req.userId }, "workflow.run",
+      { action: req.action, inputs: req.inputs || {} }, { preview: req.preview === true, confirmed: true })); }
+    catch (e) { return bad(e.message || "The working did not start.", e.status || 502); }
   }
 
   // An approval decided in the app (approvals.decide checked by the app API): as a tap on Telegram would.
@@ -533,7 +593,7 @@ export function makeAgent({
     const req = await jsonBody(request).catch((e) => e);
     if (req instanceof Response) return req;
     if (typeof req.approve !== "boolean" || !/^[a-f0-9-]{6,40}$/.test(String(req.id || ""))) return bad("invalid approval");
-    const result = await resolveApproval(env, req.id, req.approve);
+    const result = await resolveApproval(env, req.id, req.approve, "", {source:"app",userId:req.userId});
     if (result.status !== 200) return bad(result.error, result.status);
     const saved = result.saved;
     const who = esc(req.by || "someone");
@@ -608,7 +668,14 @@ export function makeAgent({
     return Response.json({ id: requestId, status: "queued" }, { status: 202 });
   }
 
+  async function scheduleForReports(request, env) {
+    if (!authorised(request,env)) return bad("forbidden",403);
+    const {results: history} = await env[db].prepare("SELECT id,enabled,cron,created_at,revision FROM agent_schedule_history ORDER BY created_at,revision").all();
+    return Response.json({baseline:schedule.map(s => ({...s,id:scheduleKey(s)})),history,schedule:await effectiveSchedule(env[db],schedule)});
+  }
   function route(request, env, path) {
+    if (path === "/api/control/schedule" && request.method === "GET") return scheduleForReports(request,env);
+    if (path === "/api/control" && request.method === "POST") return controlRoute(request, env);
     if ((path === "/api/app/chat" || path === "/api/app/chat/history") && request.method === "POST"
         || path.startsWith("/api/app/chat/job/")) return appChat(request, env, path);
     if (path === "/api/ai" || path === "/api/chat/completions") return runAI(request, env);
@@ -626,5 +693,5 @@ export function makeAgent({
     return null;
   }
 
-  return { route, ask, isTap, decide, runAI, saveApproval, memory, settings };
+  return { route, ask, isTap, decide, runAI, saveApproval, memory, settings, control, telegramControl };
 }

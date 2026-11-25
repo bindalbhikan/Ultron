@@ -367,8 +367,9 @@ async function workflowRun(request: Request, env: Env, actor: Identity) {
   requirePermission(actor, 'workflows.run');
   const input = await body(request);
   if (typeof input.action !== 'string' || !/^[a-z0-9]{2,40}$/.test(input.action)) throw new HttpError(400, 'Choose a working.');
+  if (typeof input.preview !== 'boolean') throw new HttpError(400, 'Update the app and choose Preview or Start run explicitly.');
   const inputs = input.inputs && typeof input.inputs === 'object' && !Array.isArray(input.inputs) ? input.inputs : {};
-  const out = await worker(env, '/api/app/run', { method: 'POST', body: JSON.stringify({ action: input.action, inputs, by: actor.name }) });
+  const out = await worker(env, '/api/app/run', { method: 'POST', body: JSON.stringify({ action: input.action, inputs, preview: input.preview === true, userId: actor.id, by: actor.name }) });
   await env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'workflow.run',?,?)`)
     .bind(crypto.randomUUID(), actor.id, input.action, JSON.stringify({ inputs })).run();
   return json(out);
@@ -390,7 +391,7 @@ async function approvalDecide(request: Request, env: Env, actor: Identity) {
   if (typeof input.id !== 'string' || !/^[0-9a-f-]{6,40}$/.test(input.id) || typeof input.approve !== 'boolean') {
     throw new HttpError(400, 'Choose an approval and a decision.');
   }
-  const out = await worker(env, '/api/app/decide', { method: 'POST', body: JSON.stringify({ id: input.id, approve: input.approve, by: actor.name }) });
+  const out = await worker(env, '/api/app/decide', { method: 'POST', body: JSON.stringify({ id: input.id, approve: input.approve, userId: actor.id, by: actor.name }) });
   await env.DB.prepare(`INSERT INTO app_audit(id,actor_id,action,target_id,detail) VALUES(?,?,'approval.decide',?,?)`)
     .bind(crypto.randomUUID(), actor.id, input.id, JSON.stringify({ approve: input.approve })).run();
   return json(out);
@@ -449,6 +450,53 @@ async function saveRole(request: Request, env: Env, actor: Identity, id: string)
   return json({ roles: await roles(env) });
 }
 
+
+async function internalControl(request: Request, env: Env) {
+  if (!env.WORKER_TOKEN || request.headers.get('Authorization') !== 'Bearer ' + env.WORKER_TOKEN) throw new HttpError(403, 'Forbidden.');
+  const input = await body(request);
+  const who = input.actor as {source?: string; id?: string};
+  let userId = who?.source === 'app' ? who.id : undefined;
+  if (who?.source === 'telegram') {
+    const owner = await env.DB.prepare("SELECT user_id FROM app_access WHERE role_id='admin' AND status='active' ORDER BY user_id LIMIT 1").first<{user_id:string}>();
+    userId = owner?.user_id;
+  }
+  if (!userId) throw new HttpError(403, 'A verified account is required.');
+  const actor = await identity(env, userId);
+  const args = (input.args || {}) as Record<string,unknown>;
+  const operation = String(input.operation || '');
+  const changed = new Request('https://app.internal/control', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(args)});
+  const id = typeof args.id === 'string' ? args.id : '';
+  if (operation === 'model.get') { requirePermission(actor,'agent.tools.read'); return json({settings:await agentSettings(env)}); }
+  if (operation === 'model.set') return saveAgentSettings(changed,env,actor);
+  if (operation === 'models.list') { requirePermission(actor,'agent.tools.read'); return agentModels(env); }
+  if (operation === 'models.refresh') { requirePermission(actor,'agent.manage'); await refreshModels(env,false); return agentModels(env); }
+  if (operation === 'keys.list') { requirePermission(actor,'agent.tools.read'); return apiKeys(env); }
+  if (operation === 'keys.change') return changeApiKey(changed,env,actor,id);
+  if (operation === 'keys.remove') return changeApiKey(new Request('https://app.internal/control',{method:'DELETE'}),env,actor,id);
+  if (operation === 'memory.list') {
+    requirePermission(actor,'agent.tools.read');
+    const url = new URL('https://app.internal/api/agent/memory');
+    if (typeof args.kind === 'string') url.searchParams.set('kind',args.kind);
+    if (typeof args.search === 'string') url.searchParams.set('search',args.search);
+    return agentMemory(env,url);
+  }
+  if (operation === 'memory.remove') return forgetNote(env,actor,id);
+  if (operation === 'phones.list') { requirePermission(actor,'phone.manage'); return smsPhones(env); }
+  if (operation === 'phones.block') return blockPhone(changed,env,actor,id);
+  if (operation === 'phoneAgents.list') { requirePermission(actor,'phone.manage'); return phoneAgents(env); }
+  if (operation === 'phoneAgents.revoke') return revokePhoneAgent(env,actor,id);
+  throw new HttpError(400,'Unknown account control.');
+}
+async function agentControl(request: Request, env: Env, actor: Identity) {
+  requirePermission(actor,'app.access');
+  const input = request.method === 'GET' ? {operation:'catalog'} : await body(request);
+  // The session supplies identity; client-supplied actor/user/permissions are ignored.
+  return json(await worker(env,'/api/control',{method:'POST',body:JSON.stringify({
+    actor:{source:'app',userId:actor.id}, operation:input.operation, args:input.args || {},
+    preview:input.preview === true, confirmed:input.confirmed === true,
+  })}));
+}
+
 async function route(request: Request, env: Env) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -458,6 +506,7 @@ async function route(request: Request, env: Env) {
   }
   if (path === '/api/setup' && request.method === 'GET') return json({ needed: !(await adminExists(env)) });
   if (path === '/api/setup' && request.method === 'POST') return firstAdmin(request, env);
+  if (path === '/api/internal/control' && request.method === 'POST') return internalControl(request,env);
   const release = await releases(request, env);
   if (release) return release;
   const auth = createAuth(env);
@@ -481,6 +530,7 @@ async function route(request: Request, env: Env) {
   if (!session) throw new HttpError(401, 'Sign in to continue.');
   const user = await identity(env, session.user.id);
   if (path === '/api/me' && request.method === 'GET') return json({ user });
+  if (['/api/agent/control','/api/agent/tools','/api/agent/execute'].includes(path) && ['GET','POST'].includes(request.method)) return agentControl(request,env,user);
   if (path === '/api/admin/users' && request.method === 'GET') {
     requirePermission(user, 'users.manage');
     const page = Number(url.searchParams.get('page') || '0');

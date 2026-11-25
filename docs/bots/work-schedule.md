@@ -28,6 +28,15 @@ with an empty `run_id` (`month` = YYYY-MM rebuilds that month).
 * Only this month's sheet (and SCHEDULE) is rewritten; older month sheets stay as they are. Edits
   made by hand in the current month's sheet are overwritten.
 
+## Runtime schedule changes (25 Nov 2026)
+
+The app and Telegram can pause/resume or move future starts through shared controls.
+The report reads the operations service's baseline and revision history, and counts a slot only while its
+revision was active. Earlier days remain unchanged. A task with changed times is labelled
+Changed (app schedule) rather than showing one historical time as if it applied all month.
+An unavailable or incomplete shared source fails the rebuild instead of publishing guessed due figures.
+Default TASKS and WORK remain the documented baseline.
+
 ## Hyper logs (`core/hyperlog.py`)
 
 Every bot run (`run_bot`) writes a detailed log: header (bot, arguments, GitHub run, commit,

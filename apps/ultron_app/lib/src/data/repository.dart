@@ -14,6 +14,13 @@ abstract class UltronRepository extends AccountRepository {
   Future<WorkspaceData> requestRun(
     String workflowId, {
     required bool preview,
+    Map<String, String> inputs = const {},
+  }) async => unavailable();
+  Future<Map<String, dynamic>> control(
+    String operation, {
+    Map<String, Object?> args = const {},
+    bool preview = false,
+    bool confirmed = false,
   }) async => unavailable();
   Future<WorkspaceData> decide(String id, ApprovalStatus decision) async =>
       unavailable();

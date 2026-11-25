@@ -56,6 +56,57 @@ Future<(CloudflareRepository, List<http.Request>)> signedIn(
 }
 
 void main() {
+  test(
+    'Preview forwards parameters without treating it as a started run',
+    () async {
+      final (repository, seen) = await signedIn({
+        'GET /api/workspace': (
+          200,
+          {
+            'workflows': [
+              {
+                'id': 'inventory',
+                'name': 'Inventory',
+                'file': 'inventory.yml',
+                'action': 'inventory',
+                'status': 'none',
+                'fields': {
+                  'dry_run': {'description': 'Test only'},
+                },
+              },
+            ],
+          },
+        ),
+        'POST /api/workflows/run': (200, {'preview': true}),
+        'POST /api/agent/control': (200, {'cancel': '123'}),
+      });
+      await repository.loadWorkspace();
+      await repository.requestRun(
+        'inventory',
+        preview: true,
+        inputs: {'dry_run': '1'},
+      );
+      expect(seen.last.url.path, '/api/workflows/run');
+      expect(jsonDecode(seen.last.body), {
+        'action': 'inventory',
+        'inputs': {'dry_run': '1'},
+        'preview': true,
+      });
+      expect(seen.where((r) => r.url.path == '/api/workspace').length, 1);
+      await repository.control(
+        'workflow.cancel',
+        args: {'runId': '123'},
+        confirmed: true,
+      );
+      expect(jsonDecode(seen.last.body), {
+        'operation': 'workflow.cancel',
+        'args': {'runId': '123'},
+        'preview': false,
+        'confirmed': true,
+      });
+    },
+  );
+
   test('an administrator creates a user', () async {
     final (repository, seen) = await signedIn({
       'POST /api/admin/users': (

@@ -45,10 +45,12 @@ test('concurrent approvals dispatch once; refusal retains request; ambiguous fai
   const kv = {get:async(key:string,type?:string)=>{const v=saved.get(key);return v ? type==='json'?JSON.parse(v):v : null;},
     put:async(key:string,value:string)=>{saved.set(key,value);},delete:async(key:string)=>{saved.delete(key);}};
   const agent = makeAgent({repo:'example/test'});
-  const env = {AGENT_DB:db,AGENT_KV:kv,AGENT_TOKEN:'test-token',AGENT_ACTIONS:{sale:{workflow:'sale.yml',inputs:[]}}};
+  await db.prepare("INSERT INTO user(id,name,email,created_at,updated_at) VALUES('approval-owner','Owner','approval@example.test',1,1)").run();
+  await db.prepare("UPDATE app_access SET status='active',role_id='admin' WHERE user_id='approval-owner'").run();
+  const env = {ALLOWED_CHAT_IDS:'test',AGENT_DB:db,AGENT_KV:kv,AGENT_TOKEN:'test-token',AGENT_ACTIONS:{sale:{workflow:'sale.yml',inputs:[]}}};
   const seed = (id:string)=>saved.set('approval:'+id,JSON.stringify({action:'sale',inputs:{},chat:'test',at:Date.now()}));
   const decide = (id:string)=>agent.route(new Request('https://worker.test/api/app/decide',{method:'POST',
-    headers:{Authorization:'Bearer test-token'},body:JSON.stringify({id,approve:true})}),env,'/api/app/decide') as Promise<Response>;
+    headers:{Authorization:'Bearer test-token'},body:JSON.stringify({id,approve:true,userId:'approval-owner'})}),env,'/api/app/decide') as Promise<Response>;
   let calls=0, status=204;
   globalThis.fetch=(async(url:unknown)=>{
     if (String(url).includes('api.github.com')) {calls++;return new Response(null,{status});}

@@ -21,6 +21,7 @@ from ..core import approvals, config, llm, memory, runtime
 from ..core.style import MOBILE, tidy
 from ..core.config import env
 from ..integrations import telegram
+from ..tools import controls
 
 log = logging.getLogger("ultron")
 
@@ -117,7 +118,7 @@ def run_now(action: str, summary: str, inputs: str = "{}") -> str:
     url, token = cfg.worker()
     if not url or not token:
         return "Error: the worker is not set up, so nothing can start; tell the owner."
-    r = http.post(f"{url}/api/run", json={"action": action, "inputs": parsed},
+    r = http.post(f"{url}/api/run", json={"action": action, "inputs": parsed, "chat_id": _chat.get()},
                   headers={"Authorization": f"Bearer {token}"}, timeout=30)
     if r.status_code != 200:
         return f"Not started: {r.status_code} {r.text[:200]}"
@@ -131,9 +132,13 @@ run_now = llm.tool(run_now)
 def tools(read_only: bool = False) -> list:
     if read_only:
         # App chat cannot inherit Telegram's owner-level action or shared-note write tools.
-        return config.load_tools(("runs", "omsguru", "business", "knowledge"))
+        names = ("runs", "omsguru", "business", "knowledge")
+        if (controls.actor.get() or {}).get("source") == "job":
+            names += ("controls",)
+        return config.load_tools(names)
     cfg = config.get()
     names = cfg.chat_tools + (("memory",) if memory_on() and "memory" not in cfg.chat_tools else ())
+    names += ("controls",) if "controls" not in names else ()
     extra = [propose_action] if cfg.actions else []
     if any(a.auto and a.workflow for a in cfg.actions.values()):
         extra.append(run_now)
@@ -147,9 +152,11 @@ def answer(question: str, chat: str = "", *, read_only: bool = False) -> str:
     """The reply (Telegram HTML) to one owner message from `chat`."""
     cfg = config.get()
     _chat.set(str(chat))
+    if not read_only:
+        controls.actor.set({"source": "telegram", "chatId": str(chat)})
     system, history, mem = rules(cfg), [], None
     if read_only:
-        system += "\nThis is read-only app chat. Do not start or propose actions, or change shared memory. Direct action requests to the app's Workflows or Approvals screens, where the user's permissions are checked."
+        system += "\nThis is private app chat. Use agent_controls and agent_control for actions; the server checks this user's current permissions. Do not use Telegram owner actions or write shared memory outside those controls. Changes wait for approval in the app or Telegram. Preview makes no changes."
     if memory_on():
         try:                                # the agent still answers when its memory is out of reach
             mem = memory.get()
@@ -191,11 +198,14 @@ def app_reply(request_id: str) -> int:
     response.raise_for_status()
     job = http.json_of(response)
     status = "completed"
+    context = controls.actor.set({"source": "job", "jobId": request_id})
     try:
         text = answer(job["question"], f"app:{job['userId']}", read_only=True)
     except Exception:  # report a safe failure in the app, not through Telegram
         log.exception("App chat could not finish")
         text, status = "The agent could not finish your answer. Please try again.", "failed"
+    finally:
+        controls.actor.reset(context)
     result = http.request("PUT", path, headers=headers, json={"answer": text[:12000], "status": status}, timeout=30)
     result.raise_for_status()
     return 0 if status == "completed" else 1

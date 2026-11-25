@@ -158,9 +158,13 @@ class WorkspaceController extends AsyncNotifier<WorkspaceData> {
     }
   }
 
-  Future<void> requestRun(String id, {required bool preview}) => _perform(
+  Future<void> requestRun(
+    String id, {
+    required bool preview,
+    Map<String, String> inputs = const {},
+  }) => _perform(
     'run:$id',
-    (repository) => repository.requestRun(id, preview: preview),
+    (repository) => repository.requestRun(id, preview: preview, inputs: inputs),
   );
 
   Future<void> decide(String id, ApprovalStatus decision) =>

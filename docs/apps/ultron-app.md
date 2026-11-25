@@ -16,13 +16,13 @@ Every screen reads a live service; a person sees only what their role allows (`d
 | SMS only | `/sms` | none | Android: a name and a SIM, then every SMS goes to the sheet (below) |
 | Waiting for approval | `/access` | signed in | a pending or disabled account; "Check again" re-reads the access |
 | Home | `/app/home` | `app.access` | greeting by name, runs completed / running / needing attention, recent activity, the first pending approval, the next two scheduled workings, the Agent mode phone |
-| Agent | `/app/agent` | `agent.chat` | private in-app chat with the existing Python agent; queued answers refresh every 5 seconds while the screen is open; read-only tools, actions stay in Workflows / Approvals |
+| Agent | `/app/agent` | `agent.chat` | private chat with fact tools and permission-checked shared controls; queued answers refresh every 5 seconds; mutating chat requests become approvals |
 | Workflows | `/app/workflows` | `workflows.read` | every working on GitHub with its last run; **Run** on one the worker allows (`workflows.run`) |
 | Reports | `/app/reports` | `reports.read` | the reports the workings published, with their time and notes |
 | Approvals | `/app/approvals` | `approvals.read` | the agent's pending proposals; Approve / Decline (`approvals.decide`) starts or drops them, and Telegram is told |
 | Analytics | `/app/analytics` | `analytics.read` | run counts by status and marketplace from the recent runs |
 | Connections | `/app/connections` | `connections.read` | Myntra MAIN / DBCC / FMCC sessions and the Agent mode phone: connected or needs login |
-| Schedule | `/app/schedule` | `schedule.read` | the worker's cron schedule (IST), as it runs |
+| Schedule | `/app/schedule` | `schedule.read` | the shared effective schedule (IST); agent.manage can pause/resume or move tasks to existing trigger times |
 | Control panel | `/app/control` | `agent.tools.read` | **Brain**: the model (auto, or a provider and one of its models, chosen in a search box; **Refresh models** reads the providers' lists again), the API keys (add several per provider, order, retry, remove; each shows Ready / Limit · back HH:MM / Refused), tier, provider order; the SMS phones (block / unblock), Agent mode (turn this phone on, revoke a phone), the memory (remove a note) |
 | Users | `/app/admin` | `users.manage` | search, **Approve** on a pending registration, change role / status, **Create user** (username, optional email) |
 | Roles | `/app/roles` | `roles.manage` | roles and their permissions |
@@ -36,6 +36,8 @@ Profile links to **AI providers and models**. Provider/model controls stay visib
 Startup checks for a newer build and shows an update prompt inside the app, including SMS only. Profile also has Check for updates.
 Android verifies the APK before opening its system installer; desktops open the package download.
 See app-updates.md for the connected R2 bucket and free-allowance guards; updates pause at their limits. Older installations need the first updater-enabled APK from Drive once.
+
+25 Nov: shared actions, parameters, Preview, cancel/rerun and schedule editing are described in shared-controls.md. Preview dispatches nothing; Start run confirms the requested working.
 
 ## Design
 

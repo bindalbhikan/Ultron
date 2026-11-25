@@ -21,6 +21,16 @@ class _RunDialog extends ConsumerStatefulWidget {
 
 class _RunDialogState extends ConsumerState<_RunDialog> {
   String? _workflow;
+  final Map<String, TextEditingController> _inputs = {};
+
+  @override
+  void dispose() {
+    for (final input in _inputs.values) {
+      input.dispose();
+    }
+    super.dispose();
+  }
+
   bool _preview = true;
   bool _busy = false;
   String? _error;
@@ -33,11 +43,21 @@ class _RunDialogState extends ConsumerState<_RunDialog> {
     try {
       await ref
           .read(workspaceProvider.notifier)
-          .requestRun(id, preview: _preview);
+          .requestRun(
+            id,
+            preview: _preview,
+            inputs: {
+              for (final entry in _inputs.entries)
+                if (entry.value.text.trim().isNotEmpty)
+                  entry.key: entry.value.text.trim(),
+            },
+          );
       if (!mounted) return;
       showNotice(
         context,
-        'Started. The result reaches Telegram when it finishes.',
+        _preview
+            ? 'Preview validated. Nothing was started or changed.'
+            : 'Started. Follow its progress in Workflows.',
       );
       Navigator.pop(context);
     } on FrontendException catch (error) {
@@ -84,7 +104,12 @@ class _RunDialogState extends ConsumerState<_RunDialog> {
                     .toList(),
                 onChanged: _busy
                     ? null
-                    : (value) => setState(() => _workflow = value),
+                    : (value) => setState(() {
+                        _workflow = value;
+                        for (final controller in _inputs.values) {
+                          controller.clear();
+                        }
+                      }),
               ),
               if (workflow != null) ...[
                 const SizedBox(height: 14),
@@ -93,12 +118,31 @@ class _RunDialogState extends ConsumerState<_RunDialog> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
+              if (workflow != null)
+                for (final field in workflow.fields.entries) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: ValueKey('run-input-${field.key}'),
+                    controller: _inputs.putIfAbsent(
+                      field.key,
+                      () => TextEditingController(),
+                    ),
+                    enabled: !_busy,
+                    decoration: InputDecoration(
+                      labelText: field.key.replaceAll('_', ' '),
+                      helperText:
+                          (field.value as Map?)?['description'] as String?,
+                      helperMaxLines: 3,
+                      hintText: (field.value as Map?)?['default']?.toString(),
+                    ),
+                  ),
+                ],
               const SizedBox(height: 18),
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Preview mode'),
                 subtitle: const Text(
-                  'Inspect the run without changing portal data.',
+                  'Validate the request without starting a workflow.',
                 ),
                 value: _preview,
                 onChanged: _busy
@@ -107,7 +151,7 @@ class _RunDialogState extends ConsumerState<_RunDialog> {
               ),
               const SizedBox(height: 14),
               const NotePanel(
-                'The working runs on GitHub with its own rules; a working that changes data still asks for approval.',
+                'Preview starts nothing. With Preview off, Start run is your confirmation; the working follows its configured rules.',
               ),
               if (_error != null)
                 Padding(
@@ -137,7 +181,7 @@ class _RunDialogState extends ConsumerState<_RunDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(LucideIcons.play, size: 16),
-          label: const Text('Simulate request'),
+          label: Text(_preview ? 'Preview request' : 'Start run'),
         ),
       ],
     );
@@ -160,6 +204,7 @@ Future<void> showRunDetail(BuildContext context, WorkflowRun run) => showDetail(
       DetailRow('Marketplace', run.marketplace),
       DetailRow('Started', run.started),
       DetailRow('Duration', run.duration),
+      _RunControls(run),
       const SizedBox(height: 14),
       const NotePanel(
         'Latest runs on GitHub. No customer data or secret values are shown.',
@@ -167,6 +212,82 @@ Future<void> showRunDetail(BuildContext context, WorkflowRun run) => showDetail(
     ],
   ),
 );
+
+class _RunControls extends ConsumerStatefulWidget {
+  const _RunControls(this.run);
+  final WorkflowRun run;
+  @override
+  ConsumerState<_RunControls> createState() => _RunControlsState();
+}
+
+class _RunControlsState extends ConsumerState<_RunControls> {
+  bool _busy = false;
+  Future<void> _execute(bool cancel) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(cancel ? 'Cancel this run?' : 'Run this working again?'),
+        content: Text(
+          cancel ? 'Already completed portal changes cannot be undone.' : 'This repeats the run with its original code and inputs. Any live portal actions can happen again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Back'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            child: Text(cancel ? 'Cancel run' : 'Run again'),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(repositoryProvider)
+          .control(
+            cancel ? 'workflow.cancel' : 'workflow.rerun',
+            args: {'runId': widget.run.id},
+            confirmed: true,
+          );
+      await ref.read(workspaceProvider.notifier).refresh();
+      if (mounted) {
+        showNotice(
+          context,
+          cancel ? 'Cancellation requested.' : 'Run requested.',
+        );
+      }
+    } on FrontendException catch (e) {
+      if (mounted) showNotice(context, e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.run.controllable ||
+        ref.watch(authProvider).user?.allows('workflows.run') != true) {
+      return const SizedBox.shrink();
+    }
+    final cancel = widget.run.status == RunStatus.running;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: OutlinedButton(
+        onPressed: _busy ? null : () => _execute(cancel),
+        child: Text(
+          _busy
+              ? 'Please wait…'
+              : cancel
+              ? 'Cancel run'
+              : 'Run again',
+        ),
+      ),
+    );
+  }
+}
 
 Future<void> showConnectionDetail(
   BuildContext context,

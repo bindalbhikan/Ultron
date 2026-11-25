@@ -22,8 +22,9 @@ seller-neutral core (`src/ultron/`, not `workings/`) still installs on Android (
 | 10 | [10-small.md](10-small.md) | **orjson**, **pypdfium2** text instead of pypdf, **pydantic-settings** | ✅ 17 Nov 2026 |
 | 11 | [11-flutter-frontend.md](11-flutter-frontend.md) | New Flutter frontend: Material UI, Riverpod, GoRouter, Lucide and bundled DM Sans | ✅ frontend dependencies added; live API/native migration pending |
 | 12 | [12-url-launcher.md](12-url-launcher.md) | Flutter team url_launcher for desktop update downloads | Added 24 Nov 2026 |
-| 13 | (page with the first move) | xlsx without **openpyxl**: read by python-calamine / `pl.read_excel`, written by **xlsxwriter**, a workbook written anew instead of edited (owner, 22 Nov 2026: only the top libraries, built for big data) | 🔧 done in business report, return analysis, grouping; ~25 files left (SPF engines, AJIO ads, sale / VMS / Myntra reports workbooks, core helpers) |
+| 13 | [13-pyyaml.md](13-pyyaml.md) | Safe workflow YAML parsing for the shared action registry | Added 25 Nov 2026 |
+| 14 | (page with the first move) | xlsx without **openpyxl**: read by python-calamine / `pl.read_excel`, written by **xlsxwriter**, a workbook written anew instead of edited (owner, 22 Nov 2026: only the top libraries, built for big data) | 🔧 done in business report, return analysis, grouping; ~25 files left (SPF engines, AJIO ads, sale / VMS / Myntra reports workbooks, core helpers) |
 
 Kept as they are (already the top choice, or a hard rule): Patchright (browser, rule), Scrapy (Myntra buyer
 site, rule), python-calamine and fastexcel (xlsx read), xlsxwriter (xlsx write), zxing-cpp, Pillow, pypdfium2,
-cryptography, PyNaCl, google-auth, gspread, curl_cffi. openpyxl is on its way out (row 13).
+cryptography, PyNaCl, google-auth, gspread, curl_cffi. openpyxl is on its way out (row 14).

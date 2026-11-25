@@ -23,6 +23,7 @@ The database is called `ultron`. Its tables come from `services/app_api/migratio
 
 | Migration | Tables | Used by |
 |---|---|---|
+| `0011_agent_controls.sql` | Shared schedule state/history and control audit events | operations worker; reporting reads its authenticated endpoint |
 | `0010_release_limits.sql` | Durable R2 operation counters and storage reservations; reject before exceeding app cutoffs | app API |
 | `0009_app_release.sql` | Current completed R2 package per platform | app API; see app-updates.md |
 | `0008_operations_state.sql` | Atomic approval decisions and independent phone jobs/results | Telegram worker |
@@ -66,13 +67,12 @@ through this API, with a signed-in user's session and permissions.
 The app API reaches the worker through the `OPS` service binding (in `wrangler.jsonc`) with the secret
 `WORKER_TOKEN` (the worker's `DASHBOARD_TOKEN`); the app never holds that token. Not through `WORKER_URL`:
 one Worker fetching another Worker of the same account by its workers.dev URL gets Cloudflare's 404
-(error 1042), which the app showed as "The operations service said 404". `WORKER_URL` is only the fallback. The other operational routes
-(`/api/agent/tools`, `/api/agent/execute` ...) check the permission and then answer 503 until their services are connected.
+(error 1042), which the app showed as "The operations service said 404". `WORKER_URL` is only the fallback. Shared agent control routes (/api/agent/control, /api/agent/tools, /api/agent/execute) now use the central catalog/executor. See shared-controls.md.
 
 App chat uses the existing `agent-chat.yml` workflow. Only the request id is dispatched to GitHub;
 the message stays in D1. A worker-authenticated job claim rechecks the account's active status and
-chat permission. The Python agent uses read-only tools (runs, orders, business facts and knowledge),
-private `app:<user>` history, and no Telegram notifications or owner action/shared-note write tools.
+chat permission. The Python agent uses fact tools plus shared controls checked against the claimed job's current user permissions,
+private app:user history, and no Telegram owner action/shared-note write tools or reply notifications.
 Workflows and approvals stay in their separately authorised screens. Requests expire after 30 minutes;
 dispatch failures and expired requests are shown as failures, and a result can be saved only once.
 

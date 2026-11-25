@@ -1,5 +1,8 @@
 # Telegram worker and dashboard
 
+App/Telegram controls now share one catalog, validation and execution service. See ../apps/shared-controls.md.
+The APP service binding delegates account controls to their existing handlers; no workers.dev inter-worker fetch is used.
+
 **Worker** `bindal-telegram-bot` (`worker/`, Cloudflare): the Telegram webhook (commands + menu
 buttons; only `ALLOWED_CHAT_IDS` + `EXTRA_CHAT_IDS` are obeyed), the scheduler (5 cron triggers to
 GitHub `workflow_dispatch`, `SCHEDULE` with `day` / `weekdays` filters), `/api/push/<key>` for the

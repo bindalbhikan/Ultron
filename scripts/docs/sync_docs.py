@@ -186,8 +186,11 @@ def main(argv=None) -> int:
     p.add_argument("--check", action="store_true", help="exit 1 when a file would change; write nothing")
     p.add_argument("--quiet", action="store_true", help="print only what changed")
     args = p.parse_args(argv)
+    from sync_controls import build as controls_build
+    import json
     changed = []
-    for path, new in build().items():
+    generated = {ROOT / "worker" / "actions.json": json.dumps(controls_build(), indent=2, ensure_ascii=False) + chr(10)}
+    for path, new in {**build(), **generated}.items():
         old = path.read_text(encoding="utf-8") if path.is_file() else None
         if new != old:
             changed.append(path.relative_to(ROOT).as_posix())

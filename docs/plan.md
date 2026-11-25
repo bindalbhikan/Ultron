@@ -26,11 +26,13 @@ irreversible.
 | 3. Approvals | Approve / Reject buttons; only an Approve starts the action, from a fixed list | ✅ worker `/api/approval`, `AGENT_ACTIONS` = `agent.toml [actions]` |
 | 3. Code-fix PRs | on a failed AJIO / Myntra SPF run Claude Code (fallback: Gemini CLI, 1 Nov 2026) proposes a fix PR, never merged by itself | ✅ `ci-fix.yml` (31 Oct 2026) |
 | 3. What ran / was missed | every scheduled task ticked per day | ✅ Drive work-schedule sheet (`work-schedule`); a weekly "what failed / was fixed" message is not built |
-| 4. Cross-platform control app | Emerald Flutter frontend, required login and Phone Work | ✅ Live username auth/API, secure sessions and Android SMS/Agent mode migrated (23 Nov); private read-only in-app agent chat connected (24 Nov). Native runtime checks still require devices (`docs/apps/ultron-app.md`) |
+| 4. Cross-platform control app | Emerald Flutter frontend, required login and Phone Work | ✅ Live username auth/API, secure sessions and Android SMS/Agent mode migrated (23 Nov); private in-app chat connected (24 Nov), with central permission-checked controls shared by app/Telegram (25 Nov). Native runtime checks still require devices (`docs/apps/ultron-app.md`) |
 
 24 Nov app reliability: workspace sections now respect server permissions; approvals use atomic claims;
 overlapping phone jobs have independent storage; model outages fail app chat jobs.
 Provider/model selection stays visible in Auto mode. In-app update implementation is added; Cloudflare R2 is connected with a 2 GB storage reservation ceiling and operation cutoffs below the free allowance.
+
+25 Nov: shared control catalog/executor, real Preview, run cancellation/rerun, schedule revisions/history and permission-checked app chat are implemented. See docs/apps/shared-controls.md.
 
 ## 3. Decision rules
 

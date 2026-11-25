@@ -244,7 +244,8 @@ test('workspace, run and decide check the role, then reach the operations servic
   const ws=await call('/api/workspace','GET',undefined,adminToken);
   assert.equal(ws.status,200);
   assert.equal(((await ws.json()) as {github:string}).github,'ok');
-  const run=await call('/api/workflows/run','POST',{action:'sale'},adminToken);
+  assert.equal((await call('/api/workflows/run','POST',{action:'sale'},adminToken)).status,400);
+  const run=await call('/api/workflows/run','POST',{action:'sale',preview:false},adminToken);
   assert.equal(run.status,200);
   assert.equal(((await run.json()) as {started:string}).started,'sale.yml');
   const gone=await call('/api/approvals/decide','POST',{id:'abcdef123456',approve:true},adminToken);

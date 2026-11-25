@@ -1,6 +1,6 @@
 # Project context — BINDAL EXPORTS report bots
 
-<!-- AUTO:synced -->Last synced with the code: 2026-11-24.<!-- /AUTO:synced -->
+<!-- AUTO:synced -->Last synced with the code: 2026-11-25.<!-- /AUTO:synced -->
 Owner: Bhikan (GitHub `bindalbhikan`, commit author
 `bhikan.serein@gmail.com`). Every bot reports to Telegram **@bindal_exports_bot**.
 
@@ -59,7 +59,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 Gaps the sync found:
 
 <!-- AUTO:gaps -->
-- `master-sheet.yml` (MasterSheet from OMSGuru) has no Telegram command (`COMMANDS` in `worker/src/worker.js`)
+- `/mastersheet` has no button in the Telegram menu (`SCREENS` in `worker/src/worker.js`)
 <!-- /AUTO:gaps -->
 
 ## The agent's folder: Drive `BINDAL EXPORTS/AGENT WORK`
@@ -105,6 +105,11 @@ scheduled task, or a new daily step of a working, goes into `TASKS` / `WORK` in
 detailed **hyper log** is kept on Drive in `AGENT WORK/AGENT LOGS/<month>/<date>/`
 (`core/hyperlog.py`), not in this sheet.
 
+## Agent context and token use
+
+The owner's TOKEN OPTIMIZATION RULES are in AGENTS.md. Keep PROJECT_CONTEXT.md concise and current;
+read task-relevant files, prefer targeted edits, exclude unrelated generated files, and preserve correctness.
+
 ## Rules every working keeps
 
 - **Data must never be wrong.** A source that fails, or a month whose source data is incomplete
@@ -126,6 +131,11 @@ ultron-app-releases bucket is Standard and private. Its app API stops at 2 GB to
 10,000 Class A calls and 100,000 Class B calls per UTC month. Stop updates rather than pay overage;
 never reset accounting blindly or enable public bucket URLs. Unrelated account use is outside these guards.
 See docs/apps/app-updates.md; Cloudflare has no R2 billing cap.
+
+The app and Telegram use one permission-checked agent control service (owner, 24-25 Nov 2026).
+Preview must never dispatch or mutate state. App chat uses its claimed job's current account permissions;
+changes wait for approval except allowed automatic reports. Runtime schedule revisions are shared with
+reporting, not copied into separate client configurations. See docs/apps/shared-controls.md.
 
 ## Settings and secrets — never in git
 

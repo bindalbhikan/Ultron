@@ -148,6 +148,7 @@ class FakeRepository extends UltronRepository {
   Future<WorkspaceData> requestRun(
     String workflowId, {
     required bool preview,
+    Map<String, String> inputs = const {},
   }) async {
     started.add(workflowId);
     return _workspace;

@@ -444,7 +444,7 @@ class _HomeContext extends StatelessWidget {
 List<(String, String)> _next(List<ScheduleItem> schedule) {
   final ist = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
   final now = ist.hour * 60 + ist.minute;
-  final daily = schedule.where((s) => s.daily).toList();
+  final daily = schedule.where((s) => s.daily && s.enabled).toList();
   final later = [
     ...daily.where((s) => s.minutes > now),
     ...daily.where((s) => s.minutes <= now),

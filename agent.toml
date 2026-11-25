@@ -79,16 +79,17 @@ paths = ["docs/knowledge", "docs/PORTALS.md"]
 max_steps = 8
 tools = ["runs", "omsguru", "business", "memory", "knowledge", "browser", "ultron.workings.agent_tools"]
 
-# What the agent may propose; each starts only after the owner taps Approve. The worker's
-# AGENT_ACTIONS (worker/wrangler.toml) must list the same workflows and inputs (a test checks).
+# The shared action registry for Python, Telegram and the app.
+# scripts/docs/sync_controls.py generates worker/actions.json from this section and workflow inputs.
 [actions]
+mastersheet = { workflow = "master-sheet.yml", inputs = ["no_upload"], about = "Build the shared SKU MasterSheet" }
 # auto = true: only makes a report, so the agent runs it at once when asked; the rest change something
 # outside (tickets, inventory, OTP sheet, portal requests) and wait for the owner's Approve tap.
-sale = { workflow = "sale.yml", inputs = ["from", "to", "today", "snapshot"], about = "Daily sale report into the SALE REPORT sheet. inputs: from, to (YYYY-MM-DD) or today=1; snapshot=current or YYYY-MM for a picture of that month's sheet instead", auto = true }
-vms = { workflow = "vms.yml", inputs = ["from", "to", "erp_only", "snapshot"], about = "Myntra VMS report. inputs: from, to (YYYY-MM-DD); erp_only=1 for ERP vs VMS of yesterday and today; snapshot=current or YYYY-MM for a sheet picture", auto = true }
+sale = { workflow = "sale.yml", inputs = ["from", "to", "today", "sjit_request", "snapshot"], about = "Daily sale report into the SALE REPORT sheet. inputs: from, to (YYYY-MM-DD) or today=1; snapshot=current or YYYY-MM for a picture of that month's sheet instead", auto = true }
+vms = { workflow = "vms.yml", inputs = ["from", "to", "snapshot", "erp_only"], about = "Myntra VMS report. inputs: from, to (YYYY-MM-DD); erp_only=1 for ERP vs VMS of yesterday and today; snapshot=current or YYYY-MM for a sheet picture", auto = true }
 ajiotat = { workflow = "ajio-tat.yml", inputs = ["days", "orders"], about = "AJIO TAT master update. inputs: days (OMSGuru window), orders (FN/EX/seller order numbers to add, comma separated)" }
-ajiospf = { workflow = "ajio-spf.yml", inputs = ["dry_run"], about = "AJIO SPF run (raises claims on AJIO). inputs: dry_run=1 for a test run" }
-myntraspf = { workflow = "myntra-spf.yml", inputs = [], about = "Myntra SPF master. no inputs" }
+ajiospf = { workflow = "ajio-spf.yml", inputs = ["dry_run", "master_only", "disputes"], about = "AJIO SPF run (raises claims on AJIO). inputs: dry_run=1 for a test run" }
+myntraspf = { workflow = "myntra-spf.yml", inputs = ["request", "no_upload"], about = "Myntra SPF master. no inputs" }
 invpush = { workflow = "inv-push.yml", inputs = ["dry_run"], about = "OMSGuru Push Inventory on every channel. inputs: dry_run=1 to only list channels" }
 morning = { workflow = "morning.yml", inputs = ["day"], about = "Morning sale report. inputs: day (YYYY-MM-DD)", auto = true }
 sla = { workflow = "sla.yml", inputs = [], about = "SLA warning now. no inputs", auto = true }
@@ -101,9 +102,19 @@ listings = { workflow = "listings.yml", inputs = [], about = "Listing health che
 mis = { workflow = "mis.yml", inputs = ["day"], about = "Monthly MIS and plan now (last month). inputs: day (YYYY-MM-DD)", auto = true }
 myntratat = { workflow = "myntra-tat.yml", inputs = [], about = "Myntra courier pickup scorecard now. no inputs", auto = true }
 fktat = { workflow = "flipkart-tat.yml", inputs = ["days"], about = "Flipkart dispatch TAT sheet (AGENT WORK/FLIPKART) now. inputs: days (OMSGuru window)", auto = true }
-smscatchup = { workflow = "sms-catchup.yml", inputs = [], about = "Returns SMS catch-up now: courier SMS of the last 2 days the phone sheet script did not file, worked again. no inputs" }
-returns = { workflow = "returns.yml", inputs = ["month"], about = "Return analysis of a month (Myntra x3, Ajio, Flipkart). inputs: month (YYYY-MM; default last month)", auto = true }
-ajioads = { workflow = "ajio-ads.yml", inputs = [], about = "AJIO ads / TOT gap report now. no inputs", auto = true }
-myntraotp = { workflow = "myntra-otp.yml", inputs = [], about = "Myntra courier pickup / return OTPs now. no inputs" }
+smscatchup = { workflow = "sms-catchup.yml", inputs = ["days"], about = "Returns SMS catch-up now: courier SMS of the last 2 days the phone sheet script did not file, worked again. no inputs" }
+returns = { workflow = "returns.yml", inputs = ["month", "request", "fresh", "drive_input", "backfill_year", "backfill_portals", "no_upload"], about = "Return analysis of a month (Myntra x3, Ajio, Flipkart). inputs: month (YYYY-MM; default last month)", auto = true }
+ajioads = { workflow = "ajio-ads.yml", inputs = ["if_missing"], about = "AJIO ads / TOT gap report now. no inputs", auto = true }
+myntraotp = { workflow = "myntra-otp.yml", inputs = ["retry"], about = "Myntra courier pickup / return OTPs now. no inputs" }
 myntrareports = { workflow = "myntra-reports.yml", inputs = ["date"], about = "Myntra daily reports made on the portal at 9:30 AM (orders, returns, return delivery, listings, inventory; not saved to Drive). inputs: date (YYYY-MM-DD; default yesterday)" }
-myntrazerotd = { workflow = "myntra-zero-td.yml", inputs = [], about = "Myntra zero TD check now: styles of the ZERO TD sheet live on myntra.com with stock at MRP, per account. no inputs" }
+myntrazerotd = { workflow = "myntra-zero-td.yml", inputs = ["runner"], about = "Myntra zero TD check now: styles of the ZERO TD sheet live on myntra.com with stock at MRP, per account. no inputs" }
+fkprice = { workflow = "flipkart-price.yml", inputs = ["dry_run"], about = "Flipkart Final TP update using the owner's approved rules" }
+fklisting = { workflow = "flipkart-listing-file.yml", inputs = [], about = "Flipkart listing file" }
+fkcalc = { workflow = "flipkart-calc.yml", inputs = [], about = "Flipkart calculator" }
+erpomsreturn = { workflow = "erp-oms-return.yml", inputs = ["dry_run"], about = "Accept ERP returns in OMSGuru" }
+ticketfollowup = { workflow = "ticket-followup.yml", inputs = ["dry_run", "no_upload"], about = "Ticket follow-up" }
+grouping = { workflow = "myntra-grouping.yml", inputs = ["runner", "no_upload", "status_only", "submit"], about = "Myntra colour grouping" }
+myntrahistory = { workflow = "myntra-history.yml", inputs = ["from", "to"], about = "Myntra order and return history" }
+businessreport = { workflow = "business-report.yml", inputs = ["portals", "from", "to", "no_upload"], about = "Build business reports from saved portal reports" }
+portalreports = { workflow = "portal-reports.yml", inputs = ["month", "from", "to", "kinds", "portals", "fresh", "no_upload"], about = "Save portal reports" }
+portalsale = { workflow = "portal-sale.yml", inputs = ["from", "to", "no_upload"], about = "Portal sale report from saved data" }

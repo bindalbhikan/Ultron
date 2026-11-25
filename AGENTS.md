@@ -5,7 +5,7 @@ for BINDAL EXPORTS on GitHub Actions, a Cloudflare Telegram worker + dashboard, 
 (`src/ultron/`, seller-neutral, sellable). Any coding agent (Claude Code, Gemini CLI, the "AI fix on failure"
 workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 
-<!-- AUTO:synced -->Last synced with the code: 2026-11-24.<!-- /AUTO:synced -->
+<!-- AUTO:synced -->Last synced with the code: 2026-11-25.<!-- /AUTO:synced -->
 
 ## Read next
 
@@ -17,6 +17,21 @@ workflow, Codex, Cursor, …) follows this file. `CLAUDE.md` imports it.
 6. `docs/knowledge/` — **Ultron's brain**: every portal API call seen (what it is for, read-only or
    changes something). Look here before saying a portal cannot give some data; the agent reads it
    with its `knowledge_search` / `knowledge_read` tools.
+
+Keep PROJECT_CONTEXT.md current with the active task and verified state.
+
+## TOKEN OPTIMIZATION RULES
+
+1. Do not scan the entire repository unnecessarily.
+2. Read only task-relevant files.
+3. Prefer targeted edits over full file rewrites.
+4. Keep responses concise.
+5. Do not repeat existing code.
+6. Avoid unnecessary tool calls and repeated file reads.
+7. Maintain project context in PROJECT_CONTEXT.md.
+8. Exclude irrelevant logs, build files and dependencies.
+9. Use higher reasoning only for complex tasks.
+10. Prioritize correctness and minimize token usage.
 
 ## Hard rules
 
@@ -86,7 +101,7 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 ## Gaps the sync found (fix them)
 
 <!-- AUTO:gaps -->
-- `master-sheet.yml` (MasterSheet from OMSGuru) has no Telegram command (`COMMANDS` in `worker/src/worker.js`)
+- `/mastersheet` has no button in the Telegram menu (`SCREENS` in `worker/src/worker.js`)
 <!-- /AUTO:gaps -->
 
 ## Working on this machine (owner's Windows PC)
@@ -116,9 +131,13 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   is outside these app guards.
 - Approval decisions claim D1 before dispatch; ambiguous failures cannot dispatch again automatically.
   Phone jobs/results use independent D1 rows rather than a shared KV job slot.
-- App chat is private per user and read-only: `app_chat_job` in D1, `agent-chat.yml` dispatched with a request
-  id only. Never give app chat Telegram's owner action or shared-note write tools; actions use the app's
-  separately authorised Workflows and Approvals routes. App replies never go to Telegram.
+- App and Telegram controls are central (owner, 24-25 Nov 2026): agent.toml generates worker/actions.json;
+  worker/control.js checks permissions and executes operations for both. Preview never starts or changes
+  anything. Runtime schedules preserve revision history, which work-schedule reporting also reads.
+- App chat stays private per user: app_chat_job in D1, agent-chat.yml dispatched with a request id only.
+  It may use shared controls through that claimed job's current user permissions, never Telegram owner
+  action tools or model-supplied identity/confirmation. Mutations require approval except permitted auto
+  reports. App replies never go to Telegram. See docs/apps/shared-controls.md.
 - Phone jobs share one reconnect/processing deadline: a stale heartbeat is polled within the existing
   wait budget, and work is queued only after the phone reconnects. Zero TD's retries share that original
   lookup budget too, so they cannot start another full wait past the workflow timeout. An offline phone

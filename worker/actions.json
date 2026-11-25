@@ -1,0 +1,644 @@
+{
+  "mastersheet": {
+    "workflow": "master-sheet.yml",
+    "inputs": [
+      "no_upload"
+    ],
+    "about": "Build the shared SKU MasterSheet",
+    "chat": false,
+    "fields": {
+      "no_upload": {
+        "description": "1 = test run: the sheet only as the run's artifact, Drive not changed",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "sale": {
+    "workflow": "sale.yml",
+    "inputs": [
+      "from",
+      "to",
+      "today",
+      "sjit_request",
+      "snapshot"
+    ],
+    "about": "Daily sale report into the SALE REPORT sheet. inputs: from, to (YYYY-MM-DD) or today=1; snapshot=current or YYYY-MM for a picture of that month's sheet instead",
+    "auto": true,
+    "chat": true,
+    "fields": {
+      "from": {
+        "description": "Back-fill: first day (YYYY-MM-DD), empty = normal daily run",
+        "default": "",
+        "type": "string"
+      },
+      "to": {
+        "description": "Back-fill: last day (YYYY-MM-DD), empty = yesterday",
+        "default": "",
+        "type": "string"
+      },
+      "today": {
+        "description": "1 = today so far, channel-wise, Telegram only (workbook not touched)",
+        "default": "",
+        "type": "string"
+      },
+      "sjit_request": {
+        "description": "1 = only ask the Myntra portal for the SJIT report (by hand; the 9:30 AM daily reports run asks for it)",
+        "default": "",
+        "type": "string"
+      },
+      "snapshot": {
+        "description": "Picture of a month sheet instead of the report (current or YYYY-MM)",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "vms": {
+    "workflow": "vms.yml",
+    "inputs": [
+      "from",
+      "to",
+      "snapshot",
+      "erp_only"
+    ],
+    "about": "Myntra VMS report. inputs: from, to (YYYY-MM-DD); erp_only=1 for ERP vs VMS of yesterday and today; snapshot=current or YYYY-MM for a sheet picture",
+    "auto": true,
+    "chat": true,
+    "fields": {
+      "from": {
+        "description": "Back-fill: first SLA date (YYYY-MM-DD), empty = normal daily run",
+        "default": "",
+        "type": "string"
+      },
+      "to": {
+        "description": "Back-fill: last SLA date (YYYY-MM-DD), empty = today",
+        "default": "",
+        "type": "string"
+      },
+      "snapshot": {
+        "description": "Picture of a month sheet instead of the report (current or YYYY-MM)",
+        "default": "",
+        "type": "string"
+      },
+      "erp_only": {
+        "description": "1 = only ERP vs VMS (packed yesterday and today)",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "ajiotat": {
+    "workflow": "ajio-tat.yml",
+    "inputs": [
+      "days",
+      "orders"
+    ],
+    "about": "AJIO TAT master update. inputs: days (OMSGuru window), orders (FN/EX/seller order numbers to add, comma separated)",
+    "chat": true,
+    "fields": {
+      "days": {
+        "description": "OMSGuru window: today plus N previous days (1 = yesterday + today)",
+        "default": "",
+        "type": "string"
+      },
+      "orders": {
+        "description": "Also add these AJIO orders, whatever their date (FN... / EX... / seller order nos, comma separated)",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "ajiospf": {
+    "workflow": "ajio-spf.yml",
+    "inputs": [
+      "dry_run",
+      "master_only",
+      "disputes"
+    ],
+    "about": "AJIO SPF run (raises claims on AJIO). inputs: dry_run=1 for a test run",
+    "chat": true,
+    "fields": {
+      "dry_run": {
+        "description": "1 = only report what would be raised / replied, 0 = post to AJIO (empty = repo variable SPF_DRY_RUN, else 1)",
+        "default": "",
+        "type": "string"
+      },
+      "master_only": {
+        "description": "1 = update the master only: no tickets, no replies",
+        "default": "",
+        "type": "string"
+      },
+      "disputes": {
+        "description": "1 = the master + only the delivery-dispute tickets due, no replies (the 9 AM run between Wed and Sat)",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "myntraspf": {
+    "workflow": "myntra-spf.yml",
+    "inputs": [
+      "request",
+      "no_upload"
+    ],
+    "about": "Myntra SPF master. no inputs",
+    "chat": true,
+    "fields": {
+      "request": {
+        "description": "1 = only ask Myntra for the returns and delivery reports (by hand)",
+        "default": "",
+        "type": "string"
+      },
+      "no_upload": {
+        "description": "1 = test run: master only as the run's artifact, Drive not changed",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "invpush": {
+    "workflow": "inv-push.yml",
+    "inputs": [
+      "dry_run"
+    ],
+    "about": "OMSGuru Push Inventory on every channel. inputs: dry_run=1 to only list channels",
+    "chat": false,
+    "fields": {
+      "dry_run": {
+        "description": "1 = list the channels only, push nothing",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "morning": {
+    "workflow": "morning.yml",
+    "inputs": [
+      "day"
+    ],
+    "about": "Morning sale report. inputs: day (YYYY-MM-DD)",
+    "auto": true,
+    "chat": true,
+    "fields": {
+      "day": {
+        "description": "Report day YYYY-MM-DD (empty = yesterday)",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "sla": {
+    "workflow": "sla.yml",
+    "inputs": [],
+    "about": "SLA warning now. no inputs",
+    "auto": true,
+    "chat": false,
+    "fields": {}
+  },
+  "labels": {
+    "workflow": "labels.yml",
+    "inputs": [],
+    "about": "ERP label check now. no inputs",
+    "chat": false,
+    "fields": {}
+  },
+  "stock": {
+    "workflow": "stock.yml",
+    "inputs": [],
+    "about": "Stock-out alert now. no inputs",
+    "auto": true,
+    "chat": false,
+    "fields": {}
+  },
+  "evening": {
+    "workflow": "evening.yml",
+    "inputs": [],
+    "about": "Evening summary now. no inputs",
+    "auto": true,
+    "chat": false,
+    "fields": {}
+  },
+  "weekly": {
+    "workflow": "weekly.yml",
+    "inputs": [],
+    "about": "Weekly review now. no inputs",
+    "auto": true,
+    "chat": false,
+    "fields": {}
+  },
+  "deadstock": {
+    "workflow": "deadstock.yml",
+    "inputs": [],
+    "about": "Dead and slow stock report now. no inputs",
+    "auto": true,
+    "chat": false,
+    "fields": {}
+  },
+  "listings": {
+    "workflow": "listings.yml",
+    "inputs": [],
+    "about": "Listing health check now. no inputs",
+    "auto": true,
+    "chat": false,
+    "fields": {}
+  },
+  "mis": {
+    "workflow": "mis.yml",
+    "inputs": [
+      "day"
+    ],
+    "about": "Monthly MIS and plan now (last month). inputs: day (YYYY-MM-DD)",
+    "auto": true,
+    "chat": false,
+    "fields": {
+      "day": {
+        "description": "A day of the month after the one reported, YYYY-MM-DD (empty = today)",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "myntratat": {
+    "workflow": "myntra-tat.yml",
+    "inputs": [],
+    "about": "Myntra courier pickup scorecard now. no inputs",
+    "auto": true,
+    "chat": false,
+    "fields": {}
+  },
+  "fktat": {
+    "workflow": "flipkart-tat.yml",
+    "inputs": [
+      "days"
+    ],
+    "about": "Flipkart dispatch TAT sheet (AGENT WORK/FLIPKART) now. inputs: days (OMSGuru window)",
+    "auto": true,
+    "chat": true,
+    "fields": {
+      "days": {
+        "description": "OMSGuru window: today plus N previous days (default 4)",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "smscatchup": {
+    "workflow": "sms-catchup.yml",
+    "inputs": [
+      "days"
+    ],
+    "about": "Returns SMS catch-up now: courier SMS of the last 2 days the phone sheet script did not file, worked again. no inputs",
+    "chat": false,
+    "fields": {
+      "days": {
+        "description": "SMS of the last N days",
+        "default": "2",
+        "type": "string"
+      }
+    }
+  },
+  "returns": {
+    "workflow": "returns.yml",
+    "inputs": [
+      "month",
+      "request",
+      "fresh",
+      "drive_input",
+      "backfill_year",
+      "backfill_portals",
+      "no_upload"
+    ],
+    "about": "Return analysis of a month (Myntra x3, Ajio, Flipkart). inputs: month (YYYY-MM; default last month)",
+    "auto": true,
+    "chat": true,
+    "fields": {
+      "month": {
+        "description": "Report month (YYYY-MM), empty = last month",
+        "default": "",
+        "type": "string"
+      },
+      "request": {
+        "description": "1 = only ask the portals for the reports (7 AM on the 10th / 15th)",
+        "default": "",
+        "type": "string"
+      },
+      "fresh": {
+        "description": "With request: 1 = new reports even where ones for the same dates exist (the 15th)",
+        "default": "",
+        "type": "string"
+      },
+      "drive_input": {
+        "description": "1 = reuse saved PORTAL REPORTS without requesting fresh portal exports",
+        "default": "",
+        "type": "string"
+      },
+      "backfill_year": {
+        "description": "YYYY = rebuild closed months from existing PORTAL REPORTS, without new portal jobs",
+        "default": "",
+        "type": "string"
+      },
+      "backfill_portals": {
+        "description": "With backfill_year: only these portals again, e.g. FLIPKART (empty = all)",
+        "default": "",
+        "type": "string"
+      },
+      "no_upload": {
+        "description": "1 = test run: reports only as the run's artifact, Drive not changed",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "ajioads": {
+    "workflow": "ajio-ads.yml",
+    "inputs": [
+      "if_missing"
+    ],
+    "about": "AJIO ads / TOT gap report now. no inputs",
+    "auto": true,
+    "chat": true,
+    "fields": {
+      "if_missing": {
+        "description": "1 = do nothing when this month's report is already on Drive",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "myntraotp": {
+    "workflow": "myntra-otp.yml",
+    "inputs": [
+      "retry"
+    ],
+    "about": "Myntra courier pickup / return OTPs now. no inputs",
+    "chat": false,
+    "fields": {
+      "retry": {
+        "description": "1 = send only OTPs the earlier run did not have",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "myntrareports": {
+    "workflow": "myntra-reports.yml",
+    "inputs": [
+      "date"
+    ],
+    "about": "Myntra daily reports made on the portal at 9:30 AM (orders, returns, return delivery, listings, inventory; not saved to Drive). inputs: date (YYYY-MM-DD; default yesterday)",
+    "chat": false,
+    "fields": {
+      "date": {
+        "description": "report day YYYY-MM-DD (empty = yesterday)",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "myntrazerotd": {
+    "workflow": "myntra-zero-td.yml",
+    "inputs": [
+      "runner"
+    ],
+    "about": "Myntra zero TD check now: styles of the ZERO TD sheet live on myntra.com with stock at MRP, per account. no inputs",
+    "chat": false,
+    "fields": {
+      "runner": {
+        "description": "office = the office PC; cloud = GitHub's runner, myntra.com through the ULTRON app's Agent mode",
+        "default": "office",
+        "type": "string"
+      }
+    }
+  },
+  "fkprice": {
+    "workflow": "flipkart-price.yml",
+    "inputs": [
+      "dry_run"
+    ],
+    "about": "Flipkart Final TP update using the owner's approved rules",
+    "chat": false,
+    "fields": {
+      "dry_run": {
+        "description": "1 = plan the steps only, change no price",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "fklisting": {
+    "workflow": "flipkart-listing-file.yml",
+    "inputs": [],
+    "about": "Flipkart listing file",
+    "chat": false,
+    "fields": {}
+  },
+  "fkcalc": {
+    "workflow": "flipkart-calc.yml",
+    "inputs": [],
+    "about": "Flipkart calculator",
+    "chat": false,
+    "fields": {}
+  },
+  "erpomsreturn": {
+    "workflow": "erp-oms-return.yml",
+    "inputs": [
+      "dry_run"
+    ],
+    "about": "Accept ERP returns in OMSGuru",
+    "chat": false,
+    "fields": {
+      "dry_run": {
+        "description": "1 = nothing accepted, Drive not changed",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "ticketfollowup": {
+    "workflow": "ticket-followup.yml",
+    "inputs": [
+      "dry_run",
+      "no_upload"
+    ],
+    "about": "Ticket follow-up",
+    "chat": false,
+    "fields": {
+      "dry_run": {
+        "description": "1 = nothing posted on any ticket, Drive still updated",
+        "default": "",
+        "type": "string"
+      },
+      "no_upload": {
+        "description": "1 = test run: nothing posted, Drive not changed",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "grouping": {
+    "workflow": "myntra-grouping.yml",
+    "inputs": [
+      "runner",
+      "no_upload",
+      "status_only",
+      "submit"
+    ],
+    "about": "Myntra colour grouping",
+    "chat": false,
+    "fields": {
+      "runner": {
+        "description": "office = the office PC; cloud = GitHub's runner, myntra.com through the ULTRON app's Agent mode",
+        "default": "office",
+        "type": "string"
+      },
+      "no_upload": {
+        "description": "1 = test run: Drive not changed",
+        "default": "",
+        "type": "string"
+      },
+      "status_only": {
+        "description": "1 = only read the portal's upload jobs again, myntra.com not asked; changes = the same, quiet unless a job changed",
+        "default": "",
+        "type": "string"
+      },
+      "submit": {
+        "description": "1 = after the check, submit every account's pending groups on the partner portal (by hand only); again = also the rejected / failed / recently approved ones",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "myntrahistory": {
+    "workflow": "myntra-history.yml",
+    "inputs": [
+      "from",
+      "to"
+    ],
+    "about": "Myntra order and return history",
+    "chat": false,
+    "fields": {
+      "from": {
+        "description": "first month YYYY-MM",
+        "default": "2025-04",
+        "type": "string"
+      },
+      "to": {
+        "description": "last month YYYY-MM",
+        "default": "2026-09",
+        "type": "string"
+      }
+    }
+  },
+  "businessreport": {
+    "workflow": "business-report.yml",
+    "inputs": [
+      "portals",
+      "from",
+      "to",
+      "no_upload"
+    ],
+    "about": "Build business reports from saved portal reports",
+    "chat": false,
+    "fields": {
+      "portals": {
+        "description": "MYNTRA,FLIPKART,AJIO (empty = all)",
+        "default": "",
+        "type": "string"
+      },
+      "from": {
+        "description": "First order month YYYY-MM (empty = 2025-01)",
+        "default": "",
+        "type": "string"
+      },
+      "to": {
+        "description": "Last order month YYYY-MM (empty = last month)",
+        "default": "",
+        "type": "string"
+      },
+      "no_upload": {
+        "description": "1 = test run: workbooks only as the run's artifact, Drive not changed",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "portalreports": {
+    "workflow": "portal-reports.yml",
+    "inputs": [
+      "month",
+      "from",
+      "to",
+      "kinds",
+      "portals",
+      "fresh",
+      "no_upload"
+    ],
+    "about": "Save portal reports",
+    "chat": false,
+    "fields": {
+      "month": {
+        "description": "Month (YYYY-MM), empty = last month",
+        "default": "",
+        "type": "string"
+      },
+      "from": {
+        "description": "Back-fill: first month (YYYY-MM), with to; AJIO's return report too",
+        "default": "",
+        "type": "string"
+      },
+      "to": {
+        "description": "Back-fill: last month (YYYY-MM)",
+        "default": "",
+        "type": "string"
+      },
+      "kinds": {
+        "description": "Only these reports: sale, return, payment (empty = all)",
+        "default": "",
+        "type": "string"
+      },
+      "portals": {
+        "description": "Only these portals, e.g. MYNTRA,AJIO (empty = all)",
+        "default": "",
+        "type": "string"
+      },
+      "fresh": {
+        "description": "1 = reports made today only (the 15th: last month again, fresh)",
+        "default": "",
+        "type": "string"
+      },
+      "no_upload": {
+        "description": "1 = test run: download only, Drive not changed",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "portalsale": {
+    "workflow": "portal-sale.yml",
+    "inputs": [
+      "from",
+      "to",
+      "no_upload"
+    ],
+    "about": "Portal sale report from saved data",
+    "chat": true,
+    "fields": {
+      "from": {
+        "description": "Back-fill from saved files: first day (YYYY-MM-DD), empty = normal daily run",
+        "default": "",
+        "type": "string"
+      },
+      "to": {
+        "description": "Back-fill: last day (YYYY-MM-DD), empty = yesterday",
+        "default": "",
+        "type": "string"
+      },
+      "no_upload": {
+        "description": "1 = test run: Drive not changed",
+        "default": "",
+        "type": "string"
+      }
+    }
+  }
+}

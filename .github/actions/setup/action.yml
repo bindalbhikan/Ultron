@@ -23,7 +23,7 @@ runs:
         cache-dependency-glob: uv.lock
     # Ultron with the report workings, from this checkout
     - run: |
-        uv export --frozen --no-hashes --no-emit-project --extra workings -o "$RUNNER_TEMP/requirements.txt" -q
+        uv export --frozen --no-dev --no-hashes --no-emit-project --extra workings -o "$RUNNER_TEMP/requirements.txt" -q
         uv pip install --system -r "$RUNNER_TEMP/requirements.txt"
         uv pip install --system --no-deps -e .
       shell: bash
@@ -34,7 +34,7 @@ runs:
         key: patchright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
     - if: inputs.browser == 'true'
       run: |
-        uv export --frozen --no-hashes --no-emit-project --extra browser -o "$RUNNER_TEMP/requirements-browser.txt" -q
+        uv export --frozen --no-dev --no-hashes --no-emit-project --extra browser -o "$RUNNER_TEMP/requirements-browser.txt" -q
         uv pip install --system -r "$RUNNER_TEMP/requirements-browser.txt"
         patchright install --with-deps chromium
       shell: bash

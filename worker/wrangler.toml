@@ -30,30 +30,11 @@ DASHBOARD_PAGE = "https://bindal-dashboard.bhikan-serein.workers.dev"
 
 # What Ultron may start after an Approve tap (ultron/worker/agent.js): the same workflows
 # and inputs as [actions] in ../agent.toml (keep the two lists the same).
-[vars.AGENT_ACTIONS]
-sale = { workflow = "sale.yml", inputs = ["from", "to", "today", "snapshot"], auto = true }
-vms = { workflow = "vms.yml", inputs = ["from", "to", "erp_only", "snapshot"], auto = true }
-ajiotat = { workflow = "ajio-tat.yml", inputs = ["days", "orders"] }
-ajiospf = { workflow = "ajio-spf.yml", inputs = ["dry_run"] }
-myntraspf = { workflow = "myntra-spf.yml", inputs = [] }
-invpush = { workflow = "inv-push.yml", inputs = ["dry_run"] }
-morning = { workflow = "morning.yml", inputs = ["day"], auto = true }
-sla = { workflow = "sla.yml", inputs = [], auto = true }
-labels = { workflow = "labels.yml", inputs = [] }
-stock = { workflow = "stock.yml", inputs = [], auto = true }
-evening = { workflow = "evening.yml", inputs = [], auto = true }
-weekly = { workflow = "weekly.yml", inputs = [], auto = true }
-deadstock = { workflow = "deadstock.yml", inputs = [], auto = true }
-listings = { workflow = "listings.yml", inputs = [], auto = true }
-mis = { workflow = "mis.yml", inputs = ["day"], auto = true }
-myntratat = { workflow = "myntra-tat.yml", inputs = [], auto = true }
-fktat = { workflow = "flipkart-tat.yml", inputs = ["days"], auto = true }
-smscatchup = { workflow = "sms-catchup.yml", inputs = [] }
-returns = { workflow = "returns.yml", inputs = ["month"], auto = true }
-ajioads = { workflow = "ajio-ads.yml", inputs = [], auto = true }
-myntraotp = { workflow = "myntra-otp.yml", inputs = [] }
-myntrareports = { workflow = "myntra-reports.yml", inputs = ["date"] }
-myntrazerotd = { workflow = "myntra-zero-td.yml", inputs = [] }
+# Actions are generated from agent.toml into actions.json; no second registry.
+
+[[services]]
+binding = "APP"
+service = "ultron-app-api"
 
 # Latest numbers of each bot for the dashboard (worker/../dashboard reads the same namespace).
 # The bots POST them to /api/push/<key> with the DASHBOARD_TOKEN secret.

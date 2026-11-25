@@ -20,6 +20,7 @@ dependencies = [
     # where results go, outside the source code (ultron.core.paths): the OS's user data folder; pure Python
     "platformdirs>=4.2",
     "openai>=1.60",
+    "pyyaml>=6.0.4",
 ]
 
 [project.optional-dependencies]
@@ -81,3 +82,10 @@ pythonVersion = "3.12"
 typeCheckingMode = "basic"
 reportMissingImports = "warning"
 reportMissingModuleSource = "none"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.2.0",
+    "ruff>=0.17.6",
+]

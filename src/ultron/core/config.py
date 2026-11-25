@@ -168,7 +168,7 @@ def channel_line(name: str) -> str:
 
 
 # tool sets every seller gets: name in agent.toml -> module
-BUILTIN_TOOLS = {"runs": "ultron.tools.runs", "omsguru": "ultron.tools.omsguru", "memory": "ultron.tools.memory",
+BUILTIN_TOOLS = {"controls": "ultron.tools.controls", "runs": "ultron.tools.runs", "omsguru": "ultron.tools.omsguru", "memory": "ultron.tools.memory",
                  "knowledge": "ultron.tools.knowledge", "browser": "ultron.tools.browser",
                  "business": "ultron.tools.business"}
 
@@ -176,8 +176,8 @@ BUILTIN_TOOLS = {"runs": "ultron.tools.runs", "omsguru": "ultron.tools.omsguru",
 def load_tools(names: tuple[str, ...]) -> list[Callable]:
     """The tools listed in agent.toml: a built-in set (BUILTIN_TOOLS) or the dotted name of a
     module of the seller's own. Each module exports TOOLS, a list of functions made with
-    ultron.core.llm.tool. They must only read; anything to be done goes through propose_action and
-    the owner's approval."""
+    ultron.core.llm.tool. Data tools only read. The controls module delegates to the common
+    permission and approval service; it never takes identity or confirmation from the model."""
     out = []
     for name in names:
         out += list(importlib.import_module(BUILTIN_TOOLS.get(name, name)).TOOLS)
