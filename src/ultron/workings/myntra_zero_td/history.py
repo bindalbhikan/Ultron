@@ -1,5 +1,5 @@
-"""MYNTRA ZERO TD MASTER (owner, 25 Nov 2026): which style was live at MRP, how many times, on which days and in
-which months. Drive AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/MYNTRA ZERO TD MASTER.xlsx, written anew every run from
+"""MYNTRA ZERO TD SUMMARY SHEET (owner, 25 Nov 2026): which style was live at MRP, how many times, on which days and in
+which months. Drive AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/MYNTRA ZERO TD SUMMARY SHEET.xlsx, written anew every run from
 its own LOG plus the run's styles at MRP (Drive keeps the old versions):
 
   STYLE SUMMARY  one row per style (ACCOUNTS: every account that has it): TIMES AT MRP (checks that found it at MRP), ZERO TD / PART ZERO TD
@@ -24,7 +24,8 @@ import polars as pl
 
 log = logging.getLogger("bindal.myntra_zero_td")
 
-NAME = "MYNTRA ZERO TD MASTER.xlsx"
+NAME = "MYNTRA ZERO TD SUMMARY SHEET.xlsx"   # owner, 25 Nov 2026 (first called MYNTRA ZERO TD MASTER.xlsx)
+OLD_NAME = "MYNTRA ZERO TD MASTER.xlsx"
 LOG_SCHEMA = {"CHECKED AT": pl.Datetime("us"), "ACCOUNT": pl.Utf8, "ACCOUNTS": pl.Utf8, "STYLE ID": pl.Int64, "BRAND": pl.Utf8,
               "SKU": pl.Utf8, "STATUS": pl.Utf8, "MRP": pl.Float64, "SELLING PRICE": pl.Float64,
               "SIZES AT MRP": pl.Utf8, "STOCK AT MRP": pl.Int64}

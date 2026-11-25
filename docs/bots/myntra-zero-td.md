@@ -27,8 +27,8 @@ button on the Myntra menu, or run the workflow. About 1 minute for ~3,500 styles
   columns + STATUS, MRP, SELLING PRICE, SIZES AT MRP, STOCK AT MRP, TOTAL STOCK, SELLER, LINK),
   NOT CHECKED when some had no answer.
 * Drive: the same workbook in `AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx`.
-* **MYNTRA ZERO TD MASTER** (owner, 25 Nov 2026; `myntra_zero_td/history.py`), `MYNTRA ZERO TD SHEETS/MYNTRA ZERO TD
-  MASTER.xlsx`, every check added, written anew (Drive keeps the old versions): STYLE SUMMARY (one row per style: ACCOUNTS,
+* **MYNTRA ZERO TD SUMMARY SHEET** (owner, 25 Nov 2026; `myntra_zero_td/history.py`), `MYNTRA ZERO TD SHEETS/MYNTRA ZERO TD
+  SUMMARY SHEET.xlsx`, every check added, written anew (Drive keeps the old versions): STYLE SUMMARY (one row per style: ACCOUNTS,
   BRAND, SKU, TIMES AT MRP, ZERO TD / PART ZERO TD TIMES, DAYS, FIRST / LAST AT MRP, LAST STATUS, MAX STOCK AT MRP, DATES,
   times per month), DAY WISE (style + day: TIMES, CHECK TIMES), MONTH WISE (month + account: styles, times, checks run),
   RUNS (every check), LOG (every style at MRP of every check). With no master on Drive it is built from every saved

@@ -72,7 +72,7 @@ AGENT WORK/
   AGENT REPORT WORK SCHEDULE REPORT.xlsx   the agent's reporting sheet (below)
   AGENT LOGS/<OCT-26>/<29-10-26>/          every run's hyper log
   MYNTRA/   MYNTRA DAILY REPORTS/ (up to 15 Nov 2026 only), MYNTRA DAILY RETURN DELIVERY REPORT.xlsx,
-            MYNTRA ZERO TD SHEETS/ (MYNTRA ZERO TD UPDATE SHEET.xlsx = the styles to check, MYNTRA ZERO TD MASTER.xlsx =
+            MYNTRA ZERO TD SHEETS/ (MYNTRA ZERO TD UPDATE SHEET.xlsx = the styles to check, MYNTRA ZERO TD SUMMARY SHEET.xlsx =
             times at MRP per style / day / month, <MON-YY>/<dd-mm-yy>/ every check), MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../
   AJIO/     Ajio Daily Order Tat Check Working/ (TAT master), Ajio Ads Gap Working/
   DAILY REPORTING/   DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx, PORTAL SALE REPORT.xlsx), VMS/ (the daily reports in one place)

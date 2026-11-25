@@ -9,7 +9,7 @@ read. BRAND / MY SKU / FINAL SKU come from the one SKU master (AGENT WORK/MASTER
 on the sheet (EXIM) is checked for every Myntra style the master has for it. The accounts' styles are then merged and
 each style id checked once (owner, 25 Nov 2026), under the first account (MAIN, DBCC, FMCC, EXIM) that has it, with
 ACCOUNTS naming every account that has it. Every check is added to MYNTRA ZERO TD
-MASTER (history.py: which style was at MRP, how many times, on which days and months).
+SUMMARY SHEET (history.py: which style was at MRP, how many times, on which days and months).
 Every style is looked up on the buyer side (spider.py). A style is
   ZERO TD       every size in stock sells at MRP
   PART ZERO TD  some sizes in stock sell at MRP, others with a discount
@@ -293,7 +293,7 @@ def summarise(account: str, df: pl.DataFrame) -> dict:
 
 
 def message(checked: dict[str, pl.DataFrame], when: datetime, times: dict | None = None) -> str:
-    """The Telegram text; times: style id -> times at MRP this month (MYNTRA ZERO TD MASTER)."""
+    """The Telegram text; times: style id -> times at MRP this month (MYNTRA ZERO TD SUMMARY SHEET)."""
     rows = [summarise(a, df) for a, df in checked.items()]
     flagged = sum(r["ZERO TD"] + r["PART ZERO TD"] for r in rows)
     out = [f"🏷 <b>Myntra zero TD · {when:%d %b, %I:%M %p}</b>", ""]
@@ -344,11 +344,12 @@ def source_sheet(dest: Path) -> Path:
 
 
 def update_master(checked: dict[str, pl.DataFrame], when: datetime, work: Path, upload: bool, rebuild: bool):
-    """MYNTRA ZERO TD MASTER.xlsx with this check added: (local path, Drive folder link or None, this month's times)."""
+    """MYNTRA ZERO TD SUMMARY SHEET.xlsx with this check added: (local path, Drive folder link or None, this month's times)."""
     from ..core.drive import XLSX, agent_folder
     from . import history
     folder = agent_folder(AREA, create=True).subfolder(FOLDER, create=True)
-    path = None if rebuild else folder.download(history.NAME, work / "old" / history.NAME)
+    path = None if rebuild else (folder.download(history.NAME, work / "old" / history.NAME)
+                                 or folder.download(history.OLD_NAME, work / "old" / history.NAME))
     old = history.read(path)
     if path is None:
         log.info("%s: built from every saved check", history.NAME)
@@ -399,10 +400,10 @@ def run(args) -> int:
         master_path, link, times = update_master(checked, when, work, not args.no_upload and not args.limit,
                                                  args.rebuild_master)
         if link:
-            notes.append(f'📒 <a href="{link}">MYNTRA ZERO TD MASTER</a>: times at MRP per style, day and month')
+            notes.append(f'📒 <a href="{link}">MYNTRA ZERO TD SUMMARY SHEET</a>: times at MRP per style, day and month')
     except Exception as exc:  # noqa: BLE001 - the check itself still goes out
-        log.exception("MYNTRA ZERO TD MASTER not updated")
-        notes.append(f"⚠️ MYNTRA ZERO TD MASTER not updated: {telegram.esc(str(exc)[:150])}")
+        log.exception("MYNTRA ZERO TD SUMMARY SHEET not updated")
+        notes.append(f"⚠️ MYNTRA ZERO TD SUMMARY SHEET not updated: {telegram.esc(str(exc)[:150])}")
     msg = message(checked, when, times)
     if args.no_upload:
         log.info("Not saved to Drive (test run): %s", path)
@@ -431,7 +432,7 @@ def main(argv=None) -> int:
                                 description="Styles live on www.myntra.com with stock at MRP (no TD), per account")
     p.add_argument("--source", help="a local copy of the zero TD sheet instead of the one on Drive")
     p.add_argument("--rebuild-master", action="store_true",
-                   help="build MYNTRA ZERO TD MASTER again from every saved check (not only add this one)")
+                   help="build MYNTRA ZERO TD SUMMARY SHEET again from every saved check (not only add this one)")
     p.add_argument("--limit", type=int, default=0, help="only the first N styles of each account (a test)")
     p.add_argument("--no-upload", action="store_true", help="keep the workbook in output/, not on Drive")
     p.add_argument("--no-telegram", action="store_true", help="print the message instead of sending it")

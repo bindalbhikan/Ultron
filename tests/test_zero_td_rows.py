@@ -1,5 +1,5 @@
 """Myntra zero TD on Polars: the sheet read typed, brand / SKU from the MasterSheet, every style checked once,
-the workbook, the message and MYNTRA ZERO TD MASTER (the history)."""
+the workbook, the message and MYNTRA ZERO TD SUMMARY SHEET (the history)."""
 from datetime import datetime
 
 import polars as pl
