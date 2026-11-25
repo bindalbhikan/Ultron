@@ -1,0 +1,147 @@
+name: Code change
+
+# The agent's codechange action (agent.toml [actions]): after the owner approves it on Telegram or in the app, an
+# AI coding agent builds the requested change (usually a dynamic working made permanent) and proposes it as a pull
+# request - never merged by itself. The owner merges it; nothing goes live before that.
+#   1. Claude Code on the owner's subscription (CLAUDE_CODE_OAUTH_TOKEN), when the secret is set.
+#   2. Fallback: Gemini CLI on the free Gemini API key (GEMINI_API_KEY), model CI_FIX_GEMINI_MODEL.
+# The repository is public: the request stays on the runner and in the PR only as the agent's own summary line.
+on:
+  workflow_dispatch:
+    inputs:
+      request:
+        description: "What to build or change, in plain words"
+        required: true
+      chat_id:
+        description: "Telegram chat to tell (empty or an app chat = the owner's chat)"
+        default: ""
+
+concurrency:
+  group: code-change
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  change:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TZ: Asia/Kolkata
+      GH_TOKEN: ${{ github.token }}
+      HAS_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' && '1' || '' }}
+      HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' && '1' || '' }}
+      # the request reaches the shell only as a variable, never pasted into the script
+      IN_REQUEST: ${{ inputs.request }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - name: Write the task
+        id: task
+        run: |
+          mkdir -p .code-change
+          printf '%s\n' "$IN_REQUEST" > .code-change/request.md
+          {
+            echo 'prompt<<PROMPT_END'
+            cat .github/code-change/prompt.md
+            echo 'PROMPT_END'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Claude builds it
+        if: env.HAS_CLAUDE == '1'
+        id: claude
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          claude_args: >-
+            --max-turns 80
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(python -m py_compile:*),Bash(python -m pytest:*),Bash(python -m ruff check:*),Bash(python scripts/docs/sync_docs.py),Bash(python scripts/docs/sync_controls.py),Bash(git diff:*),Bash(git log:*),Bash(git status:*)"
+          prompt: ${{ steps.task.outputs.prompt }}
+
+      - name: Claude gave no result - undo its half-done edits
+        if: hashFiles('.code-change/result.md') == ''
+        run: git checkout -- . && git clean -fdq -e .code-change
+
+      - name: Gemini builds it (fallback)
+        if: env.HAS_GEMINI == '1' && hashFiles('.code-change/result.md') == ''
+        id: gemini
+        continue-on-error: true
+        uses: google-github-actions/run-gemini-cli@v0.1.22
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: ${{ vars.CI_FIX_GEMINI_MODEL || 'gemini-3.5-flash' }}
+          settings: |-
+            {
+              "model": {"maxSessionTurns": 80},
+              "privacy": {"usageStatisticsEnabled": false},
+              "tools": {"core": ["list_directory", "read_file", "write_file", "replace", "glob", "grep_search",
+                                  "run_shell_command(python -m py_compile)", "run_shell_command(python -m pytest)",
+                                  "run_shell_command(python -m ruff check)",
+                                  "run_shell_command(python scripts/docs/sync_docs.py)",
+                                  "run_shell_command(python scripts/docs/sync_controls.py)",
+                                  "run_shell_command(git diff)", "run_shell_command(git log)"]}
+            }
+          prompt: ${{ steps.task.outputs.prompt }}
+
+      - name: Who answered
+        id: who
+        run: |
+          if [ ! -f .code-change/result.md ]; then
+            git checkout -- . && git clean -fdq -e .code-change
+            echo "name=" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.gemini.outcome }}" = "success" ]; then
+            echo "name=Gemini" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=Claude" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pull request
+        id: pr
+        env:
+          WHO: ${{ steps.who.outputs.name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          first=$(head -n 1 .code-change/result.md 2>/dev/null || echo "NOT DONE: no AI agent could build it (Claude and Gemini both unavailable)")
+          echo "first=$first" >> "$GITHUB_OUTPUT"
+          if [ -z "$WHO" ] || [ -z "$(git status --porcelain -- . ':!.code-change')" ]; then exit 0; fi
+          branch="ai-change/${{ github.run_id }}"
+          if [ "$WHO" = "Claude" ]; then
+            trailer="Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+            footer='🤖 Generated with [Claude Code](https://claude.com/claude-code)'
+          else
+            trailer="Proposed by Gemini CLI (fallback)"
+            footer='Proposed by Gemini CLI (fallback: Claude Code was not available).'
+          fi
+          git config user.name "ai-change[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A -- . ':!.code-change'
+          git commit -q -m "${first#DONE: }" -m "Requested through the agent: $RUN_URL" -m "$trailer"
+          git push -q origin "$branch"
+          detail=$(tail -n +2 .code-change/result.md | head -c 2500)
+          url=$(gh pr create --head "$branch" --title "${first#DONE: }" \
+                --body "$(printf 'Built by %s on the agent'"'"'s codechange request: %s\n\n%s\n\nCheck the change before merging.\n\n%s' "$WHO" "$RUN_URL" "$detail" "$footer")" \
+                || echo "https://github.com/$GITHUB_REPOSITORY/compare/$branch")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Telegram
+        if: always()
+        env:
+          PR_URL: ${{ steps.pr.outputs.url }}
+          WHO: ${{ steps.who.outputs.name }}
+          FIRST: ${{ steps.pr.outputs.first }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          # an app conversation is private: the owner's chat hears that a PR is waiting, without the conversation
+          TELEGRAM_CHAT_ID: ${{ (inputs.chat_id != '' && !startsWith(inputs.chat_id, 'app:')) && inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          text=$(printf '🛠️ Code change%s\n\n%s\n\n%s' "${WHO:+ (built by $WHO)}" "${FIRST:-NOT DONE: the run failed before a result}" "${PR_URL:+PR to check and merge: $PR_URL}")
+          IFS=',' read -ra chats <<< "$TELEGRAM_CHAT_ID"
+          for chat in "${chats[@]}"; do
+            curl -s -o /dev/null "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+              --data-urlencode "chat_id=${chat// /}" --data-urlencode "text=$text"
+          done

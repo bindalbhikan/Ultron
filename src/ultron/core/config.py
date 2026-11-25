@@ -74,6 +74,7 @@ class Config:
     watch_lost_runner: tuple[str, ...]          # workflows started again with runner=cloud when their self-hosted runner is lost
     chat_steps: int
     chat_tools: tuple[str, ...]
+    app_tools: tuple[str, ...] = ("runs", "omsguru", "business", "knowledge", "files", "adhoc")
     actions: dict[str, Action] = field(default_factory=dict)
     channel_prefixes: tuple[str, ...] = ()
     channel_names: dict[str, str] = field(default_factory=dict)
@@ -141,6 +142,7 @@ def parse(path: Path) -> Config:
         watch_lost_runner=tuple(watch.get("lost_runner", [])),
         chat_steps=int(chat.get("max_steps", 8)),
         chat_tools=tuple(chat.get("tools", [])),
+        app_tools=tuple(chat.get("app_tools", ["runs", "omsguru", "business", "knowledge", "files", "adhoc"])),
         actions=actions,
         channel_prefixes=tuple(channels.get("strip_prefix", [])),
         channel_names=dict(channels.get("names", {})),
@@ -170,7 +172,8 @@ def channel_line(name: str) -> str:
 # tool sets every seller gets: name in agent.toml -> module
 BUILTIN_TOOLS = {"controls": "ultron.tools.controls", "runs": "ultron.tools.runs", "omsguru": "ultron.tools.omsguru", "memory": "ultron.tools.memory",
                  "knowledge": "ultron.tools.knowledge", "browser": "ultron.tools.browser",
-                 "business": "ultron.tools.business"}
+                 "business": "ultron.tools.business",
+                 "files": "ultron.tools.files", "adhoc": "ultron.tools.adhoc"}
 
 
 def load_tools(names: tuple[str, ...]) -> list[Callable]:

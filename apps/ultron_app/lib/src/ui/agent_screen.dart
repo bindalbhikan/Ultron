@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../domain/models.dart';
 import '../state/providers.dart';
@@ -191,6 +193,119 @@ class _AgentScreenState extends ConsumerState<AgentScreen> {
   );
 }
 
+/// A file of an agent answer: a picture is shown, any file opens (downloads) with a tap.
+class _FileCard extends ConsumerStatefulWidget {
+  const _FileCard({required this.file});
+  final AgentFile file;
+  @override
+  ConsumerState<_FileCard> createState() => _FileCardState();
+}
+
+class _FileCardState extends ConsumerState<_FileCard> {
+  Future<Uint8List>? _picture;
+  bool _opening = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.file.isImage) {
+      _picture = ref.read(repositoryProvider).chatFileBytes(widget.file.id);
+    }
+  }
+
+  Future<void> _open() async {
+    if (_opening) return;
+    setState(() => _opening = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final link = await ref
+          .read(repositoryProvider)
+          .chatFileLink(widget.file.id);
+      final opened = await launchUrl(
+        link,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) throw const FormatException();
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('The file could not be opened. Try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final file = widget.file;
+    final kb = (file.size / 1024).ceil();
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _open,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_picture != null)
+              FutureBuilder<Uint8List>(
+                future: _picture,
+                builder: (context, snap) => snap.hasData
+                    ? Image.memory(snap.data!, fit: BoxFit.contain)
+                    : SizedBox(
+                        height: 120,
+                        child: Center(
+                          child: snap.hasError
+                              ? const Text('Picture unavailable')
+                              : const CircularProgressIndicator(),
+                        ),
+                      ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(
+                    file.isImage ? LucideIcons.image : LucideIcons.fileText,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          file.name,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        if (file.caption.isNotEmpty)
+                          Text(
+                            file.caption,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                      ],
+                    ),
+                  ),
+                  Text('$kb KB', style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(width: 8),
+                  _opening
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(LucideIcons.download, size: 18),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({required this.message});
   final AgentMessage message;
@@ -224,6 +339,10 @@ class _MessageBubble extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
+            for (final file in message.files) ...[
+              const SizedBox(height: 10),
+              _FileCard(file: file),
+            ],
             if (message.sources.isNotEmpty) ...[
               const SizedBox(height: 12),
               Card(

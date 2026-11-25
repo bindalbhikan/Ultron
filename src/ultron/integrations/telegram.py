@@ -185,6 +185,42 @@ def updates(offset: int, timeout: int = 50) -> list[dict]:
     return http.json_of(r).get("result", [])
 
 
+PHOTO = {".png", ".jpg", ".jpeg", ".webp"}
+PHOTO_MAX = 10 * 1024 * 1024      # Bot API: a photo up to 10 MB; anything larger goes as a document
+FILE_MAX = 50 * 1024 * 1024       # Bot API: a document up to 50 MB
+
+
+def send_file(path, chat: str | int | None = None, caption: str = "") -> bool:
+    """Send one file to one chat, or to every chat in TELEGRAM_CHAT_ID: a picture as a photo (inline) and also
+    as a document (Telegram downscales photos), anything else as a document."""
+    from pathlib import Path
+    path = Path(path)
+    token = env("TELEGRAM_BOT_TOKEN")
+    targets = [str(chat)] if chat else chats()
+    if not token or not targets:
+        log.warning("Telegram not configured - %s not sent", path.name)
+        return False
+    size = path.stat().st_size
+    if size > FILE_MAX:
+        log.error("Telegram: %s is %d bytes, over the 50 MB limit", path.name, size)
+        return False
+    caption = split_html(caption, 1000)[0] if caption else ""
+    photo = path.suffix.lower() in PHOTO and size <= PHOTO_MAX
+    ok = True
+    for target in targets:
+        sends = [("sendPhoto", "photo", caption), ("sendDocument", "document", "Full size")] if photo \
+            else [("sendDocument", "document", caption)]
+        for method, field, text in sends:
+            with path.open("rb") as fh:
+                r = _post(token, method, data={"chat_id": target, "caption": text, "parse_mode": "HTML"},
+                          files={field: (path.name, fh)})
+            if not http.ok(r):
+                ok = False
+                if r is not None:
+                    log.error("Telegram %s to %s failed: %s %s", method, target, r.status_code, r.text[:300])
+    return ok
+
+
 def send(text: str, chat: str | int | None = None) -> bool:
     """Send to one chat, or to every chat in TELEGRAM_CHAT_ID."""
     token = env("TELEGRAM_BOT_TOKEN")

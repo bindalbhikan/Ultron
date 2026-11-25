@@ -24,6 +24,7 @@ irreversible.
 | 1. Auto-retry | a failed first attempt on a known passing cause (portal timeout, 5xx, connection reset) is rerun once by itself, Telegram told | ✅ `[watch] retry` / `retry_when` in `agent.toml` (1 Nov 2026) |
 | 2. Chat | plain text to the Telegram bot → the agent reads with its tools and answers | ✅ `agent-chat` |
 | 3. Approvals | Approve / Reject buttons; only an Approve starts the action, from a fixed list | ✅ worker `/api/approval`, `AGENT_ACTIONS` = `agent.toml [actions]` |
+| 3. Dynamic workings | the agent writes a Polars script for a request no working covers, runs it in a locked sandbox on copies of saved data and sends the file to the same chat (Telegram and app); `codechange` makes it permanent as a PR | ✅ `run_adhoc`, `send_file`, `code-change.yml` (25 Nov 2026; `docs/ARCHITECTURE.md` Dynamic workings) |
 | 3. Code-fix PRs | on a failed AJIO / Myntra SPF run Claude Code (fallback: Gemini CLI, 1 Nov 2026) proposes a fix PR, never merged by itself | ✅ `ci-fix.yml` (31 Oct 2026) |
 | 3. What ran / was missed | every scheduled task ticked per day | ✅ Drive work-schedule sheet (`work-schedule`); a weekly "what failed / was fixed" message is not built |
 | 4. Cross-platform control app | Emerald Flutter frontend, required login and Phone Work | ✅ Live username auth/API, secure sessions and Android SMS/Agent mode migrated (23 Nov); private in-app chat connected (24 Nov), with central permission-checked controls shared by app/Telegram (25 Nov). Native runtime checks still require devices (`docs/apps/ultron-app.md`) |

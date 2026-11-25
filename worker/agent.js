@@ -605,13 +605,42 @@ export function makeAgent({
     return Response.json({ started: result.workflow });
   }
 
+  // A file the agent attached to an app answer (src/ultron/agents/chat.py upload_files): stored with the answer
+  // while the job runs, before it is marked done. base64 text in D1 (migration 0012), at most 1.4 MB a file.
+  const FILE_DAYS = 30, FILE_MAX = 1400000, FILES_PER_ANSWER = 5;
+  const FILE_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", csv: "text/csv", txt: "text/plain",
+    pdf: "application/pdf", json: "application/json", parquet: "application/vnd.apache.parquet" };
+  async function appChatFile(request, database, id, now) {
+    const input = await jsonBody(request, 2000000).catch((e) => e);
+    if (input instanceof Response) return input;
+    const name = String(input.name || "");
+    const ext = (name.match(/\.([a-z0-9]{1,8})$/i) || [])[1]?.toLowerCase();
+    if (!/^[^\\/:*?"<>|\x00-\x1f]{1,120}$/.test(name) || !FILE_TYPES[ext]) return bad("unsupported file");
+    const data = String(input.data || "");
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data)) return bad("invalid file data");
+    const size = Math.floor(data.length * 3 / 4) - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0);
+    if (size < 1 || size > FILE_MAX) return bad(`a file is at most ${FILE_MAX} bytes`, 413);
+    const job = await database.prepare(`SELECT id,(SELECT COUNT(*) FROM app_chat_file f WHERE f.job_id=app_chat_job.id) AS n
+      FROM app_chat_job WHERE id=? AND status='running' AND created_at>?`).bind(id, now - 30 * 60000).first();
+    if (!job) return bad("chat request expired or already answered", 409);
+    if (job.n >= FILES_PER_ANSWER) return bad(`an answer carries at most ${FILES_PER_ANSWER} files`, 413);
+    const fileId = crypto.randomUUID();
+    await database.prepare(`INSERT INTO app_chat_file(id,job_id,name,mime,caption,size,data,created_at)
+      VALUES(?,?,?,?,?,?,?,?)`).bind(fileId, id, name, FILE_TYPES[ext], String(input.caption || "").slice(0, 200),
+      size, data, now).run();
+    return Response.json({ id: fileId, size });
+  }
+
   async function appChat(request, env, path) {
     if (!authorised(request, env)) return bad("forbidden", 403);
     const database = env[db];
     const now = Date.now();
-    const id = path.slice("/api/app/chat/job/".length);
+    const [id, part = ""] = path.slice("/api/app/chat/job/".length).split("/");
     if (path.startsWith("/api/app/chat/job/")) {
       if (!/^[0-9a-f-]{36}$/.test(id)) return bad("unknown chat request", 404);
+      if (part === "file" && request.method === "PUT") return appChatFile(request, database, id, now);
+      if (part) return bad("unknown chat request", 404);
       if (request.method === "GET") {
         const job = await database.prepare(`UPDATE app_chat_job SET status='running',updated_at=?
           WHERE id=? AND status='queued' AND created_at>? AND EXISTS (
@@ -644,9 +673,12 @@ export function makeAgent({
     await database.prepare(`UPDATE app_chat_job SET status='failed',answer='The agent did not finish in time. Please send your question again.',updated_at=?
       WHERE user_id=? AND status IN ('queued','running') AND created_at<=?`).bind(now, userId, now - 30 * 60000).run();
     if (path === "/api/app/chat/history") {
-      const { results } = await database.prepare(`SELECT id,question,answer,status FROM app_chat_job
-        WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 30`).bind(userId).all();
-      return Response.json({ messages: results.reverse() });
+      await database.prepare("DELETE FROM app_chat_file WHERE created_at<?").bind(now - FILE_DAYS * 86400000).run();
+      const { results } = await database.prepare(`SELECT id,question,answer,status,
+        (SELECT json_group_array(json_object('id',f.id,'name',f.name,'mime',f.mime,'size',f.size,'caption',f.caption))
+           FROM app_chat_file f WHERE f.job_id=app_chat_job.id) AS files
+        FROM app_chat_job WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 30`).bind(userId).all();
+      return Response.json({ messages: results.reverse().map((m) => ({ ...m, files: JSON.parse(m.files || "[]") })) });
     }
     if (typeof input.text !== "string" || !input.text.trim() || input.text.trim().length > 2000) return bad("Enter a message of 1 to 2000 characters.");
     const requestId = crypto.randomUUID();

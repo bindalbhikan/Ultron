@@ -12,7 +12,9 @@ def test_read_only_tools_exclude_action_and_memory_modules(monkeypatch):
     seen = []
     monkeypatch.setattr(config, "load_tools", lambda names: seen.extend(names) or [])
     chat.tools(read_only=True)
-    assert set(seen) == {"runs", "omsguru", "business", "knowledge"}
+    assert seen == list(config.get().app_tools)
+    assert {"files", "adhoc"} <= set(seen)
+    assert not {"memory", "browser", "controls"} & set(seen)
 
 
 def test_app_reply_is_private_and_reports_safe_failures(monkeypatch):

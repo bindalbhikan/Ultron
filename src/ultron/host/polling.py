@@ -66,7 +66,7 @@ def on_message(msg: dict) -> None:
     except Exception as exc:  # noqa: BLE001 - one bad message must not stop the agent
         log.exception("Answer failed")
         reply = f"❌ <b>The agent failed</b>\n<code>{telegram.esc(str(exc)[:300])}</code>"
-    telegram.send(reply, chat_id)
+    chat.deliver(reply, chat_id)
 
 
 def memory_command(cmd: str, arg: str, chat_id: str) -> str:

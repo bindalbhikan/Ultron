@@ -16,7 +16,7 @@ Every screen reads a live service; a person sees only what their role allows (`d
 | SMS only | `/sms` | none | Android: a name and a SIM, then every SMS goes to the sheet (below) |
 | Waiting for approval | `/access` | signed in | a pending or disabled account; "Check again" re-reads the access |
 | Home | `/app/home` | `app.access` | greeting by name, runs completed / running / needing attention, recent activity, the first pending approval, the next two scheduled workings, the Agent mode phone |
-| Agent | `/app/agent` | `agent.chat` | private chat with fact tools and permission-checked shared controls; queued answers refresh every 5 seconds; mutating chat requests become approvals |
+| Agent | `/app/agent` | `agent.chat` | private chat with fact tools, files and dynamic workings (a picture shows inline, any file opens by a one-use link; `docs/ARCHITECTURE.md` Dynamic workings) and permission-checked shared controls; queued answers refresh every 5 seconds; mutating chat requests become approvals |
 | Workflows | `/app/workflows` | `workflows.read` | every working on GitHub with its last run; **Run** on one the worker allows (`workflows.run`) |
 | Reports | `/app/reports` | `reports.read` | the reports the workings published, with their time and notes |
 | Approvals | `/app/approvals` | `approvals.read` | the agent's pending proposals; Approve / Decline (`approvals.decide`) starts or drops them, and Telegram is told |

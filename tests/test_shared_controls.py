@@ -35,7 +35,8 @@ def test_app_tools_add_shared_controls_without_telegram_owner_tools(monkeypatch)
         chat.tools(read_only=True)
     finally:
         controls.actor.reset(token)
-    assert set(names) == {"runs", "omsguru", "business", "knowledge", "controls"}
+    assert set(names) == set(config.get().app_tools) | {"controls"}
+    assert not {"memory", "browser"} & set(names)
 
 
 def test_control_without_identity_does_not_contact_the_service(monkeypatch):

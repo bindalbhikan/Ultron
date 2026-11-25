@@ -385,6 +385,40 @@ async function appChat(request: Request, env: Env, actor: Identity) {
   }
   return json(await worker(env, '/api/app/chat', { method: 'POST', body: JSON.stringify({ userId: actor.id, text: input.text.trim() }) }), 202);
 }
+// Files the agent attached to an app answer (migration 0012): the owner of the conversation only.
+type ChatFile = { id: string; name: string; mime: string; data: string };
+function fileResponse(file: ChatFile) {
+  const bytes = Uint8Array.from(atob(file.data), (c) => c.charCodeAt(0));
+  return new Response(bytes, { headers: { 'Content-Type': file.mime, 'Content-Length': String(bytes.length),
+    'Content-Disposition': `attachment; filename="${file.name.replace(/["\\]/g, '_')}"`,
+    'Content-Security-Policy': "sandbox; default-src 'none'" } });
+}
+async function ownFile(env: Env, actor: Identity, id: string) {
+  requirePermission(actor, 'agent.chat');
+  const file = await env.DB.prepare(`SELECT f.id,f.name,f.mime,f.data FROM app_chat_file f JOIN app_chat_job j ON j.id=f.job_id
+    WHERE f.id=? AND j.user_id=?`).bind(id, actor.id).first<ChatFile>();
+  if (!file) throw new HttpError(404, 'That file is no longer available.');
+  return file;
+}
+async function sha256(text: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function fileLink(request: Request, env: Env, actor: Identity, id: string) {
+  const file = await ownFile(env, actor, id);
+  const token = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  await env.DB.prepare('DELETE FROM app_chat_file_ticket WHERE expires_at<?').bind(Date.now()).run();
+  await env.DB.prepare('INSERT INTO app_chat_file_ticket(token_hash,file_id,expires_at) VALUES(?,?,?)')
+    .bind(await sha256(token), file.id, Date.now() + 5 * 60000).run();
+  return json({ url: `${new URL(request.url).origin}/api/agent/chat/download/${token}`, name: file.name });
+}
+async function fileDownload(env: Env, token: string) {
+  const ticket = await env.DB.prepare('DELETE FROM app_chat_file_ticket WHERE token_hash=? AND expires_at>? RETURNING file_id AS fileId')
+    .bind(await sha256(token), Date.now()).first<{ fileId: string }>();
+  const file = ticket && await env.DB.prepare('SELECT id,name,mime,data FROM app_chat_file WHERE id=?').bind(ticket.fileId).first<ChatFile>();
+  if (!file) throw new HttpError(404, 'This download link has expired. Open the file again in the app.');
+  return fileResponse(file);
+}
 async function approvalDecide(request: Request, env: Env, actor: Identity) {
   requirePermission(actor, 'approvals.decide');
   const input = await body(request);
@@ -509,6 +543,8 @@ async function route(request: Request, env: Env) {
   if (path === '/api/internal/control' && request.method === 'POST') return internalControl(request,env);
   const release = await releases(request, env);
   if (release) return release;
+  const download = path.match(/^\/api\/agent\/chat\/download\/([0-9a-f]{64})$/);
+  if (download && request.method === 'GET') return fileDownload(env, download[1]);
   const auth = createAuth(env);
   if (path.startsWith('/api/auth/')) {
     const authPath = path.slice('/api/auth'.length);
@@ -602,6 +638,9 @@ async function route(request: Request, env: Env) {
   }
   if (path === '/api/workflows/run' && request.method === 'POST') return workflowRun(request, env, user);
   if (path === '/api/agent/chat' && ['GET', 'POST'].includes(request.method)) return appChat(request, env, user);
+  const fileMatch = path.match(/^\/api\/agent\/chat\/files\/([0-9a-f-]{36})(\/link)?$/);
+  if (fileMatch && request.method === 'GET' && !fileMatch[2]) return fileResponse(await ownFile(env, user, fileMatch[1]));
+  if (fileMatch && request.method === 'POST' && fileMatch[2]) return fileLink(request, env, user, fileMatch[1]);
   if (path === '/api/approvals/decide' && request.method === 'POST') return approvalDecide(request, env, user);
   const noteMatch = path.match(/^\/api\/agent\/memory\/([a-f0-9]{6,16})$/);
   if (noteMatch && request.method === 'DELETE') return forgetNote(env, user, noteMatch[1]);
