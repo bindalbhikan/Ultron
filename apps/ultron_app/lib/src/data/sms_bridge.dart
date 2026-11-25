@@ -22,10 +22,11 @@ class SmsStatus {
     required this.smsAllowed,
     required this.notificationsAllowed,
     required this.batteryFree,
+    this.maker = '',
   });
 
   final bool on, smsAllowed, notificationsAllowed, batteryFree;
-  final String name, sim, phoneId, log;
+  final String name, sim, phoneId, log, maker;
   final int sent;
   final DateTime? lastSent;
 
@@ -42,6 +43,7 @@ class SmsStatus {
       smsAllowed: m['smsAllowed'] == true,
       notificationsAllowed: m['notificationsAllowed'] == true,
       batteryFree: m['batteryFree'] == true,
+      maker: m['maker'] as String? ?? '',
     );
   }
 }
@@ -80,6 +82,9 @@ class SmsBridge {
 
   /// Opens Android's "don't optimise battery" prompt for ULTRON.
   Future<SmsStatus> askBattery() => _call('battery');
+
+  /// Opens the phone maker's auto-start / background page for ULTRON (else the app's settings page).
+  Future<SmsStatus> openAutostart() => _call('autostart');
 
   /// Turns SMS only on: every new SMS (of [sim]: '' both, 'SIM 1', 'SIM 2') goes to the sheet as [name].
   Future<SmsStatus> start({required String name, required String sim}) =>

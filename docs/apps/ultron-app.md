@@ -141,10 +141,31 @@ working after the app is closed and after a reboot. While SMS only is on, openin
 `/sms`, not sign-in (`main.dart` asks Android first; `startPathProvider`); that screen also shows Agent mode
 (Myntra) with its last check-in when it is on (23 Nov 2026).
 
+**Signed in: Profile > SMS to OTP sheet** (25 Nov 2026; OTPs had stopped reaching the sheet: a signed-in person
+never sees the SMS only screen, so nothing could turn forwarding on, and Agent mode does not forward SMS). The same
+forwarding, switched on Profile (`ui/sms_sheet_card.dart`, Android only) under the signed-in user's name (renamed
+to it when it was on under another name); SIM choice; it shows SMS allowed, battery not restricted, the count and
+time of the last SMS sent and the recent activity, and opens Android's battery exemption and the phone maker's
+auto-start page (Xiaomi, Oppo / Realme / OnePlus, Vivo / iQOO, Huawei, Samsung; else the app's settings), which
+those phones need or they stop the app in the background.
+
 How it works on the Android side (`android/app/src/main/kotlin/.../sms`, ported from `android app/`):
 
 * `SmsReceiver` queues each SMS of the chosen SIM. `SmsUpload` (WorkManager: retries, backoff, waits for the
   network) fetches the POD of a courier SMS (`Pod`, PDFBox) and posts JSON to the worker's `POST /api/sms`.
+  **Real time** (owner, 25 Nov 2026: "real time hi chahiye", OTPs had reached the sheet late or not at all):
+  `SmsReceiver` sends each SMS to the worker itself, the moment it arrives (`goAsync`, a background thread, 8 s to
+  connect, 25 s for the sheet), with no queue in between. Only a send that cannot go through (no internet, a
+  timeout, a server error) is queued in `SmsUpload`, which is **expedited** (runs at once, also while the phone
+  sleeps, not at Android's next window for background work) and sends it the moment the network is back. A
+  courier SMS with a POD link is sent at once too, so its OTP reaches the Daily OTP sheet first (filed under the
+  portal "Unknown": the portals are in the POD); right after, `SmsUpload` (expedited) reads its POD and sends the
+  same SMS again with it (`rework=1`), and the sheet's script (`services/sms_sheet/Code.gs`, version 22) replaces
+  our Unknown row of that code with the POD's portals and counts and files the POD. The sheet skips a repeat, so a
+  send that went through but timed out is not doubled.
+* **Battery**: nothing runs between SMS (the receiver is woken by Android; one short send per SMS). Agent mode
+  checks in every minute only while work comes: after 5 empty check-ins the pause grows a minute at a time to 5
+  minutes (the bots wait 40 minutes for a phone), and goes back to 1 minute after a job.
 * `SmsService` is a foreground service ("ULTRON: SMS to sheet on") that keeps the process alive on phones that
   kill idle apps. `SmsBootReceiver` starts it again after a reboot or an update.
 * `KeepAlive` (with `AgentService` too): if a phone maker stops either service, it is started again when the app
@@ -153,11 +174,11 @@ How it works on the Android side (`android/app/src/main/kotlin/.../sms`, ported 
   is written to the Activity log.
 * **Internet off**: an SMS waits on the phone until the network is back (also across reboots) and is then
   sent; on any network or server trouble it tries again with growing pauses (up to 5 hours apart) and never gives
-  up. Only the worker's own refusal stops it: 403 (phone blocked) or 400 (bad request). Agent mode checks in every
-  minute while offline, and keeps sending a finished job's answers for up to 6 hours.
+  up. Only the worker's own refusal stops it: 403 (phone blocked) or 400 (bad request). Agent mode keeps checking
+  in while offline (1 to 5 minutes apart), and keeps sending a finished job's answers for up to 6 hours.
 * `SmsImport` sends the inbox of the last 60 days on a tap. The sheet skips SMS it already has.
 * `MainActivity`'s `ultron/sms` channel (`lib/src/data/sms_bridge.dart`) handles status, start, stop,
-  permissions, battery and the old SMS.
+  permissions, battery, auto-start (the maker's page) and the old SMS.
 
 The phone keeps its random id and the name. It never holds the sheet's link or key: the worker holds them.
 `--dart-define=ULTRON_WORKER=...` points another seller's build at their own worker. A phone blocked in the

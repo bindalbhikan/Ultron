@@ -22,6 +22,9 @@ object Pod {
     class Result(val pdfBase64: String = "", val text: String = "", val error: String = "", val htmlBase64: String = "")
 
     /** null when the SMS is not a courier's or has no link. An HTML page comes back as htmlBase64. */
+    /** A courier SMS with a POD link: it needs the slower path (the POD is read first). */
+    fun needed(from: String, body: String) = COURIERS.containsMatchIn(from) && LINK.containsMatchIn(body)
+
     fun fetch(context: Context, from: String, body: String): Result? {
         if (!COURIERS.containsMatchIn(from)) return null
         val link = LINK.find(body)?.value?.trimEnd('.', ',', ')') ?: return null

@@ -322,6 +322,21 @@ function returns(from, body, deviceTime, p) {
   const sheetable = sms.status === 'RETURN' || (sms.courier === 'Ekart' && EKART_SELLERS[sms.seller] === 'Nykaa');
   let filled = sms.otp && sheetable ? true : null;
 
+  // The app sends a courier SMS at once, before its POD is read (owner, 25 Nov 2026: the OTP in real time), so
+  // its code was filed under the portal "Unknown"; the same SMS sent again with the POD (rework=1) names the
+  // portals: our Unknown row of that code and its log entry give way to them.
+  if (p.rework === '1' && named.length && !groups.Unknown && sms.otp) {
+    const ph = sheetPortal('Unknown', sms.courier);
+    const phRef = [sms.courier, 'Unknown', sms.status, day].join('|');
+    for (let i = otpRows.length - 1; otpSheet && i >= 0; i--) {
+      const r = otpRows[i];
+      if (r[0] === day && r[1] === ph && r[3] === sms.otp && ours(r)) { otpSheet.deleteRow(i + 2); otpRows.splice(i, 1); }
+    }
+    for (let i = logRows.length - 1; i >= 0; i--) {
+      if (logRows[i][0] === phRef && logRows[i][4] === sms.otp) { logTab.deleteRow(i + 2); logRows.splice(i, 1); }
+    }
+  }
+
   for (const portal of Object.keys(groups)) {
     const awbs = groups[portal];
     const sp = sheetPortal(portal, sms.courier);

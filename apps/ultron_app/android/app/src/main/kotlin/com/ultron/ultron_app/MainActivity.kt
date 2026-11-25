@@ -107,6 +107,10 @@ class MainActivity : FlutterActivity() {
                     askBattery()
                     result.success(status())
                 }
+                "autostart" -> {
+                    openAutostart()
+                    result.success(status())
+                }
                 "sendOld" -> {
                     val days = (call.argument<Int>("days") ?: 60).coerceIn(1, 365)
                     if (!SmsPrefs.isOn(this) || !granted(Manifest.permission.READ_SMS)) {
@@ -145,6 +149,30 @@ class MainActivity : FlutterActivity() {
         startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
     }
 
+    /** The phone maker's own "auto-start" / background setting (Xiaomi, Oppo, Realme, Vivo, Huawei, Samsung kill
+     *  apps without it, also with the battery exemption); else the app's own settings page. */
+    private fun openAutostart() {
+        val pages = listOf(
+            "com.miui.securitycenter" to "com.miui.permcenter.autostart.AutoStartManagementActivity",
+            "com.coloros.safecenter" to "com.coloros.safecenter.permission.startup.StartupAppListActivity",
+            "com.coloros.safecenter" to "com.coloros.safecenter.startupapp.StartupAppListActivity",
+            "com.oplus.safecenter" to "com.oplus.safecenter.permission.startup.StartupAppListActivity",
+            "com.vivo.permissionmanager" to "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
+            "com.iqoo.secure" to "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager",
+            "com.huawei.systemmanager" to "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
+            "com.samsung.android.lool" to "com.samsung.android.sm.battery.ui.BatteryActivity",
+        )
+        for ((pkg, cls) in pages) {
+            try {
+                startActivity(Intent().setClassName(pkg, cls).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return
+            } catch (_: Exception) {
+                // not this maker's page
+            }
+        }
+        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+    }
+
     private fun status(): Map<String, Any> = mapOf(
         "on" to SmsPrefs.isOn(this),
         "name" to SmsPrefs.name(this),
@@ -156,6 +184,7 @@ class MainActivity : FlutterActivity() {
         "smsAllowed" to (granted(Manifest.permission.RECEIVE_SMS) && granted(Manifest.permission.READ_SMS)),
         "notificationsAllowed" to (Build.VERSION.SDK_INT < 33 || granted(Manifest.permission.POST_NOTIFICATIONS)),
         "batteryFree" to getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName),
+        "maker" to Build.MANUFACTURER,
     )
 
     companion object {

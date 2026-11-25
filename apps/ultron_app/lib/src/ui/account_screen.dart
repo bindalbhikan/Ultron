@@ -7,6 +7,7 @@ import '../app_info.dart';
 import '../domain/access.dart';
 import '../state/providers.dart';
 import 'components.dart';
+import 'sms_sheet_card.dart';
 import 'update_notice.dart';
 
 void showUltronAbout(BuildContext context) => showAboutDialog(
@@ -116,6 +117,7 @@ class AccountScreen extends ConsumerWidget {
               onTap: () => context.go('/app/control'),
             ),
           const UpdateNotice(full: true),
+          const SmsSheetCard(),
           const SectionHeading('Appearance'),
           SegmentedButton<ThemeMode>(
             segments: const [

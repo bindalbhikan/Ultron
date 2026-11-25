@@ -94,6 +94,7 @@ class AgentService : Service() {
 
     private fun loop() {
         AgentPrefs.addLog(this, "Agent on")
+        var idle = 0
         while (running && AgentPrefs.isOn(this)) {
             try {
                 val job = call("next", null, JSONObject()
@@ -101,7 +102,10 @@ class AgentService : Service() {
                     .put("battery", battery())
                     .put("version", "ultron-app").toString())
                 AgentPrefs.markPoll(this)
-                if (job.optString("id").isNotEmpty()) work(job)
+                if (job.optString("id").isNotEmpty()) {
+                    work(job)
+                    idle = 0
+                } else idle++
             } catch (e: Refused) {
                 AgentPrefs.addLog(this, "Agent: this phone's token was revoked; turn Agent mode on again in the app")
                 AgentPrefs.turnOff(this)
@@ -109,7 +113,8 @@ class AgentService : Service() {
             } catch (e: Exception) {
                 AgentPrefs.addLog(this, "Agent: worker not reached (${e.javaClass.simpleName})")
             }
-            try { Thread.sleep(POLL_MS) } catch (_: InterruptedException) { break }
+            // the bots wait 40 minutes for a phone: 1 minute after work, then 2, 3, 4, at most 5 when idle
+            try { Thread.sleep(pause(idle)) } catch (_: InterruptedException) { if (!running) break }
         }
         AgentPrefs.addLog(this, "Agent off")
         stopSelf()
@@ -222,6 +227,10 @@ class AgentService : Service() {
         private const val CHANNEL = "agent"
         private const val NOTE_ID = 8
         private const val POLL_MS = 60_000L
+        private const val MAX_POLL_MS = 5 * 60_000L
+
+        /** The pause before the next check-in after [idle] empty ones in a row. */
+        fun pause(idle: Int): Long = minOf(POLL_MS * (1 + idle / 5), MAX_POLL_MS)
         private const val PART = 300
         private const val SEND_FOR_MS = 6 * 60 * 60 * 1000L
         const val ACTION_STOP = "stop"
