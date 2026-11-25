@@ -59,7 +59,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 Gaps the sync found:
 
 <!-- AUTO:gaps -->
-- `/mastersheet` has no button in the Telegram menu (`SCREENS` in `worker/src/worker.js`)
+- none: every bot has its page and its workflow is watched
 <!-- /AUTO:gaps -->
 
 ## The agent's folder: Drive `BINDAL EXPORTS/AGENT WORK`
@@ -71,7 +71,7 @@ and folder kept its Drive id):
 AGENT WORK/
   AGENT REPORT WORK SCHEDULE REPORT.xlsx   the agent's reporting sheet (below)
   AGENT LOGS/<OCT-26>/<29-10-26>/          every run's hyper log
-  MYNTRA/   MYNTRA DAILY REPORTS/ (up to 15 Nov 2026 only), MYNTRA DAILY RETURN DELIVERY REPORT.xlsx, MYNTRA ZERO TD UPDATE SHEET.xlsx,
+  MYNTRA/   MYNTRA DAILY REPORTS/ (up to 15 Nov 2026 only), MYNTRA DAILY RETURN DELIVERY REPORT.xlsx (the zero TD sheet retired 25 Nov 2026: styles from MASTER SHEET),
             MYNTRA ZERO TD SHEETS/, MYNTRA SIZE CHART WORKING/, MYNTRA ORDER RETURN REPORTS .../
   AJIO/     Ajio Daily Order Tat Check Working/ (TAT master), Ajio Ads Gap Working/
   DAILY REPORTING/   DAILY SALE REPORT BINDAL/ (SALE REPORT.xlsx, PORTAL SALE REPORT.xlsx), VMS/ (the daily reports in one place)
@@ -81,7 +81,7 @@ AGENT WORK/
                      return reports by the return analysis on the 10th (replaced by the 15th's fresh second
                      try); the business reporting reads them (core/portal_reports.py)
   BUSINESS REPORTING/ the owner's Myntra sale / return / payment analysis (CONTEXT.md and scripts in it)
-  MASTER SHEET/      MasterSheet.xlsx, the one SKU master every working reads (core/master_sheet.py): MasterData rebuilt
+  MASTER SHEET/      MasterSheet.xlsx, the one SKU master every working and the chat agent read (core/master_sheet.py): MasterData rebuilt
                      from OMSGuru at 1 AM (master-sheet), REMOVED LISTINGS, the owner's Master Sku / Fabric Code /
                      Launch Date & Size Count (owner, 24 Nov 2026; the old copies in BUSINESS REPORTING and RETURN
                      ANALYSIS/Supporting are no longer read)

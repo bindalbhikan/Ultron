@@ -71,7 +71,7 @@ Keep PROJECT_CONTEXT.md current with the active task and verified state.
   A switch never changes a number: the old and new code give the same output on the same input first.
   One page per library change, in order, with its status: `docs/libraries/` (run `python -m ruff check src tests run.py` before a commit).
 - **Centralise, do not copy**: a portal login comes from `workings/core/clients.py`, a retry from
-  `ultron/core/retry.py`, an AGENT WORK folder from `agent_folder()`, a new xlsx from `workings/core/xlsx.py`,
+  `ultron/core/retry.py`, an AGENT WORK folder from `agent_folder()`, a new xlsx from `workings/core/xlsx.py`, any SKU / style / brand / design / portal id from the one SKU master (`AGENT WORK/MASTER SHEET/MasterSheet.xlsx`, read only through `workings/core/master_sheet.py`; the chat agent's `sku_lookup` / `master_sheet_query`; no working keeps its own SKU sheet: owner, 25 Nov 2026),
   a portal answer is checked in `workings/core/shapes.py`, ids / columns via `workings/core/tables.py`, the Myntra accounts from `portals/myntra.py` `SELLERS` / `ACCOUNTS` (a new account is added there only); what two workings both need goes into one shared place (`docs/CENTRALISE.md`).
 - `netcap/` (raw browser captures) is local only: it holds cookies and customer data. Only names
   (paths, field names, meanings) go into `docs/knowledge/`, never values.
@@ -101,7 +101,7 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 ## Gaps the sync found (fix them)
 
 <!-- AUTO:gaps -->
-- `/mastersheet` has no button in the Telegram menu (`SCREENS` in `worker/src/worker.js`)
+- none: every bot has its page and its workflow is watched
 <!-- /AUTO:gaps -->
 
 ## Working on this machine (owner's Windows PC)

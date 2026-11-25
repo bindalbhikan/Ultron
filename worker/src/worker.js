@@ -264,6 +264,9 @@ const SCHEDULE = [
   { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "ticketfollowup" },
   { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "erpomsreturn" },
   ...INV_PUSH_HOURS.map((h) => ({ ist: "every 3 hours from 6 AM", cron: `30 ${h} * * *`, cmd: "invpush" })),
+  // the one SKU master every working and the agent read (AGENT WORK/MASTER SHEET/MasterSheet.xlsx), rebuilt from
+  // OMSGuru's channel listings before the day's first report (19:30 UTC = 1:00 AM IST the next day)
+  { ist: "1:00 AM daily", cron: "30 19 * * *", cmd: "mastersheet" },
 ];
 
 // The button menu. Every screen edits the same message. Button data (64 bytes at most):
@@ -357,7 +360,7 @@ const SCREENS = {
       [["⏰ SLA warning", "r:sla"], ["📉 Stock-out", "r:stock"]],
       [["🏷 Label check", "r:labels"], ["🧩 Listing health", "r:listings"]],
       [["🔄 Inventory push", "m:inv"], ["🌙 Evening summary", "r:evening"]],
-      [["📨 Returns SMS / POD catch-up", "r:smscatchup"]],
+      [["📨 Returns SMS / POD catch-up", "r:smscatchup"], ["📋 MasterSheet", "r:mastersheet"]],
       back(),
     ],
   },

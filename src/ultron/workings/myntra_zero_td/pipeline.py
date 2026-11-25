@@ -1,11 +1,11 @@
-"""Myntra zero TD (every 2 hours 7 AM - 7 PM, Monday to Saturday): which styles of the MYNTRA ZERO TD
-UPDATE SHEET are live on the buyer side (www.myntra.com) with stock and selling at MRP, i.e. with
-no trade discount on.
+"""Myntra zero TD (every 2 hours 7 AM - 7 PM, Monday to Saturday): which live Myntra styles of each account are
+live on the buyer side (www.myntra.com) with stock and selling at MRP, i.e. with no trade discount on.
 
-The sheet (Drive AGENT WORK/MYNTRA/MYNTRA ZERO TD UPDATE SHEET.xlsx) has one tab per account and month,
-"MAIN-SEP-26", "DBCC-SEP-26", "FMCC-SEP-26" (ARTICLE TYPE, BRAND, STYLE ID, MY SKU, FINAL SKU, COST,
-LIQ STYLES); the last tab of each account is the one read. Every style is looked up on the buyer
-side (spider.py). A style is
+The styles come from the one SKU master (owner, 25 Nov 2026: no separate zero TD sheet any more; the old MYNTRA ZERO
+TD UPDATE SHEET was retired): Drive AGENT WORK/MASTER SHEET/MasterSheet.xlsx, sheet MASTER DATA (core/master_sheet.py),
+every listing of a Myntra channel with a MYNTRA STYLE ID, by account (MYNTRA / MYNTRA PPMP = MAIN, MYNTRA DBCC,
+MYNTRA FMCC, MYNTRA EXIM), one row per style: BRAND, STYLE ID, MY SKU, MASTER STYLE CODE, COLOR.
+Every style is looked up on the buyer side (spider.py). A style is
   ZERO TD       every size in stock sells at MRP
   PART ZERO TD  some sizes in stock sell at MRP, others with a discount
   DISCOUNTED    every size in stock sells below MRP
@@ -16,7 +16,7 @@ one workbook: a tab per account with its ZERO TD and PART ZERO TD styles, SUMMAR
 when some styles had no answer. The workbook is also kept on Drive:
 AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/OCT-26/26-10-26/ZERO TD 26-10-26 10.00 AM.xlsx.
 
-Tables are Polars: the sheet read by pl.read_excel (calamine), the checks joined on STYLE ID; the workbook
+Tables are Polars: the master read by core/master_sheet.read (calamine), the checks joined on STYLE ID; the workbook
 written by xlsxwriter (a style id is a link to its page).
 """
 from __future__ import annotations
@@ -37,10 +37,9 @@ from ..core.config import csv_list, env, num, output_dir
 log = logging.getLogger("bindal.myntra_zero_td")
 
 AREA = "MYNTRA"   # the agent's folder is kept by portal: AGENT WORK/MYNTRA (since 29 Oct 2026)
-SOURCE = "MYNTRA ZERO TD UPDATE SHEET.xlsx"
 FOLDER = "MYNTRA ZERO TD SHEETS"   # AGENT WORK/MYNTRA/<FOLDER>/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx
 ACCOUNTS = list(MYNTRA_ACCOUNTS)
-SHEET_COLUMNS = ["ARTICLE TYPE", "BRAND", "STYLE ID", "MY SKU", "FINAL SKU", "COST", "LIQ STYLES"]
+SHEET_COLUMNS = ["BRAND", "STYLE ID", "MY SKU", "MASTER STYLE CODE", "COLOR"]   # from the MasterSheet
 CHECK_COLUMNS = ["STATUS", "MRP", "SELLING PRICE", "SIZES AT MRP", "STOCK AT MRP", "TOTAL STOCK",
                  "SELLER", "LINK"]
 CHECK_SCHEMA = {"STYLE ID": pl.Int64, "STATUS": pl.Utf8, "MRP": pl.Float64, "SELLING PRICE": pl.Float64,
@@ -50,31 +49,35 @@ FLAGGED = ("ZERO TD", "PART ZERO TD")
 ALL_TAB = "ALL ACCOUNTS"
 TOP = 5               # styles named per account in the message
 MAX_UNCHECKED = 0.05  # more styles than this without an answer fails the run
-SKU = pl.coalesce("FINAL SKU", "MY SKU").alias("SKU")
+SKU = pl.coalesce("MASTER STYLE CODE", "MY SKU").alias("SKU")
 
 
 def read_source(path: Path, accounts: list[str]) -> dict[str, pl.DataFrame]:
-    """{account: its tab's rows (SHEET_COLUMNS), one per style id}; the last tab of each account wins."""
-    tabs = pl.read_excel(path, sheet_id=0, engine="calamine", raise_if_empty=False)
+    """{account: its Myntra styles in the MasterSheet at path (SHEET_COLUMNS), one row per style id, the first value
+    a style's listings give for each column}. Only MASTER DATA: a listing OMSGuru dropped is not checked."""
+    from ..core import master_sheet as ms
+    from ..master_sheet.build import MYNTRA_ACCOUNT
+    df = ms.read(path, removed=False)
+    if "MYNTRA STYLE ID" not in df.columns or "Channel Name" not in df.columns:
+        raise RuntimeError(f"{ms.FILE} has no MYNTRA STYLE ID / Channel Name column (columns: {', '.join(df.columns)})")
+    sid = pl.col("MYNTRA STYLE ID").cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False).cast(pl.Int64)
+    channel = pl.col("Channel Name").cast(pl.Utf8).str.strip_chars().str.to_uppercase()
+    df = (df.with_columns(sid.alias("STYLE ID"), channel.replace_strict(MYNTRA_ACCOUNT, default=None).alias("ACCOUNT"),
+                          pl.col("Brand").alias("BRAND") if "Brand" in df.columns else pl.lit(None, pl.Utf8).alias("BRAND"))
+            .filter(pl.col("STYLE ID").is_not_null() & pl.col("ACCOUNT").is_in(accounts)))
+    cols = [c for c in SHEET_COLUMNS if c != "STYLE ID"]
+    df = df.with_columns(*[pl.lit(None, pl.Utf8).alias(c) for c in cols if c not in df.columns])
     out: dict[str, pl.DataFrame] = {}
-    for title, df in tabs.items():
-        account = str(title).split("-")[0].strip().upper()
-        if account not in accounts:
-            continue
-        df = df.rename({c: str(c).strip().upper() for c in df.columns})
-        if "STYLE ID" not in df.columns:
-            log.warning("Tab %s has no STYLE ID column: skipped", title)
-            continue
-        sid = pl.col("STYLE ID").cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False).cast(pl.Int64)
-        df = (df.with_columns(sid.alias("STYLE ID")).filter(pl.col("STYLE ID").is_not_null())
-                .unique("STYLE ID", keep="first", maintain_order=True))
-        out[account] = df.select(*[pl.col(c) if c in df.columns else pl.lit(None).alias(c) for c in SHEET_COLUMNS])
-        log.info("%s: %d styles from tab %s", account, out[account].height, title)
-    missing = [a for a in accounts if a not in out]
-    if len(missing) == len(accounts):
-        raise RuntimeError(f"{SOURCE} has no tab of {', '.join(accounts)} (tabs: {', '.join(map(str, tabs))})")
-    for a in missing:
-        log.warning("%s has no %s tab", SOURCE, a)
+    for account in accounts:
+        rows = (df.filter(pl.col("ACCOUNT") == account).group_by("STYLE ID", maintain_order=True)
+                  .agg(*[pl.col(c).drop_nulls().first() for c in cols]).select(SHEET_COLUMNS))
+        if rows.height:
+            out[account] = rows
+            log.info("%s: %d styles from %s", account, rows.height, ms.FILE)
+        else:
+            log.warning("%s has no Myntra style of %s", ms.FILE, account)
+    if not out:
+        raise RuntimeError(f"{ms.FILE} has no Myntra style of {', '.join(accounts)}")
     return out
 
 
@@ -268,11 +271,8 @@ def run(args) -> int:
     if args.source:
         source = Path(args.source)
     else:
-        from ..core.drive import agent_folder
-        source = agent_folder(AREA, create=True).download(
-            SOURCE, Path(tempfile.mkdtemp(prefix="zero_td_")) / SOURCE)
-        if source is None:
-            raise RuntimeError(f"{SOURCE} not found in AGENT WORK/MYNTRA on Drive")
+        from ..core import master_sheet as ms
+        source = ms.download(Path(tempfile.mkdtemp(prefix="zero_td_")))     # AGENT WORK/MASTER SHEET/MasterSheet.xlsx
     sheets = read_source(source, accounts)
     if args.limit:
         sheets = {a: df.head(args.limit) for a, df in sheets.items()}
@@ -313,7 +313,7 @@ def run(args) -> int:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="run.py myntra-zero-td",
                                 description="Styles live on www.myntra.com with stock at MRP (no TD), per account")
-    p.add_argument("--source", help="a local copy of the sheet instead of the one on Drive")
+    p.add_argument("--source", help="a local MasterSheet.xlsx instead of the one on Drive")
     p.add_argument("--limit", type=int, default=0, help="only the first N styles of each account (a test)")
     p.add_argument("--no-upload", action="store_true", help="keep the workbook in output/, not on Drive")
     p.add_argument("--no-telegram", action="store_true", help="print the message instead of sending it")

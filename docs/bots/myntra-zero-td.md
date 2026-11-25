@@ -2,12 +2,15 @@
 
 **When**: every 2 hours from 7 AM to 7 PM IST (7, 9, 11 AM, 1, 3, 5, 7 PM), Monday to Saturday, plus one fixed run every day (Sunday too) at 10 AM (`myntra-zero-td.yml`, started by the
 worker's cron, `SCHEDULE` in `worker/src/worker.js`). By hand: `/myntrazerotd`, the 🏷 Zero TD
-button on the Myntra menu, or run the workflow. About 1-2 minutes for ~5,900 styles.
+button on the Myntra menu, or run the workflow. About 2 minutes for ~5,500 styles (8,800 account checks).
 
-* Source: Drive `BINDAL EXPORTS/AGENT WORK/MYNTRA/MYNTRA ZERO TD UPDATE SHEET.xlsx`, one tab per account
-  and month (`MAIN-SEP-26`, `DBCC-SEP-26`, `FMCC-SEP-26`; ARTICLE TYPE, BRAND, STYLE ID, MY SKU,
-  FINAL SKU, COST, LIQ STYLES). The last tab of each account is read; a new month = a new tab at
-  the end. Accounts: `MYNTRA_ZERO_TD_ACCOUNTS` (default MAIN, DBCC, FMCC).
+* Source: the one SKU master (owner, 25 Nov 2026), Drive `AGENT WORK/MASTER SHEET/MasterSheet.xlsx`, sheet MASTER DATA
+  (`workings/core/master_sheet.py`; REMOVED LISTINGS not checked): every Myntra listing with a MYNTRA STYLE ID, by
+  account (MYNTRA + MYNTRA PPMP = MAIN, MYNTRA DBCC, MYNTRA FMCC, MYNTRA EXIM), one row per style: BRAND, STYLE ID,
+  MY SKU, MASTER STYLE CODE, COLOR (each the first value the style's listings give). The old MYNTRA ZERO TD UPDATE
+  SHEET (a hand list per account and month with ARTICLE TYPE, COST, LIQ STYLES) was trashed on 25 Nov 2026 and is
+  no longer read; its brand / SKU agreed with the MasterSheet on every style. Accounts: `MYNTRA_ZERO_TD_ACCOUNTS`
+  (default every account of `portals/myntra.py`). 25 Nov 2026: MAIN 4,220, DBCC 2,225, FMCC 2,351, EXIM 6 styles.
 * Each style is looked up on the buyer side, the product API behind `https://www.myntra.com/<style id>`
   (`/gateway/v2/product/<style id>`, a Scrapy spider: `myntra_zero_td/spider.py`). No login: the
   home page first gives the session cookie the API needs (without it: 401).
@@ -16,7 +19,7 @@ button on the Myntra menu, or run the workflow. About 1-2 minutes for ~5,900 sty
   CHECKED (no answer after 3 retries).
 * Telegram: one message, per account the styles at MRP and their stock, the 5 with most stock,
   then the workbook: SUMMARY, ALL ACCOUNTS (every account's styles at MRP together, each style
-  once: STYLE ID, SKU (FINAL SKU, else MY SKU), SELLING PRICE), a tab per account (its ZERO TD / PART ZERO TD styles: the sheet's
+  once: STYLE ID, SKU (MASTER STYLE CODE, else MY SKU), SELLING PRICE), a tab per account (its ZERO TD / PART ZERO TD styles: the master's
   columns + STATUS, MRP, SELLING PRICE, SIZES AT MRP, STOCK AT MRP, TOTAL STOCK, SELLER, LINK),
   NOT CHECKED when some had no answer.
 * Drive: the same workbook in `AGENT WORK/MYNTRA/MYNTRA ZERO TD SHEETS/<OCT-26>/<26-10-26>/ZERO TD 26-10-26 10.00 AM.xlsx`.
