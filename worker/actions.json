@@ -655,5 +655,20 @@
         "type": "string"
       }
     }
+  },
+  "deploy": {
+    "workflow": "cloudflare-deploy.yml",
+    "inputs": [
+      "targets"
+    ],
+    "about": "Deploy the Cloudflare parts from main: D1 migrations, app API, Telegram worker, dashboard. inputs: targets (all, or a comma list of migrations, app-api, worker, dashboard)",
+    "chat": true,
+    "fields": {
+      "targets": {
+        "description": "What to deploy: all, or a comma list of migrations, app-api, worker, dashboard",
+        "default": "all",
+        "type": "string"
+      }
+    }
   }
 }

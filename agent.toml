@@ -124,3 +124,4 @@ businessreport = { workflow = "business-report.yml", inputs = ["portals", "from"
 portalreports = { workflow = "portal-reports.yml", inputs = ["month", "from", "to", "kinds", "portals", "fresh", "no_upload"], about = "Save portal reports" }
 portalsale = { workflow = "portal-sale.yml", inputs = ["from", "to", "no_upload"], about = "Portal sale report from saved data" }
 codechange = { workflow = "code-change.yml", inputs = ["request"], about = "Make a working permanent or change the code: a coding agent writes it (code, tests, docs) and opens a pull request for the owner to merge; nothing goes live until merged. inputs: request (what to build, in plain words)" }
+deploy = { workflow = "cloudflare-deploy.yml", inputs = ["targets"], about = "Deploy the Cloudflare parts from main: D1 migrations, app API, Telegram worker, dashboard. inputs: targets (all, or a comma list of migrations, app-api, worker, dashboard)" }

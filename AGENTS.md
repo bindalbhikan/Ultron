@@ -161,6 +161,8 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   `%LOCALAPPDATA%` writes into its package folder); run with `.venv\Scripts\python`. Not plain `uv run` (it drops the extras), no pip.
 - Pull before you start (`git pull`): the Docs sync workflow may have committed on main.
 - In bash heredocs `\\n` / `\\b` become real control characters; write regexes with the Edit/Write tools.
+- Deploy without a PC: the **Cloudflare deploy** workflow (`cloudflare-deploy.yml`, Actions tab or the agent's `deploy`
+  action after approval) applies the D1 migrations, then deploys the app API, worker and dashboard from main.
 - Deploy the worker from `worker/`, the dashboard from `dashboard/` and the app API from `services/app_api/`
   (`npx wrangler deploy`); the repo root has no `wrangler.toml`. The SMS sheet's Apps Script (`services/sms_sheet/
   Code.gs`): clasp (`npx @google/clasp`), a new version of the same web app deployment so its URL stays (ids in the
