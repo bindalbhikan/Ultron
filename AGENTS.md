@@ -132,6 +132,7 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 - Approval decisions claim D1 before dispatch; ambiguous failures cannot dispatch again automatically.
   Phone jobs/results use independent D1 rows rather than a shared KV job slot.
 - App and Telegram controls are central (owner, 24-25 Nov 2026): agent.toml generates worker/actions.json;
+  The work-schedule job must receive DASHBOARD_URL and DASHBOARD_TOKEN for its shared history read.
   worker/control.js checks permissions and executes operations for both. Preview never starts or changes
   anything. Runtime schedules preserve revision history, which work-schedule reporting also reads.
 - App chat stays private per user: app_chat_job in D1, agent-chat.yml dispatched with a request id only.

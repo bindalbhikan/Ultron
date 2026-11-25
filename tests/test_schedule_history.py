@@ -4,6 +4,17 @@ from datetime import date, datetime
 from ultron.workings.work_schedule import pipeline as schedule
 
 
+
+def test_report_job_receives_shared_schedule_credentials():
+    from pathlib import Path
+    import yaml
+    path = Path(__file__).resolve().parents[1] / ".github/workflows/agent-watch.yml"
+    workflow = yaml.load(path.read_text(encoding="utf-8"), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
+    variables = workflow["jobs"]["schedule"]["env"]
+    assert variables["DASHBOARD_URL"] == "${{ secrets.DASHBOARD_URL }}"
+    assert variables["DASHBOARD_TOKEN"] == "${{ secrets.DASHBOARD_TOKEN }}"
+
+
 def change(at, target, enabled=True, *, day=0):
     return {"at": datetime.fromisoformat(at), "origin": 540, "target": target, "enabled": enabled, "day": day}
 

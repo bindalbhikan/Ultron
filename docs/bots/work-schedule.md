@@ -34,6 +34,7 @@ The app and Telegram can pause/resume or move future starts through shared contr
 The report reads the operations service's baseline and revision history, and counts a slot only while its
 revision was active. Earlier days remain unchanged. A task with changed times is labelled
 Changed (app schedule) rather than showing one historical time as if it applied all month.
+The schedule job receives DASHBOARD_URL and DASHBOARD_TOKEN to read this source.
 An unavailable or incomplete shared source fails the rebuild instead of publishing guessed due figures.
 Default TASKS and WORK remain the documented baseline.
 
