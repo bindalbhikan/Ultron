@@ -1,6 +1,6 @@
 # OMSGuru inventory push — `python run.py inv-push`
 
-**When**: every 3 hours, 12 / 3 / 6 / 9 AM and PM IST (`inv-push.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). On demand: run the workflow by hand
+**When**: failed listing retries daily at 10 AM and 3 PM IST. Full channel pushes run every 3 hours, 12 / 3 / 6 / 9 AM and PM IST (`inv-push.yml`, started by the worker's cron, `SCHEDULE` in `worker/src/worker.js`). On demand: run the workflow by hand
 (`dry_run` = 1 only lists the channels).
 
 * Channel > List Channels in OMSGuru: every channel with **Inventory Sync Enabled = Yes** gets
@@ -13,3 +13,5 @@
 * Telegram after every run: one message, each channel ✅ pushed or ❌ failed (a failed channel
   does not stop the others). Not sent on a dry run.
 * GitHub turns off scheduled workflows of a repo with no commits for 60 days; it says so by email.
+
+Use `python run.py inv-push --retry-failed` or the inv-retry workflow to retry the Failed queue in each warehouse. The worker starts it at 10 AM and 3 PM IST daily. A dry run counts listings.

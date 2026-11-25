@@ -101,7 +101,7 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
 ## Gaps the sync found (fix them)
 
 <!-- AUTO:gaps -->
-- none: every bot has its page and its workflow is watched
+- `inv-retry.yml` (OMSGuru failed listing retry) belongs to no bot of `run.py`
 <!-- /AUTO:gaps -->
 
 ## Working on this machine (owner's Windows PC)
@@ -169,3 +169,5 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   (`<BOT> <time> FAIL #<run id>.log`).
 - **Every edit updates the docs and the memory** (owner, 23 Nov 2026): this file and the pages in the same commit,
   `python scripts/docs/sync_docs.py` before it, and the agent memory note right after (not only at the end).
+
+OMSGuru failed inventory is warehouse-specific. Select a warehouse before reading its Failed queue.

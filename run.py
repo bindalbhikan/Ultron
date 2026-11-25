@@ -9,7 +9,7 @@
   returns    monthly return analysis      python run.py returns --help
   myntra-spf 10 AM Myntra SPF master     python run.py myntra-spf --help
   ajio-ads   AJIO ads / TOT gap, monthly  python run.py ajio-ads --help
-  inv-push   OMSGuru inventory push, 3-hourly  python run.py inv-push --help
+  inv-push   OMSGuru inventory push, 3-hourly (failed retries at 10 AM and 3 PM IST with --retry-failed)  python run.py inv-push --help
   agent-watch  the agent checks a finished run  python run.py agent-watch --help
   agent-chat   answer a Telegram message      python run.py agent-chat --help
   morning    9:30 AM sale vs last week     python run.py morning --help

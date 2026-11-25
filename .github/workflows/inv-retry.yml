@@ -1,0 +1,53 @@
+name: OMSGuru failed listing retry
+
+on:
+  # Started by the Telegram worker's cron (SCHEDULE in worker/src/worker.js) or by hand: GitHub's
+  # own schedule started runs late or not at all.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "1 = count failed listings only"
+        default: ""
+
+concurrency:
+  group: inv-retry
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TZ: Asia/Kolkata
+      RUN_MODE: github-actions
+      # the repo is public: the run's log and output are uploaded only encrypted (scripts/github/ci_run.sh)
+      ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+      # hyper log (core/hyperlog.py): the run's detailed log into Drive AGENT WORK/AGENT LOGS
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+      AGENT_WORK_FOLDER_ID: ${{ vars.AGENT_WORK_FOLDER_ID }}
+      OMSGURU_EMAIL: ${{ secrets.OMSGURU_EMAIL }}
+      OMSGURU_PASSWORD: ${{ secrets.OMSGURU_PASSWORD }}
+      OMSGURU_OTP: ${{ secrets.OMSGURU_OTP }}
+      INV_PUSH_SKIP: ${{ vars.INV_PUSH_SKIP }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      IN_DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Run push
+        run: |
+          set --
+          if [ -n "$IN_DRY_RUN" ]; then set -- --dry-run; fi
+          bash scripts/github/ci_run.sh inv-push --retry-failed "$@"
+      - name: Upload run output (encrypted)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inv-push-${{ github.run_id }}
+          path: secure/
+          if-no-files-found: ignore
+          retention-days: 7

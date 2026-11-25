@@ -133,6 +133,7 @@ TASKS = [
     Task("Myntra grouping status", "myntra-grouping.yml", _at(20), "DAILY"),
     Task("Evening summary", "evening.yml", _at(20), "DAILY"),
     Task("Returns SMS catch-up", "sms-catchup.yml", tuple(h * 60 for h in (9, 12, 15, 18, 21)), "DAILY (5 times)", when="every 3 hours, 9 AM - 9 PM"),
+    Task("OMSGuru failed listing retry", "inv-retry.yml", _at(10) + _at(15), "DAILY"),
     Task("OMSGuru inventory push", "inv-push.yml", tuple(h * 60 for h in range(6, 28, 3)), "DAILY (8 times)"),
 ]
 # the PORTAL column: the portal a task works on (by its workflow; a task of another portal than its
@@ -140,7 +141,7 @@ TASKS = [
 PORTAL_OF_WORKFLOW = {
     "ajio-spf.yml": "AJIO", "ajio-ads.yml": "AJIO", "ajio-tat.yml": "AJIO", "flipkart-tat.yml": "FLIPKART",
     "myntra-spf.yml": "MYNTRA", "myntra-otp.yml": "MYNTRA", "myntra-reports.yml": "MYNTRA",
-    "myntra-zero-td.yml": "MYNTRA", "myntra-tat.yml": "MYNTRA", "myntra-grouping.yml": "MYNTRA", "vms.yml": "MYNTRA", "inv-push.yml": "OMSGURU"}
+    "myntra-zero-td.yml": "MYNTRA", "myntra-tat.yml": "MYNTRA", "myntra-grouping.yml": "MYNTRA", "vms.yml": "MYNTRA", "inv-retry.yml": "OMSGURU", "inv-push.yml": "OMSGURU"}
 PORTAL_OF_TASK: dict[str, str] = {}   # portal-reports.yml / returns.yml: ALL CHANNELS
 
 
@@ -184,6 +185,7 @@ WORK = {
     "Myntra daily reports": "The day's Myntra reports made on the portal (orders, returns, return delivery, listings, inventory), used by the other workings, no file saved; the 30 days of MYNTRA DAILY RETURN DELIVERY REPORT.xlsx written again (blank where Myntra has no data yet)",
     "Myntra zero TD 10 AM": "The fixed daily (Sunday too) Myntra zero TD run: styles of the ZERO TD sheet live on myntra.com at MRP",
     "Myntra zero TD": "Styles of the ZERO TD sheet live on myntra.com with stock and selling at MRP; sheet on Telegram and in MYNTRA ZERO TD SHEETS",
+    "OMSGuru failed listing retry": "Retry failed inventory listings in each warehouse",
     "OMSGuru inventory push": "Pushes the inventory to every channel with inventory sync on in OMSGuru",
     "Return analysis": "Monthly + yearly return analysis report of all channels",
     "Return analysis report request": "Asks Myntra and Flipkart for the reports the 2 PM return analysis needs",

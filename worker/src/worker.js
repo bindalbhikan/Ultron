@@ -102,6 +102,8 @@ const COMMANDS = {
             examples: ["/labels"], inputs: none("/labels") },
   listings: { workflow: "listings.yml", icon: "🧩", name: "Listing health", portal: "all", minutes: 6,
               examples: ["/listings"], inputs: none("/listings") },
+  invretry: { workflow: "inv-retry.yml", icon: "↻", name: "Retry failed inventory", portal: "all", minutes: 10,
+              examples: ["/invretry"], inputs: none("/invretry") },
   invpush: { workflow: "inv-push.yml", icon: "🔄", name: "Inventory push", portal: "all", minutes: 3,
              examples: ["/invpush dry", "/invpush"],
              inputs: (args) => {
@@ -263,6 +265,8 @@ const SCHEDULE = [
   { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "evening" },
   { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "ticketfollowup" },
   { ist: "8:00 PM daily", cron: "30 14 * * *", cmd: "erpomsreturn" },
+  { ist: "10:00 AM daily", cron: "30 4 * * *", cmd: "invretry" },
+  { ist: "3:00 PM daily", cron: "30 9 * * *", cmd: "invretry" },
   ...INV_PUSH_HOURS.map((h) => ({ ist: "every 3 hours from 6 AM", cron: `30 ${h} * * *`, cmd: "invpush" })),
   // the one SKU master every working and the agent read (AGENT WORK/MASTER SHEET/MasterSheet.xlsx), rebuilt from
   // OMSGuru's channel listings before the day's first report (19:30 UTC = 1:00 AM IST the next day)
@@ -376,6 +380,7 @@ const SCREENS = {
   inv: {
     title: "🔄 <b>Inventory push</b>\n<i>OMSGuru Push Inventory, every channel</i>\n\nRuns by itself every 3 hours.",
     rows: [
+      [["Retry failed inventory", "r:invretry"]],
       [["🧪 Dry run", "r:invpush dry"], ["⚠️ Push now", "c:invpush"]],
       back("all"),
     ],

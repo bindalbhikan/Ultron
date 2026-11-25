@@ -59,7 +59,7 @@ Generated from `run.py`, the workflows, the work schedule (`TASKS`) and `docs/bo
 Gaps the sync found:
 
 <!-- AUTO:gaps -->
-- none: every bot has its page and its workflow is watched
+- `inv-retry.yml` (OMSGuru failed listing retry) belongs to no bot of `run.py`
 <!-- /AUTO:gaps -->
 
 ## The agent's folder: Drive `BINDAL EXPORTS/AGENT WORK`

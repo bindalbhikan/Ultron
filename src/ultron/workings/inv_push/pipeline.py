@@ -18,6 +18,11 @@ log = logging.getLogger("bindal.inv_push")
 
 def run(args) -> int:
     client = clients.omsguru()
+    if args.retry_failed:
+        from .failed import retry_failed
+        count = retry_failed(client, args.dry_run)
+        log.info("Failed listings %s: %d", "found" if args.dry_run else "accepted for retry", count)
+        return 0
     skip = set(csv_list("INV_PUSH_SKIP"))           # channel ids never pushed
     channels = [c for c in client.channels() if c["inventory_sync"] and c["id"] not in skip]
     if not channels:
@@ -46,6 +51,7 @@ def run(args) -> int:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="run.py inv-push", description="OMSGuru Push Inventory on every channel")
+    p.add_argument("--retry-failed", action="store_true", help="retry only failed listings in each warehouse")
     p.add_argument("--dry-run", action="store_true", help="list the channels only, push nothing")
     p.add_argument("--no-telegram", action="store_true", help="print the summary instead of sending it")
     return run_bot("OMSGuru inventory push", p, run, argv)

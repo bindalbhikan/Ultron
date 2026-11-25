@@ -6,6 +6,7 @@ workers_dev = true
 # Every auto run (UTC; IST = UTC + 5:30). The worker is the only scheduler; which report runs at
 # which time: SCHEDULE in src/worker.js. The free plan allows 5 cron triggers per account, so one
 # trigger lists many hours and weekly / monthly runs ride on daily ones (filtered in SCHEDULE).
+#   04:30 and 09:30 UTC -> failed inventory retries (10 AM and 3 PM IST)
 #   :30 past  0  3  6  9 12 15 18 21  -> inventory push every 3 hours (6 AM, 9 AM ... IST)
 #            1 -> 7:00 AM   return analysis requests (10th, 15th), Flipkart calculator (Mon)
 #            3 -> 9:00 AM   AJIO SPF master (AJIO tickets / replies Wed + Sat)

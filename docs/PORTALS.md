@@ -197,3 +197,5 @@ here is a secret. Each section ends with the lessons that cost a run to learn.
   run's own content found on Drive means the upload is done (a 502 can still have saved it). A new file
   that a failed try did create is reused, never made twice. Creating a folder is not tried again.
 * The bot cannot delete files you own: to drop data it overwrites the file (e.g. header-only CSV).
+
+The Failed tab requires a warehouse selection. Its retry form posts selected listing IDs to /channel_listings/process_failed_listings/1. The success notice confirms queuing only.
