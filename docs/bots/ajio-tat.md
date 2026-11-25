@@ -21,8 +21,9 @@
   `TAT_OPEN_RECHECK_CAP` 300). Before, only yesterday + today were read, so an order cancelled after packing (OMSGuru
   `Cancel Init` -> `Cancelled Return Received`) kept showing as pickup pending and got ticket follow-ups (25 Nov: 6 of
   the 10 pickup pending AWBs).
-* **Cancelled after packing, never picked up** (`cancelled_unpicked`, owner, 25 Nov 2026): never in pickup pending, the
-  Telegram message, its Excel or the pickup form. It gets the courier pickup ticket once (when it has none and the
+* **Cancelled after it was processed, never picked up** (`cancelled_unpicked`, owner, 25 Nov 2026), a same-day cancel
+  too (invoiced, cancelled that day before ready to ship: no RTS time): never in pickup pending, the Telegram message,
+  its Excel or the pickup form. A courier site saying CANCELLED with no pickup scan counts as not picked. It gets the courier pickup ticket once (when it has none and the
   courier's site says not picked), never a follow-up, and that ticket is not reported on Telegram (only logged).
 * **ERP label print**: `Label Printed` / `ERP Label Time` / `ERP Label By` from ERP report 62
   (portal AJIO; its "Order ID" is the AWB), read from the window start (a week at least); the first

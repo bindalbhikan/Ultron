@@ -421,10 +421,12 @@ def pickup_pending_report(df: pl.DataFrame, now=None) -> list:
 
 
 def cancelled_unpicked() -> pl.Expr:
-    """Cancelled (OMSGuru or the courier) after it was packed, never picked up: one pickup ticket, no follow-up,
-    not in pickup pending, the Telegram message or its sheet (owner, 25 Nov 2026)."""
+    """Cancelled (OMSGuru or the courier) after it was processed (invoiced: an AWB given), never picked up: one pickup
+    ticket, no follow-up, not in pickup pending, the Telegram message, its sheet or the pickup form (owner, 25 Nov
+    2026). A same-day cancel too: processed, cancelled that day before it was ready to ship (no RTS time; owner,
+    25 Nov 2026)."""
     return ((pl.col("Pickup Status") == "Cancelled") & pl.col("Pickup Time").is_null()
-            & pl.col("RTS Time").is_not_null()).fill_null(False)
+            & (pl.col("RTS Time").is_not_null() | pl.col("Processed Time").is_not_null())).fill_null(False)
 
 
 def pickup_ticket_candidates(df: pl.DataFrame, now: datetime) -> pl.DataFrame:
@@ -525,14 +527,15 @@ def due_followup(ticket: dict, seller_id: str, now, hours: int) -> bool:
 
 def courier_pickup_check(pairs: pl.DataFrame) -> dict[str, str]:
     """AWB -> "picked" / "not picked" / "not checked", from the courier's site right now. Picked: a
-    pickup (or later) scan, or a status past pickup. NOT_FOUND (the courier has no such AWB yet) is
-    not picked; any other tracking failure is not checked."""
+    pickup (or later) scan, or a status past pickup. NOT_FOUND (the courier has no such AWB yet) and
+    CANCELLED with no pickup scan (a cancelled order the courier never collected) are not picked; any
+    other tracking failure is not checked."""
     out = {}
     for r in track_results(pairs):
         summ, ev = prepare_tracking([r.summary_row()], r.event_rows())
         pk = pickup_times(ev)
         if (pk["Pickup Time"].is_not_null().any()
-                or str(r.status) not in NOT_PICKED_COURIER_STATUSES):
+                or str(r.status) not in NOT_PICKED_COURIER_STATUSES | {"CANCELLED"}):
             out[str(r.awb)] = "picked"
         elif not r.ok and r.status != "NOT_FOUND":
             out[str(r.awb)] = "not checked"
