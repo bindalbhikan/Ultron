@@ -723,15 +723,16 @@ def run(args) -> int:
     sjit_out: dict[str, dict] = {}
     claims = raise_due_claims(work, today, ticketed, oms, notes, details, paused, unread, sjit, sjit_out)
     dispute_rejected(work, today, oms, notes, details, paused, unread)
-    # the SJIT / FBM returns and claims: their own file (owner, 25 Nov 2026), not in the PPMP master
-    from . import sjit_master
-    sjit_master.publish(work, today, sjit, sjit_out, notes, upload=not args.no_upload,
-                        why_not=f"{', '.join(paused)} not read" if paused else "")
     for p in _files(inp) - after_engine:          # ticket files of these claims, for a rebuild
         (work / "claim_files" / p).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(inp / p, work / "claim_files" / p)
     if oms or claims:
         run_engine(work, oms, details)
+    # the SJIT / FBM returns and claims: their own file, laid out like the PPMP master (owner, 25 Nov 2026), from
+    # its final SJIT / FBM rows
+    from . import sjit_master
+    sjit_master.publish(work, today, sjit, sjit_out, notes, upload=not args.no_upload,
+                        why_not=f"{', '.join(paused)} not read" if paused else "", ppmp=work / MASTER_NAME)
     waiting = {a: sum(d.get("NEEDS OUR REPLY") == "YES" for d in rows) for a, rows in details.items()}
     if any(waiting.values()):
         notes.insert(0, "SPF claims awaiting our response (TICKETS sheet): "

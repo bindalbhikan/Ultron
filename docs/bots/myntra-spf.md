@@ -100,16 +100,22 @@ On demand: `/myntraspf`.
     report counts the items due. `MYNTRA_SPF_SJIT_CATEGORY` (repo variable, unset) changes the category. Dry run on MAIN, 25 Nov 2026
     (younger window, only a 1-23 Nov report on hand): 47 of 60 checked still out of stock.
   * The SJIT / FBM rows stay NON ELIGIBLE on the sheets and out of the summaries (below): only the claims are new.
-  * **Their own file** (owner, 25 Nov 2026: "alag master sheet ... same me mat karo"): `AGENT WORK/SPF CLAIMS/MYNTRA
-    SJIT SPF MASTER.xlsx` (`sjit_master.py`), rebuilt by every run on the previous one (made by the bot the first
-    time with the owner's OAuth; the bot owns it, an edit on Drive is not kept). Sheets: **SUMMARY** per account
-    (items, in the claim window, out of Myntra stock, raised today, due not raised, claims, open, paid, rejected,
-    amount paid); **ITEMS** one row per Fact Core Item ID read so far (order line, Return / RTO, its date and age,
-    report status, MYNTRA STOCK and LAST CHECKED from the tool, BOT RESULT: RAISED / DUE (claims off) / BACK IN
-    MYNTRA STOCK / CLAIM ON IT / TICKETED / SETTLED ON THE MASTER / TOO YOUNG / TOO OLD / NOT CHECKED ..., BOT JOB,
-    and the claim: ticket id, category, status, dates, compensation, UTR); an item stays after it leaves the report
-    window, its claim followed; **TICKETS** every SJIT claim on the portal. A line in the Telegram report. First
-    built 25 Nov 2026 from MAIN's 1-23 Nov report (411 items, all younger than the window).
+  * **Their own file, laid out like the PPMP master** (owner, 25 Nov 2026: "alag master sheet ... same me mat karo",
+    "MYNTRA SPF MASTER iske jaise same chahiye"): `AGENT WORK/SPF CLAIMS/MYNTRA SJIT SPF MASTER.xlsx`
+    (`sjit_master.py`), rebuilt after the PPMP master's last engine run, on the previous SJIT master from Drive (made
+    by the bot with the owner's OAuth; the bot owns it, an edit on Drive is not kept). Its rows are the PPMP
+    master's SJIT / FBM rows, every engine column as there (order amount, settlement, return debit, SPF paid, UTR,
+    PODs), with CLAIM STATUS (CLAIM DONE / ELIGIBLE / UPCOMING CLAIM / NON ELIGIBLE), CLAIM TYPE ("SJIT: ..."),
+    TICKET ID, CLAIM TAT, STATUS, REJECTION REASON from the SJIT claims, and FACT CORE ITEM ID, MYNTRA STOCK, LAST
+    CHECKED, BOT RESULT, BOT JOB at the end; an item of the SJIT returns report the master does not have yet gets a
+    short row (kept on later runs). Sheets as in the PPMP master: SUMMARY (account x return month, its columns),
+    DATE SUMMARY, CLAIM TAT (the SJIT claims by month), MAIN / DBCC / FMCC (+ an account with SJIT data not in the
+    engine's SHEETS), RETURN IN TRANSIT, TICKETS (the SJIT claims, the PPMP TICKETS columns + FACT CORE ITEM ID),
+    INPUT LOG (the SJIT returns reports read); yellow headers, SUBTOTAL row, frozen panes and filters as there.
+    Figures are values (the PPMP master's are COUNTIFS formulas). An item's core id is learnt from the SJIT returns
+    report (only the 61-120 day window each run) and kept from the previous file; older rows have none (BOT
+    RESULT "NO FACT CORE ID"). Rebuilt 25 Nov 2026: MAIN 5,667 + DBCC 122 + in transit 226 rows, the same as the
+    PPMP master's SJIT / FBM rows; 7 CLAIM DONE (tickets of the old route).
 * A formula linking another workbook (e.g. `=VLOOKUP(G5,[1]Orders!$E:$F,2,)` pasted into a
   yellow column) reads as empty: written back it made Excel repair the file on every open.
 * **Return received**: ERP GRN, then **OMSGuru** (only rows whose FINAL RETURN STATUS is blank or Payment Received,
