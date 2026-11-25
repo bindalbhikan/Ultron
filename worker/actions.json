@@ -172,6 +172,21 @@
       }
     }
   },
+  "invretry": {
+    "workflow": "inv-retry.yml",
+    "inputs": [
+      "dry_run"
+    ],
+    "about": "OMSGuru failed listing retry: push the failed inventory again. inputs: dry_run=1 to only count failed listings",
+    "chat": false,
+    "fields": {
+      "dry_run": {
+        "description": "1 = count failed listings only",
+        "default": "",
+        "type": "string"
+      }
+    }
+  },
   "morning": {
     "workflow": "morning.yml",
     "inputs": [
@@ -652,6 +667,21 @@
       "request": {
         "description": "What to build or change, in plain words",
         "default": "",
+        "type": "string"
+      }
+    }
+  },
+  "deploy": {
+    "workflow": "cloudflare-deploy.yml",
+    "inputs": [
+      "targets"
+    ],
+    "about": "Deploy the Cloudflare parts from main: D1 migrations, app API, Telegram worker, dashboard. inputs: targets (all, or a comma list of migrations, app-api, worker, dashboard)",
+    "chat": true,
+    "fields": {
+      "targets": {
+        "description": "What to deploy: all, or a comma list of migrations, app-api, worker, dashboard",
+        "default": "all",
         "type": "string"
       }
     }

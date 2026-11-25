@@ -156,6 +156,8 @@ reporting, not copied into separate client configurations. See docs/apps/shared-
   Their old values remain in the git history.
 - WhatsApp alerts: secrets `CALLMEBOT_PHONE`, `CALLMEBOT_APIKEY` (`integrations/whatsapp.py`, CallMeBot, free for personal use: the owner's own number, text only, no replies). They pass through an outside service, so no customer data or log lines. Telegram stays the main channel. Today: the morning report and the watcher's alerts.
 - Cloudflare worker secrets: see `docs/bots/worker-and-dashboard.md`.
+- Cloudflare deploy from GitHub (`cloudflare-deploy.yml`, agent action `deploy`): secret `CLOUDFLARE_API_TOKEN`
+  (Workers Scripts, D1, Workers KV, R2: Edit) and, for a token that reaches several accounts, `CLOUDFLARE_ACCOUNT_ID`.
 - New Drive files need the owner's OAuth token (the service account cannot create files): `docs/PORTALS.md`.
 
 ## Hand-run tools the workings came from (still in their Drive folders)
