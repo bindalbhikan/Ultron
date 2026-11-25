@@ -95,7 +95,8 @@ On demand: `/myntraspf`.
     settled nor returned; `MYNTRA_SPF_SJIT_CATEGORY` may name `INWARD_REJECTIONS_DELAY_IN_RETURNS` or
     `SHORTAGE_IN_RSTN`, the tool's other two), description "Return Pending: ...".
   * Live only with the repo variable `MYNTRA_SPF_SJIT_TICKETS=1` (its own switch: the category is new and a
-    rejected claim cannot be raised again); otherwise the report counts the items due. Dry run on MAIN, 25 Nov 2026
+    rejected claim cannot be raised again; set on 25 Nov 2026, also in the three `.env` copies); otherwise the
+    report counts the items due. `MYNTRA_SPF_SJIT_CATEGORY` (repo variable, unset) changes the category. Dry run on MAIN, 25 Nov 2026
     (younger window, only a 1-23 Nov report on hand): 47 of 60 checked still out of stock.
   * The SJIT / FBM rows stay NON ELIGIBLE on the sheets and out of the summaries (below): only the claims are new.
 * A formula linking another workbook (e.g. `=VLOOKUP(G5,[1]Orders!$E:$F,2,)` pasted into a
