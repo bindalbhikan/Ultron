@@ -4,7 +4,8 @@ from pathlib import Path
 
 import polars as pl
 
-from .build import CHANNELS, COLUMNS, HEADERS, KEY, MYNTRA_ACCOUNT, PORTAL_HEADERS, _norm, _txt, family
+from .build import (CHANNELS, COLUMNS, HEADERS, KEY, MYNTRA_ACCOUNT, PORTAL_HEADERS,
+                    _norm, _txt, family, strip_colour_from_sku)
 
 CHANNEL, SKU, ID = KEY
 SELLER_KEYS = ("channellistingskucode", "sellerskucode", "sellerskuid", "sellersku", "vendorskucode", "sku")
@@ -28,6 +29,9 @@ def listing_rows(frames, known):
             frame = frame.with_columns(
                 pl.concat_str(_txt(cols["styleid"]), _txt(cols["variation"]), separator="-").alias("_seller"),
                 pl.concat_str(_txt(cols["productid"]), _txt(cols["variation"]), separator="_").alias("_listing"))
+            # Also apply colour stripping and size normalization to the constructed SKU
+            frame = frame.with_columns(
+                pl.col("_seller").map_elements(lambda s: strip_colour_from_sku(s), return_dtype=pl.Utf8).alias("_seller"))
             key, listing = "_seller", "_listing"
         if source == "SNAPDEAL":
             key = cols.get("skucode")

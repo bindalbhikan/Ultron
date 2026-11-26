@@ -50,6 +50,124 @@ PREFIX = r"^([A-Za-z]+)-"
 SOURCE = {"_oms_sku": pl.Utf8, "_brand": pl.Utf8, "_title": pl.Utf8, "_fsn": pl.Utf8, "_asin": pl.Utf8,
           "_meesho": pl.Utf8}
 
+# Colour words a channel likes to drop into its seller SKU. Colour has its own
+# COLOR column, so it is never part of a SKU: E-18-PINK-M is the SKU E-18-M.
+COLOUR_TOKENS = frozenset({
+    "AQUA", "BEIGE", "BLACK", "BLUE", "BRONZE", "BROWN", "BURGUNDY",
+    "CHARCOAL", "CLEAR", "COFFEE", "CORAL", "CREAM", "FUCHSIA", "GOLD",
+    "GREEN", "GREY", "INDIGO", "KHAKI", "LAVENDER", "LIME", "MAGENTA",
+    "MAROON", "MAUVE", "MULTI", "MUSTARD", "NAVY", "NUDE", "OFF", "OFFWHITE",
+    "OLIVE", "ORANGE", "PEACH", "PINK", "PURPLE", "RED", "ROYAL", "RUST",
+    "SEA", "SILVER", "TAN", "TAUPE", "TEAL", "TURQUOISE", "VIOLET", "WHITE",
+    "WINE", "YELLOW",
+})
+
+# SKU prefix -> brand mapping (from old tool, owner 26 Nov 2026)
+PREFIX_BRANDS = {
+    ("FSH", "FASH", "FSHCC", "FH", "FAH", "NEW", "FS"): "Fashfun",
+    ("SER", "SERN", "SR"): "Serein",
+    ("SY",): "Shopsy",
+    ("MUR", "MURCC", "MU", "MR"): "Murcia",
+    ("DB", "DBCC"): "DressBerry",
+    ("AAY", "AAT"): "all about you",
+    ("BSD",): "BAESD",
+    ("FWD", "GTZ"): "glitchez",
+    ("HN",): "HERE&NOW",
+    ("MTR",): "METRONAUT",
+    ("MF",): "Masalli Fashion",
+    ("LEA", "LA", "LEIA", "LIA", "LIEA"): "LEIA",
+    ("ANN",): "Ann Springs",
+    ("NYK",): "Twenty Dresses by Nykaa Fashion",
+}
+
+
+def prefix_brand(sku: str, channel: str) -> str:
+    """Map SKU prefix to brand (portal-aware where needed)."""
+    if not sku:
+        return ""
+    tokens = sku.upper().split("-")
+    if len(tokens) >= 2 and tokens[0] == "M" and tokens[1] in {"SER", "SERN", "SR"}:
+        prefix = tokens[1]
+    elif len(tokens) >= 2 and tokens[:2] == ["NEW", "DB"]:
+        prefix = "DB"
+    else:
+        prefix = tokens[0]
+
+    portal = channel.split()[0].upper() if channel else ""
+    for prefixes, brand in PREFIX_BRANDS.items():
+        if prefix in prefixes:
+            if prefix in {"SER", "SERN", "SR", "SY"} and portal == "MYNTRA":
+                return "Fashfun" if prefix in {"SER", "SERN", "SR"} else "Shopsy"
+            return brand
+    return ""
+
+# Size normalization aliases (from old tool, owner 26 Nov 2026)
+SINGLE_SIZE_ALIASES = {
+    "SMALL": "S", "MEDIUM": "M", "LARGE": "L", "XSMALL": "XS",
+    "XLARGE": "XL", "XXLARGE": "XXL",
+}
+
+LETTER_SIZES = {
+    "XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL",
+    "2XS", "3XS", "2XL", "3XL", "4XL", "5XL", "6XL", "7XL", "8XL", "9XL", "10XL",
+}
+
+NUMERIC_SIZES = {str(number) for number in range(20, 61)}
+SIZES = LETTER_SIZES | NUMERIC_SIZES
+
+
+def strip_colour_from_sku(sku: str) -> str:
+    """Remove colour tokens from a SKU string. E-18-PINK-M -> E-18-M."""
+    if not sku:
+        return ""
+    tokens = [t for t in sku.upper().split("-") if t not in COLOUR_TOKENS]
+    return "-".join(tokens)
+
+
+def normalize_size_suffix(tokens: list[str]) -> list[str]:
+    """Normalize size tokens: SMALL->S, XLARGE->XL, etc."""
+    if not tokens:
+        return tokens
+    if tokens[-1] in SINGLE_SIZE_ALIASES:
+        tokens[-1] = SINGLE_SIZE_ALIASES[tokens[-1]]
+    elif len(tokens) >= 2 and tokens[-2:] in (["X", "SMALL"], ["EXTRA", "SMALL"]):
+        tokens[-2:] = ["XS"]
+    elif len(tokens) >= 2 and tokens[-2:] in (["X", "LARGE"], ["EXTRA", "LARGE"]):
+        tokens[-2:] = ["XL"]
+    elif len(tokens) >= 2 and tokens[-2:] == ["XX", "LARGE"]:
+        tokens[-2:] = ["XXL"]
+    elif tokens[-1] == "FREESIZE":
+        tokens[-1:] = ["FREE", "SIZE"]
+    return tokens
+
+
+def collapse_repeated_tokens(tokens: list[str]) -> list[str]:
+    """Drop a token that is immediately repeated (non-digit only): ZI-1-K21-K21 -> ZI-1-K21."""
+    collapsed = []
+    for token in tokens:
+        if collapsed and token == collapsed[-1] and not token.isdigit():
+            continue
+        collapsed.append(token)
+    return collapsed
+
+
+def ajio_style_code(jiocode: str, color: str) -> str:
+    """Trim AJIO's 12-digit JioCode to 9-digit style + colour: 700637745001 + 'Pink' -> 700637745_pink."""
+    if not jiocode or not color:
+        return ""
+    digits = "".join(ch for ch in jiocode if ch.isdigit())
+    colour = "".join(color.lower().split())
+    if len(digits) < 9 or not colour:
+        return ""
+    return f"{digits[:9]}_{colour}"
+
+
+def meesho_constructed_sku(style_id: str, variation: str) -> str:
+    """Meesho seller SKU = style_id-variation."""
+    if not style_id or not variation:
+        return ""
+    return f"{style_id}-{variation}"
+
 
 def _txt(col: str) -> pl.Expr:
     """A text column trimmed, an empty text as null (OMSGuru writes '' for nothing, dates as 'yyyy-mm-dd)."""
@@ -231,11 +349,21 @@ def derive(df: pl.DataFrame, ctx: Context, cols: list[str]) -> pl.DataFrame:
         pl.when(pl.col("Channel Name") == "AMAZON SMART").then(pl.coalesce("AMAZON ASIN", "_amz"))
           .otherwise(pl.col("AMAZON ASIN")).alias("AMAZON ASIN"))
     colour = pl.col("COLOR").str.to_lowercase().str.replace_all(r"\s+", "")
+    has_jiocode = "AJIO / JioCode" in df.columns
+    has_jiocolor = "AJIO / Color" in df.columns
     df = df.with_columns(
         pl.when(pl.col("Channel Name").is_in(["AJIO", "AJIO API"]) & pl.col("AJIO JIOCODE").is_null()
                 & pl.col("Channel Listing Id").str.contains(r"^\d{12}$") & pl.col("COLOR").is_not_null())
           .then(pl.col("Channel Listing Id").str.slice(0, 9) + "_" + colour)
           .otherwise(pl.col("AJIO JIOCODE")).alias("AJIO JIOCODE"))
+    # Also compute from portal-provided JioCode and Color if listing id not 12-digit
+    if has_jiocode and has_jiocolor:
+        df = df.with_columns(
+            pl.when(pl.col("Channel Name").is_in(["AJIO", "AJIO API"]) & pl.col("AJIO JIOCODE").is_null()
+                    & pl.col("AJIO / JioCode").is_not_null() & pl.col("AJIO / Color").is_not_null())
+              .then(pl.struct("AJIO / JioCode", "AJIO / Color").map_elements(
+                  lambda s: ajio_style_code(s["AJIO / JioCode"], s["AJIO / Color"]), return_dtype=pl.Utf8))
+              .otherwise(pl.col("AJIO JIOCODE")).alias("AJIO JIOCODE"))
     return df
 
 
@@ -270,6 +398,9 @@ def infer_brands(data: pl.DataFrame) -> pl.DataFrame:
     frame = data.with_columns(
         sku.str.replace(r"[-_](?:XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|[2-9]XL)$", "").alias("_listing_style"),
         sku.str.extract(r"^([A-Z]{2,})[-_]", 1).alias("_prefix"))
+    # Treat empty string Brand as null for inference
+    frame = frame.with_columns(
+        pl.when(pl.col("Brand").str.len_chars() > 0).then(pl.col("Brand")).alias("Brand"))
     frame = frame.with_columns(pl.when(~pl.col("Brand").str.to_uppercase().is_in(sorted(NOT_BRANDS)))
                                .then(pl.col("Brand")).alias("Brand"))
     known = frame.filter(pl.col("Brand").is_not_null())
@@ -295,10 +426,21 @@ def infer_brands(data: pl.DataFrame) -> pl.DataFrame:
         frame = frame.join(lookup.select(*keys, pl.col("_candidate").alias(name)), on=keys, how="left")
         guesses.append(name)
     agree = pl.concat_list(guesses).list.drop_nulls().list.unique()
+    # Capture statistical inference result BEFORE fallbacks modify Brand
     inferred = pl.when(pl.col("Brand").is_null() & (agree.list.len() == 1)).then(agree.list.first())
-    return (frame.with_columns(inferred.alias("INFERRED BRAND"))
+    frame = frame.with_columns(inferred.alias("_inferred"))
+    # Prefix-based brand (from old tool): final fallback for rows with portal evidence
+    portal_id_cols = ["MYNTRA STYLE ID", "MYNTRA SKU CODE", "FLIPKART FSN",
+                      "MEESHO PRODUCT ID", "MEESHO CATALOG ID", "AMAZON ASIN", "AJIO JIOCODE"]
+    has_portal_id = pl.any_horizontal(pl.col(c).is_not_null() for c in portal_id_cols if c in frame.columns)
+    frame = frame.with_columns(
+        pl.when(pl.col("Brand").is_null() & has_portal_id)
+        .then(pl.struct("Channel Listing SKU Code", "Channel Name")
+              .map_elements(lambda s: prefix_brand(s["Channel Listing SKU Code"], s["Channel Name"]), return_dtype=pl.Utf8))
+        .otherwise(pl.col("Brand")).alias("Brand"))
+    return (frame.with_columns(pl.col("_inferred").alias("INFERRED BRAND"))
             .with_columns(pl.coalesce("Brand", "INFERRED BRAND").alias("Brand"))
-            .drop("_listing_style", "_prefix", *guesses))
+            .drop("_listing_style", "_prefix", "_inferred", *guesses))
 
 
 def apply_given(df: pl.DataFrame, given: pl.DataFrame | None, cols: list[str]) -> pl.DataFrame:
