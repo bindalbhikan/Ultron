@@ -14,7 +14,7 @@ Updated: 26 Nov 2026.
   no duplicate listing keys.
 - Upload safety: the run downloads the MasterSheet with edit access and refuses to overwrite a file changed on
   Drive during the run (`DriveFile.download(need_edit=True)` / `upload`).
-- Remaining: commit and push this change.
+- Done (26 Nov): committed and pushed (bc51ef4); Tests, Lint and Docs sync pass on GitHub. Nothing pending for this task.
 - Readers use MASTER DATA directly in the new layout (historical rows are in it); older workbooks still read
   MASTER DATA, UNMAPPED LISTINGS and REMOVED LISTINGS.
 - Durable implementation notes: .serena/memories/workings/core.md; product docs: docs/bots/master-sheet.md.
