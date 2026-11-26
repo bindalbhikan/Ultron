@@ -41,7 +41,7 @@ NAME = re.compile(r"^(?P<portal>[A-Z]+) (?:(?P<acc>MAIN|DBCC|FMCC) )?(?P<kind>OR
 
 
 def month_of(text: str) -> date:
-    y, m = text.split("-")
+    y, m = text.strip().split("-")[:2]          # YYYY-MM, or a full YYYY-MM-DD date: its month
     return date(int(y), int(m), 1)
 
 
