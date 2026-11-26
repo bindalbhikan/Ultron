@@ -46,14 +46,13 @@ def typed(header: str, value):
     return int(value) if WHOLE.match(value) else value
 
 
-def rows_of(df: pl.DataFrame) -> list[list]:
+def rows_of(df: pl.DataFrame):
     heads = df.columns
-    return [[typed(h, v) for h, v in zip(heads, row)] for row in df.iter_rows()]
+    return ([typed(h, v) if "/" not in h else v for h, v in zip(heads, row)] for row in df.iter_rows())
 
 
 def omsguru_listings(notes: list[str]) -> pl.DataFrame:
-    """OMSGuru's mapped channel listings of its Active channels only (owner, 24 Nov 2026: a Paused / Disabled
-    channel's listings go to REMOVED LISTINGS). The warehouse is chosen first, as the listing pages show its listings."""
+    """Read the warehouse export including mapped listings on paused and disabled channels."""
     client = clients.omsguru()
     channels = client.channels(every=True)
     active = {c["id"] for c in channels if c["active"]}
@@ -69,9 +68,9 @@ def omsguru_listings(notes: list[str]) -> pl.DataFrame:
     if off.height:
         status = {c["id"]: c["status"] for c in channels}
         names = (off.group_by("Channel ID").len().sort("Channel ID").rows())
-        notes.append("Not active in OMSGuru, left out: " + ", ".join(
+        notes.append("Included from inactive OMSGuru channels: " + ", ".join(
             f"{build.channel_of(cid, '')} {status.get(cid, '?').lower()} ({n:,})" for cid, n in names))
-    return df.filter(pl.col("Channel ID").str.strip_chars().is_in(sorted(active)))
+    return df
 
 
 def portal_sheets(dest: Path, notes: list[str], listings: pl.DataFrame) -> pl.DataFrame | None:
@@ -80,7 +79,7 @@ def portal_sheets(dest: Path, notes: list[str], listings: pl.DataFrame) -> pl.Da
     from ..core.drive import agent_folder
     folder = agent_folder(ms.FOLDER, ms.PORTAL_FOLDER, create=True)
     files = sorted(((name, meta) for name, meta in folder.children().items()
-                    if name.lower().endswith((".xlsx", ".csv", ".txt"))), key=lambda f: f[1].get("modifiedTime") or "")
+                    if name.lower().endswith((".xlsx", ".xls", ".csv", ".txt"))), key=lambda f: f[1].get("modifiedTime") or "")
     frames = []
     for name, meta in files:
         try:
@@ -92,15 +91,22 @@ def portal_sheets(dest: Path, notes: list[str], listings: pl.DataFrame) -> pl.Da
                 frames.append((name, pl.read_csv(path, separator="\t", infer_schema=False, quote_char=None)))
             else:
                 from python_calamine import CalamineWorkbook
-                for sheet in CalamineWorkbook.from_path(str(path)).sheet_names:
+                for index, sheet in enumerate(CalamineWorkbook.from_path(str(path)).sheet_names):
+                    if low.endswith(".xls") and index > 0:
+                        continue
+                    if low.startswith("ajio-inv-") and sheet != "B2C InventoryView":
+                        continue
                     ajio = re.fullmatch(r"AJIO-INV-(.+)\.xlsx", name, re.I)
                     if ajio and sheet == "B2C InventoryView":
                         table = read_excel_text(path, sheet, header=1)
                         brand = ajio[1].replace("-", " ").strip()
                         brand = "LEIA" if brand.upper() == "LEIA" else brand.title()
-                        table = table.select("Seller SKU", "JioCode", "Color").with_columns(pl.lit(brand).alias("Brand"))
+                        table = table.with_columns(pl.lit(brand).alias("Brand"))
                     else:
                         table = read_excel_text(path, sheet)
+                        if (sheet == "Inventory-Update-Data-Fill This" or
+                                (low.startswith("flipkart-active") and "Seller SKU Id" in table.columns)):
+                            table = table.slice(1)
                     frames.append((f"{name} [{sheet}]", table))
         except Exception as exc:  # noqa: BLE001 - the other files still count
             notes.append(f"PORTAL SHEET {name} not read: {str(exc)[:80]}")
@@ -153,14 +159,26 @@ def run(args) -> int:
     work = Path(tempfile.mkdtemp(prefix="master_sheet_"))
     notes: list[str] = []
     today = date.today()
-    src = ms.download(work / "drive") if not args.file else Path(args.file)
+    target = None
+    if args.file:
+        src = Path(args.file)
+    elif args.no_upload:
+        src = ms.download(work / "drive")
+    else:
+        from ..core.drive import DriveFile, agent_folder
+        folder = agent_folder(ms.FOLDER)
+        target = DriveFile(folder.children()[ms.FILE]["id"], folder.http)
+        src = target.download(work / "drive" / ms.FILE, need_edit=True)
     from python_calamine import CalamineWorkbook
     names = CalamineWorkbook.from_path(str(src)).sheet_names
     main, gone_sheet = ms.sheet_of(names, ms.SHEET), ms.sheet_of(names, ms.REMOVED)
     if main is None:
         raise RuntimeError(f"{ms.FILE} has no {ms.SHEET} sheet (sheets: {', '.join(names)})")
-    old = read_excel_text(src, main)
-    removed = read_excel_text(src, gone_sheet) if gone_sheet else None
+    old = ms.listing_sheet(src, main)
+    loose_sheet = ms.sheet_of(names, ms.UNMAPPED)
+    if loose_sheet and "REMARK" not in old.columns:
+        old = pl.concat([old, read_excel_text(src, loose_sheet)], how="diagonal_relaxed")
+    removed = ms.listing_sheet(src, gone_sheet) if gone_sheet else None
     made = {ms.sheet_of(names, n) for n in (ms.SHEET, ms.REMOVED, ms.UNMAPPED, ms.NEED)}
     # the owner's own sheets, by their names in capitals (owner, 24 Nov 2026: "MASTER SKU", "FABRIC CODE" ...)
     own = {n: n.upper() for n in names if n not in made}
@@ -170,7 +188,8 @@ def run(args) -> int:
 
     export = omsguru_listings(notes)
     oms = build.from_omsguru(export)
-    share = oms.height / max(old.height, 1)
+    previous = old.filter(~pl.col("REMARK").fill_null("").str.ends_with("UNMAPPED")) if "REMARK" in old.columns else old
+    share = oms.height / max(previous.height, 1)
     if share < num("MASTER_SHEET_MIN_SHARE", 0.7):
         raise RuntimeError(f"OMSGuru gave {oms.height} listings, the sheet has {old.height}: too few to rebuild on "
                            "(nothing written)")
@@ -180,8 +199,14 @@ def run(args) -> int:
     reports = myntra_reports(work / "myntra", notes)
     myntra = build.myntra_ids(reports) if reports is not None else None
     flipkart = flipkart_listing_file(work / "flipkart", notes)
-    given = portal_sheets(work / "portal", notes, oms) if not args.file else None
+    given = portal_sheets(work / "portal", notes, pl.concat(
+        [f.select(build.KEY) for f in (oms, old, removed) if f is not None and f.width]).unique()) if not args.file else None
     data, gone, loose, counts = build.rebuild(old, removed, oms, others, myntra, today, flipkart, given)
+    if data.height >= 1_048_576 or data.width > 16_384:
+        raise ValueError("MASTER DATA exceeds the Excel worksheet size limit")
+    raw_fields = [c for c in data.columns if " / " in c]
+    if raw_fields and (data.select(pl.max_horizontal(pl.col(raw_fields).str.len_chars().max())).item() or 0) > 32767:
+        raise ValueError("A portal field exceeds the Excel cell text limit")
     need = build.need_data(data)
     counts["need"] = need.height
     log.info("MasterData: %s", counts)
@@ -194,14 +219,17 @@ def run(args) -> int:
         raw = CalamineWorkbook.from_path(str(src)).get_sheet_by_name(n).to_python(skip_empty_area=False)
         while raw and all(v in ("", None) for v in raw[-1]):
             raw.pop()
-        if raw:
-            sheets.append((upper, [("" if v is None else v) for v in raw[0]], raw[1:]))
+        headers = [("" if v is None else v) for v in raw[0]] if raw else []
+        sheets.append((upper, headers, raw[1:]))
     write_sheets(work / ms.FILE, sheets, header_format=ACCENT2_HEADER, freeze=True, autofilter=True,
-                 column_widths=[(0, 25, 20)])
+                 column_widths=[(0, data.width - 1, 20)], constant_memory=True)
+    with CalamineWorkbook.from_path(str(work / ms.FILE)) as workbook:
+        written = workbook.get_sheet_by_name(ms.SHEET)
+        if written.height != data.height + 1 or written.width != data.width:
+            raise ValueError("Written MASTER DATA dimensions differ from the reconciled listings")
     shutil.copy2(work / ms.FILE, out)
-    if not args.no_upload and not args.file:
-        from ..core.drive import XLSX, agent_folder
-        agent_folder(ms.FOLDER).put(work / ms.FILE, XLSX)
+    if target is not None:
+        target.upload(work / ms.FILE)
     text = message(counts, notes, datetime.now())
     if args.no_telegram:
         print(text)
@@ -213,8 +241,8 @@ def run(args) -> int:
 def message(c: dict, notes: list[str], now: datetime) -> str:
     lines = [f"🗂 MasterSheet updated from OMSGuru · {now:%d %b %Y %I:%M %p}",
              f"MasterData: {c['listings']:,} listings ({c['new']:,} new, {c['back']:,} back)",
-             f"Removed from OMSGuru today: {c['removed_today']:,} (REMOVED LISTINGS: {c['removed_total']:,})",
-             f"In a portal's listing file, not in OMSGuru: {c['unmapped']:,} (UNMAPPED LISTINGS)"]
+
+             f"Marked UNMAPPED in MASTER DATA: {c['unmapped']:,} (UNMAPPED LISTINGS)"]
     if c["no_brand"]:
         lines.append(f"Listings without a brand: {c['no_brand']:,}")
     if c.get("need"):

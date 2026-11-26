@@ -17,10 +17,8 @@ One row per channel listing OMSGuru has (Channel Listings > Download Mapped Chan
   ASIN (OMSGuru; Amazon: "Extra Data", Amazon DF: the listing id, Amazon Smart: the ASIN of the same listing SKU on
   Amazon), Meesho product id (OMSGuru "Extra Key"), AJIO JIOCODE = the listing id's first 9 digits + "_" + the
   colour (as AJIO writes it: lower case, no spaces);
-* a listing OMSGuru no longer has moves to REMOVED LISTINGS (owner: kept so old orders still map), with the day it
-  went; one that comes back moves back;
-* UNMAPPED LISTINGS (owner, 24 Nov 2026): a listing in a portal's own listing file (Myntra listing reports,
-  Flipkart listing file) that OMSGuru does not have, in MasterData's columns.
+* MASTER DATA retains historical listings and includes portal-only listings.
+  REMARK contains UNMAPPED for a listing missing from the full OMSGuru export.
 
 Inferred brands are marked and recalculated on each run.
 """
@@ -262,62 +260,8 @@ def _norm(h: str) -> str:
 
 
 def given_rows(frames: list[tuple[str, pl.DataFrame]], listings: pl.DataFrame) -> tuple[pl.DataFrame | None, list[str]]:
-    """The portal files the owner drops in PORTAL SHEET (owner, 24 Nov 2026: a portal's own listing / inventory file,
-    as it downloads): (table of _family, Channel Listing SKU Code + the MASTER DATA columns it gives, notes).
-    The SKU column and the portal are found by the values: the column whose values are most often a listing SKU of
-    one portal on the sheet (listings: Channel Name + Channel Listing SKU Code). A file in MASTER DATA's own columns
-    works too. A later file's row wins."""
-    skus = listings.select(family(pl.col("Channel Name")).alias("_family"),
-                           pl.col("Channel Listing SKU Code").str.to_uppercase().alias("_k")).drop_nulls().unique()
-    by_family = {f: set(g["_k"].to_list()) for (f,), g in skus.group_by("_family")}
-    canon = {_norm(c): c for c in COLUMNS}
-    out, notes = [], []
-    for name, f in frames:
-        best = (0, None, None)
-        ajio_inventory = name.upper().startswith("AJIO-INV-") and name.endswith("[B2C InventoryView]")
-        source = name.upper().split("-", 1)[0]
-        if name.upper().startswith("MYNTRA-STYLE-") and "STYLE ID" in f.columns:
-            notes.append(f"PORTAL SHEET {name}: style report without seller SKU")
-            continue
-        for col in f.columns:
-            if ajio_inventory and col != "Seller SKU":
-                continue
-            vals = {str(v).strip().upper() for v in f[col].drop_nulls().to_list() if str(v).strip()}
-            for fam, have in by_family.items():
-                if source in (set(PORTAL_HEADERS) | {"NYKAA", "COCOBLU"}) and fam != source:
-                    continue
-                hits = len(vals & have)
-                if hits > best[0]:
-                    best = (hits, col, fam)
-        hits, key, fam = best
-        if not key or (not ajio_inventory and hits < max(5, 0.2 * f.height)):
-            notes.append(f"PORTAL SHEET {name}: no column of listing SKUs found, not used")
-            continue
-        names = {**{_norm(c): c for c in COLUMNS if c not in ("Channel Listing SKU Code", "Channel Listing Id",
-                                                               "Channel Name")},
-                 **HEADERS, **PORTAL_HEADERS.get(fam, {})}
-        take = {}
-        for col in f.columns:
-            target = names.get(_norm(col))
-            if col != key and target and target not in take.values() and (target in canon.values()):
-                take[col] = target
-        if not take:
-            notes.append(f"PORTAL SHEET {name}: {fam} listing SKUs in '{key}', but no column MASTER DATA uses")
-            continue
-        notes.append(f"PORTAL SHEET {name}: {fam}, {hits:,} listings, {', '.join(sorted(set(take.values())))}")
-        out.append(f.select(pl.lit(fam).alias("_family"), _txt(key).str.to_uppercase().alias("_k"),
-                            *(_txt(c).alias(t) for c, t in take.items())).drop_nulls("_k"))
-    if not out:
-        return None, notes
-    merged = pl.concat(out, how="diagonal")
-    fields = [c for c in merged.columns if c not in ("_family", "_k")]
-    values = []
-    for field in fields:
-        value = pl.col(field).drop_nulls().last()
-        if field == "Brand":
-            value = pl.when(pl.col(field).drop_nulls().str.to_uppercase().n_unique() == 1).then(value)
-        values.append(value.alias(field))
-    return merged.group_by("_family", "_k", maintain_order=True).agg(values), notes
+    from .portal import listing_rows
+    return listing_rows(frames, listings.select(KEY).unique())
 
 
 def infer_brands(data: pl.DataFrame) -> pl.DataFrame:
@@ -363,12 +307,10 @@ def apply_given(df: pl.DataFrame, given: pl.DataFrame | None, cols: list[str]) -
     if given is None or not given.height:
         return df
     fill = [c for c in given.columns if c in cols and c not in KEY]
-    g = given.select("_family", "_k", *(pl.col(c).alias(f"_g_{c}") for c in fill))
-    out = df.with_columns(family(pl.col("Channel Name")).alias("_family"),
-                          pl.col("Channel Listing SKU Code").str.to_uppercase().alias("_k")
-                          ).join(g, on=["_family", "_k"], how="left")
+    updates = given.select(KEY + fill).rename({c: f"_g_{c}" for c in fill})
+    out = df.join(updates, on=KEY, how="left", nulls_equal=True)
     return out.with_columns(pl.coalesce(f"_g_{c}", c).alias(c) for c in fill).drop(
-        ["_family", "_k"] + [f"_g_{c}" for c in fill])
+        [f"_g_{c}" for c in fill])
 
 
 # NEED DATA (owner, 24 Nov 2026: only the portal and the file it needs): per channel, the file that gives what is
@@ -441,34 +383,61 @@ def rebuild(old: pl.DataFrame, removed: pl.DataFrame | None, oms: pl.DataFrame, 
             myntra: pl.DataFrame | None, today: date, flipkart: pl.DataFrame | None = None,
             given: pl.DataFrame | None = None) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, dict]:
     """(MasterData, REMOVED LISTINGS, UNMAPPED LISTINGS, counts). old / removed: the sheets as text
-    (read_excel_text); oms: from_omsguru(), the active channels' listings only; sheets: the owner's "Master Sku",
+    (read_excel_text); oms: from_omsguru(), all exported channels; sheets: the owner's "Master Sku",
     "Fabric Code", "Launch Date & Size Count"; myntra: myntra_ids() or None when the Myntra reports could not be read
     (the ids then stay as they were); flipkart: the Flipkart listing file (read_excel_text) or None; given:
     given_rows() of the owner's PORTAL SHEET files, over everything else."""
     cols = [c for c in (old.columns if old.width else COLUMNS)]
-    cols += [c for c in COLUMNS if c not in cols]
+    if removed is not None:
+        cols += [c for c in removed.columns if c != REMOVED_ON]
+    cols = list(dict.fromkeys(cols + COLUMNS + ["REMARK"] +
+                              ([c for c in given.columns if c not in KEY] if given is not None else [])))
+    # A portal-only SKU may acquire its first listing id in a later OMS export.
+    # Complete a blank id only when that channel and SKU have one mapped id.
+    filled = oms.group_by(KEY[:2]).agg(pl.col(KEY[2]).unique().alias("_ids")).filter(
+        pl.col("_ids").list.len() == 1).select(*KEY[:2], pl.col("_ids").list.first().alias("_resolved"))
+    def complete_id(frame: pl.DataFrame) -> pl.DataFrame:
+        return frame.join(filled, on=KEY[:2], how="left").with_columns(
+            pl.coalesce(KEY[2], "_resolved").alias(KEY[2])).drop("_resolved")
+
+    old = complete_id(old)
+    if given is not None:
+        given = complete_id(given).group_by(KEY, maintain_order=True).agg(pl.exclude(KEY).drop_nulls().last())
     old = old.with_columns(pl.lit(None, pl.Utf8).alias(c) for c in cols if c not in old.columns).select(cols)
     removed = removed if removed is not None and removed.width else pl.DataFrame(schema={c: pl.Utf8 for c in cols})
     removed = removed.with_columns(pl.lit(None, pl.Utf8).alias(c) for c in cols + [REMOVED_ON] if c not in removed.columns)
     old_all = pl.concat([old.with_columns(pl.lit(None, pl.Utf8).alias(REMOVED_ON)).select(cols + [REMOVED_ON]),
                          removed.select(cols + [REMOVED_ON])], how="vertical_relaxed")
     old_all = old_all.with_columns(_txt(c).alias(c) for c in KEY).unique(KEY, keep="first", maintain_order=True)
-    history = old_all
     if "INFERRED BRAND" in old_all.columns:
         old_all = old_all.with_columns(
             pl.when(pl.col("Brand").eq_missing(pl.col("INFERRED BRAND"))).then(None)
             .otherwise(pl.col("Brand")).alias("Brand"), pl.lit(None, pl.String).alias("INFERRED BRAND"))
     ctx = Context(old_all, sheets, myntra, flipkart)
-
-    joined = apply_given(derive(oms.join(old_all, on=KEY, how="left"), ctx, cols), given, cols)
+    known = pl.concat([oms.select(KEY), old_all.select(KEY)]).unique()
+    portal = unmapped(known, ctx, old_all, COLUMNS)
+    sources = [oms.with_columns(pl.lit(True).alias("_mapped")), portal.select(KEY)]
+    if given is not None:
+        sources.append(given.select(KEY))
+    sources.append(old_all.select(KEY))
+    keys = pl.concat(sources, how="diagonal_relaxed").unique(KEY, keep="first", maintain_order=True)
+    base = keys.join(old_all.with_columns(pl.lit(True).alias("_known")), on=KEY, how="left", nulls_equal=True)
+    # Only supply the derived SKU columns for genuinely new portal listings.
+    additions = portal.select(KEY + ["SIZE SKU", "MY SKU", "MASTER SKU", "MASTER STYLE CODE"])
+    base = base.update(additions, on=KEY, how="left", include_nulls=False)
+    joined = apply_given(derive(base, ctx, cols), given, cols)
+    remark = pl.col("REMARK").str.replace(r"(?:^| \| )UNMAPPED$", "").replace("", None)
+    joined = joined.with_columns(pl.when(pl.col("_mapped").fill_null(False)).then(remark)
+        .otherwise(pl.concat_str(remark, pl.lit("UNMAPPED"), separator=" | ", ignore_nulls=True)).alias("REMARK"))
     data = infer_brands(joined.select(cols))
-    gone = history.join(oms.select(KEY), on=KEY, how="anti").with_columns(
-        pl.coalesce(REMOVED_ON, pl.lit(today.isoformat())).alias(REMOVED_ON)).select(cols + [REMOVED_ON])
-    loose = apply_given(unmapped(oms, ctx, old_all, cols), given, cols).select(cols)
-    came_back = joined.filter(pl.col(REMOVED_ON).is_not_null()).height
-    counts = {"listings": data.height, "new": joined.filter("_new").height,
-              "kept": joined.filter(~pl.col("_new")).height - came_back, "back": came_back,
-              "removed_today": gone.filter(pl.col(REMOVED_ON) == today.isoformat()).height, "removed_total": gone.height,
+    if data.height != keys.height or data.select(KEY).n_unique() != keys.height:
+        raise ValueError("Listing keys changed during the MasterSheet rebuild")
+    loose = data.filter(pl.col("REMARK").str.contains(r"(?:^| \| )UNMAPPED$"))
+    gone = removed.select([c for c in removed.columns if " / " not in c])
+    came_back = joined.filter(pl.col(REMOVED_ON).is_not_null() & pl.col("_mapped")).height
+    counts = {"listings": data.height, "new": joined.filter(pl.col("_known").is_null()).height,
+              "kept": joined.filter(pl.col("_known").is_not_null()).height - came_back, "back": came_back,
+              "removed_today": 0, "removed_total": gone.height,
               "unmapped": loose.height, "no_brand": data.filter(pl.col("Brand").is_null()).height,
               "no_design": data.filter(pl.col("DESIGN-NO").is_null()).height,
               "new_no_design": joined.filter(pl.col("_new") & pl.col("DESIGN-NO").is_null()).height,

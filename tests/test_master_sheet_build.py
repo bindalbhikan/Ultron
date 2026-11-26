@@ -43,8 +43,8 @@ def test_rebuild_keeps_derives_and_removes():
     assert new["Brand"] == new["INFERRED BRAND"] == "Fashfun"
     assert new["FLIPKART FSN"] == "FSN_NEW"                     # nothing on the sheet: OMSGuru's
     assert rows["B0ASIN"]["AMAZON ASIN"] == "B0ASIN" and rows["B0ASIN"]["Channel Name"] == "AMAZON DF"
-    assert gone["Channel Listing SKU Code"].to_list() == ["OLD-1"] and gone[build.REMOVED_ON][0] == "2026-11-24"
-    assert counts["new"] == 2 and counts["removed_today"] == 1
+    assert gone.is_empty() and rows["OLD-1"]["REMARK"] == "UNMAPPED"
+    assert counts["new"] == 2 and counts["removed_today"] == 0
 
 
 def test_portal_file_wins_and_removed_rows_come_back():
@@ -56,7 +56,7 @@ def test_portal_file_wins_and_removed_rows_come_back():
     listing_file = pl.DataFrame({"Seller SKU Id": ["FSH-DRESS-A-1-L"], "Flipkart Serial Number": ["FSN_PORTAL"]})
     data, gone, _, counts = build.rebuild(_old([]), removed, build.from_omsguru(export), {}, None, TODAY, listing_file)
     assert data["FLIPKART FSN"].to_list() == ["FSN_PORTAL"]
-    assert gone.height == 0 and counts["back"] == 1
+    assert gone.height == 1 and counts["back"] == 1
 
 
 def test_same_style_value_only_when_all_rows_agree():
@@ -65,7 +65,7 @@ def test_same_style_value_only_when_all_rows_agree():
                  "MY SKU": "TOP-B-1", "SIZE SKU": f"TOP-B-1-{s}", "MASTER SKU": f"TOP-B-1-{s}",
                  "MASTER STYLE CODE": "TOP-B-1", "COLOR": c} for s, c in (("S", "Red"), ("L", "Blue"))])
     data, _, _, _ = build.rebuild(old, None, build.from_omsguru(export), {}, None, TODAY)
-    assert data["COLOR"].to_list() == [None]                    # two colours on the style: no guess
+    assert data.filter(pl.col("Channel Listing Id") == "LST9")["COLOR"].to_list() == [None]                    # two colours on the style: no guess
 
 
 def _sheet_rows(n=6, prefix="FSH", brand="Fashfun", channel="AJIO"):
@@ -106,7 +106,7 @@ def test_portal_file_found_by_its_skus_and_need_data_names_the_file():
     meesho_file = pl.DataFrame({"Seller SKU ID": [f"fsh-dress-q-1-{i}" for i in range(6)],
                                 "Brand Name": ["Fashfun"] * 6, "Catalog ID": ["C77"] * 6, "Style": ["x"] * 6})
     given, notes = build.given_rows([("meesho.csv", meesho_file)], oms)
-    assert "MEESHO" in notes[0] and given["_family"].unique().to_list() == ["MEESHO"]
+    assert "MEESHO" in notes[0] and given["Channel Name"].unique().to_list() == ["MEESHO"]
     data, _, _, _ = build.rebuild(_old([]), None, oms, {}, None, TODAY, None, given)
     meesho = data.filter(pl.col("Channel Name") == "MEESHO")
     assert meesho["Brand"].unique().to_list() == ["Fashfun"] and meesho["MEESHO CATALOG ID"].unique().to_list() == ["C77"]
@@ -126,7 +126,42 @@ def test_portal_listing_missing_in_omsguru_is_unmapped():
     _, _, loose, counts = build.rebuild(_old(_sheet_rows()), None, build.from_omsguru(export), {}, None, TODAY,
                                         listing_file)
     rows = {r["Channel Listing SKU Code"]: r for r in loose.to_dicts()}
-    assert counts["unmapped"] == 2 and set(loose.columns) >= set(build.COLUMNS)
+    assert counts["unmapped"] == 7 and set(loose.columns) >= set(build.COLUMNS)
     assert rows["FSH-DRESS-Q-1-7"]["SIZE SKU"] == "DRESS-Q-1-7"     # the brand code taken off
     assert rows["DRESS-VW-1-L"]["SIZE SKU"] == "DRESS-VW-1-L"       # DRESS- is part of the SKU
     assert rows["FSH-DRESS-Q-1-7"]["FLIPKART FSN"] == "FSN7" and rows["DRESS-VW-1-L"]["Brand"] == "Serein"
+
+def test_portal_only_rows_and_raw_fields_survive_a_missing_file_and_remap():
+    oms = build.from_omsguru(_export([("37864", "Meesho", "other", "1", "mapped", "", "", "", "")]))
+    frame = pl.DataFrame({"SKU": ["ABC", "ABC"], "Warehouse": ["East", "West"], "Available units": ["2", "9"]})
+    given, _ = build.given_rows([("COCOBLU-INV.csv", frame)], oms)
+    data, _, _, _ = build.rebuild(_old([]), None, oms, {}, None, TODAY, given=given)
+    row = data.filter(pl.col("Channel Name") == "COCOBLU").row(0, named=True)
+    assert row["REMARK"] == "UNMAPPED"
+    assert row["COCOBLU / Available units"] == "2\n9"
+    again, _, _, _ = build.rebuild(data, None, oms, {}, None, TODAY)
+    assert again.height == data.height
+    assert again.filter(pl.col("Channel Name") == "COCOBLU")["COCOBLU / Warehouse"].item() == "East\nWest"
+    mapped = build.from_omsguru(_export([("63052", "Cocoblu", "ABC", "2", "ABC", "", "", "", "")]))
+    remapped, _, _, _ = build.rebuild(again, None, mapped, {}, None, TODAY)
+    row = remapped.filter(pl.col("Channel Name") == "COCOBLU").row(0, named=True)
+    assert remapped.height == again.height and row["REMARK"] is None
+    assert row["COCOBLU / Warehouse"] == "East\nWest"
+
+
+def test_myntra_shared_sku_stays_in_its_account_and_distinct_portal_ids_survive():
+    oms = build.from_omsguru(_export([
+        ("64106", "Myntra Exim", "SAME", "10", "A", "", "", "", ""),
+        ("47460", "Myntra Dbcc", "SAME", "20", "B", "", "", "", ""),
+    ]))
+    files = [("MYNTRA-LISTING-EXIM.csv", pl.DataFrame({
+        "seller sku code": ["SAME", "SAME"], "sku id": ["10", "11"], "brand": ["One", "Two"]}))]
+    given, _ = build.given_rows(files, oms)
+    data, _, _, _ = build.rebuild(_old([]), None, oms, {}, None, TODAY, given=given)
+    rows = {r["Channel Listing Id"]: r for r in data.to_dicts()}
+    assert rows["10"]["Brand"] == "One" and rows["10"]["REMARK"] is None
+    assert rows["11"]["Brand"] == "Two" and rows["11"]["REMARK"] == "UNMAPPED"
+    assert rows["20"]["Brand"] is None
+    one = files[0][1].tail(1)
+    given, _ = build.given_rows([(files[0][0], one)], oms)
+    assert given["Channel Listing Id"].to_list() == ["11"]

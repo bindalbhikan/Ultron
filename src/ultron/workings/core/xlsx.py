@@ -41,7 +41,7 @@ URL_LIMIT = 65_530                   # xlsxwriter's (Excel's) most links in one 
 def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze: bool | tuple[int, int] = False,
                  auto_width: bool = False, max_width: int = 60, autofilter: bool = False,
                  column_widths: list[tuple[int, int, float]] | None = None, links: bool = False,
-                 header_format: dict | None = None) -> Path:
+                 header_format: dict | None = None, constant_memory: bool = False) -> Path:
     """{sheet: (headers, rows)} or [(sheet, headers, rows), ...] (a name may repeat) -> one xlsx at path (its
     folder made); the path. header_format: the header row's xlsxwriter format (e.g. ACCENT2_HEADER), else bold_header
     makes it bold. freeze: True = the header row, or (rows, columns); autofilter over the header and rows;
@@ -49,7 +49,7 @@ def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze
     import xlsxwriter
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    wb = xlsxwriter.Workbook(str(path), {"strings_to_numbers": False, "strings_to_formulas": False,
+    wb = xlsxwriter.Workbook(str(path), {"constant_memory": constant_memory, "strings_to_numbers": False, "strings_to_formulas": False,
                                          "strings_to_urls": False, "nan_inf_to_errors": True})
     head = (wb.add_format(header_format) if header_format else wb.add_format({"bold": True}) if bold_header else None)
     when = wb.add_format({"num_format": "yyyy-mm-dd hh:mm:ss"})

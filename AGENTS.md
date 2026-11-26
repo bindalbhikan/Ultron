@@ -43,6 +43,7 @@ Keep PROJECT_CONTEXT.md current with the active task and verified state.
   `myntra_session*.json` stay local (ignored). A run's files never go inside the source code: the output folder is
   the user's data folder (`%LOCALAPPDATA%\Ultron\output` on Windows; `ULTRON_OUTPUT` overrides it, GitHub's runner
   uses the checkout's `output/` that `ci_run.sh` encrypts), `ultron/core/paths.py`.
+- **MasterSheet** retains historical and portal-only listings in MASTER DATA. Mark a listing absent from OMSGuru as UNMAPPED in REMARK.
 - **Data must never be wrong**: a failed or incomplete source is left out and named, never shown as 0.
 - **Numbers that connect agree** (owner, 22 Nov 2026): when a report shows a figure another report also shows (the
   return analysis' sold / returned units and the business report's Delivered + Customer Return / Customer Return of

@@ -1,7 +1,7 @@
 """The SKU master, one file for every working (owner, 24 Nov 2026): Drive AGENT WORK/MASTER SHEET/MasterSheet.xlsx.
 
-Sheets: MasterData (one row per channel listing OMSGuru has, rebuilt every night at 1 AM by the master-sheet
-working), REMOVED LISTINGS (the listings OMSGuru no longer has, kept so old orders still map), and the owner's own
+Sheets: MASTER DATA (historical, OMSGuru and portal listings, rebuilt at 1 AM by the master-sheet working),
+UNMAPPED LISTINGS, REMOVED LISTINGS (the historical archive), and the owner's own
 Master Sku / Fabric Code / Launch Date & Size Count. Read it only through read() / download() here.
 
 The owner renamed two columns (24 Nov 2026): FINAL SKU -> MASTER SKU, FINAL MY SKU -> MASTER STYLE CODE. read()
@@ -42,6 +42,14 @@ def download(dest: Path) -> Path:
     return path
 
 
+def listing_sheet(path: Path, sheet: str) -> "pl.DataFrame":
+    """Read the wide generated listing table directly into string columns with calamine."""
+    import polars as pl
+
+    return pl.read_excel(path, sheet_name=sheet, read_options={"dtypes": "string"},
+                         drop_empty_cols=False, raise_if_empty=False)
+
+
 def read(path: Path, removed: bool = True) -> "pl.DataFrame":
     """MasterData (then REMOVED LISTINGS when removed=True) as text columns, with the old column names FINAL SKU /
     FINAL MY SKU added. A file in the old layout (sheet Master) is read as it is."""
@@ -53,8 +61,8 @@ def read(path: Path, removed: bool = True) -> "pl.DataFrame":
     main = sheet_of(names, SHEET)
     if main is None:
         return read_excel_text(path, OLD_SHEET)
-    frames = [read_excel_text(path, main)]
-    if removed:            # MASTER DATA's row of a listing first, then the listings OMSGuru lacks or dropped
+    frames = [listing_sheet(path, main)]
+    if removed and "REMARK" not in frames[0].columns:  # legacy workbooks keep additional listings on these tabs
         frames += [read_excel_text(path, n) for n in (sheet_of(names, UNMAPPED), sheet_of(names, REMOVED)) if n]
     df = pl.concat([f for f in frames if f.width], how="diagonal")
     return df.with_columns(pl.col(new).alias(old) for new, old in RENAMED.items() if new in df.columns and old not in df.columns)

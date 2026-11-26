@@ -83,7 +83,7 @@ AGENT WORK/
                      try); the business reporting reads them (core/portal_reports.py)
   BUSINESS REPORTING/ the owner's Myntra sale / return / payment analysis (CONTEXT.md and scripts in it)
   MASTER SHEET/      MasterSheet.xlsx, the one SKU master every working and the chat agent read (core/master_sheet.py): MasterData rebuilt
-                     from OMSGuru at 1 AM (master-sheet), REMOVED LISTINGS, the owner's Master Sku / Fabric Code /
+                     from OMSGuru, historical rows and portal listings at 1 AM (master-sheet), REMOVED LISTINGS, the owner's Master Sku / Fabric Code /
                      Launch Date & Size Count (owner, 24 Nov 2026; the old copies in BUSINESS REPORTING and RETURN
                      ANALYSIS/Supporting are no longer read)
   SPF CLAIMS/        the final SPF master sheets only: AJIO MASTER.xlsx, MYNTRA SPF MASTER.xlsx, MYNTRA SJIT SPF
