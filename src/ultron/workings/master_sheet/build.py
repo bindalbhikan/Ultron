@@ -46,7 +46,7 @@ COLUMNS = ["Channel Listing SKU Code", "Channel Listing Id", "Channel Name", "Br
 KEY = ["Channel Name", "Channel Listing SKU Code", "Channel Listing Id"]
 REMOVED_ON = "REMOVED ON"
 OMS_SKU = "Product SkuCode (Reference Only)"
-NOT_BRANDS = {"SHOPSY"}             # a marketplace, not a brand (owner, 24 Nov 2026)
+NOT_BRANDS = {"SHOPSY", "NULL", "N/A", "NONE", "NAN"}             # a marketplace, not a brand (owner, 24 Nov 2026)
 PREFIX = r"^([A-Za-z]+)-"
 # the extra columns a source frame for derive() may carry (null when it has none)
 SOURCE = {"_oms_sku": pl.Utf8, "_brand": pl.Utf8, "_title": pl.Utf8, "_fsn": pl.Utf8, "_asin": pl.Utf8,
@@ -326,6 +326,8 @@ def infer_brands(data: pl.DataFrame) -> pl.DataFrame:
     frame = data.with_columns(
         sku.str.replace(r"[-_](?:XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|[2-9]XL)$", "").alias("_listing_style"),
         sku.str.extract(r"^([A-Z]{2,})[-_]", 1).alias("_prefix"))
+    frame = frame.with_columns(pl.when(~pl.col("Brand").str.to_uppercase().is_in(sorted(NOT_BRANDS)))
+                               .then(pl.col("Brand")).alias("Brand"))
     known = frame.filter(pl.col("Brand").is_not_null())
     guesses = []
     for keys, minimum, shared in [

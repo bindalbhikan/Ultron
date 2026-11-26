@@ -25,7 +25,7 @@ DATE & SIZE COUNT; the readers find a sheet whatever its case (`master_sheet.she
 * **Brand** (26 Nov 2026): portal brands take precedence. AJIO B2C InventoryView uses the second header row,
   Seller SKU and the brand in the AJIO-INV filename. Blank brands can use unanimous same-channel listing style or
   master style, a listing style shared by two branded channels, or a same-channel prefix supported by five styles.
-  Conflicting candidates stay blank. INFERRED BRAND records each guess and the next run recalculates it.
+  Portal placeholders such as the literal text null count as missing. Conflicting candidates stay blank. INFERRED BRAND records each guess and the next run recalculates it.
 * **Portal ids**, the portal's own file first, then the sheet, then OMSGuru: Myntra style id / SKU code from each
   account's Myntra listing report (the 9:30 AM `myntra-reports` job reused); Flipkart FSN from the newest Flipkart
   listing file (`flipkart-listing-file`), else OMSGuru `Extra Param` (OMSGuru's FSN was wrong on 358 of 377 rows where
