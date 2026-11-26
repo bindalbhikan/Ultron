@@ -121,22 +121,32 @@ def claim_of(r: dict, today: date, ticketed: set[str]) -> str | None:
 
 
 def candidates(path: Path, today: date, ticketed: dict[str, set[str]], skip: set[tuple] = frozenset(),
-               blocked: dict[str, set[str]] | None = None) -> dict[str, dict[str, list[str]]]:
+               blocked: dict[str, set[str]] | None = None,
+               transit: dict[str, set[str]] | None = None) -> dict[str, dict[str, list[str]]]:
     """account -> category -> order line ids to claim, from the master's account sheets.
     ticketed: account -> order lines with a portal ticket. skip: (order_line_id, return_id)
     keys known to be received (OMSGuru) since the master was written. blocked (filled when
     given): account -> order lines that already have a ticket, are received / settled or have a
-    courier POD, which an SJIT claim leaves alone too."""
+    courier POD, which an SJIT claim leaves alone too. transit (filled when given): account ->
+    order lines whose return is still in transit on the master (not delivered back, not received,
+    no ticket, no POD): the only ones an SJIT claim may be raised on (owner, 26 Nov 2026)."""
     from openpyxl import load_workbook
-    from .engine import SHEETS, master_rows, norm
+    from .engine import SHEETS, is_delivered_status, master_rows, norm
     wb = load_workbook(path, read_only=True)
     out: dict[str, dict[str, list[str]]] = {}
     for name in SHEETS:          # the account sheet and its rows on the RETURN IN TRANSIT sheet
         seen: set[str] = set()
+        moving: set[str] = set()
+        stopped: set[str] = set()    # a line with any row back, received or ticketed is never in transit
         for r in master_rows(wb, name):
             key = (norm(r.get("order_line_id")), norm(r.get("return_id")))
-            if blocked is not None and (key in skip or not _blank(r.get("TICKET ID")) or _settled(r)):
+            done = key in skip or not _blank(r.get("TICKET ID")) or _settled(r)
+            if blocked is not None and done:
                 blocked.setdefault(name, set()).add(key[0])
+            if done or _day(r.get("deliver_to_seller_date")) or is_delivered_status(r.get("status")):
+                stopped.add(key[0])
+            elif key[0]:
+                moving.add(key[0])
             if key in skip:
                 continue
             cat = claim_of(r, today, ticketed.get(name, set()))
@@ -144,6 +154,8 @@ def candidates(path: Path, today: date, ticketed: dict[str, set[str]], skip: set
             if cat and oli not in seen:
                 seen.add(oli)
                 out.setdefault(name, {}).setdefault(cat, []).append(oli)
+        if transit is not None:
+            transit[name] = moving - stopped
     wb.close()
     return out
 
@@ -195,6 +207,7 @@ def sjit_returns(folder: Path) -> list[dict]:
 # Why an SJIT / FBM item is not claimed (the SJIT master's BOT RESULT); "" = a candidate
 SJIT_CLAIMED = "CLAIM ON IT"
 SJIT_SETTLED = "TICKETED / SETTLED ON THE MASTER"
+SJIT_NOT_TRANSIT = "NOT IN TRANSIT (BACK / RECEIVED)"
 SJIT_NO_DATE = "NO RETURN DATE"
 SJIT_YOUNG = "TOO YOUNG"
 SJIT_OLD = "TOO OLD"
@@ -213,15 +226,20 @@ def sjit_window() -> tuple[int, int]:
             num("MYNTRA_SPF_SJIT_MAX_DAYS", num("MYNTRA_SPF_DELAY_MAX_DAYS", 120)))
 
 
-def sjit_reason(r: dict, today: date, ticketed: set[str], blocked: set[str]) -> str:
+def sjit_reason(r: dict, today: date, ticketed: set[str], blocked: set[str], transit: set[str]) -> str:
     """Why the item is not a candidate today, or "": an SJIT claim on the item (ticketed: core ids and order
-    lines), its order line ticketed / received / settled / POD'd on the master (blocked), or its age outside
+    lines), its order line ticketed / received / settled / POD'd on the master (blocked), its return not in
+    transit on the master (transit: candidates(); delivered back, received, or not on the master at all:
+    the SJIT tool's itemStatus SHIPPED alone does not say the return is still on the way), or its age outside
     sjit_window()."""
-    oli = r["order_line_id"]
+    from .engine import norm
+    oli = norm(r["order_line_id"])
     if r["core_item_id"] in ticketed or (oli and oli in ticketed):
         return SJIT_CLAIMED
     if oli and oli in blocked:
         return SJIT_SETTLED
+    if not oli or oli not in transit:
+        return SJIT_NOT_TRANSIT
     if not r["created"]:
         return SJIT_NO_DATE
     lo, hi = sjit_window()
@@ -229,10 +247,11 @@ def sjit_reason(r: dict, today: date, ticketed: set[str], blocked: set[str]) -> 
     return SJIT_YOUNG if age < lo else SJIT_OLD if age > hi else ""
 
 
-def sjit_candidates(rows: list[dict], today: date, ticketed: set[str], blocked: set[str]) -> list[dict]:
+def sjit_candidates(rows: list[dict], today: date, ticketed: set[str], blocked: set[str],
+                    transit: set[str]) -> list[dict]:
     """The SJIT / FBM returns to claim as in transit today (sjit_reason ""). Whether the item is still out of
     Myntra's warehouse is asked live (raise_sjit_claims)."""
-    return [r for r in rows if not sjit_reason(r, today, ticketed, blocked)]
+    return [r for r in rows if not sjit_reason(r, today, ticketed, blocked, transit)]
 
 
 def sjit_category() -> str:

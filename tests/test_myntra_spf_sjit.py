@@ -38,12 +38,27 @@ def test_candidates_by_age_ticket_and_master(tmp_path):
         + f"C4,14,Return,Ret Created,{_day(130)},\n"       # too old
         + f"C5,15,Return,Ret Created,{_day(70)},\n"        # SJIT claim on the item
         + f"C6,16,Return,Ret Created,{_day(70)},\n"        # settled on the master
+        + f"C7,18,Return,Ret Delivered,{_day(70)},\n"      # back at the warehouse: not in transit on the master
         + f",17,Return,Ret Created,{_day(70)},\n",         # a PPMP line: no core item id
         encoding="utf-8")
     rows = tickets.sjit_returns(tmp_path)
-    assert {r["core_item_id"] for r in rows} == {"C1", "C2", "C3", "C4", "C5", "C6"}
-    got = tickets.sjit_candidates(rows, TODAY, ticketed={"C5"}, blocked={"16"})
+    assert {r["core_item_id"] for r in rows} == {"C1", "C2", "C3", "C4", "C5", "C6", "C7"}
+    moving = {"11", "12", "13", "14", "15", "16"}
+    got = tickets.sjit_candidates(rows, TODAY, ticketed={"C5"}, blocked={"16"}, transit=moving)
     assert sorted(r["core_item_id"] for r in got) == ["C1", "C2"]
+    c7 = next(r for r in rows if r["core_item_id"] == "C7")
+    assert tickets.sjit_reason(c7, TODAY, set(), set(), moving) == tickets.SJIT_NOT_TRANSIT
+
+
+def test_only_returns_still_in_transit_on_the_master_are_sjit_candidates(tmp_path):
+    """26 Nov 2026: 903 SJIT items already delivered back (deliver_to_seller_date, Ret Delivered / Delivered)
+    were claimed because the SJIT tool still said SHIPPED. Only master rows still in transit count."""
+    path = tmp_path / "m.xlsx"
+    _ppmp_master(path)
+    transit, blocked = {}, {}
+    tickets.candidates(path, TODAY, {}, blocked=blocked, transit=transit)
+    assert transit["MAIN"] == {"10", "11", "12"}     # Ret Created rows (account sheet + in-transit sheet)
+    assert "19" not in transit["MAIN"]               # SJIT Ret Delivered: back, never claimed
 
 
 class Portal:

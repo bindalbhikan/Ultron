@@ -508,8 +508,9 @@ def raise_due_claims(work: Path, today: date, ticketed: dict[str, set[str]], oms
     from ..portals import myntra as mp
     received = {k for k, v in oms.items() if "RECEIVED" in str(v).upper()}
     blocked: dict[str, set[str]] = {}
+    transit: dict[str, set[str]] = {}       # SJIT claims only on returns still in transit
     try:
-        due = tickets.candidates(work / MASTER_NAME, today, ticketed, received | set(unread), blocked)
+        due = tickets.candidates(work / MASTER_NAME, today, ticketed, received | set(unread), blocked, transit)
     except Exception as exc:  # noqa: BLE001 - the master still goes out
         log.exception("SPF claims not worked out")
         notes.append(f"SPF claims not worked out: {str(exc)[:100]}")
@@ -538,7 +539,9 @@ def raise_due_claims(work: Path, today: date, ticketed: dict[str, set[str]], oms
             claimed = tickets.sjit_ticketed(sjit_tickets)
             master = blocked.get(account, set()) | ticketed.get(account, set())
             items = tickets.sjit_returns(work / "sjit" / account)
-            out = {"reasons": {r["core_item_id"]: tickets.sjit_reason(r, today, claimed, master) for r in items},
+            moving = transit.get(account, set())
+            out = {"reasons": {r["core_item_id"]: tickets.sjit_reason(r, today, claimed, master, moving)
+                               for r in items},
                    "results": {}}
             if sjit_out is not None:
                 sjit_out[account] = out

@@ -88,6 +88,13 @@ On demand: `/myntraspf`.
   * Not claimed: an item with an SJIT claim (`getTickets?modelType=SJIT`, its `factCoreId` / order line), or whose
     order line has a ticket, is received / settled or has a courier POD on the master. An account whose SJIT claims
     could not be read gets none, and none at all while ERP or OMSGuru was not read.
+  * **Only returns still in transit** (owner, 26 Nov 2026: "jo return intransit he or return received me nai he usko
+    hi claim karna tha"): the item's order line must be in transit on the PPMP master (`tickets.candidates`
+    `transit`: no `deliver_to_seller_date`, `status` not Ret Delivered / Delivered, not received / settled, no
+    ticket, no POD). Anything else, or a line not on the master, is `NOT IN TRANSIT (BACK / RECEIVED)` on the SJIT
+    master. Why: the SJIT tool still says `SHIPPED` for returns already delivered back (Ret Delivered, return_status
+    RIS / RL / RRC); trusting it alone raised 903 claims on 26 Nov 2026 (jobs 156760050 / 156760051) on returns
+    that had come back, against 10 really in transit.
   * Each candidate is looked up live (`fetchNewClaimSJIT?factCoreId`): claimed only while `itemStatus` is
     `SHIPPED` (out of Myntra's warehouse: the return never came back; `STORED` = back in stock) and no claim is on
     it. A lookup that fails is not claimed. At most `MYNTRA_SPF_SJIT_CHECK_MAX` (1000) lookups per account a run.
