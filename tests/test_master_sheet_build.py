@@ -131,22 +131,31 @@ def test_portal_listing_missing_in_omsguru_is_unmapped():
     assert rows["DRESS-VW-1-L"]["SIZE SKU"] == "DRESS-VW-1-L"       # DRESS- is part of the SKU
     assert rows["FSH-DRESS-Q-1-7"]["FLIPKART FSN"] == "FSN7" and rows["DRESS-VW-1-L"]["Brand"] == "Serein"
 
-def test_portal_only_rows_and_raw_fields_survive_a_missing_file_and_remap():
+def test_portal_only_rows_do_not_write_raw_fields_to_master_data():
+    """Portal raw fields (prefixed like 'COCOBLU / ...') are used to update standard columns
+    but are NOT written as separate columns in MASTER DATA."""
     oms = build.from_omsguru(_export([("37864", "Meesho", "other", "1", "mapped", "", "", "", "")]))
     frame = pl.DataFrame({"SKU": ["ABC", "ABC"], "Warehouse": ["East", "West"], "Available units": ["2", "9"]})
     given, _ = build.given_rows([("COCOBLU-INV.csv", frame)], oms)
     data, _, _, _ = build.rebuild(_old([]), None, oms, {}, None, TODAY, given=given)
+    # MASTER DATA only has standard columns + REMARK + INFERRED BRAND
+    portal_cols = [c for c in data.columns if " / " in c]
+    assert not portal_cols, f"portal raw columns leaked into MASTER DATA: {portal_cols}"
+    # Standard columns present
+    assert set(build.COLUMNS).issubset(set(data.columns))
+    assert "REMARK" in data.columns and "INFERRED BRAND" in data.columns
     row = data.filter(pl.col("Channel Name") == "COCOBLU").row(0, named=True)
     assert row["REMARK"] == "UNMAPPED"
-    assert row["COCOBLU / Available units"] == "2\n9"
+    # Rebuild without portal file keeps standard columns only
     again, _, _, _ = build.rebuild(data, None, oms, {}, None, TODAY)
     assert again.height == data.height
-    assert again.filter(pl.col("Channel Name") == "COCOBLU")["COCOBLU / Warehouse"].item() == "East\nWest"
+    portal_cols2 = [c for c in again.columns if " / " in c]
+    assert not portal_cols2
+    # When OMSGuru later maps it, UNMAPPED clears
     mapped = build.from_omsguru(_export([("63052", "Cocoblu", "ABC", "2", "ABC", "", "", "", "")]))
     remapped, _, _, _ = build.rebuild(again, None, mapped, {}, None, TODAY)
     row = remapped.filter(pl.col("Channel Name") == "COCOBLU").row(0, named=True)
     assert remapped.height == again.height and row["REMARK"] is None
-    assert row["COCOBLU / Warehouse"] == "East\nWest"
 
 
 def test_myntra_shared_sku_stays_in_its_account_and_distinct_portal_ids_survive():

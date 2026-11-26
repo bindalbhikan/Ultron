@@ -49,4 +49,5 @@ DATE & SIZE COUNT; the readers find a sheet whatever its case (`master_sheet.she
   (0.7) of the sheet's rows, fails the run with nothing written. A Myntra listing report, the Flipkart file or a
   PORTAL SHEET file not read: those values stay as they were and Telegram names it.
 * 26 Nov 2026: 184,973 listings in MASTER DATA (118,830 previously on the sheet, 61,419 kept from REMOVED LISTINGS,
-  4,724 new), 46,076 marked UNMAPPED, 7,101 without a brand, 11 channels in NEED DATA; about 2.5 min.
+  4,724 new), 46,076 marked UNMAPPED, 7,101 without a brand, 11 channels in NEED DATA; MASTER DATA has the 22
+  standard columns + INFERRED BRAND + REMARK only (portal raw columns not written); about 2.5 min.

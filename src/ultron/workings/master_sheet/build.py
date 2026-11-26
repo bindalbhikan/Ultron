@@ -390,8 +390,11 @@ def rebuild(old: pl.DataFrame, removed: pl.DataFrame | None, oms: pl.DataFrame, 
     cols = [c for c in (old.columns if old.width else COLUMNS)]
     if removed is not None:
         cols += [c for c in removed.columns if c != REMOVED_ON]
-    cols = list(dict.fromkeys(cols + COLUMNS + ["REMARK"] +
-                              ([c for c in given.columns if c not in KEY] if given is not None else [])))
+    # MASTER DATA only keeps the standard columns + REMARK + INFERRED BRAND.
+    # Portal-prefixed raw columns (containing " / ") are used only to update
+    # standard columns via apply_given, not written as separate columns.
+    standard = COLUMNS + ["REMARK", "INFERRED BRAND"]
+    cols = list(dict.fromkeys([c for c in cols if c in standard or not (" / " in c)] + standard))
     # A portal-only SKU may acquire its first listing id in a later OMS export.
     # Complete a blank id only when that channel and SKU have one mapped id.
     filled = oms.group_by(KEY[:2]).agg(pl.col(KEY[2]).unique().alias("_ids")).filter(
