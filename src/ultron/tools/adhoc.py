@@ -68,10 +68,13 @@ def _gather(data: str, into: Path) -> list[str]:
 @tool
 def run_adhoc(script: str, data: str = "", purpose: str = "") -> str:
     """Do a working no report or tool covers: run a Python script you write on copies of saved data, then send its
-    result with send_file. The script runs locked: no network, no secrets, no portal or Drive access; it reads the
+    result with send_file. Use this whenever the owner asks for something (image, chart, table, sheet, filtered
+    data, comparison) and no existing run file matches exactly — this is the main way to deliver what is asked.
+    The script runs locked: no network, no secrets, no portal or Drive access; it reads the
     files under /data (read-only) and writes results to /out (the working folder). Libraries: polars (tables;
     pl.read_excel reads xlsx through calamine, pl.read_parquet, pl.read_csv), xlsxwriter (xlsx, with native Excel
-    charts), Pillow, the standard library. No pandas, no openpyxl, no matplotlib. Print a short summary (and
+    charts), Pillow (images: tables as PNG, bar charts, comparisons — use PIL.Image, PIL.ImageDraw, PIL.ImageFont),
+    the standard library. No pandas, no openpyxl, no matplotlib. Print a short summary (and
     df.schema when you do not know the columns yet); a failed script shows its error, fix it and run again.
     Results are ad-hoc, not checked reports: say so to the owner. Never invent data the files do not hold.
 

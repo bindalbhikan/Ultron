@@ -14,7 +14,7 @@ Updated: 26 Nov 2026.
   no duplicate listing keys.
 - Upload safety: the run downloads the MasterSheet with edit access and refuses to overwrite a file changed on
   Drive during the run (`DriveFile.download(need_edit=True)` / `upload`).
-- Done (26 Nov): committed and pushed (bc51ef4); Tests, Lint and Docs sync pass on GitHub. Nothing pending for this task.
+- Done (26 Nov): committed and pushed (c435754); MASTER DATA has exactly 23 columns. Adopted useful logic from old OMSGuru mapping tool: colour stripping, size normalization, AJIO JioCode mapping, Meesho constructed SKU, prefix->brand mapping. INFERRED BRAND captures statistical inference before fallbacks. Tests/Lint/Docs sync pass. Drive upload verified (184,978 rows, 23 columns).
 - Readers use MASTER DATA directly in the new layout (historical rows are in it); older workbooks still read
   MASTER DATA, UNMAPPED LISTINGS and REMOVED LISTINGS.
 - Durable implementation notes: .serena/memories/workings/core.md; product docs: docs/bots/master-sheet.md.

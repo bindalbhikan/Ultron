@@ -91,7 +91,7 @@ mastersheet = { workflow = "master-sheet.yml", inputs = ["no_upload"], about = "
 # auto = true: only makes a report, so the agent runs it at once when asked; the rest change something
 # outside (tickets, inventory, OTP sheet, portal requests) and wait for the owner's Approve tap.
 sale = { workflow = "sale.yml", inputs = ["from", "to", "today", "sjit_request", "snapshot"], about = "Daily sale report into the SALE REPORT sheet. inputs: from, to (YYYY-MM-DD) or today=1; snapshot=current or YYYY-MM for a picture of that month's sheet instead", auto = true }
-vms = { workflow = "vms.yml", inputs = ["from", "to", "snapshot", "erp_only"], about = "Myntra VMS report. inputs: from, to (YYYY-MM-DD); erp_only=1 for ERP vs VMS of yesterday and today; snapshot=current or YYYY-MM for a sheet picture", auto = true }
+vms = { workflow = "vms.yml", inputs = ["from", "to", "snapshot", "erp_only"], about = "Myntra VMS report. inputs: from, to (YYYY-MM-DD); erp_only=1 for ERP vs VMS text on Telegram (no image); snapshot=current or YYYY-MM for a MON-YY VMS sheet picture (not ERP vs VMS)", auto = true }
 ajiotat = { workflow = "ajio-tat.yml", inputs = ["days", "orders"], about = "AJIO TAT master update. inputs: days (OMSGuru window), orders (FN/EX/seller order numbers to add, comma separated)" }
 ajiospf = { workflow = "ajio-spf.yml", inputs = ["dry_run", "master_only", "disputes"], about = "AJIO SPF run (raises claims on AJIO). inputs: dry_run=1 for a test run" }
 myntraspf = { workflow = "myntra-spf.yml", inputs = ["request", "no_upload"], about = "Myntra SPF master. no inputs" }

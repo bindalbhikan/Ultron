@@ -62,7 +62,7 @@
       "snapshot",
       "erp_only"
     ],
-    "about": "Myntra VMS report. inputs: from, to (YYYY-MM-DD); erp_only=1 for ERP vs VMS of yesterday and today; snapshot=current or YYYY-MM for a sheet picture",
+    "about": "Myntra VMS report. inputs: from, to (YYYY-MM-DD); erp_only=1 for ERP vs VMS text on Telegram (no image); snapshot=current or YYYY-MM for a MON-YY VMS sheet picture (not ERP vs VMS)",
     "auto": true,
     "chat": true,
     "fields": {

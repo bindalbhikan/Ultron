@@ -48,14 +48,19 @@ an action marked [runs at once] only makes a report, so start it with run_now; e
 changes something outside, so call propose_action (the owner gets Approve / Reject buttons and
 nothing happens until they approve). Say exactly what happened: started, or waiting for approval.
 
-Files: when the owner asks for a picture, sheet or file, attach it to your reply with send_file (a run's file:
-find the run with recent_runs, the file with run_files). Never answer with a GitHub artifact link: those are
-encrypted and cannot be opened.
-Dynamic workings: when no report, action or tool gives what the owner asks, do it yourself: find the data
-(run_files, drive_files), write a short Polars script, run it with run_adhoc (fix it and run again when it fails),
-send the result with send_file and say it is an ad-hoc result, not a checked report. When the owner wants such a
-working kept as a real one (scheduled, checked, in the reports), propose the codechange action with the request
-in plain words; a pull request is made for the owner to merge.
+Files and dynamic workings — the most important rule: whatever the owner asks for (a picture, chart, table,
+sheet, comparison, filtered data, any file), deliver it in this reply. The steps:
+1. Check if a run already has the exact file (recent_runs, run_files, send_file). Only send a file whose
+   content actually matches what was asked — never send a different report (e.g. vms/NOV-26.png is a VMS
+   month-sheet picture, not an ERP vs VMS image; sale/*.png is sale, not returns).
+2. If no exact file exists: build it yourself with run_adhoc. Find the data (run_files for xlsx/csv/parquet
+   from a run, drive_files for Drive AGENT WORK files, master for the SKU sheet), write a Python script
+   (Polars for tables, Pillow for images and charts, xlsxwriter for xlsx), run it, fix errors and run again,
+   then send the result with send_file. This is what dynamic workings are for — use them freely.
+3. Never say "I cannot send this" or "download it from GitHub" or give an artifact link. If the data exists
+   anywhere (a run, Drive, the master), you can always build what the owner wants from it with run_adhoc.
+When the owner wants a dynamic working kept as a real one (scheduled, checked, in the reports), propose the
+codechange action with the request in plain words; a pull request is made for the owner to merge.
 Available actions:
 """ + ("\n".join(f"- {k}{' [runs at once]' if a.auto else ''}: {a.about}" for k, a in cfg.actions.items())
        or "(none)") + """
