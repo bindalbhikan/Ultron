@@ -40,7 +40,7 @@ def test_rebuild_keeps_derives_and_removes():
     assert kept["DESIGN-NO"] == "D-1" and kept["Brand"] == "Fashfun"
     assert new["SIZE SKU"] == "DRESS-A-1-M" and new["MY SKU"] == "DRESS-A-1" and new["MASTER STYLE CODE"] == "DRESS-A-1"
     assert new["DESIGN-NO"] == "D-1" and new["COLOR"] == "Red"   # from the same style
-    assert new["Brand"] is None                                 # only a portal sheet names a brand, not OMSGuru's "FSH"
+    assert new["Brand"] == new["INFERRED BRAND"] == "Fashfun"
     assert new["FLIPKART FSN"] == "FSN_NEW"                     # nothing on the sheet: OMSGuru's
     assert rows["B0ASIN"]["AMAZON ASIN"] == "B0ASIN" and rows["B0ASIN"]["Channel Name"] == "AMAZON DF"
     assert gone["Channel Listing SKU Code"].to_list() == ["OLD-1"] and gone[build.REMOVED_ON][0] == "2026-11-24"

@@ -10,12 +10,7 @@ One row per channel listing OMSGuru has (Channel Listings > Download Mapped Chan
   MASTER SKU / MASTER STYLE CODE from the owner's "Master Sku" sheet (else SIZE SKU / MY SKU), DESIGN-NO / COLOR /
   LAUNCH DATE / PORTAL LISTING DATE from the other rows of the same style only when they all agree (12% of the
   styles have more than one colour; DESIGN-NO else "Fabric Code", LAUNCH DATE first from "Launch Date & Size Count");
-* Brand only from the portal's own sheet (owner, 24 Nov 2026: "brand confirmation portal ki sheet se hi"): a Myntra
-  listing takes the brand of its account's Myntra listing report, a Flipkart one the Flipkart listing file's (spelt
-  as the sheet spells it: FashFun -> Fashfun). A channel with no portal sheet keeps the Brand the sheet has, unless
-  it is wrong (a SKU brand code like "FSH", or "Shopsy", a Flipkart marketplace): that one, and a new listing's, is
-  left blank. Nothing is taken from titles, other channels or SKU prefixes (24 Nov 2026: that put "Fashfun" on
-  BINDAL EXIM, which has no such brand);
+* Brand comes from portal data, including AJIO inventory filenames, then existing brands and supported SKU patterns.
 * portal ids, the portal's own file first, then the value on the sheet, then OMSGuru: Myntra style id / SKU code
   from each account's Myntra listing report (seller SKU code = the listing SKU), Flipkart FSN from the Flipkart
   listing file (else OMSGuru "Extra Param"; OMSGuru's was wrong on 358 of 377 rows where they differed), Amazon
@@ -27,7 +22,7 @@ One row per channel listing OMSGuru has (Channel Listings > Download Mapped Chan
 * UNMAPPED LISTINGS (owner, 24 Nov 2026): a listing in a portal's own listing file (Myntra listing reports,
   Flipkart listing file) that OMSGuru does not have, in MasterData's columns.
 
-Nothing is guessed: a value no source gives stays empty.
+Inferred brands are marked and recalculated on each run.
 """
 from __future__ import annotations
 
@@ -279,14 +274,23 @@ def given_rows(frames: list[tuple[str, pl.DataFrame]], listings: pl.DataFrame) -
     out, notes = [], []
     for name, f in frames:
         best = (0, None, None)
+        ajio_inventory = name.upper().startswith("AJIO-INV-") and name.endswith("[B2C InventoryView]")
+        source = name.upper().split("-", 1)[0]
+        if name.upper().startswith("MYNTRA-STYLE-") and "STYLE ID" in f.columns:
+            notes.append(f"PORTAL SHEET {name}: style report without seller SKU")
+            continue
         for col in f.columns:
+            if ajio_inventory and col != "Seller SKU":
+                continue
             vals = {str(v).strip().upper() for v in f[col].drop_nulls().to_list() if str(v).strip()}
             for fam, have in by_family.items():
+                if source in (set(PORTAL_HEADERS) | {"NYKAA", "COCOBLU"}) and fam != source:
+                    continue
                 hits = len(vals & have)
                 if hits > best[0]:
                     best = (hits, col, fam)
         hits, key, fam = best
-        if not key or hits < max(5, 0.2 * f.height):
+        if not key or (not ajio_inventory and hits < max(5, 0.2 * f.height)):
             notes.append(f"PORTAL SHEET {name}: no column of listing SKUs found, not used")
             continue
         names = {**{_norm(c): c for c in COLUMNS if c not in ("Channel Listing SKU Code", "Channel Listing Id",
@@ -305,7 +309,50 @@ def given_rows(frames: list[tuple[str, pl.DataFrame]], listings: pl.DataFrame) -
                             *(_txt(c).alias(t) for c, t in take.items())).drop_nulls("_k"))
     if not out:
         return None, notes
-    return pl.concat(out, how="diagonal").unique(["_family", "_k"], keep="last", maintain_order=True), notes
+    merged = pl.concat(out, how="diagonal")
+    fields = [c for c in merged.columns if c not in ("_family", "_k")]
+    values = []
+    for field in fields:
+        value = pl.col(field).drop_nulls().last()
+        if field == "Brand":
+            value = pl.when(pl.col(field).drop_nulls().str.to_uppercase().n_unique() == 1).then(value)
+        values.append(value.alias(field))
+    return merged.group_by("_family", "_k", maintain_order=True).agg(values), notes
+
+
+def infer_brands(data: pl.DataFrame) -> pl.DataFrame:
+    """Fill blanks from independent branded listings. Reuse no guesses as training evidence."""
+    sku = pl.col("Channel Listing SKU Code").str.to_uppercase()
+    frame = data.with_columns(
+        sku.str.replace(r"[-_](?:XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|[2-9]XL)$", "").alias("_listing_style"),
+        sku.str.extract(r"^([A-Z]{2,})[-_]", 1).alias("_prefix"))
+    known = frame.filter(pl.col("Brand").is_not_null())
+    guesses = []
+    for keys, minimum, shared in [
+        (["Channel Name", "_listing_style"], 1, False),
+        (["Channel Name", "MASTER STYLE CODE"], 1, False),
+        (["_listing_style"], 2, True),
+        (["Channel Name", "_prefix"], 5, False),
+    ]:
+        lookup = known.group_by(keys).agg(
+            pl.col("Brand").first().alias("_candidate"),
+            pl.col("Brand").str.to_uppercase().n_unique().alias("_brands"),
+            pl.col("Channel Name").n_unique().alias("_channels"),
+            pl.col("MASTER STYLE CODE").drop_nulls().n_unique().alias("_styles"),
+        ).filter(pl.col("_brands") == 1)
+        if shared:
+            lookup = lookup.filter(pl.col("_channels") >= minimum)
+        elif minimum > 1:
+            lookup = lookup.filter((pl.col("_styles") >= minimum) &
+                                   ~pl.col("_prefix").is_in(["DRESS", "TOP", "COORD", "KURTI", "SHIRT", "NYK", "SY"]))
+        name = f"_guess{len(guesses)}"
+        frame = frame.join(lookup.select(*keys, pl.col("_candidate").alias(name)), on=keys, how="left")
+        guesses.append(name)
+    agree = pl.concat_list(guesses).list.drop_nulls().list.unique()
+    inferred = pl.when(pl.col("Brand").is_null() & (agree.list.len() == 1)).then(agree.list.first())
+    return (frame.with_columns(inferred.alias("INFERRED BRAND"))
+            .with_columns(pl.coalesce("Brand", "INFERRED BRAND").alias("Brand"))
+            .drop("_listing_style", "_prefix", *guesses))
 
 
 def apply_given(df: pl.DataFrame, given: pl.DataFrame | None, cols: list[str]) -> pl.DataFrame:
@@ -404,11 +451,16 @@ def rebuild(old: pl.DataFrame, removed: pl.DataFrame | None, oms: pl.DataFrame, 
     old_all = pl.concat([old.with_columns(pl.lit(None, pl.Utf8).alias(REMOVED_ON)).select(cols + [REMOVED_ON]),
                          removed.select(cols + [REMOVED_ON])], how="vertical_relaxed")
     old_all = old_all.with_columns(_txt(c).alias(c) for c in KEY).unique(KEY, keep="first", maintain_order=True)
+    history = old_all
+    if "INFERRED BRAND" in old_all.columns:
+        old_all = old_all.with_columns(
+            pl.when(pl.col("Brand").eq_missing(pl.col("INFERRED BRAND"))).then(None)
+            .otherwise(pl.col("Brand")).alias("Brand"), pl.lit(None, pl.String).alias("INFERRED BRAND"))
     ctx = Context(old_all, sheets, myntra, flipkart)
 
     joined = apply_given(derive(oms.join(old_all, on=KEY, how="left"), ctx, cols), given, cols)
-    data = joined.select(cols)
-    gone = old_all.join(oms.select(KEY), on=KEY, how="anti").with_columns(
+    data = infer_brands(joined.select(cols))
+    gone = history.join(oms.select(KEY), on=KEY, how="anti").with_columns(
         pl.coalesce(REMOVED_ON, pl.lit(today.isoformat())).alias(REMOVED_ON)).select(cols + [REMOVED_ON])
     loose = apply_given(unmapped(oms, ctx, old_all, cols), given, cols).select(cols)
     came_back = joined.filter(pl.col(REMOVED_ON).is_not_null()).height

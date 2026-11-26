@@ -22,12 +22,10 @@ DATE & SIZE COUNT; the readers find a sheet whatever its case (`master_sheet.she
   STYLE CODE from **MASTER SKU** (else SIZE SKU / MY SKU), DESIGN-NO / COLOR / LAUNCH DATE / PORTAL LISTING DATE from
   the other rows of the same style when they all agree (DESIGN-NO else **FABRIC CODE**, LAUNCH DATE first from
   **LAUNCH DATE & SIZE COUNT**).
-* **Brand only from a portal's own sheet** (owner, 24 Nov 2026): a Myntra listing's from its account's Myntra listing
-  report, a Flipkart one's from the Flipkart listing file (spelt as the sheet spells it, FashFun -> Fashfun), any
-  channel's from the owner's PORTAL SHEET files. Otherwise the sheet's own Brand stays, unless it is wrong (a SKU
-  brand code like "FSH", or "Shopsy", a Flipkart marketplace): that one, and a new listing's, stays blank and is listed
-  in NEED DATA. Nothing from titles, other channels or SKU prefixes (that put "Fashfun" on BINDAL EXIM, which has no
-  such brand). On 24 Nov the brands the earlier runs had filled that way were set back to the owner's own.
+* **Brand** (26 Nov 2026): portal brands take precedence. AJIO B2C InventoryView uses the second header row,
+  Seller SKU and the brand in the AJIO-INV filename. Blank brands can use unanimous same-channel listing style or
+  master style, a listing style shared by two branded channels, or a same-channel prefix supported by five styles.
+  Conflicting candidates stay blank. INFERRED BRAND records each guess and the next run recalculates it.
 * **Portal ids**, the portal's own file first, then the sheet, then OMSGuru: Myntra style id / SKU code from each
   account's Myntra listing report (the 9:30 AM `myntra-reports` job reused); Flipkart FSN from the newest Flipkart
   listing file (`flipkart-listing-file`), else OMSGuru `Extra Param` (OMSGuru's FSN was wrong on 358 of 377 rows where

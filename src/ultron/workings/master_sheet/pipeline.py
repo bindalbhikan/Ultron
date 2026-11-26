@@ -92,8 +92,16 @@ def portal_sheets(dest: Path, notes: list[str], listings: pl.DataFrame) -> pl.Da
                 frames.append((name, pl.read_csv(path, separator="\t", infer_schema=False, quote_char=None)))
             else:
                 from python_calamine import CalamineWorkbook
-                frames += [(f"{name} [{s}]", read_excel_text(path, s))
-                           for s in CalamineWorkbook.from_path(str(path)).sheet_names]
+                for sheet in CalamineWorkbook.from_path(str(path)).sheet_names:
+                    ajio = re.fullmatch(r"AJIO-INV-(.+)\.xlsx", name, re.I)
+                    if ajio and sheet == "B2C InventoryView":
+                        table = read_excel_text(path, sheet, header=1)
+                        brand = ajio[1].replace("-", " ").strip()
+                        brand = "LEIA" if brand.upper() == "LEIA" else brand.title()
+                        table = table.select("Seller SKU", "JioCode", "Color").with_columns(pl.lit(brand).alias("Brand"))
+                    else:
+                        table = read_excel_text(path, sheet)
+                    frames.append((f"{name} [{sheet}]", table))
         except Exception as exc:  # noqa: BLE001 - the other files still count
             notes.append(f"PORTAL SHEET {name} not read: {str(exc)[:80]}")
     given, found = build.given_rows(frames, listings)

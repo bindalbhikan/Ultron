@@ -35,6 +35,8 @@ Keep PROJECT_CONTEXT.md current with the active task and verified state.
 
 ## Hard rules
 
+- MasterSheet uses AJIO inventory filenames as brands and marks SKU-derived brands in INFERRED BRAND.
+
 - **English only** in everything written: code, comments, logs, docs, commits, PRs, Telegram texts.
 - **Public repo**: never commit or print logins, cookies, tokens, customer data, Drive/chat ids.
   Bots run through `scripts/github/ci_run.sh` (encrypted output). `.env`, `service_account.json`,
