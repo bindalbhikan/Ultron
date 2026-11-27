@@ -1,13 +1,13 @@
-"""Myntra courier OTPs (11 AM, again at 11:40 AM with --retry): today's PICKUP and RETURN one-time codes of the TLPL, MMRJ and BOAT
+"""Myntra courier OTPs (11 AM, again at 11:40 AM with --retry): today's PICKUP and RETURN one-time codes of the TLPL, MMRJ, BOAT and EXIM
 warehouses, from the partner portal's Orders > OTC page (api/location/otc), to Telegram.
 
 Each OMSGuru channel is one Myntra seller account and its Surat warehouse (the warehouse code
-C45111W17453 names channel 45111): TLPL = MAIN 46148, MMRJ = DBCC 50829, BOAT = FMCC 56765
-(MYNTRA_OTP_SITES, code:account:warehouse). A courier with no trip today has no code ("-").
+C45111W17453 names channel 45111): TLPL = MAIN 46148, MMRJ = DBCC 50829, BOAT = FMCC 56765,
+EXIM = EXIM 107530 (MYNTRA_OTP_SITES, code:account:warehouse). A courier with no trip today has no code ("-").
 
 The codes go to Telegram and into the team's "Daily OTP 2026" Google Sheet (MYNTRA_OTP_SHEET_ID),
-one row per code in its own layout: DATE, PORTAL, COUNT (left empty, filled in by hand), OTP,
-STATUS (PICKUP / RETURN), Name (MYNTRA_OTP_NAME, Bhikan) and the courier as the team writes it (MYE = EK, MYS = FL).
+one row per code in its own layout: DATE, PORTAL (with _EK / _FL suffix, e.g. Myntra_Main_TLPL_EK),
+COUNT (left empty, filled in by hand), OTP, STATUS (PICKUP / RETURN), Name (MYNTRA_OTP_NAME, Bhikan).
 A code the sheet already has that day is not added again; a code Myntra changed replaces the bot's own
 row (COUNT still empty) and never a row the team filled (Telegram is told). Nothing is logged.
 --retry (11:40 AM): a courier often has no trip yet at 11 AM. The codes are read again; Telegram
@@ -25,7 +25,7 @@ from ..core.config import env, required
 
 log = logging.getLogger("bindal.myntra_otp")
 
-SITES = "TLPL:MAIN:46148,MMRJ:DBCC:50829,BOAT:FMCC:56765"
+SITES = "TLPL:MAIN:46148,MMRJ:DBCC:50829,BOAT:FMCC:56765,EXIM:EXIM:107530"
 TRIPS = (("PICKUP", "Pickup"), ("RETURN", "Return"))
 
 
@@ -57,7 +57,7 @@ def read_codes(portal_of=None) -> tuple[list[tuple[str, str, dict[str, str]]], l
     return rows, couriers, notes
 
 
-ACCOUNT_NAMES = {"TLPL": "Myntra Main", "MMRJ": "Myntra DBCC", "BOAT": "Myntra FF X MUR CC"}
+ACCOUNT_NAMES = {"TLPL": "Myntra Main", "MMRJ": "Myntra DBCC", "BOAT": "Myntra FF X MUR CC", "EXIM": "Myntra Exim"}
 
 
 def message(rows, couriers, notes, now: datetime) -> str:
@@ -78,7 +78,12 @@ def message(rows, couriers, notes, now: datetime) -> str:
     return "\n".join(out)
 
 
-PORTAL_NAMES = {"TLPL": "Myntra_Main_TLPL", "MMRJ": "Myntra_DBCC_MMRJ", "BOAT": "Myntra_FF X MUR CC_BOAT"}
+PORTAL_NAMES = {
+    "TLPL": "Myntra_Main_TLPL",
+    "MMRJ": "Myntra_DBCC_MMRJ",
+    "BOAT": "Myntra_FF X MUR CC_BOAT",
+    "EXIM": "Myntra_Exim",
+}
 COURIER_TAGS = {"MYE": "EK", "MYS": "FL"}
 
 
@@ -97,18 +102,24 @@ def sheet_rows(rows, now: datetime, existing: list[list[str]], notes: list[str] 
         for courier, otc in codes.items():
             if otc in (None, "", "-") or str(otc) in codes_today:
                 continue
-            portal, status, tag = PORTAL_NAMES.get(code, f"Myntra_{code}"), label.upper(), COURIER_TAGS.get(courier, courier)
-            mine = [i for i, r in enumerate(grid) if r[0].strip() == day and r[1].strip() == portal
-                    and r[4].strip().upper() == status and r[6].strip() == tag]
+            base = PORTAL_NAMES.get(code, f"Myntra_{code}")
+            status, tag = label.upper(), COURIER_TAGS.get(courier, courier)
+            portal = f"{base}_{tag}"
+            mine = [
+                i for i, r in enumerate(grid)
+                if r[0].strip() == day
+                and r[4].strip().upper() == status
+                and (r[1].strip() == portal or (r[1].strip() == base and r[6].strip() == tag))
+            ]
             codes_today.add(str(otc))
             if mine:
                 i = mine[-1]
                 if grid[i][2].strip() == "":
                     replace[i + 1] = str(otc)                # sheet row number (the header is row 1)
                 elif notes is not None:
-                    notes.append(f"{portal} {tag} {status}: new code {otc}, the team's row has {grid[i][3]} (left)")
+                    notes.append(f"{portal} {status}: new code {otc}, the team's row has {grid[i][3]} (left)")
                 continue
-            out.append([day, portal, "", str(otc), status, env("MYNTRA_OTP_NAME") or "Bhikan", tag])
+            out.append([day, portal, "", str(otc), status, env("MYNTRA_OTP_NAME") or "Bhikan"])
     return out, replace
 
 

@@ -35,6 +35,13 @@ const LOG_HEADERS = ['REF', 'DATE', 'PORTAL', 'STATUS', 'OTP', 'COUNT', 'SMS TIM
 // written before then still read 'Agent' or 'Agent · <name>'. The team's rows are never changed.
 const OTP_NAME = 'Agent';          // the name when the phone has no user name
 const OTP_MARK = 'ULTRON app';     // the note on the name cell of the agent's rows
+const OTP_USER_NAMES = { bhikan: 'Bhikan', vipul: 'Vipul', asif: 'Asif', rahul: 'RAHUL' };
+function otpUserName(user) {
+  const raw = String(user || '').trim();
+  if (!raw) return OTP_NAME;
+  const first = raw.split(/\s+/)[0].toLowerCase();
+  return OTP_USER_NAMES[first] || raw;
+}
 // r: a row of otpRowsOf (r[5] the name, r[6] the name cell's note)
 function ours(r) {
   const name = String(r[5] || '');
@@ -405,7 +412,7 @@ function returns(from, body, deviceTime, p) {
 // the team already wrote left alone, else a new row. Older SMS (write = false) are only looked up.
 // user: the phone's user name (SMS-only mode), the only thing in the name column (OTP_NAME without one).
 function putOtp(sheet, rows, day, portal, status, otp, count, logged, write, user) {
-  const name = String(user || '').trim() || OTP_NAME;
+  const name = otpUserName(user);
   const at = (code) => rows.findIndex(r => r[0] === day && r[1] === portal && r[3] === code && r[4].toUpperCase() === status);
   const old = logged && logged[4] ? at(logged[4]) : -1;
   if (old >= 0 && write) {
