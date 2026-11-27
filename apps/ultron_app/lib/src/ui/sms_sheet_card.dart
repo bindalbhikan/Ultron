@@ -47,11 +47,22 @@ class _SmsSheetCardState extends ConsumerState<SmsSheetCard>
     }
   }
 
-  /// The sheet's name for this phone: the signed-in user's name (2 to 40 characters), else the username.
+  static const _sheetAliases = {
+    'bhikan': 'Bhikan',
+    'vipul': 'Vipul',
+    'asif': 'Asif',
+    'rahul': 'RAHUL',
+  };
+
+  /// The sheet's name for this phone: the signed-in user's name (matched to the OTP sheet's Name
+  /// dropdown when known, e.g. "bhikan deshmukh" -> "Bhikan"), else the username.
   String get _sheetName {
     final user = ref.read(authProvider).user;
     final name = (user?.name ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();
     if (name.length >= 2) {
+      final first = name.split(' ').first.toLowerCase();
+      final mapped = _sheetAliases[first];
+      if (mapped != null) return mapped;
       return name.length > 40 ? name.substring(0, 40) : name;
     }
     return (user?.username ?? 'ULTRON user').padRight(2, '_');
