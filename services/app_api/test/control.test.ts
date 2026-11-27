@@ -118,3 +118,24 @@ test('runtime schedule edits preserve revisions and append history atomically',a
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM agent_schedule_history').first<{n:number}>())!.n,2);
   assert.equal((await call(app(),'schedule.set',{id:item.id,enabled:true,cron:'15 4 * * *',revision:2},{preview:true})).status,400);
 });
+
+test('daily sale results go into the app history of the requesting user', async () => {
+  Object.assign(env.AGENT_ACTIONS as object, {sale:{workflow:'sale.yml',inputs:[],auto:true,chat:true}});
+  const result = await call(app('control-runner'), 'workflow.run', {action:'sale'});
+  assert.equal(result.status,200);
+  const dispatch = [...requests].reverse().find(r => r.url.includes('sale.yml/dispatches'));
+  const recipient = dispatch?.body.inputs.chat_id;
+  assert.match(recipient,/^report:/);
+  const path = '/api/app/chat/report/' + recipient.slice(7);
+  const id = crypto.randomUUID();
+  const deliver = () => agent.route(new Request('https://worker.test'+path,{
+    method:'POST',headers:{Authorization:'Bearer test-token'},
+    body:JSON.stringify({id,text:'Sale summary'})
+  }),env,path) as Promise<Response>;
+  assert.equal((await deliver()).status,200);
+  assert.equal((await deliver()).status,200);
+  const row = await db.prepare('SELECT user_id,answer,status FROM app_chat_job WHERE id=?').bind(id).first();
+  assert.equal(row?.user_id,'control-runner');
+  assert.equal(row?.answer,'Sale summary');
+  assert.equal(row?.status,'completed');
+});

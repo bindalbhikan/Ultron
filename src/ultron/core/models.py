@@ -181,7 +181,12 @@ def candidates(pinned: Choice | None, order: tuple[str, ...], tier: str, worker_
 
     out = on_keys(pinned.provider, pinned.model) if pinned else []
     for name in available(order, keys, worker_ready):
-        for choice in on_keys(name, best(PROVIDERS[name], tier, lists.ids(name))):
-            if choice not in out:
-                out.append(choice)
+        ids = lists.ids(name)
+        models = [best(PROVIDERS[name], tier, ids)]
+        if name == "cloudflare":
+            models.extend(PROVIDERS[name].known.values())
+        for model in models:
+            for choice in on_keys(name, model):
+                if choice not in out:
+                    out.append(choice)
     return out

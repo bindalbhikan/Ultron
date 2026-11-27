@@ -636,6 +636,21 @@ export function makeAgent({
     if (!authorised(request, env)) return bad("forbidden", 403);
     const database = env[db];
     const now = Date.now();
+    if (path.startsWith("/api/app/chat/report/")) {
+      const event = path.slice("/api/app/chat/report/".length);
+      if (request.method !== "POST" || !/^[a-f0-9-]{36}$/.test(event)) return bad("unknown report", 404);
+      const input = await jsonBody(request).catch((e) => e);
+      if (input instanceof Response) return input;
+      if (typeof input.text !== "string" || !input.text.trim() || input.text.length > 12000
+          || !/^[a-f0-9-]{36}$/.test(input.id)) return bad("invalid report");
+      const result = await database.prepare(`INSERT INTO app_chat_job(id,user_id,question,answer,status,created_at,updated_at)
+        SELECT ?,u.id,'Daily sale report',?,'completed',?,? FROM agent_control_event e JOIN user u ON u.id=e.actor
+        WHERE e.id=? AND e.operation='workflow.run' AND e.target='sale' AND e.created_at>?
+        ON CONFLICT(id) DO NOTHING`).bind(input.id,input.text,now,now,event,now-86400000).run();
+      if (!result.meta.changes && !await database.prepare("SELECT id FROM app_chat_job WHERE id=?").bind(input.id).first())
+        return bad("report request expired or unavailable", 404);
+      return Response.json({ saved: true });
+    }
     const [id, part = ""] = path.slice("/api/app/chat/job/".length).split("/");
     if (path.startsWith("/api/app/chat/job/")) {
       if (!/^[0-9a-f-]{36}$/.test(id)) return bad("unknown chat request", 404);
@@ -709,7 +724,7 @@ export function makeAgent({
     if (path === "/api/control/schedule" && request.method === "GET") return scheduleForReports(request,env);
     if (path === "/api/control" && request.method === "POST") return controlRoute(request, env);
     if ((path === "/api/app/chat" || path === "/api/app/chat/history") && request.method === "POST"
-        || path.startsWith("/api/app/chat/job/")) return appChat(request, env, path);
+        || path.startsWith("/api/app/chat/job/") || path.startsWith("/api/app/chat/report/")) return appChat(request, env, path);
     if (path === "/api/ai" || path === "/api/chat/completions") return runAI(request, env);
     if (path === "/api/models") return listModels(request, env);
     if (path === "/api/approval") return saveApproval(request, env);

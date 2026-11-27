@@ -10,6 +10,7 @@ the SJIT orders come from the 30-day order report the 9:30 AM `myntra-reports` r
 (blocks per channel, rows GROSS / RETURN / Cancel / NET per day), Telegram day + month table.
 
 **Sources**
+* New marketplaces in the OMSGuru channel list get their own GROSS, RETURN, Cancel and NET columns before Total, even with no orders yet. Existing marketplace groupings and the Snapdeal exclusion still apply.
 * OMSGuru: GROSS per channel by order date (required: no orders at all = workbook untouched).
 * Flipkart FBF: GROSS + cancel from Seller Hub metrics on Flipkart's own warehouses.
 * Myntra SJIT: `Seller_Orders_Report` of MAIN from the partner portal (saved session); reports

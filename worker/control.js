@@ -119,6 +119,9 @@ export function makeControl({ repo, actions, github, dispatch, allowedChat, data
       if (operation === "workflow.run") {
         const inputs = { ...prepared.inputs };
         if (who.chatId && prepared.chat) inputs.chat_id = who.chatId;
+        if (who.source === "app" && args.action === "sale" && !inputs.snapshot && !inputs.sjit_request) {
+          inputs.chat_id = `report:${event}`;
+        }
         const r = await dispatch(env, prepared.workflow, inputs);
         if (r.status !== 204) {
           const error = new ControlError(502,"GitHub did not confirm the run (" + r.status + "). Check run history before retrying.");

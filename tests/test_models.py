@@ -148,3 +148,18 @@ def test_keys_env_first_then_the_apps_in_order(monkeypatch):
     got = llm.keys()
     assert got["groq"] == [("env", "env-secret"), ("a1", "app-1"), ("a2", "app-2")] and "unknown" not in got
     assert llm._resting["a2"] > 1e9                                   # resting as the app last said
+
+
+def test_cloudflare_falls_back_to_the_other_worker_model(tmp_path):
+    lists = ModelLists(tmp_path / "models.json", lambda _: [])
+    got = candidates(None, ("cloudflare",), "smart", True, lists, {})
+    assert [c.model for c in got] == ["@cf/openai/gpt-oss-120b", "@cf/openai/gpt-oss-20b"]
+
+
+def test_watcher_recognizes_log_severity():
+    import re
+    from ultron.agents.watch import ERROR_LINES
+
+    assert re.search(ERROR_LINES, "2026-11-27 09:22:44,120 ERROR portal: download failed", re.I)
+    assert re.search(ERROR_LINES, "Traceback (most recent call last):", re.I)
+    assert not re.search(ERROR_LINES, "2026-11-27 09:22:44,120 WARNING portal: failed: Internal server error", re.I)

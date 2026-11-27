@@ -28,7 +28,7 @@ from ..tools.runs import run_log
 
 log = logging.getLogger("ultron")
 
-ERROR_LINES = r"\bERROR\b|Traceback|CRITICAL|failed:"
+ERROR_LINES = r"^(?:(?:\d{4}-\d\d-\d\d[ T])?\d\d:\d\d:\d\d(?:[.,]\d+)?\s+)?(?:ERROR|CRITICAL)\b|^Traceback \(most recent call last\):"
 
 RULES = """You are Ultron, the e-commerce manager of {who} You watch its automated report bots;
 each bot is a GitHub Actions workflow, and its documentation follows.
@@ -218,7 +218,8 @@ def run(args) -> int:
         return 0
     earlier = github.runs(info["workflow_file"], 12)
     try:
-        errors = run_log(run_id=args.run_id, grep=ERROR_LINES)
+        pattern = r"\bERROR\b|Traceback|CRITICAL|failed:" if info["conclusion"] == "failure" else ERROR_LINES
+        errors = run_log(run_id=args.run_id, grep=pattern)
         tail = run_log(run_id=args.run_id, tail=40)
     except Exception as exc:  # noqa: BLE001 - no encrypted output (cancelled before upload)
         errors, tail = f"(log not readable: {exc})", ""

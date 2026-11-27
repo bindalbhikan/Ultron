@@ -147,3 +147,17 @@ def test_retry_call_logs_each_try_and_raises_the_last_error():
                                           "X failed: boom 3 (attempt 3)"]
     with pytest.raises(KeyError):           # not in `on`: no second try
         retry_call(lambda: {}["k"], tries=3, wait=backoff(1, 1), on=(ValueError,), sleep=waits.append)
+
+
+def test_zero_td_preserves_scraped_styles_when_phone_is_offline(monkeypatch):
+    from ultron.workings.core import phone
+    from ultron.workings.myntra_zero_td import pipeline, spider
+    monkeypatch.setenv("MYNTRA_ZERO_TD_VIA", "scrapy")
+    monkeypatch.setattr(spider, "fetch", lambda ids, concurrency: {1: {"id": 1}, 2: "HTTP 403"})
+
+    def offline(kind, items, wait_minutes):
+        assert items == [2]
+        raise phone.PhoneUnavailable("offline")
+
+    monkeypatch.setattr(phone, "run_job", offline)
+    assert pipeline.lookup([1, 2]) == {1: {"id": 1}, 2: "no answer from the phone"}

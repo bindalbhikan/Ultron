@@ -1,6 +1,9 @@
 # Project context
 
-Updated: 26 Nov 2026.
+Updated: 27 Nov 2026.
+
+- Daily sale discovers new marketplace columns from the OMSGuru channel catalog and includes them in workbook totals, Telegram and dashboard summaries.
+- Run watcher uses Cloudflare Workers AI and checks log severity. Daily sale summary workflows launched from the app use the control event to deliver the result to the requesting user.
 
 - Active checkout: D:\ULTRON; the Google Drive checkout is retired. Read AGENTS.md first.
 - Ultron: seller-neutral agent core, seller workings, Cloudflare operations worker, app API and Flutter app.

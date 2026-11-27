@@ -30,17 +30,30 @@ OMS_BLOCKS = sorted({block for _, block in CHANNEL_RULES} - {IGNORE})
 
 
 def block_for(channel_name: str) -> str | None:
-    name = channel_name.casefold()
+    _, separator, marketplace = channel_name.partition(" - ")
+    label = " ".join((marketplace if separator else channel_name).split()).upper()
+    name = label.casefold()
     for keywords, block in CHANNEL_RULES:
         if any(k in name for k in keywords):
             return block
-    return None
+    if label in {"", "-"}:
+        return None
+    if label in {"TOTAL", "SJIT", "FBF", "AZ/FX/FBA", "AMAZON/FLEX/FBA"} or label.startswith("="):
+        return f"OMS {label}"
+    return label
+
+
+def report_blocks(names: dict[str, str]) -> list[str]:
+    """Include newly configured marketplaces even before their first order."""
+    found = {block_for(name) for cid, name in names.items() if cid and name}
+    return [*OMS_BLOCKS, *sorted(found - set(OMS_BLOCKS) - {None, IGNORE})]
 
 
 def gross_by_day(client: OmsGuruClient, days: list[date], max_pages: int = 80):
-    """(Counter[(day, block)] of units, Counter of unmapped channel units)."""
+    """Return gross units, unmapped units and all configured report blocks."""
     units, _, names = units_by_channel(client, days, max_pages)
-    return blocks_of(units, names)
+    gross, unmapped = blocks_of(units, names)
+    return gross, unmapped, report_blocks(names)
 
 
 def blocks_of(units: Counter, names: dict[str, str]):
@@ -49,7 +62,7 @@ def blocks_of(units: Counter, names: dict[str, str]):
     unmapped: Counter = Counter()
     for (day, chid), qty in units.items():
         name = names.get(chid, chid or "(blank)")
-        block = block_for(name)
+        block = block_for(name) if names.get(chid) and chid else None
         if block == IGNORE:
             continue
         if block:

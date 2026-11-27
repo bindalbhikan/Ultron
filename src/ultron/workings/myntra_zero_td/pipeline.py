@@ -164,8 +164,18 @@ def lookup(ids: list[int]) -> dict[int, dict | str]:
                     refused, len(ids))
     wait = num("MYNTRA_ZERO_TD_PHONE_MINUTES", 40)
     deadline = time.monotonic() + wait * 60
-    got = phone.run_job("myntra_style", ids, wait_minutes=wait)
-    answers = {i: got.get(str(i), "no answer from the phone") for i in ids}
+    pending = [i for i in ids if not isinstance(answers.get(i), dict) and answers.get(i) != "NOT FOUND"]
+    if not pending:
+        return answers
+    try:
+        got = phone.run_job("myntra_style", pending, wait_minutes=wait)
+    except phone.PhoneUnavailable:
+        if len(pending) == len(ids):
+            raise
+        log.warning("Phone unavailable; keeping %d styles already checked", len(ids) - len(pending))
+        answers.update({i: "no answer from the phone" for i in pending})
+        return answers
+    answers.update({i: got.get(str(i), "no answer from the phone") for i in pending})
     # the phone's line drops for a while (UnknownHostException) or myntra.com refuses a burst
     # (HTTP 403): the styles without an answer are asked for again after a pause
     for again in range(int(num("MYNTRA_ZERO_TD_PHONE_RETRIES", 2))):

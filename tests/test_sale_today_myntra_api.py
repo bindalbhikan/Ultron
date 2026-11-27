@@ -51,3 +51,19 @@ def test_a_difference_between_the_two_is_named(monkeypatch):
     notes = []
     pipeline.myntra_live(None, TODAY, UNITS, CANCEL, NAMES, notes)
     assert "Myntra MAIN: Seller API 50 open, OMSGuru 48 (live orders since)" in notes
+
+
+def test_new_oms_marketplace_is_listed_before_first_sale_and_counted_once():
+    from collections import Counter
+    from datetime import date
+    from ultron.workings.sale.oms_sales import blocks_of, report_blocks
+    from ultron.workings.sale.pipeline import today_report
+
+    names = {"1": "Seller - LimeRoad", "2": "Second seller - LIMEROAD", "3": "Seller - Snapdeal"}
+    assert report_blocks(names).count("LIMEROAD") == 1
+    day = date(2026, 11, 27)
+    units = Counter({(day, "1"): 2, (day, "2"): 3, (day, "3"): 8, (day, "unknown"): 4})
+    gross, missing = blocks_of(units, names)
+    assert gross == {(day, "LIMEROAD"): 5}
+    assert missing == {"unknown": 4}
+    assert "limeroad" in today_report({"LIMEROAD": 5}, {}, []).lower()

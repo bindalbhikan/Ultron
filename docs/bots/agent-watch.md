@@ -4,12 +4,8 @@
 only when it did not succeed. By hand: run the workflow with a run id. The same workflow's
 `schedule` job updates the work schedule (`docs/bots/work-schedule.md`).
 
-* **Model** (22 Nov 2026): auto-selected across the providers with a key, with fallback
-  (`docs/bots/agent-models.md`); without a key, Cloudflare Workers AI `@cf/openai/gpt-oss-120b` on the account's free daily allocation (10,000 neurons), through the Telegram
-  worker's `/api/ai` route with the `DASHBOARD_TOKEN` - no API key. 20 Oct 2026: a check is about
-  13-20K tokens (~$0.005-0.008 of the ~$0.11 a day free), so ~15 checks a day fit. Models on the
-  Workers Free plan with tool calling: gpt-oss-120b / -20b, qwen3.8-27b, nemotron-3-120b (GLM 5.x,
-  Kimi, DeepSeek v4 need the paid plan).
+* The GitHub watcher uses Cloudflare Workers AI through the authenticated Worker. It tries the configured tier first and can fall back between GPT-OSS 120B and 20B. Successful runs are scanned for error-level log entries and tracebacks. Failed runs retain the broader diagnostic search.
+
 * A plainly fine run (succeeded, no more than twice its usual minutes, no ERROR / Traceback line in
   its log) is not sent to the model at all.
 * Otherwise the model reads the run with read-only tools (`ultron.tools.runs`): the decrypted

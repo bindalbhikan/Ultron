@@ -45,6 +45,18 @@ def _post(token: str, method: str, tries: int = 3, **kw) -> "http.Response | Non
 
 def send(text: str) -> bool:
     token, chats = _config()
+    if len(chats) == 1 and chats[0].startswith("report:"):
+        from uuid import uuid4
+        from ultron.core import config
+        from ultron.core.retry import backoff, retry_call
+        url, secret = config.get().worker()
+        for part in split_html(text, 12000):
+            body = {"id": str(uuid4()), "text": _plain(part)}
+            response = retry_call(lambda body=body: http.post(
+                f"{url}/api/app/chat/report/{chats[0][7:]}", headers={"Authorization": f"Bearer {secret}"},
+                json=body, timeout=30), tries=3, wait=backoff(1, 4), on=http.PASSING)
+            response.raise_for_status()
+        return True
     if not token or not chats:
         log.warning("Telegram not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID) - message printed instead")
         print(text)

@@ -23,14 +23,15 @@ from ..core.app import run_bot
 from ..core.config import ROOT, csv_list, env, num, output_dir
 from ..core.drive import DriveFile
 from ..core.files import replace_atomically
-from .oms_sales import OMS_BLOCKS, blocks_of, gross_by_day
+from .oms_sales import OMS_BLOCKS, blocks_of, gross_by_day, report_blocks
 from .workbook import SaleWorkbook
 from ..core import clients
 
 BOOK_NAME = "SALE REPORT.xlsx"
 REPORT_ORDER = ["AZ/FX/FBA", "COCOBLU", "MEESHO", "AJIO B2C", "FLIPKART", "FBF", "MYNTRA", "SJIT", "NYKAA"]
 TODAY_ORDER = [b for b in REPORT_ORDER if b != "SJIT"]  # the SJIT report has no data for today
-SHORT = {"AZ/FX/FBA": "Amazon", "COCOBLU": "Cocoblu", "AJIO B2C": "Ajio", "FBF": "FBF", "SJIT": "SJIT"}
+SHORT = {"AZ/FX/FBA": "Amazon", "COCOBLU": "Cocoblu", "AJIO B2C": "Ajio", "FBF": "FBF", "SJIT": "SJIT",
+         "LIMEROAD": "LimeRoad"}
 log = logging.getLogger("bindal.sale")
 
 
@@ -196,10 +197,11 @@ def _sale_table(rows: list[tuple[str, int, int | None]]) -> str:
 
 
 def telegram_report(book: SaleWorkbook, day: date, notes: list[str]) -> str:
-    rows = [(SHORT.get(b, b.title()), book.read(day, b, "GROSS") if b != "SJIT" or book.known(day, b, "GROSS") else "-",
-             book.read(day, b, "CANCEL")) for b in REPORT_ORDER]
     month = book.month_gross(day)
-    mrows = [(SHORT.get(b, b.title()), month.get(b, 0), None) for b in REPORT_ORDER]
+    order = [*REPORT_ORDER, *(b for b in month if b not in REPORT_ORDER and b != "SNAPDEAL")]
+    rows = [(SHORT.get(b, b.title()), book.read(day, b, "GROSS") if b != "SJIT" or book.known(day, b, "GROSS") else "-",
+             book.read(day, b, "CANCEL")) for b in order]
+    mrows = [(SHORT.get(b, b.title()), month.get(b, 0), None) for b in order]
     return "\n".join([
         f"📈 <b>Daily Sale · {day:%d %b %Y}</b>",
         "",
@@ -213,7 +215,7 @@ def telegram_report(book: SaleWorkbook, day: date, notes: list[str]) -> str:
 
 
 def today_report(counts: dict[str, int], cancels: dict[str, int], notes: list[str]) -> str:
-    rows = [(SHORT.get(b, b.title()), counts.get(b, 0), cancels.get(b)) for b in TODAY_ORDER]
+    rows = [(SHORT.get(b, b.title()), counts.get(b, 0), cancels.get(b)) for b in dict.fromkeys([*TODAY_ORDER, *counts])]
     return "\n".join([
         f"📊 <b>Today's Sale · {datetime.now():%d %b, %I:%M %p}</b>",
         "<i>so far today, by order time</i>",
@@ -228,14 +230,22 @@ def dashboard_data(book: SaleWorkbook, day: date, notes: list[str]) -> dict:
     first = day.replace(day=1)
     prev = (first - timedelta(days=1)).replace(day=1)
     days = []
+    sheets = dict(book._month_sheets())
+    orders = {key: list(dict.fromkeys([*REPORT_ORDER, *(b for b in book.layout(ws)[0]
+                                                        if b not in {"TOTAL", "SNAPDEAL"})]))
+              for key, ws in sheets.items() if key in {(prev.year, prev.month), (day.year, day.month)}}
+    channels = list(dict.fromkeys([*REPORT_ORDER, *(b for order in orders.values() for b in order)]))
     for d in (prev + timedelta(days=i) for i in range((day - prev).days + 1)):
+        order = orders.get((d.year, d.month))
+        if not order:
+            continue
         try:
-            gross = {SHORT.get(b, b.title()): book.read(d, b, "GROSS") for b in REPORT_ORDER}
-            cancel = {SHORT.get(b, b.title()): book.read(d, b, "CANCEL") for b in REPORT_ORDER}
+            gross = {SHORT.get(b, b.title()): book.read(d, b, "GROSS") for b in order}
+            cancel = {SHORT.get(b, b.title()): book.read(d, b, "CANCEL") for b in order}
         except Exception:   # noqa: BLE001 - a month without a sheet is just left out
             continue
         days.append({"date": d, "gross": gross, "cancel": cancel})
-    return {"day": day, "channels": [SHORT.get(b, b.title()) for b in REPORT_ORDER], "days": days, "notes": notes}
+    return {"day": day, "channels": [SHORT.get(b, b.title()) for b in channels], "days": days, "notes": notes}
 
 
 def myntra_live(client, today: date, units: Counter, cancel: Counter, names: dict[str, str],
@@ -279,7 +289,7 @@ def run_today(args) -> int:
     client = clients.omsguru()
     units, cancel, names = units_by_channel(client, [today])
     gross, unmapped = blocks_of(units, names)
-    counts = {b: gross[(today, b)] for b in OMS_BLOCKS}
+    counts = {b: gross[(today, b)] for b in report_blocks(names)}
     cancels: dict[str, int] = {}
     try:
         counts["MYNTRA"], cancels["MYNTRA"] = myntra_live(client, today, units, cancel, names, notes)
@@ -297,9 +307,10 @@ def run_today(args) -> int:
     log.info("Today's GROSS: %s", counts)
     text = today_report(counts, cancels, notes)
     print(text) if args.no_telegram else telegram.send(text)
+    order = list(dict.fromkeys([*TODAY_ORDER, *counts]))
     dashboard.publish("sale_today", {"at": datetime.now(), "notes": notes,
-                                     "gross": {SHORT.get(b, b.title()): counts.get(b, 0) for b in TODAY_ORDER},
-                                     "cancel": {SHORT.get(b, b.title()): cancels.get(b, 0) for b in TODAY_ORDER}})
+                                     "gross": {SHORT.get(b, b.title()): counts.get(b, 0) for b in order},
+                                     "cancel": {SHORT.get(b, b.title()): cancels.get(b, 0) for b in order}})
     return 0
 
 
@@ -400,16 +411,18 @@ def run(args) -> int:
                          + (" ..." if len(restored) > 6 else "") + ")")
 
     # OMSGuru: required - without it there is no report
-    gross, unmapped = oms_source(days)
+    gross, unmapped, blocks = oms_source(days)
     if not sum(gross.values()):
         raise RuntimeError(f"OMSGuru returned no orders for {days[0]} - {days[-1]}; workbook left unchanged")
+    for year, month in sorted({(d.year, d.month) for d in days}):
+        book.ensure_blocks(book.month_sheet(year, month), [b for b in blocks if b not in OMS_BLOCKS])
     for d in days:
-        values = {block: gross[(d, block)] for block in OMS_BLOCKS}
+        values = {block: gross[(d, block)] for block in blocks}
         if not book.has_block(d, "COCOBLU"):        # sheets from before Oct 2026: Cocoblu sat inside Amazon
             values["AZ/FX/FBA"] += values.pop("COCOBLU", 0)
         for block, value in values.items():
             book.write(d, block, "GROSS", value)
-    log.info("OMS GROSS written: %s", {f"{d}": {b: gross[(d, b)] for b in OMS_BLOCKS} for d in days})
+    log.info("OMS GROSS written: %s", {f"{d}": {b: gross[(d, b)] for b in blocks} for d in days})
     if unmapped:
         notes.append("unmapped OMS channels: " + ", ".join(f"{k} {v}" for k, v in unmapped.items()))
 

@@ -185,7 +185,16 @@ class SaleWorkbook:
         layout, _, _ = self.layout(self.month_sheet(day.year, day.month))
         return block in layout
 
-    def move_blocks(self, ws, new_block: str, after: str, remove: str) -> None:
+    def ensure_blocks(self, ws, blocks) -> None:
+        layout, _, _ = self.layout(ws)
+        for block in blocks:
+            if block in layout:
+                continue
+            after = next(key for key in reversed(layout) if key != "TOTAL")
+            self.move_blocks(ws, block, after)
+            layout, _, _ = self.layout(ws)
+
+    def move_blocks(self, ws, new_block: str, after: str, remove: str | None = None) -> None:
         """Rebuild a month sheet's columns: drop the `remove` block and add an empty `new_block`
         (GROSS / RETURN / Cancel / NET, styled like `after`) right after `after`. Values,
         styles, widths and merged headers move with their columns; formulas are rewritten."""

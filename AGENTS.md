@@ -143,6 +143,7 @@ forgotten sync is caught within a minute; the hand-written parts are still yours
   The work-schedule job must receive DASHBOARD_URL and DASHBOARD_TOKEN for its shared history read.
   worker/control.js checks permissions and executes operations for both. Preview never starts or changes
   anything. Runtime schedules preserve revision history, which work-schedule reporting also reads.
+- The run watcher uses Cloudflare Workers AI. App-requested daily sale summaries go to the requesting user's private app history.
 - App chat stays private per user: app_chat_job in D1, agent-chat.yml dispatched with a request id only.
   It may use shared controls through that claimed job's current user permissions, never Telegram owner
   action tools or model-supplied identity/confirmation. Mutations require approval except permitted auto
