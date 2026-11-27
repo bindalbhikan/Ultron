@@ -119,7 +119,11 @@ def portal_inputs(folder: Path, notes: list[str]) -> list[str]:
 
 def omsguru_export(folder: Path) -> Path:
     """OMSGuru's channel listing mapping export (every mapped listing, every channel), pulled fresh."""
-    data = clients.omsguru().export_listings(wait_minutes=num("LISTING_EXPORT_WAIT_MINUTES", 15))
+    client = clients.omsguru()
+    warehouses = list(client.warehouses())     # the export form shows only once a warehouse is chosen
+    if warehouses:
+        client.set_warehouse(warehouses[0])
+    data = client.export_listings(wait_minutes=num("LISTING_EXPORT_WAIT_MINUTES", 15))
     if not data:
         raise RuntimeError("OMSGuru's channel listing export came back empty (nothing written)")
     path = folder / ("OMSGURU-MAPPING.zip" if data[:2] == b"PK" else "omsguru-channel_listing_mapping.csv")

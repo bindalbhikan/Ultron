@@ -45,3 +45,6 @@ central SKU master); the old copies in BUSINESS REPORTING and RETURN ANALYSIS/Su
   (0.7) of the sheet's rows fails the run with nothing written. A PORTAL SHEET file not read is named in Telegram.
 * 27 Nov 2026: put back on the old tool's MasterSheet (its 26 Nov 12:17 run, 167,079 rows) as the base; the bot's
   own 24-26 Nov rebuilds (184,973 rows with REMOVED LISTINGS folded in, guessed brands) were the wrong updates.
+  First run on it (27 Nov, live): 168,127 listings (104 new, 944 without a sized SKU), OMSGuru 138,997, UNMAPPED
+  27,951. FLIPKART-ARCHIVE.xls, SNAPDEAL-CATALOG.xlsx and MEESHO-EXPORT were copied from the tool's input/ to
+  PORTAL SHEET (the tool read them, PORTAL SHEET did not have them). OMSGuru's export needs a warehouse chosen first.
