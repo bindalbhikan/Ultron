@@ -176,7 +176,7 @@ def _myntra_account(account: str, months: list[date], dest: Path, notes: list[st
                 # again after the cooldown - moving on lost May MAIN / Jun DBCC (18 Oct backfill).
                 asked = True
                 try:
-                    job = portal.schedule(start, end, report_id, cooldown_wait=False)
+                    job = portal.schedule(start, end, report_id, cooldown_wait=0)
                 except Exception as exc:  # noqa: BLE001 - that month only
                     key = (report_id, start)
                     tries[key] = tries.get(key, 0) + 1

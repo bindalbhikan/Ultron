@@ -137,7 +137,7 @@ def fetch_account(account: str, today: date, dest: Path, notes: list[str],
             if not job:
                 asked = True                     # a refusal too: the next one of this report waits
                 try:
-                    job = portal.schedule(a, b, rid, cooldown_wait=False)
+                    job = portal.schedule(a, b, rid, cooldown_wait=0)
                 except Exception as exc:  # noqa: BLE001 - that report only
                     key = (rid, a, b)
                     tries[key] = tries.get(key, 0) + 1

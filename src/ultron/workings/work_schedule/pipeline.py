@@ -22,7 +22,10 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
+import httpx
+
 from ultron.core import http
+from ultron.core.retry import backoff, retry_call
 
 from ..core.app import run_bot
 from ..core.config import env, num
@@ -266,8 +269,18 @@ def successful_runs(workflow: str, since: date, repo: str, s) -> list[datetime]:
     """Start times (IST) of the workflow's successful runs created from `since`."""
     out, page = [], 1
     while True:
-        r = s.get(f"https://api.github.com/repos/{repo}/actions/workflows/{workflow}/runs", timeout=60,
-                  params={"status": "success", "created": f">={since}", "per_page": 100, "page": page})
+        params = {"status": "success", "created": f">={since}", "per_page": 100, "page": page}
+
+        def get():
+            # GitHub's API answers a 502 / 503 now and then (27 Nov 2026 failed the whole run): asked again
+            r = s.get(f"https://api.github.com/repos/{repo}/actions/workflows/{workflow}/runs", timeout=60,
+                      params=params)
+            if r.status_code >= 500:
+                raise RuntimeError(f"GitHub API HTTP {r.status_code} for {workflow} runs")
+            return r
+
+        r = retry_call(get, tries=4, wait=backoff(10, 60), on=(RuntimeError, OSError, httpx.TransportError), log=log,
+                       what=f"GitHub runs of {workflow}")
         if r.status_code == 404:
             log.warning("No workflow %s on GitHub", workflow)
             return out

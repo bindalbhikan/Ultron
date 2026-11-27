@@ -458,7 +458,8 @@ class MyntraPortal:
 
         data = retry_call(lambda: self._call("POST", "/report/jobs/schedule", json=body).get("data") or [],
                           tries=tries, wait=lambda n: cooldown_wait * 60, on=(RuntimeError,), log=log,
-                          what=f"Report {report_id} request (a cooldown refusal waits {cooldown_wait} min)",
+                          what=(f"Report {report_id} request (a cooldown refusal waits {int(cooldown_wait)} min)"
+                                if cooldown_wait else f"Report {report_id} request (no cooldown wait)"),
                           sleep=lambda s: time.sleep(s))
         if not data:
             raise RuntimeError("Myntra portal did not return the scheduled report job")
