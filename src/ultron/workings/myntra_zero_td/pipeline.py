@@ -91,7 +91,7 @@ def master_styles(path: Path, accounts: list[str]) -> dict[str, pl.DataFrame]:
     """{account: its Myntra styles in the MasterSheet at path, in SHEET_COLUMNS, one row per style id (the first
     value its listings give)}. Only MASTER DATA: a listing OMSGuru dropped is not taken."""
     from ..core import master_sheet as ms
-    from ..master_sheet.build import MYNTRA_ACCOUNT
+    MYNTRA_ACCOUNT = ms.MYNTRA_ACCOUNT
     df = ms.read(path, removed=False)
     if "MYNTRA STYLE ID" not in df.columns or "Channel Name" not in df.columns:
         raise RuntimeError(f"{ms.FILE} has no MYNTRA STYLE ID / Channel Name column")

@@ -41,11 +41,17 @@ URL_LIMIT = 65_530                   # xlsxwriter's (Excel's) most links in one 
 def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze: bool | tuple[int, int] = False,
                  auto_width: bool = False, max_width: int = 60, autofilter: bool = False,
                  column_widths: list[tuple[int, int, float]] | None = None, links: bool = False,
-                 header_format: dict | None = None, constant_memory: bool = False) -> Path:
+                 header_format: dict | None = None, constant_memory: bool = False,
+                 merges: dict[str, list] | None = None, date_format: str | None = None) -> Path:
     """{sheet: (headers, rows)} or [(sheet, headers, rows), ...] (a name may repeat) -> one xlsx at path (its
     folder made); the path. header_format: the header row's xlsxwriter format (e.g. ACCENT2_HEADER), else bold_header
     makes it bold. freeze: True = the header row, or (rows, columns); autofilter over the header and rows;
-    column_widths: (first column, last column, width) each; links: a text starting with http(s):// as a clickable link."""
+    column_widths: (first column, last column, width) each; links: a text starting with http(s):// as a clickable link.
+    merges: sheet name -> merged ranges ((first row, first col), (last row, last col)), 0-based with the header as row
+    0, as python-calamine's merged_cell_ranges gives them (an owner's sheet keeps its merged cells; not with
+    constant_memory). date_format: the number format of a day (default yyyy-mm-dd)."""
+    if merges and constant_memory:
+        raise ValueError("merged cells cannot be written with constant_memory")
     import xlsxwriter
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,11 +59,14 @@ def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze
                                          "strings_to_urls": False, "nan_inf_to_errors": True})
     head = (wb.add_format(header_format) if header_format else wb.add_format({"bold": True}) if bold_header else None)
     when = wb.add_format({"num_format": "yyyy-mm-dd hh:mm:ss"})
-    day = wb.add_format({"num_format": "yyyy-mm-dd"})
+    day = wb.add_format({"num_format": date_format or "yyyy-mm-dd"})
     taken: set[str] = set()
     items = [(n, h, r) for n, (h, r) in sheets.items()] if isinstance(sheets, dict) else list(sheets)
     for name, headers, rows in items:
         ws = wb.add_worksheet(sheet_name(name, taken))
+        merged = (merges or {}).get(name) or ()
+        if merged:
+            rows = [list(r) for r in rows]
         taken.add(ws.get_name())
         headers = list(headers)
         widths = [len(str(h)) for h in headers]
@@ -95,5 +104,15 @@ def write_sheets(path, sheets: dict | list, *, bold_header: bool = False, freeze
                 ws.set_column(c, c, min(w + 2, max_width))
         for first, end, width in column_widths or ():
             ws.set_column(first, end, width)
+        cells = [list(headers)] + rows if merged else []
+        for (r0, c0), (r1, c1) in merged:
+            value = cells[r0][c0] if r0 < len(cells) and c0 < len(cells[r0]) else None
+            ws.merge_range(r0, c0, r1, c1, "")
+            if isinstance(value, datetime):
+                ws.write_datetime(r0, c0, value.replace(tzinfo=None), when)
+            elif isinstance(value, date):
+                ws.write_datetime(r0, c0, datetime(value.year, value.month, value.day), day)
+            elif not _blank(value):
+                ws.write(r0, c0, value)
     wb.close()
     return path

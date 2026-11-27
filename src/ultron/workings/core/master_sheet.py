@@ -1,8 +1,8 @@
 """The SKU master, one file for every working (owner, 24 Nov 2026): Drive AGENT WORK/MASTER SHEET/MasterSheet.xlsx.
 
-Sheets: MASTER DATA (historical, OMSGuru and portal listings, rebuilt at 1 AM by the master-sheet working),
-UNMAPPED LISTINGS, REMOVED LISTINGS (the historical archive), and the owner's own
-Master Sku / Fabric Code / Launch Date & Size Count. Read it only through read() / download() here.
+Sheets: MASTER DATA (every listing, REMARK UNMAPPED = not in OMSGuru; updated at 1 AM by the master-sheet
+working, the owner's OMSGuru mapping tool), PORTAL COMBINED, and the owner's own MASTER SKU / FABRIC CODE /
+LAUNCH DATE & SIZE COUNT. Older files also had UNMAPPED LISTINGS / REMOVED LISTINGS (still read). Read it only through read() / download() here.
 
 The owner renamed two columns (24 Nov 2026): FINAL SKU -> MASTER SKU, FINAL MY SKU -> MASTER STYLE CODE. read()
 gives the old names too, so a reader written for them keeps working.
@@ -24,6 +24,9 @@ NEED = "NEED DATA"                         # MasterData rows with a value missin
 PORTAL_FOLDER = "PORTAL SHEET"             # AGENT WORK/MASTER SHEET/PORTAL SHEET: the owner's portal data, read each run
 OLD_SHEET = "Master"                       # the layout before 24 Nov 2026
 RENAMED = {"MASTER SKU": "FINAL SKU", "MASTER STYLE CODE": "FINAL MY SKU"}   # new name -> the old one
+# MASTER DATA Channel Name -> Myntra account (portals/myntra.py ACCOUNTS)
+MYNTRA_ACCOUNT = {"MYNTRA PPMP": "MAIN", "MYNTRA": "MAIN", "MYNTRA FMCC": "FMCC", "MYNTRA DBCC": "DBCC",
+                  "MYNTRA EXIM": "EXIM"}
 
 
 def sheet_of(names: list[str], name: str) -> str | None:
